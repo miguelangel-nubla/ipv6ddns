@@ -1,0 +1,50 @@
+{ 
+  "tasks": {
+    "load_balancer_for_web_app": {
+      "subnets": ["2000::/3", "fd00::/8"],
+      "mac_address": ["00:11:22:33:44:55", "00:11:22:33:44:56"],
+      "endpoints": {
+        "example-project": [
+          "test-webapp.example.com"
+        ]
+      }
+    },
+    "reverse_proxy": {
+      "subnets": ["2000::/3"],
+      "mac_address": ["00:11:22:33:44:57"],
+      "endpoints": {
+        "example-project": [
+          "test-proxy.example.com"
+        ]
+      }
+    },
+    "local_iot_device": {
+      "subnets": ["fd00::/8"],
+      "mac_address": ["00:11:22:33:44:58"],
+      "endpoints": {
+        "other-project": [
+          "test-iot.example.com"
+        ]
+      }
+    }
+  },
+  "credentials": {
+    "example-project": {
+      "provider": "cloudflare",
+      "settings": {
+        "email": "email@example.com",
+        "api_token": "CLOUDFLARETOKEN",
+        "zone_name": "example.com",
+        "ttl": "1h",
+        "proxied": true
+      }
+    },
+    "other-project": {
+      "provider": "duckdns",
+      "settings": {
+        "api_token": "DUCKDNSTOKEN",
+        "domain": "otherproject.duckdns.org"
+      }
+    }
+  }
+}
