@@ -2,6 +2,8 @@
 
 This utility discovers the IPv6 addresses of specific hosts in your network and updates DNS records dynamically. [Details](#what-does-this-do)
 
+If you have a special use case: [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc)
+
 ## Installation
 
 Download the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest) for your architecture.
