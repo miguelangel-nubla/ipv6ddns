@@ -18,23 +18,23 @@ go install github.com/miguelangel-nubla/ipv6ddns
 ## Usage
 
 Adjust the configuration on config.json and run the binary with the desired flags:
+
+>:warning: This utility needs to be executed as a superuser to be able to listen for IPv6 ICMP packets.
 ```
-./ipv6ddns [flags]
+sudo ipv6ddns [flags]
 ```
 
 ### Flags
 
-- `-config_file` (default "config.json"): Config file to use
-- `-log_level` (default "info"): Set the logging level (debug, info, warn, error, fatal, panic)
-- `-storm_delay` (default "60s"): Time to allow finishing storm of host discoveries before updating the DDNS record
-- `-ttl` (default "4h"): Time to keep a discovered host entry in the table after it has been last seen. This is not the TTL of the DDNS record
-- `-live` (default false): Show the current state live on the terminal
-
-This utility needs to be executed as a superuser to be able to listen on the required ports.
+- `-config_file` (default "config.json"): Config file to use.
+- `-log_level` (default "info"): Set the logging level (debug, info, warn, error, fatal, panic).
+- `-storm_delay` (default "60s"): Time to allow finishing storm of host discoveries before updating the DDNS record.
+- `-ttl` (default "4h"): Time to keep a discovered host entry in the table after it has been last seen. This is not the TTL of the DDNS record.
+- `-live` (default false): Show the current state live on the terminal.
 
 Depending on your IPv6 network configuration, you will need to allow outside access to the hosts you want to expose.
-On Mikrotik devices it is particularly easy, you just need to add an address list with your domain, the IPv6 addresses to which it points to will be automatically resolved, and then you can simply create a new forwarding rule on the firewall that allows forwarding to hosts in that destination address list.
-The alternative on more limited systems is to either specify subnets or simply allow by destination MAC address.
+
+The easiest way is to either specify allowed subnets or simply allow by destination MAC address.
 
 ## Configuration
 
