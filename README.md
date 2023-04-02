@@ -115,10 +115,20 @@ This utility scans the network for the IPv6s of the hosts you want to expose, id
 
 ---
 
-# Other nice usages
+## Other nice usages
 
 ### Roaming over multiple IPv6 networks
 This utility allows you to move between IPv6 networks and to maintain inbound connectivity.
 You can have as many IPv6 addresses from different ISPs as you like and the AAAA records for your domain will be kept in sync.
 
 For example, you can have a fiber connection, a backup LTE connection, and Starlink on your roof. Your domain will have AAAA records for every WAN connection, inbound WAN failover will simply work.
+
+## License
+
+This project is licensed under Apache License 2.0 
+
+It uses libraries from the following projects:
+- github.com/miguelangel-nubla/ipv6disc - Apache License 2.0
+- github.com/xeipuuv/gojsonschema - MIT License
+- go.uber.org/zap - MIT License
+- github.com/cloudflare/cloudflare-go - BSD 3-Clause License
