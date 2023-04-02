@@ -45,7 +45,10 @@ func startUpdater() {
 	liveOutput := make(chan string)
 
 	table := worker.NewTable()
-	worker.NewWorker(table, ttl, sugar).Start()
+	err := worker.NewWorker(table, ttl, sugar).Start()
+	if err != nil {
+		sugar.Fatalf("can't start worker: %s", err)
+	}
 
 	t := tree.NewTree()
 
