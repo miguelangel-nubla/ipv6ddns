@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"sort"
@@ -140,7 +141,7 @@ func validateConfig(configFile string) {
 
 	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
 	if err != nil {
-		panic(err.Error())
+		log.Fatal(err.Error())
 	}
 
 	if !result.Valid() {
