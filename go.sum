@@ -24,8 +24,6 @@ github.com/mattn/go-runewidth v0.0.14 h1:+xnbZSEeDbOIg5/mE6JF0w6n9duR1l3/WmbinWV
 github.com/mattn/go-runewidth v0.0.14/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mdlayher/ndp v1.0.0 h1:rcFaJVj04Rj47ZlV/t3iZcuKzlpwBuBsD3gR9AHDzcI=
 github.com/mdlayher/ndp v1.0.0/go.mod h1:+3vkk6YnlL8ZTRTjmQanCNQFqDKOpP2zNyHl2HqyoZs=
-github.com/miguelangel-nubla/ipv6disc v0.1.1 h1:Ph/bqPdp+fDW9u9GVE0ZClqvulcx6FlyDASA8JVQPw0=
-github.com/miguelangel-nubla/ipv6disc v0.1.1/go.mod h1:LGRJcRCVOZgCPdSj4jh+v6mpYhnveFGW7ekOC8e9M1w=
 github.com/miguelangel-nubla/ipv6disc v0.1.2 h1:xkUMXn3BhdbXUdnG/oAxQO4Za0cPNiJ4N/OPos35Nqo=
 github.com/miguelangel-nubla/ipv6disc v0.1.2/go.mod h1:LGRJcRCVOZgCPdSj4jh+v6mpYhnveFGW7ekOC8e9M1w=
 github.com/nsf/termbox-go v1.1.1 h1:nksUPLCb73Q++DwbYUBEglYBRPZyoXJdrj5L+TkjyZY=

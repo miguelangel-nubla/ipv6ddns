@@ -38,9 +38,60 @@ builds:
     goarm:
       - 6
       - 7
+dockers:
+  -
+    image_templates:
+    - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-amd64"
+    dockerfile: 'Dockerfile.goreleaser'
+    use: buildx
+    build_flag_templates:
+    - "--pull"
+    - "--platform=linux/amd64"
+    - "--label=org.opencontainers.image.created={{.Date}}"
+    - "--label=org.opencontainers.image.title={{.ProjectName}}"
+    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+    - "--label=org.opencontainers.image.version={{.Version}}"
+    - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+    - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+    extra_files:
+    - LICENSE.txt
+  -
+    image_templates:
+    - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-arm64v8"
+    dockerfile: 'Dockerfile.goreleaser'
+    use: buildx
+    build_flag_templates:
+    - "--pull"
+    - "--platform=linux/arm64/v8"
+    - "--label=org.opencontainers.image.created={{.Date}}"
+    - "--label=org.opencontainers.image.title={{.ProjectName}}"
+    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+    - "--label=org.opencontainers.image.version={{.Version}}"
+    - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+    - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+    extra_files:
+    - LICENSE.txt
+docker_manifests:
+  - 
+    name_template: ghcr.io/miguelangel-nubla/{{ .ProjectName }}:latest
+    image_templates:
+    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-amd64
+    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-arm64v8
+  - 
+    name_template: ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}
+    image_templates:
+    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-amd64
+    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-arm64v8
+  - 
+    name_template: ghcr.io/miguelangel-nubla/{{.ProjectName}}:v{{ .Major }}
+    image_templates:
+    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-amd64
+    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-arm64v8
 
 archives:
-  - files:
+  - 
+    rlcp: true
+    files:
       - LICENSE*
       - README*
       - CHANGELOG*

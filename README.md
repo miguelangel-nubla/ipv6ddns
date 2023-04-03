@@ -15,6 +15,12 @@ Ensure you have Go installed on your system. If not, follow the instructions on 
 go install github.com/miguelangel-nubla/ipv6ddns
 ```
 
+### Or use the docker image
+This may or may not work on your system. I was able to make it work with host networking and without `ipv6:true` in `/etc/docker/daemon.json`???. If you have experience and can help with ipv6 docker please let me know.
+```
+docker run -it --rm --network host -v ./config.json:/config.json gcr.io/miguelangel-nubla/ipv6ddns -live
+```
+
 ## Usage
 
 Adjust the configuration on config.json and run the binary with the desired flags:

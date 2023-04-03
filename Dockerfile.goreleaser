@@ -1,0 +1,3 @@
+FROM scratch
+ENTRYPOINT ["/ipv6ddns"]
+COPY ipv6ddns /
