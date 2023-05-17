@@ -49,8 +49,8 @@ This is the structure of the `config.json` file:
 ```
 { 
   "tasks": {
-    "load_balancer_for_web_app": { // whichever name you like for this task
-      "subnets": ["2000::/3"], // only IPv6 addresses on these subnets will be updated. "2000::/3" is any GUA.
+    "my_public_web_server": { // whichever name you like for this task, it is only for reference
+      "subnets": ["2000::/3"], // only IPv6 addresses on these subnets will be updated into the DDNS provider. "2000::/3" is any GUA.
       "mac_address": ["00:11:22:33:44:55", "00:11:22:33:44:56"], // MAC addresses of the hosts to look for
       "endpoints": {
         "example-project": [ // name of the endpoint to use for this task, as configured on the credentials section at the bottom
