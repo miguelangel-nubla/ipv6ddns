@@ -85,6 +85,8 @@ dockers:
     - "--label=org.opencontainers.image.version={{.Version}}"
     - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
     - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+    extra_files:
+    - LICENSE.txt
   -
     image_templates:
     - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-armv7"
@@ -99,6 +101,8 @@ dockers:
     - "--label=org.opencontainers.image.version={{.Version}}"
     - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
     - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+    extra_files:
+    - LICENSE.txt
   -
     image_templates:
     - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-arm64v8"
