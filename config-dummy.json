@@ -1,0 +1,30 @@
+{ 
+  "tasks": {
+    "here": {
+      "subnets": ["2000::/3"],
+      "mac_address": ["00:11:22:33:44:55"],
+      "endpoints": {
+        "dummy": [
+          "here.there.com"
+        ]
+      }
+    },
+    "there": {
+      "subnets": ["2000::/3"],
+      "mac_address": ["00:11:22:33:44:66"],
+      "endpoints": {
+        "dummy": [
+          "there.there.com"
+        ]
+      }
+    }
+  },
+  "credentials": {
+    "dummy": {
+      "provider": "dummy",
+      "settings": {
+        "domain": "dummy.org"
+      }
+    }
+  }
+}
