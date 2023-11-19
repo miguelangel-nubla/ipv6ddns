@@ -86,6 +86,7 @@ The available DDNS providers are:
 
 - Cloudflare
 - Duckdns (provider only allows a single AAAA record)
+- Route53 (AWS) This provider requires aws credentials to be set
 
 - :rocket: **Adding your preferred provider is easy**:
   - Take a provider from `ddns/` such as cloudflare.go as a template.
