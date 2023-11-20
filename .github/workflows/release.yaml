@@ -25,6 +25,13 @@ jobs:
           go-version: 'stable'
           check-latest: true
       -
+        name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GH_PAT }}
+      -
         name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
@@ -32,4 +39,4 @@ jobs:
           version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
