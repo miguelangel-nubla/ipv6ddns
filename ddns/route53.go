@@ -77,25 +77,48 @@ func route53ValidateConfig(config json.RawMessage) {
 }
 
 func (d *Route53) Update(domain string, hosts []string) error {
+	fmt.Printf("Updating %s with %v\n", domain, hosts)
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(d.Region))
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
 	}
 	svc := route53.NewFromConfig(cfg)
+
+	// input := &route53.ListResourceRecordSetsInput{
+	// 	HostedZoneId:    aws.String(d.ZoneId),
+	// 	StartRecordType: types.RRTypeAaaa,
+	// 	StartRecordName: aws.String(domain),
+	// 	MaxItems:        aws.Int32(1),
+	// }
+
+	// resp, err := svc.ListResourceRecordSets(context.TODO(), input)
+
+	// if err != nil {
+	// 	log.Fatalf("unable to list resource records, %v", err)
+	// }
+
+	// for record := range resp.ResourceRecordSets {
+	// 	fmt.Printf("On %s, Found record: %s\n", domain, *resp.ResourceRecordSets[record].Name)
+	// }
+
+	ips := make([]types.ResourceRecord, 0)
+	for _, host := range hosts {
+		ips = append(ips, types.ResourceRecord{
+			Value: aws.String(host),
+		})
+	}
+
+	// Create, update, or delete records as necessary
 	input := &route53.ChangeResourceRecordSetsInput{
 		ChangeBatch: &types.ChangeBatch{
 			Changes: []types.Change{
 				{
 					Action: types.ChangeActionUpsert,
 					ResourceRecordSet: &types.ResourceRecordSet{
-						Name: aws.String(domain),
-						ResourceRecords: []types.ResourceRecord{
-							{
-								Value: aws.String(hosts[0]),
-							},
-						},
-						TTL:  aws.Int64(d.TTL),
-						Type: types.RRTypeAaaa,
+						Name:            aws.String(domain),
+						ResourceRecords: ips,
+						TTL:             aws.Int64(d.TTL),
+						Type:            types.RRTypeAaaa,
 					},
 				},
 			},
