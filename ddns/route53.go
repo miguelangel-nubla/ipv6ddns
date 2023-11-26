@@ -84,23 +84,6 @@ func (d *Route53) Update(domain string, hosts []string) error {
 	}
 	svc := route53.NewFromConfig(cfg)
 
-	// input := &route53.ListResourceRecordSetsInput{
-	// 	HostedZoneId:    aws.String(d.ZoneId),
-	// 	StartRecordType: types.RRTypeAaaa,
-	// 	StartRecordName: aws.String(domain),
-	// 	MaxItems:        aws.Int32(1),
-	// }
-
-	// resp, err := svc.ListResourceRecordSets(context.TODO(), input)
-
-	// if err != nil {
-	// 	log.Fatalf("unable to list resource records, %v", err)
-	// }
-
-	// for record := range resp.ResourceRecordSets {
-	// 	fmt.Printf("On %s, Found record: %s\n", domain, *resp.ResourceRecordSets[record].Name)
-	// }
-
 	ips := make([]types.ResourceRecord, 0)
 	for _, host := range hosts {
 		ips = append(ips, types.ResourceRecord{
@@ -108,28 +91,50 @@ func (d *Route53) Update(domain string, hosts []string) error {
 		})
 	}
 
-	// Create, update, or delete records as necessary
-	input := &route53.ChangeResourceRecordSetsInput{
-		ChangeBatch: &types.ChangeBatch{
-			Changes: []types.Change{
-				{
-					Action: types.ChangeActionUpsert,
-					ResourceRecordSet: &types.ResourceRecordSet{
-						Name:            aws.String(domain),
-						ResourceRecords: ips,
-						TTL:             aws.Int64(d.TTL),
-						Type:            types.RRTypeAaaa,
+	if len(ips) == 0 {
+		// Delete records if no hosts are provided
+		input := &route53.ChangeResourceRecordSetsInput{
+			ChangeBatch: &types.ChangeBatch{
+				Changes: []types.Change{
+					{
+						Action: types.ChangeActionDelete,
+						ResourceRecordSet: &types.ResourceRecordSet{
+							Name: aws.String(domain),
+							Type: types.RRTypeAaaa,
+						},
 					},
 				},
 			},
-			Comment: aws.String("AAAA record for " + domain + " updated by ddns"),
-		},
-		HostedZoneId: aws.String(d.ZoneId),
+		}
+		_, err = svc.ChangeResourceRecordSets(context.TODO(), input)
+		if err != nil {
+			log.Fatalf("unable to delete resource record set, %v", err)
+		}
+	} else {
+		// Create or update records as necessary
+		input := &route53.ChangeResourceRecordSetsInput{
+			ChangeBatch: &types.ChangeBatch{
+				Changes: []types.Change{
+					{
+						Action: types.ChangeActionUpsert,
+						ResourceRecordSet: &types.ResourceRecordSet{
+							Name:            aws.String(domain),
+							ResourceRecords: ips,
+							TTL:             aws.Int64(d.TTL),
+							Type:            types.RRTypeAaaa,
+						},
+					},
+				},
+				Comment: aws.String("AAAA record for " + domain + " updated by ddns"),
+			},
+			HostedZoneId: aws.String(d.ZoneId),
+		}
+		_, err = svc.ChangeResourceRecordSets(context.TODO(), input)
+		if err != nil {
+			log.Fatalf("unable to reare or update resource record set, %v", err)
+		}
 	}
-	_, err = svc.ChangeResourceRecordSets(context.TODO(), input)
-	if err != nil {
-		log.Fatalf("unable to update resource record sets, %v", err)
-	}
+
 	return nil
 }
 
