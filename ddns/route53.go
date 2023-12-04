@@ -77,7 +77,7 @@ func route53ValidateConfig(config json.RawMessage) {
 }
 
 func (d *Route53) Update(domain string, hosts []string) error {
-	fmt.Printf("Updating %s with %v\n", domain, hosts)
+	// fmt.Printf("Updating %s with %v\n", domain, hosts)
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(d.Region))
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
@@ -93,22 +93,53 @@ func (d *Route53) Update(domain string, hosts []string) error {
 
 	if len(ips) == 0 {
 		// Delete records if no hosts are provided
-		input := &route53.ChangeResourceRecordSetsInput{
-			ChangeBatch: &types.ChangeBatch{
-				Changes: []types.Change{
-					{
-						Action: types.ChangeActionDelete,
-						ResourceRecordSet: &types.ResourceRecordSet{
-							Name: aws.String(domain),
-							Type: types.RRTypeAaaa,
+		// Get current records
+		listParams := &route53.ListResourceRecordSetsInput{
+			HostedZoneId: aws.String(d.ZoneId),
+		}
+		respList, err := svc.ListResourceRecordSets(context.TODO(), listParams)
+		if err != nil {
+			log.Fatalf("unable to list zone records, %v", err)
+		}
+		var found bool
+		var ipAddress string
+		var ttl int64
+		for _, rs := range respList.ResourceRecordSets {
+			if *rs.Name == domain+"." {
+				found = true
+				ttl = *rs.TTL
+				for _, record := range rs.ResourceRecords {
+					ipAddress = *record.Value
+					ips = append(ips, types.ResourceRecord{
+						Value: aws.String(ipAddress),
+					})
+				}
+			}
+		}
+		if !found {
+			// fmt.Printf("No AAAA record found for %s\n", domain)
+			return nil
+		} else {
+			input := &route53.ChangeResourceRecordSetsInput{
+				ChangeBatch: &types.ChangeBatch{
+					Changes: []types.Change{
+						{
+							Action: types.ChangeActionDelete,
+							ResourceRecordSet: &types.ResourceRecordSet{
+								Name:            aws.String(domain),
+								ResourceRecords: ips,
+								TTL:             aws.Int64(ttl),
+								Type:            types.RRTypeAaaa,
+							},
 						},
 					},
 				},
-			},
-		}
-		_, err = svc.ChangeResourceRecordSets(context.TODO(), input)
-		if err != nil {
-			log.Fatalf("unable to delete resource record set, %v", err)
+				HostedZoneId: aws.String(d.ZoneId),
+			}
+			_, err = svc.ChangeResourceRecordSets(context.TODO(), input)
+			if err != nil {
+				log.Fatalf("unable to delete resource record set, %v", err)
+			}
 		}
 	} else {
 		// Create or update records as necessary
