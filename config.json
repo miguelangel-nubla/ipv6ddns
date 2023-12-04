@@ -26,6 +26,15 @@
           "test-iot.example.com"
         ]
       }
+    },
+    "some-server": {
+      "subnets": ["2000::/3"],
+      "mac_address": ["00:11:22:33:44:59"],
+      "endpoints": {
+        "aws": [
+          "my.cool.zone.com"
+        ]
+      }
     }
   },
   "credentials": {
@@ -44,6 +53,16 @@
       "settings": {
         "api_token": "DUCKDNSTOKEN",
         "domain": "otherproject.duckdns.org"
+      }
+    },
+    "credentials": {
+      "aws": {
+        "provider": "route53",
+        "settings": {
+          "region": "eu-west-1",
+          "zone_id": "<Zone ID>",
+          "ttl": "3600"
+        }
       }
     }
   }
