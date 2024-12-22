@@ -84,8 +84,9 @@ This is the structure of the `config.json` file:
 
 The available DDNS providers are:
 
-- Cloudflare
-- Duckdns (provider only allows a single AAAA record)
+- [Cloudflare](https://www.cloudflare.com/application-services/products/dns/) (free plan compatible)
+- [Duckdns](https://www.duckdns.org/) (provider only allows a single AAAA record)
+- [Gravity](https://github.com/BeryJu/gravity) (hosted locally)
 
 - :rocket: **Adding your preferred provider is easy**:
   - Take a provider from `ddns/` such as cloudflare.go as a template.
