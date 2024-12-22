@@ -155,7 +155,6 @@ docker_manifests:
 
 archives:
   - 
-    rlcp: true
     files:
       - LICENSE*
       - README*
