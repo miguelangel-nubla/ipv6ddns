@@ -70,6 +70,8 @@ func startUpdater() {
 
 		if err != nil {
 			sugar.Errorf("endpoint %s error updating %s: %s", endpoint.ID, domainName, err)
+		} else {
+			sugar.Infof("endpoint %s updated %s: %v", endpoint.ID, domainName, hostList)
 		}
 
 		return err
