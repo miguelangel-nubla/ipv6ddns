@@ -148,9 +148,9 @@ func (tree *Tree) PrettyPrint(tabSize int) string {
 
 func (tree *Tree) Update(config *config.Config, table *worker.Table, stormDelay time.Duration, onUpdate func(endpoint *Endpoint, domain string) error) {
 	for _, task := range config.Tasks {
-		for endpoint, domains := range task.Endpoints {
+		for endpointId, domains := range task.Endpoints {
 			for _, domainName := range domains {
-				credential := config.Credentials[endpoint]
+				credential := config.Credentials[endpointId]
 
 				tree.providersMutex.Lock()
 				if _, ok := tree.providers[credential.Provider]; !ok {
@@ -160,19 +160,20 @@ func (tree *Tree) Update(config *config.Config, table *worker.Table, stormDelay 
 				tree.providersMutex.Unlock()
 
 				provider.endpointsMutex.Lock()
-				if _, ok := provider.endpoints[endpoint]; !ok {
+				if _, ok := provider.endpoints[endpointId]; !ok {
 					service, err := ddns.NewDDNSService(credential.Provider, credential.RawSettings)
 					if err != nil {
-						panic(fmt.Sprintf("Error creating DDNSService for endpoint %s: %v\n", endpoint, err))
+						panic(fmt.Sprintf("Error creating DDNSService for endpoint %s: %v\n", endpointId, err))
 					}
 
-					provider.endpoints[endpoint] = &Endpoint{
-						ID:      endpoint,
+					provider.endpoints[endpointId] = &Endpoint{
+						ID:      endpointId,
 						Domains: make(map[string]*Domain),
 						Service: service,
 					}
 				}
-				endpoint := provider.endpoints[endpoint]
+
+				endpoint := provider.endpoints[endpointId]
 				provider.endpointsMutex.Unlock()
 
 				endpoint.DomainsMutex.Lock()
@@ -199,12 +200,15 @@ func (tree *Tree) Update(config *config.Config, table *worker.Table, stormDelay 
 					if domain.updateNextTimer != nil {
 						domain.updateNextTimer.Stop()
 					}
+
+					// capture reference to the current domain name
+					currentDomainName := domainName
 					callback := func() {
 						domain.mutex.Lock()
 						defer domain.mutex.Unlock()
 						domain.updateRunning = true
 
-						domain.updateError = onUpdate(endpoint, domainName)
+						domain.updateError = onUpdate(endpoint, currentDomainName)
 						if domain.updateError == nil {
 							domain.updatedTime = time.Now()
 						}
