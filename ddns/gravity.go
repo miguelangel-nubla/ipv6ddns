@@ -106,8 +106,15 @@ func (g *Gravity) Update(domain string, hosts []string) error {
 		return fmt.Errorf("failed to get current records: %v", currentRecords.Status())
 	}
 
-	// Build a set of current IP addresses in Cloudflare
+	// Initialize records if necessary
+	if currentRecords.JSON200.Records == nil {
+		records := make([]gravity.DnsAPIRecord, 0)
+		currentRecords.JSON200.Records = &records
+	}
+
 	currentIPs := make(map[string]bool)
+
+	// Build a set of current IP addresses
 	for _, record := range *currentRecords.JSON200.Records {
 		if record.Type == "AAAA" {
 			currentIPs[record.Data] = true
