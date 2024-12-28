@@ -22,12 +22,14 @@ type Domain struct {
 
 	updatedTime time.Time
 
-	updateRunning bool
-
 	updateNext      time.Time
 	updateNextTimer *time.Timer
 
-	updateError error
+	updateRunning bool
+	updateError   error
+
+	updateAction        func() error
+	updateRetryInterval time.Duration
 }
 
 type Endpoint struct {
@@ -98,14 +100,14 @@ func (tree *Tree) PrettyPrint(tabSize int) string {
 				if domain.updateRunning {
 					result.WriteString(" (update running)")
 				}
-				if domain.updateError != nil {
-					fmt.Fprintf(&result, " (error: %s)", domain.updateError)
+				if !domain.updateNext.IsZero() && domain.updateNext.After(time.Now()) {
+					fmt.Fprintf(&result, " (next update: %.0fs)", time.Until(domain.updateNext).Seconds())
 				}
 				if !domain.updatedTime.IsZero() {
 					result.WriteString(" (last update: " + domain.updatedTime.Format(time.RFC3339) + ")")
 				}
-				if !domain.updateNext.IsZero() && domain.updateNext.After(time.Now()) {
-					fmt.Fprintf(&result, " (next update: %.0fs)", time.Until(domain.updateNext).Seconds())
+				if domain.updateError != nil {
+					fmt.Fprintf(&result, " (last update error: %s)", domain.updateError)
 				}
 				result.WriteString("\n")
 
@@ -197,34 +199,50 @@ func (tree *Tree) Update(config *config.Config, table *worker.Table, stormDelay 
 				existingHosts := domain.Hosts
 				if !sameHosts(currentHosts, existingHosts) {
 					domain.mutex.Lock()
+
+					// stop the current update timer if it exists
 					if domain.updateNextTimer != nil {
 						domain.updateNextTimer.Stop()
+						domain.updateNext = time.Time{}
 					}
 
-					// capture reference to the current domain name
+					domain.updateRetryInterval = stormDelay
+
+					// capture references to the current values
 					currentDomainName := domainName
-					callback := func() {
-						domain.mutex.Lock()
-						defer domain.mutex.Unlock()
-						domain.updateRunning = true
-
-						domain.updateError = onUpdate(endpoint, currentDomainName)
-						if domain.updateError == nil {
-							domain.updatedTime = time.Now()
-						}
-
-						domain.updateRunning = false
+					currentEndpoint := endpoint
+					domain.updateAction = func() error {
+						return onUpdate(currentEndpoint, currentDomainName)
 					}
-					domain.updateNextTimer = time.AfterFunc(stormDelay, callback)
+
+					domain.updateNextTimer = time.AfterFunc(stormDelay, domain.update)
 					domain.updateNext = time.Now().Add(stormDelay)
-					domain.mutex.Unlock()
 
 					domain.Hosts = currentHosts
+
+					domain.mutex.Unlock()
 				}
 				domain.HostsMutex.Unlock()
 			}
 		}
 	}
+}
+
+func (domain *Domain) update() {
+	domain.mutex.Lock()
+	defer domain.mutex.Unlock()
+
+	domain.updateRunning = true
+
+	domain.updateError = domain.updateAction()
+	if domain.updateError == nil {
+		domain.updatedTime = time.Now()
+	} else {
+		domain.updateNextTimer = time.AfterFunc(domain.updateRetryInterval, domain.update)
+		domain.updateNext = time.Now().Add(domain.updateRetryInterval)
+	}
+
+	domain.updateRunning = false
 }
 
 func sameHosts(slice1 []*worker.IPAddressInfo, slice2 []*worker.IPAddressInfo) bool {
