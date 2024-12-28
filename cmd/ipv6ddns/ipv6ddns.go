@@ -38,22 +38,22 @@ func Start() {
 }
 
 func startUpdater() {
-	config := config.NewConfig(configFile)
+	currentConfig := config.NewConfig(configFile)
 
 	sugar := initializeLogger()
 
 	liveOutput := make(chan string)
 
-	table := worker.NewTable()
-	err := worker.NewWorker(table, ttl, sugar).Start()
+	currentTable := worker.NewTable()
+	err := worker.NewWorker(currentTable, ttl, sugar).Start()
 	if err != nil {
 		sugar.Fatalf("can't start worker: %s", err)
 	}
 
-	t := tree.NewTree()
+	currentTree := tree.NewTree()
 
 	onUpdate := func(endpoint *tree.Endpoint, domainName string) error {
-		sugar.Infof("endpoint %s starting update of: %s", endpoint.ID, domainName)
+		sugar.Debugf("endpoint %s starting update of: %s", endpoint.ID, domainName)
 
 		endpoint.DomainsMutex.RLock()
 		domain := endpoint.Domains[domainName]
@@ -79,13 +79,13 @@ func startUpdater() {
 
 	go func() {
 		for {
-			t.Update(config, table, stormDelay, onUpdate)
+			currentTree.Update(currentConfig, currentTable, stormDelay, onUpdate)
 
 			if live {
 				var result strings.Builder
-				result.WriteString(t.PrettyPrint(4))
-				result.WriteString(table.PrettyPrint(4))
-				result.WriteString(config.PrettyPrint(4))
+				result.WriteString(currentTree.PrettyPrint(4))
+				result.WriteString(currentTable.PrettyPrint(4))
+				result.WriteString(currentConfig.PrettyPrint(4))
 				liveOutput <- result.String()
 			}
 
