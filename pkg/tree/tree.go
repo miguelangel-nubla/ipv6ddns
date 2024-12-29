@@ -132,6 +132,7 @@ func (tree *Tree) PrettyPrint(tabSize int) string {
 					if lastIp != ip {
 						fmt.Fprintf(&result, indent(4)+"[%s]\n", ip)
 						lastIp = ip
+						lastHw = ""
 					}
 
 					hw := ipAddressInfo.Hw.String()
