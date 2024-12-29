@@ -1,11 +1,10 @@
 module github.com/miguelangel-nubla/ipv6ddns
 
-go 1.22.0
-
-toolchain go1.23.4
+go 1.23.4
 
 require (
 	github.com/cloudflare/cloudflare-go v0.112.0
+	github.com/google/uuid v1.6.0
 	github.com/miguelangel-nubla/ipv6disc v0.1.3
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
 	github.com/oapi-codegen/runtime v1.1.1
@@ -21,7 +20,6 @@ require (
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/yaml v0.3.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
