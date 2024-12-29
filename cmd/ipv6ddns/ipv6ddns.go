@@ -3,7 +3,9 @@ package ipv6ddns
 import (
 	"flag"
 	"log"
+	"maps"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,20 +60,23 @@ func startUpdater() {
 		endpoint.DomainsMutex.RLock()
 		domain := endpoint.Domains[domainName]
 		domain.HostsMutex.RLock()
-		hostList := make([]string, 0, len(domain.Hosts))
+		hostMap := make(map[string]bool) // make unique list of hosts
 		for _, host := range domain.Hosts {
 			// Remove zone identifier from netip.Addr, zones strip prefixes
-			hostList = append(hostList, netip.AddrFrom16(host.Address.As16()).String())
+			host := netip.AddrFrom16(host.Address.As16()).String()
+			hostMap[host] = true
 		}
 		domain.HostsMutex.RUnlock()
 		endpoint.DomainsMutex.RUnlock()
 
-		err := endpoint.Service.Update(domainName, hostList)
+		hosts := slices.Collect(maps.Keys(hostMap))
+
+		err := endpoint.Service.Update(domainName, hosts)
 
 		if err != nil {
 			sugar.Errorf("endpoint %s error updating %s: %s", endpoint.ID, domainName, err)
 		} else {
-			sugar.Infof("endpoint %s updated %s: %v", endpoint.ID, domainName, hostList)
+			sugar.Infof("endpoint %s successfully updated %s: %v", endpoint.ID, domainName, hosts)
 		}
 
 		return err
