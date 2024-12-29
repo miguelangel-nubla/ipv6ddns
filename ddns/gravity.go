@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns/gravity"
 	"github.com/xeipuuv/gojsonschema"
 )
@@ -131,11 +132,13 @@ func (g *Gravity) Update(domain string, hosts []string) error {
 	for ip := range desiredIPs {
 		if !currentIPs[ip] {
 			// Create a new DNS record
+			uid := uuid.New().String()
 			response, err := apiClient.DnsPutRecordsWithResponse(
 				context.Background(),
 				&gravity.DnsPutRecordsParams{
 					Zone:     g.ZoneName,
 					Hostname: domain,
+					Uid:      &uid,
 				},
 				gravity.DnsPutRecordsJSONRequestBody{
 					Type: "AAAA",
