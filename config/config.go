@@ -60,15 +60,11 @@ func (task *Task) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (config *Config) PrettyPrint(tabSize int) string {
-	indent := func(level int) string {
-		return strings.Repeat(" ", level*tabSize)
-	}
-
+func (config *Config) PrettyPrint(prefix string) string {
 	var result strings.Builder
-	result.WriteString("Config:\n")
 
-	result.WriteString(indent(1) + "Tasks:\n")
+	fmt.Fprintf(&result, "%sConfig:\n", prefix)
+	fmt.Fprintf(&result, "%s    Tasks:\n", prefix)
 
 	// Sort task names
 	taskNames := make([]string, 0, len(config.Tasks))
@@ -80,14 +76,14 @@ func (config *Config) PrettyPrint(tabSize int) string {
 	// Iterate over sorted tasks
 	for _, name := range taskNames {
 		task := config.Tasks[name]
-		result.WriteString(indent(2) + name + ":\n")
+		result.WriteString(prefix + "        " + name + ":\n")
 		macAddresses := make([]string, len(task.MACAddresses))
 		for i, mac := range task.MACAddresses {
 			macAddresses[i] = mac.String()
 		}
-		result.WriteString(indent(3) + "MAC Addresses: " + strings.Join(macAddresses, ", ") + "\n")
-		result.WriteString(indent(3) + "Subnets: " + strings.Join(task.Subnets, ", ") + "\n")
-		result.WriteString(indent(3) + "Domains:\n")
+		result.WriteString(prefix + "            MAC Addresses: " + strings.Join(macAddresses, ", ") + "\n")
+		result.WriteString(prefix + "            Subnets: " + strings.Join(task.Subnets, ", ") + "\n")
+		result.WriteString(prefix + "            Hostnames:\n")
 
 		// Sort endpoint keys
 		endpointKeys := make([]string, 0, len(task.Endpoints))
@@ -97,22 +93,22 @@ func (config *Config) PrettyPrint(tabSize int) string {
 		sort.Strings(endpointKeys)
 
 		// Iterate over sorted endpoints
-		for _, endpoint := range endpointKeys {
-			domains := task.Endpoints[endpoint]
+		for _, endpointKey := range endpointKeys {
+			hostnames := task.Endpoints[endpointKey]
 
-			// Sort domain names
-			sortedDomainNames := make([]string, len(domains))
-			copy(sortedDomainNames, domains)
-			sort.Strings(sortedDomainNames)
+			// Sort hostnames
+			sortedHostnames := make([]string, len(hostnames))
+			copy(sortedHostnames, hostnames)
+			sort.Strings(sortedHostnames)
 
-			// Iterate over sorted domain names
-			for _, domainName := range sortedDomainNames {
-				result.WriteString(indent(4) + domainName + " (" + endpoint + ")\n")
+			// Iterate over sorted hostnames
+			for _, hostname := range sortedHostnames {
+				result.WriteString(prefix + "                " + hostname + " (" + endpointKey + ")\n")
 			}
 		}
 	}
 
-	result.WriteString(indent(1) + "Credentials:\n")
+	result.WriteString(prefix + "    Credentials:\n")
 
 	// Sort credential aliases
 	credentialAliases := make([]string, 0, len(config.Credentials))
@@ -124,11 +120,11 @@ func (config *Config) PrettyPrint(tabSize int) string {
 	// Iterate over sorted credentials
 	for _, alias := range credentialAliases {
 		credential := config.Credentials[alias]
-		result.WriteString(indent(2) + "Endpoint: " + alias + ":\n")
-		result.WriteString(indent(3) + "Provider: " + credential.Provider + "\n")
-		result.WriteString(indent(3) + "Settings: ")
-		by, _ := json.MarshalIndent(credential.RawSettings, indent(4), "    ")
-		result.Write(by)
+		result.WriteString(prefix + "        Endpoint: " + alias + "\n")
+		result.WriteString(prefix + "            Provider: " + credential.Provider + "\n")
+		result.WriteString(prefix + "            Settings: ")
+		bytes, _ := json.MarshalIndent(credential.RawSettings, "            ", "    ")
+		result.Write(bytes)
 		result.WriteString("\n")
 	}
 
@@ -153,7 +149,7 @@ func validateConfig(configFile string) {
 	}
 }
 
-func NewConfig(filename string) *Config {
+func NewConfig(filename string) Config {
 	validateConfig(filename)
 
 	jsonFile, err := os.Open(filename)
@@ -167,5 +163,5 @@ func NewConfig(filename string) *Config {
 	var config Config
 	json.Unmarshal(byteValue, &config)
 
-	return &config
+	return config
 }

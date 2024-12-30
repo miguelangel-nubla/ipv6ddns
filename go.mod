@@ -5,7 +5,7 @@ go 1.23.4
 require (
 	github.com/cloudflare/cloudflare-go v0.112.0
 	github.com/google/uuid v1.6.0
-	github.com/miguelangel-nubla/ipv6disc v0.1.3
+	github.com/miguelangel-nubla/ipv6disc v0.2.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
 	github.com/oapi-codegen/runtime v1.1.1
 	github.com/xeipuuv/gojsonschema v1.2.0

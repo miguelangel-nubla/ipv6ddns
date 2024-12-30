@@ -7,18 +7,20 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns/gravity"
+	"github.com/miguelangel-nubla/ipv6disc"
 	"github.com/xeipuuv/gojsonschema"
 )
 
 type Gravity struct {
-	Server   string        `json:"server"`
-	APIKey   string        `json:"api_key"`
-	ZoneName string        `json:"zone_name"`
-	TTL      time.Duration `json:"ttl"`
+	Server string        `json:"server"`
+	APIKey string        `json:"api_key"`
+	Zone   string        `json:"zone"`
+	TTL    time.Duration `json:"ttl"`
 }
 
 func init() {
@@ -46,7 +48,7 @@ func gravityValidateConfig(config json.RawMessage) {
 				"type": "string",
 				"minLength": 1
 			},
-			"zone_name": {
+			"zone": {
 				"type": "string",
 				"minLength": 1
 			},
@@ -58,7 +60,7 @@ func gravityValidateConfig(config json.RawMessage) {
 		"required": [
 		    "server",
 			"api_key",
-			"zone_name",
+			"zone",
 			"ttl"
 		]
 	}
@@ -81,7 +83,7 @@ func gravityValidateConfig(config json.RawMessage) {
 	}
 }
 
-func (g *Gravity) Update(domain string, hosts []string) error {
+func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	requestEditors := []gravity.RequestEditorFn{
 		func(ctx context.Context, req *http.Request) error {
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", g.APIKey))
@@ -95,8 +97,8 @@ func (g *Gravity) Update(domain string, hosts []string) error {
 
 	// Get current records
 	params := gravity.DnsGetRecordsParams{
-		Zone:     &g.ZoneName,
-		Hostname: &domain,
+		Zone:     &g.Zone,
+		Hostname: &hostname,
 	}
 	currentRecords, err := apiClient.DnsGetRecordsWithResponse(context.Background(), &params, requestEditors...)
 	if err != nil {
@@ -113,35 +115,40 @@ func (g *Gravity) Update(domain string, hosts []string) error {
 		currentRecords.JSON200.Records = &records
 	}
 
-	currentIPs := make(map[string]bool)
+	currentIPs := make(map[string]string)
 
 	// Build a set of current IP addresses
 	for _, record := range *currentRecords.JSON200.Records {
-		if record.Type == "AAAA" {
-			currentIPs[record.Data] = true
+		if record.Type != "AAAA" && record.Type != "A" {
+			continue
 		}
+		currentIPs[record.Data] = record.Type
 	}
 
 	// Build a set of desired IP addresses
-	desiredIPs := make(map[string]bool)
-	for _, host := range hosts {
-		desiredIPs[host] = true
+	desiredIPs := make(map[string]string)
+	for _, addr := range addrCollection.Get() {
+		recordType := "AAAA"
+		if addr.Addr.Is4() {
+			recordType = "A"
+		}
+		desiredIPs[addr.WithZone("").String()] = recordType
 	}
 
-	// Create, update, or delete records as necessary
-	for ip := range desiredIPs {
-		if !currentIPs[ip] {
-			// Create a new DNS record
+	// Create records as necessary
+	for ip, recordType := range desiredIPs {
+		_, exists := currentIPs[ip]
+		if !exists {
 			uid := uuid.New().String()
 			response, err := apiClient.DnsPutRecordsWithResponse(
 				context.Background(),
 				&gravity.DnsPutRecordsParams{
-					Zone:     g.ZoneName,
-					Hostname: domain,
+					Zone:     g.Zone,
+					Hostname: hostname,
 					Uid:      &uid,
 				},
 				gravity.DnsPutRecordsJSONRequestBody{
-					Type: "AAAA",
+					Type: recordType,
 					Data: ip,
 				},
 				requestEditors...,
@@ -156,15 +163,21 @@ func (g *Gravity) Update(domain string, hosts []string) error {
 		}
 	}
 
+	// Update or delete records as necessary
 	for _, record := range *currentRecords.JSON200.Records {
+		if record.Type != "AAAA" && record.Type != "A" {
+			continue
+		}
+
 		ip := record.Data
-		if !desiredIPs[ip] {
+		_, exists := desiredIPs[ip]
+		if !exists {
 			// Delete the DNS record
 			response, err := apiClient.DnsDeleteRecordsWithResponse(
 				context.Background(),
 				&gravity.DnsDeleteRecordsParams{
-					Zone:     g.ZoneName,
-					Hostname: domain,
+					Zone:     g.Zone,
+					Hostname: hostname,
 					Type:     record.Type,
 					Uid:      record.Uid,
 				},
@@ -178,7 +191,7 @@ func (g *Gravity) Update(domain string, hosts []string) error {
 				return fmt.Errorf("failed to delete DNS record: %v", response.Status())
 			}
 		} else {
-			// Nothing to do for now
+			// Nothing to update for now
 		}
 	}
 
@@ -226,4 +239,10 @@ func (g *Gravity) MarshalJSON() ([]byte, error) {
 		TTL:   int64(g.TTL.Seconds()),
 		Alias: (*Alias)(g),
 	})
+}
+
+func (g *Gravity) Domain(hostname string) string {
+	hostname = strings.Trim(hostname, ".")
+	zone := strings.Trim(g.Zone, ".")
+	return strings.Join([]string{hostname, zone}, ".")
 }

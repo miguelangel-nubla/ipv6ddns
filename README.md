@@ -12,7 +12,7 @@ Download the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/rele
 
 Ensure you have Go installed on your system. If not, follow the instructions on the official [Go website](https://golang.org/doc/install) to install it. Then:
 ```
-go install github.com/miguelangel-nubla/ipv6ddns
+go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 ```
 
 ### Or use the docker image
@@ -35,7 +35,7 @@ sudo ipv6ddns [flags]
 - `-config_file` (default "config.json"): Config file to use.
 - `-log_level` (default "info"): Set the logging level (debug, info, warn, error, fatal, panic).
 - `-storm_delay` (default "60s"): Time to allow finishing storm of host discoveries before updating the DDNS record.
-- `-ttl` (default "4h"): Time to keep a discovered host entry in the table after it has been last seen. This is not the TTL of the DDNS record.
+- `-lifetime` (default "4h"): Time to keep a discovered host entry after it has been last seen.
 - `-live` (default false): Show the current state live on the terminal.
 
 Depending on your IPv6 network configuration, you will need to allow outside access to the hosts you want to expose.
@@ -54,7 +54,7 @@ This is the structure of the `config.json` file:
       "mac_address": ["00:11:22:33:44:55", "00:11:22:33:44:56"], // MAC addresses of the hosts to look for
       "endpoints": {
         "example-project": [ // name of the endpoint to use for this task, as configured on the credentials section at the bottom
-          "test-webapp.example.com" // domain name whose AAAA records will be kept in sync
+          "test-webapp" // hostname whose AAAA records will be kept in sync. This results in updating test-webapp.example.com as defined by example-project settings
         ]
       }
     }
@@ -66,9 +66,8 @@ This is the structure of the `config.json` file:
     "example-project": { // name you will use to refer to this endpoint on the tasks
       "provider": "cloudflare", // one of the supported providers
       "settings": { // provider specific configuration
-        "email": "email@example.com",
         "api_token": "CLOUDFLARETOKEN",
-        "zone_name": "example.com",
+        "zone": "example.com",
         "ttl": "1h", // if proxied over cloudflare this will have no effect
         "proxied": true
       }

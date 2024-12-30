@@ -32,9 +32,8 @@
     "example-project": {
       "provider": "cloudflare",
       "settings": {
-        "email": "email@example.com",
         "api_token": "CLOUDFLARETOKEN",
-        "zone_name": "example.com",
+        "zone": "example.com",
         "ttl": "1h",
         "proxied": true
       }
@@ -42,8 +41,7 @@
     "other-project": {
       "provider": "duckdns",
       "settings": {
-        "api_token": "DUCKDNSTOKEN",
-        "domain": "otherproject.duckdns.org"
+        "api_token": "DUCKDNSTOKEN"
       }
     }
   }
