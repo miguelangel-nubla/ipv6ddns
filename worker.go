@@ -127,7 +127,7 @@ func (w *Worker) lookForChanges() {
 					hostname.updateTimer = time.AfterFunc(w.stormDelay, hostname.update)
 					hostname.updateTime = time.Now().Add(w.stormDelay)
 
-					hostname.AddrCollection = *currentHosts
+					hostname.AddrCollection = *currentHosts.Copy()
 
 					hostname.mutex.Unlock()
 				}

@@ -36,14 +36,14 @@ type Endpoint struct {
 	service        ddns.Service
 }
 
-func (e *Endpoint) Update(hostname string) (ipv6disc.AddrCollection, error) {
+func (e *Endpoint) Update(hostname string) (*ipv6disc.AddrCollection, error) {
 	e.hostnamesMutex.RLock()
 	h := e.hostnames[hostname]
 	// just copy it for now
-	addrCollection := h.AddrCollection
+	addrCollection := h.AddrCollection.Copy()
 	e.hostnamesMutex.RUnlock()
 
-	return addrCollection, e.service.Update(hostname, &addrCollection)
+	return addrCollection, e.service.Update(hostname, addrCollection)
 }
 
 type Provider struct {
