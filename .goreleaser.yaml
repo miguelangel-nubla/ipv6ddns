@@ -161,7 +161,7 @@ archives:
       - LICENSE*
       - README*
       - CHANGELOG*
-      - example.config.json
+      - cmd/ipv6ddns/example.config.json
     format: tar.gz
     name_template: >-
       {{ .ProjectName }}_
