@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -95,8 +96,6 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 
 	// Create a new *ResourceContainer for the zone
 	rc := cloudflare.ZoneIdentifier(zoneID)
-
-	// Get current DNS records from Cloudflare
 	params := cloudflare.ListDNSRecordsParams{
 		Name: c.Domain(hostname),
 	}
@@ -109,7 +108,12 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	currentIPs := make(map[string]string)
 	for _, record := range currentRecords {
 		if record.Type == "AAAA" || record.Type == "A" {
-			currentIPs[record.Content] = record.Type
+			addr, err := netip.ParseAddr(record.Content)
+			if err != nil {
+				return fmt.Errorf("invalid existing record found: %v", err)
+			}
+			ip := addr.WithZone("").String()
+			currentIPs[ip] = record.Type
 		}
 	}
 
@@ -120,7 +124,8 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 		if addr.Addr.Is4() {
 			recordType = "A"
 		}
-		desiredIPs[addr.WithZone("").String()] = recordType
+		ip := addr.WithZone("").String()
+		desiredIPs[ip] = recordType
 	}
 
 	// Create records as necessary

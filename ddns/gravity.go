@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -95,7 +96,6 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		return fmt.Errorf("failed to create gravity client: %v", err)
 	}
 
-	// Get current records
 	params := gravity.DnsGetRecordsParams{
 		Zone:     &g.Zone,
 		Hostname: &hostname,
@@ -109,20 +109,23 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		return fmt.Errorf("failed to get current records: %v", currentRecords.Status())
 	}
 
-	// Initialize records if necessary
 	if currentRecords.JSON200.Records == nil {
 		records := make([]gravity.DnsAPIRecord, 0)
 		currentRecords.JSON200.Records = &records
 	}
 
-	currentIPs := make(map[string]string)
-
 	// Build a set of current IP addresses
+	currentIPs := make(map[string]string)
 	for _, record := range *currentRecords.JSON200.Records {
 		if record.Type != "AAAA" && record.Type != "A" {
 			continue
 		}
-		currentIPs[record.Data] = record.Type
+		addr, err := netip.ParseAddr(record.Data)
+		if err != nil {
+			return fmt.Errorf("invalid existing record found: %v", err)
+		}
+		ip := addr.WithZone("").String()
+		currentIPs[ip] = record.Type
 	}
 
 	// Build a set of desired IP addresses
