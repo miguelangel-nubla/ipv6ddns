@@ -47,6 +47,10 @@
                     "provider": {
                         "type": "string"
                     },
+                    "debounce_time": {
+                        "type": "string",
+                        "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$"
+                    },
                     "settings": {
                         "type": "object"
                     },

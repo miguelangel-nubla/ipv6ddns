@@ -26,16 +26,14 @@ type Worker struct {
 	DiscWorker *ipv6disc.Worker
 	logger     *zap.SugaredLogger
 	config     config.Config
-	stormDelay time.Duration
 }
 
-func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, stormDelay time.Duration, config config.Config) *Worker {
+func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, config config.Config) *Worker {
 	return &Worker{
 		State:      NewState(),
 		DiscWorker: ipv6disc.NewWorker(logger, rediscover, lifetime),
 		logger:     logger,
 		config:     config,
-		stormDelay: stormDelay,
 	}
 }
 
@@ -55,8 +53,8 @@ func (w *Worker) lookForChanges() {
 	for _, task := range w.config.Tasks {
 		for endpointKey, hostnames := range task.Endpoints {
 			for _, hostnameKey := range hostnames {
+				// Provider creation
 				credential := w.config.Credentials[endpointKey]
-
 				w.State.providersMutex.Lock()
 				if _, ok := w.State.providers[credential.Provider]; !ok {
 					w.State.providers[credential.Provider] = &Provider{endpoints: make(map[string]*Endpoint)}
@@ -64,6 +62,7 @@ func (w *Worker) lookForChanges() {
 				provider := w.State.providers[credential.Provider]
 				w.State.providersMutex.Unlock()
 
+				// Endpoint creation
 				provider.endpointsMutex.Lock()
 				if _, ok := provider.endpoints[endpointKey]; !ok {
 					service, err := ddns.NewService(credential.Provider, credential.RawSettings)
@@ -76,10 +75,10 @@ func (w *Worker) lookForChanges() {
 						service:   service,
 					}
 				}
-
 				endpoint := provider.endpoints[endpointKey]
 				provider.endpointsMutex.Unlock()
 
+				// Hostname creation
 				endpoint.hostnamesMutex.Lock()
 				if _, ok := endpoint.hostnames[hostnameKey]; !ok {
 					endpoint.hostnames[hostnameKey] = &Hostname{}
@@ -87,6 +86,7 @@ func (w *Worker) lookForChanges() {
 				hostname := endpoint.hostnames[hostnameKey]
 				endpoint.hostnamesMutex.Unlock()
 
+				// Task handling
 				prefixes := []netip.Prefix{}
 				for _, subnet := range task.Subnets {
 					prefix, err := netip.ParsePrefix(subnet)
@@ -95,23 +95,12 @@ func (w *Worker) lookForChanges() {
 					}
 					prefixes = append(prefixes, prefix)
 				}
-
 				currentHosts := w.DiscWorker.Filter(task.MACAddresses, prefixes)
-				if !hostname.Equal(currentHosts) {
-					hostname.mutex.Lock()
-
-					// stop the current update timer if it exists
-					if hostname.updateTimer != nil {
-						hostname.updateTimer.Stop()
-						hostname.updateTime = time.Time{}
-					}
-
-					hostname.updateRetryInterval = w.stormDelay
-
+				if !hostname.AddrCollection.Equal(currentHosts) {
 					// capture references to the current values
 					currenthostnameKey := hostnameKey
 					currentEndpoint := endpoint
-					hostname.updateAction = func() error {
+					action := func() error {
 						w.logger.Debugf("endpoint %s starting update of: %s", endpointKey, currenthostnameKey)
 
 						addrCollection, err := currentEndpoint.Update(currenthostnameKey)
@@ -123,12 +112,10 @@ func (w *Worker) lookForChanges() {
 
 						return err
 					}
+					hostname.ScheduleUpdate(credential.DebounceTime, action)
 
-					hostname.updateTimer = time.AfterFunc(w.stormDelay, hostname.update)
-					hostname.updateTime = time.Now().Add(w.stormDelay)
-
+					hostname.mutex.Lock()
 					hostname.AddrCollection = *currentHosts.Copy()
-
 					hostname.mutex.Unlock()
 				}
 			}
@@ -141,6 +128,5 @@ func (w *Worker) PrettyPrint(prefix string) string {
 	fmt.Fprint(&result, w.State.PrettyPrint(prefix))
 	fmt.Fprint(&result, w.DiscWorker.State.PrettyPrint(prefix))
 	fmt.Fprint(&result, w.config.PrettyPrint(prefix))
-
 	return result.String()
 }

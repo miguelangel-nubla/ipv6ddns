@@ -3,6 +3,7 @@ package config
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/xeipuuv/gojsonschema"
 )
@@ -17,10 +19,50 @@ import (
 //go:embed schema.json
 var configSchema []byte
 
+type IPv4Handler struct {
+	Interval time.Duration `json:"interval"`
+	Command  string        `json:"command"`
+	Args     []string      `json:"args"`
+}
+
 type Credential struct {
-	Provider    string          `json:"provider"`
-	RawSettings json.RawMessage `json:"settings"`
-	//Service     ddns.DDNSService `json:"-"`
+	Provider     string          `json:"provider"`
+	DebounceTime time.Duration   `json:"debounce_time"`
+	RawSettings  json.RawMessage `json:"settings"`
+}
+
+func (c *Credential) UnmarshalJSON(b []byte) error {
+	type Alias Credential
+	aux := &struct {
+		DebounceTime interface{} `json:"debounce_time"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+
+	// Default to 60s
+	if aux.DebounceTime == nil {
+		c.DebounceTime = 60 * time.Second
+		return nil
+	}
+
+	switch value := aux.DebounceTime.(type) {
+	case float64:
+		c.DebounceTime = time.Duration(value) * time.Second
+		return nil
+	case string:
+		var err error
+		c.DebounceTime, err = time.ParseDuration(value)
+		if err != nil {
+			return err
+		}
+		return nil
+	default:
+		return errors.New("invalid debounce time")
+	}
 }
 
 type Task struct {
@@ -28,6 +70,7 @@ type Task struct {
 	Subnets      []string            `json:"subnets"`
 	MACAddresses []net.HardwareAddr  `json:"mac_address"`
 	Endpoints    map[string][]string `json:"endpoints"`
+	IPv4         IPv4Handler         `json:"ipv4,omitempty"`
 }
 
 type Config struct {
@@ -35,47 +78,47 @@ type Config struct {
 	Credentials map[string]Credential `json:"credentials"`
 }
 
-func (task *Task) UnmarshalJSON(data []byte) error {
+func (t *Task) UnmarshalJSON(data []byte) error {
 	type Alias Task
 	aux := &struct {
 		MACAddresses []string `json:"mac_address"`
 		*Alias
 	}{
-		Alias: (*Alias)(task),
+		Alias: (*Alias)(t),
 	}
 
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
-	task.MACAddresses = make([]net.HardwareAddr, len(aux.MACAddresses))
+	t.MACAddresses = make([]net.HardwareAddr, len(aux.MACAddresses))
 	for i, macAddress := range aux.MACAddresses {
 		parsedMAC, err := net.ParseMAC(macAddress)
 		if err != nil {
 			return fmt.Errorf("error parsing MAC address: %v", err)
 		}
-		task.MACAddresses[i] = parsedMAC
+		t.MACAddresses[i] = parsedMAC
 	}
 
 	return nil
 }
 
-func (config *Config) PrettyPrint(prefix string) string {
+func (c *Config) PrettyPrint(prefix string) string {
 	var result strings.Builder
 
 	fmt.Fprintf(&result, "%sConfig:\n", prefix)
 	fmt.Fprintf(&result, "%s    Tasks:\n", prefix)
 
 	// Sort task names
-	taskNames := make([]string, 0, len(config.Tasks))
-	for name := range config.Tasks {
+	taskNames := make([]string, 0, len(c.Tasks))
+	for name := range c.Tasks {
 		taskNames = append(taskNames, name)
 	}
 	sort.Strings(taskNames)
 
 	// Iterate over sorted tasks
 	for _, name := range taskNames {
-		task := config.Tasks[name]
+		task := c.Tasks[name]
 		result.WriteString(prefix + "        " + name + ":\n")
 		macAddresses := make([]string, len(task.MACAddresses))
 		for i, mac := range task.MACAddresses {
@@ -111,17 +154,18 @@ func (config *Config) PrettyPrint(prefix string) string {
 	result.WriteString(prefix + "    Credentials:\n")
 
 	// Sort credential aliases
-	credentialAliases := make([]string, 0, len(config.Credentials))
-	for alias := range config.Credentials {
+	credentialAliases := make([]string, 0, len(c.Credentials))
+	for alias := range c.Credentials {
 		credentialAliases = append(credentialAliases, alias)
 	}
 	sort.Strings(credentialAliases)
 
 	// Iterate over sorted credentials
 	for _, alias := range credentialAliases {
-		credential := config.Credentials[alias]
+		credential := c.Credentials[alias]
 		result.WriteString(prefix + "        Endpoint: " + alias + "\n")
 		result.WriteString(prefix + "            Provider: " + credential.Provider + "\n")
+		result.WriteString(prefix + "            Debounce time: " + credential.DebounceTime.String() + "\n")
 		result.WriteString(prefix + "            Settings: ")
 		bytes, _ := json.MarshalIndent(credential.RawSettings, "            ", "    ")
 		result.Write(bytes)
@@ -149,7 +193,7 @@ func validateConfig(configFile string) {
 	}
 }
 
-func NewConfig(filename string) Config {
+func NewConfig(filename string) (config Config, err error) {
 	validateConfig(filename)
 
 	jsonFile, err := os.Open(filename)
@@ -159,9 +203,6 @@ func NewConfig(filename string) Config {
 	defer jsonFile.Close()
 
 	byteValue, _ := io.ReadAll(jsonFile)
-
-	var config Config
-	json.Unmarshal(byteValue, &config)
-
-	return config
+	err = json.Unmarshal(byteValue, &config)
+	return config, err
 }

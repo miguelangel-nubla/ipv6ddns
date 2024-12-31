@@ -14,29 +14,30 @@ import (
 
 var configFile string
 var logLevel string
-var stormDelay time.Duration
 var lifetime time.Duration
 var live bool
 
 func init() {
 	flag.StringVar(&configFile, "config_file", "config.json", "Path to the configuration file, default: config.json")
 	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic) default: info")
-	flag.DurationVar(&stormDelay, "storm_delay", 60*time.Second, "Time to allow for host discovery before updating the DDNS record")
-	flag.DurationVar(&lifetime, "lifetime", 4*time.Hour, "Time to keep a discovered host entry after it has been last seen. Default: 4h")
+	flag.DurationVar(&lifetime, "lifetime", 4*time.Hour, "Time to keep a discovered host entry after it has been last seen, default: 4h")
 	flag.BoolVar(&live, "live", false, "Show the currrent state live on the terminal, default: false")
 }
 
 func main() {
 	flag.Parse()
 
-	config := config.NewConfig(configFile)
-
 	sugar := initializeLogger()
+
+	config, err := config.NewConfig(configFile)
+	if err != nil {
+		sugar.Fatalf("error reading config: %s", err)
+	}
+
 	rediscover := lifetime / 3
+	worker := ipv6ddns.NewWorker(sugar, rediscover, lifetime, config)
 
-	worker := ipv6ddns.NewWorker(sugar, rediscover, lifetime, stormDelay, config)
-
-	err := worker.Start()
+	err = worker.Start()
 	if err != nil {
 		sugar.Fatalf("can't start worker: %s", err)
 	}

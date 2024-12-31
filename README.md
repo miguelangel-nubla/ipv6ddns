@@ -34,7 +34,6 @@ sudo ipv6ddns [flags]
 
 - `-config_file` (default "config.json"): Config file to use.
 - `-log_level` (default "info"): Set the logging level (debug, info, warn, error, fatal, panic).
-- `-storm_delay` (default "60s"): Time to allow finishing storm of host discoveries before updating the DDNS record.
 - `-lifetime` (default "4h"): Time to keep a discovered host entry after it has been last seen.
 - `-live` (default false): Show the current state live on the terminal.
 
@@ -71,6 +70,7 @@ This is the structure of the `config.json` file:
         "ttl": "1h", // if proxied over cloudflare this will have no effect
         "proxied": true
       }
+      "debounce_time": "60s", // optional, default 60s. time to wait before pushing updates
     }
     // ...
     // more credentials if needed

@@ -36,7 +36,8 @@
         "zone": "example.com",
         "ttl": "1h",
         "proxied": true
-      }
+      },
+      "debounce_time": "60s"
     },
     "other-project": {
       "provider": "duckdns",
