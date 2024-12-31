@@ -69,13 +69,13 @@ func (hostname *Hostname) update() {
 	if hostname.updateError == nil {
 		hostname.updatedTime = time.Now()
 	} else {
-		hostname.retryUpdate()
+		hostname.reScheduleUpdate()
 	}
 	hostname.updateRunning = false
 	hostname.mutex.Unlock()
 }
 
-func (hostname *Hostname) retryUpdate() {
+func (hostname *Hostname) reScheduleUpdate() {
 	hostname.mutex.Lock()
 	defer hostname.mutex.Unlock()
 
@@ -178,12 +178,17 @@ func (state *State) PrettyPrint(prefix string) string {
 	return result.String()
 }
 
-func (hostname *Hostname) ScheduleUpdate(interval time.Duration, action func() error) {
+func (hostname *Hostname) ScheduleUpdate(debounceTime time.Duration, action func() error) {
 	hostname.mutex.Lock()
+	// stop the current update timer if it exists
+	if hostname.nextUpdateTimer != nil {
+		hostname.nextUpdateTimer.Stop()
+		hostname.nextUpdateTime = time.Time{}
+	}
 	hostname.updateAction = action
-	hostname.updateRetryInterval = interval
+	hostname.updateRetryInterval = debounceTime
 	hostname.mutex.Unlock()
-	hostname.retryUpdate()
+	hostname.reScheduleUpdate()
 }
 
 func NewState() *State {
