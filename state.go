@@ -20,8 +20,8 @@ type Hostname struct {
 
 	updatedTime time.Time
 
-	updateTime  time.Time
-	updateTimer *time.Timer
+	nextUpdateTime  time.Time
+	nextUpdateTimer *time.Timer
 
 	updateRunning bool
 	updateError   error
@@ -54,6 +54,39 @@ type Provider struct {
 type State struct {
 	providersMutex sync.RWMutex
 	providers      map[string]*Provider
+}
+
+func (hostname *Hostname) update() {
+	hostname.mutex.Lock()
+	hostname.updateRunning = true
+	hostname.mutex.Unlock()
+
+	// no mutex lock while working
+	err := hostname.updateAction()
+
+	hostname.mutex.Lock()
+	hostname.updateError = err
+	if hostname.updateError == nil {
+		hostname.updatedTime = time.Now()
+	} else {
+		hostname.retryUpdate()
+	}
+	hostname.updateRunning = false
+	hostname.mutex.Unlock()
+}
+
+func (hostname *Hostname) retryUpdate() {
+	hostname.mutex.Lock()
+	defer hostname.mutex.Unlock()
+
+	// stop the current update timer if it exists
+	if hostname.nextUpdateTimer != nil {
+		hostname.nextUpdateTimer.Stop()
+		hostname.nextUpdateTime = time.Time{}
+	}
+
+	hostname.nextUpdateTimer = time.AfterFunc(hostname.updateRetryInterval, hostname.update)
+	hostname.nextUpdateTime = time.Now().Add(hostname.updateRetryInterval)
 }
 
 func (state *State) PrettyPrint(prefix string) string {
@@ -101,8 +134,8 @@ func (state *State) PrettyPrint(prefix string) string {
 				if hostname.updateRunning {
 					fmt.Fprint(&result, " (update running)")
 				}
-				if !hostname.updateTime.IsZero() && hostname.updateTime.After(time.Now()) {
-					fmt.Fprintf(&result, " (next update: %.0fs)", time.Until(hostname.updateTime).Seconds())
+				if !hostname.nextUpdateTime.IsZero() && hostname.nextUpdateTime.After(time.Now()) {
+					fmt.Fprintf(&result, " (next update: %v)", time.Until(hostname.nextUpdateTime).Round(time.Second))
 				}
 				if !hostname.updatedTime.IsZero() {
 					fmt.Fprintf(&result, " (last update: %s)", hostname.updatedTime.Format(time.RFC3339))
@@ -145,23 +178,12 @@ func (state *State) PrettyPrint(prefix string) string {
 	return result.String()
 }
 
-func (hostname *Hostname) update() {
+func (hostname *Hostname) ScheduleUpdate(interval time.Duration, action func() error) {
 	hostname.mutex.Lock()
-	hostname.updateRunning = true
+	hostname.updateAction = action
+	hostname.updateRetryInterval = interval
 	hostname.mutex.Unlock()
-
-	err := hostname.updateAction()
-
-	hostname.mutex.Lock()
-	hostname.updateError = err
-	if hostname.updateError == nil {
-		hostname.updatedTime = time.Now()
-	} else {
-		hostname.updateTimer = time.AfterFunc(hostname.updateRetryInterval, hostname.update)
-		hostname.updateTime = time.Now().Add(hostname.updateRetryInterval)
-	}
-	hostname.updateRunning = false
-	hostname.mutex.Unlock()
+	hostname.retryUpdate()
 }
 
 func NewState() *State {
