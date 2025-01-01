@@ -98,8 +98,8 @@ func (w *Worker) lookForChanges() {
 					}
 					prefixes = append(prefixes, prefix)
 				}
-				currentIpv6Hosts := w.DiscWorker.Filter(task.MACAddresses, prefixes)
-				hostname.SetState(IPv6, currentIpv6Hosts)
+				currentHosts := w.DiscWorker.Filter(task.MACAddresses, prefixes)
+				hostname.SetAddrCollection(currentHosts)
 			}
 		}
 	}

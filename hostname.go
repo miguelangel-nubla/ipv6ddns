@@ -7,13 +7,6 @@ import (
 	"github.com/miguelangel-nubla/ipv6disc"
 )
 
-type AddressFamily string
-
-const (
-	IPv4 AddressFamily = "ipv4"
-	IPv6 AddressFamily = "ipv6"
-)
-
 type Hostname struct {
 	ipv6disc.AddrCollection
 
@@ -32,17 +25,9 @@ type Hostname struct {
 	updateRetryInterval time.Duration
 }
 
-func (h *Hostname) SetState(addressFamily AddressFamily, addrCollection *ipv6disc.AddrCollection) {
-	var oldHosts *ipv6disc.AddrCollection
-	switch addressFamily {
-	case IPv4:
-		oldHosts = h.AddrCollection.Filter4()
-	default:
-		oldHosts = h.AddrCollection.Filter6()
-	}
-
-	if !oldHosts.Equal(addrCollection) {
-		h.AddrCollection.Join(addrCollection)
+func (h *Hostname) SetAddrCollection(addrCollection *ipv6disc.AddrCollection) {
+	if !h.AddrCollection.Equal(addrCollection) {
+		h.AddrCollection = *addrCollection.Copy()
 		h.ScheduleUpdate(h.updateDebounceTime)
 	}
 }
