@@ -28,15 +28,6 @@ type Worker struct {
 	config     config.Config
 }
 
-func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, config config.Config) *Worker {
-	return &Worker{
-		State:      NewState(),
-		DiscWorker: ipv6disc.NewWorker(logger, rediscover, lifetime),
-		logger:     logger,
-		config:     config,
-	}
-}
-
 func (w *Worker) Start() error {
 	go func() {
 		for {
@@ -57,7 +48,7 @@ func (w *Worker) lookForChanges() {
 				credential := w.config.Credentials[endpointKey]
 				w.State.providersMutex.Lock()
 				if _, ok := w.State.providers[credential.Provider]; !ok {
-					w.State.providers[credential.Provider] = &Provider{endpoints: make(map[string]*Endpoint)}
+					w.State.providers[credential.Provider] = NewProvider()
 				}
 				provider := w.State.providers[credential.Provider]
 				w.State.providersMutex.Unlock()
@@ -70,10 +61,7 @@ func (w *Worker) lookForChanges() {
 						panic(fmt.Sprintf("Error creating DNS Service for endpoint %s: %v\n", endpointKey, err))
 					}
 
-					provider.endpoints[endpointKey] = &Endpoint{
-						hostnames: make(map[string]*Hostname),
-						service:   service,
-					}
+					provider.endpoints[endpointKey] = NewEndpoint(service)
 				}
 				endpoint := provider.endpoints[endpointKey]
 				provider.endpointsMutex.Unlock()
@@ -81,7 +69,7 @@ func (w *Worker) lookForChanges() {
 				// Hostname creation
 				endpoint.hostnamesMutex.Lock()
 				if _, ok := endpoint.hostnames[hostnameKey]; !ok {
-					endpoint.hostnames[hostnameKey] = &Hostname{}
+					endpoint.hostnames[hostnameKey] = NewHostname()
 				}
 				hostname := endpoint.hostnames[hostnameKey]
 				endpoint.hostnamesMutex.Unlock()
@@ -96,7 +84,7 @@ func (w *Worker) lookForChanges() {
 					prefixes = append(prefixes, prefix)
 				}
 				currentHosts := w.DiscWorker.Filter(task.MACAddresses, prefixes)
-				if !hostname.AddrCollection.Equal(currentHosts) {
+				if !hostname.AddrCollection.Filter6().Equal(currentHosts) {
 					// capture references to the current values
 					currenthostnameKey := hostnameKey
 					currentEndpoint := endpoint
@@ -115,7 +103,7 @@ func (w *Worker) lookForChanges() {
 					hostname.ScheduleUpdate(credential.DebounceTime, action)
 
 					hostname.mutex.Lock()
-					hostname.AddrCollection = *currentHosts.Copy()
+					hostname.AddrCollection.Join(currentHosts)
 					hostname.mutex.Unlock()
 				}
 			}
@@ -129,4 +117,13 @@ func (w *Worker) PrettyPrint(prefix string) string {
 	fmt.Fprint(&result, w.DiscWorker.State.PrettyPrint(prefix))
 	fmt.Fprint(&result, w.config.PrettyPrint(prefix))
 	return result.String()
+}
+
+func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, config config.Config) *Worker {
+	return &Worker{
+		State:      NewState(),
+		DiscWorker: ipv6disc.NewWorker(logger, rediscover, lifetime),
+		logger:     logger,
+		config:     config,
+	}
 }

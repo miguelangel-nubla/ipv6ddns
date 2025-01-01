@@ -7,86 +7,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/miguelangel-nubla/ipv6disc"
-
-	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 )
-
-type Hostname struct {
-	ipv6disc.AddrCollection
-
-	mutex sync.RWMutex
-
-	updatedTime time.Time
-
-	nextUpdateTime  time.Time
-	nextUpdateTimer *time.Timer
-
-	updateRunning bool
-	updateError   error
-
-	updateAction        func() error
-	updateRetryInterval time.Duration
-}
-
-type Endpoint struct {
-	hostnamesMutex sync.RWMutex
-	hostnames      map[string]*Hostname
-	service        ddns.Service
-}
-
-func (e *Endpoint) Update(hostname string) (*ipv6disc.AddrCollection, error) {
-	e.hostnamesMutex.RLock()
-	h := e.hostnames[hostname]
-	// just copy it for now
-	addrCollection := h.AddrCollection.Copy()
-	e.hostnamesMutex.RUnlock()
-
-	return addrCollection, e.service.Update(hostname, addrCollection)
-}
-
-type Provider struct {
-	endpointsMutex sync.RWMutex
-	endpoints      map[string]*Endpoint
-}
 
 type State struct {
 	providersMutex sync.RWMutex
 	providers      map[string]*Provider
-}
-
-func (hostname *Hostname) update() {
-	hostname.mutex.Lock()
-	hostname.updateRunning = true
-	hostname.mutex.Unlock()
-
-	// no mutex lock while working
-	err := hostname.updateAction()
-
-	hostname.mutex.Lock()
-	hostname.updateError = err
-	if hostname.updateError == nil {
-		hostname.updatedTime = time.Now()
-	} else {
-		hostname.reScheduleUpdate()
-	}
-	hostname.updateRunning = false
-	hostname.mutex.Unlock()
-}
-
-func (hostname *Hostname) reScheduleUpdate() {
-	hostname.mutex.Lock()
-	defer hostname.mutex.Unlock()
-
-	// stop the current update timer if it exists
-	if hostname.nextUpdateTimer != nil {
-		hostname.nextUpdateTimer.Stop()
-		hostname.nextUpdateTime = time.Time{}
-	}
-
-	hostname.nextUpdateTimer = time.AfterFunc(hostname.updateRetryInterval, hostname.update)
-	hostname.nextUpdateTime = time.Now().Add(hostname.updateRetryInterval)
 }
 
 func (state *State) PrettyPrint(prefix string) string {
@@ -176,19 +101,6 @@ func (state *State) PrettyPrint(prefix string) string {
 	}
 
 	return result.String()
-}
-
-func (hostname *Hostname) ScheduleUpdate(debounceTime time.Duration, action func() error) {
-	hostname.mutex.Lock()
-	// stop the current update timer if it exists
-	if hostname.nextUpdateTimer != nil {
-		hostname.nextUpdateTimer.Stop()
-		hostname.nextUpdateTime = time.Time{}
-	}
-	hostname.updateAction = action
-	hostname.updateRetryInterval = debounceTime
-	hostname.mutex.Unlock()
-	hostname.reScheduleUpdate()
 }
 
 func NewState() *State {
