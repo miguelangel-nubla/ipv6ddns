@@ -3,7 +3,6 @@ package ipv6ddns
 import (
 	"fmt"
 	"net"
-	"net/netip"
 	"strings"
 	"time"
 
@@ -43,29 +42,29 @@ func (w *Worker) Start() error {
 func (w *Worker) lookForChanges() {
 	for _, task := range w.config.Tasks {
 		for endpointKey, hostnames := range task.Endpoints {
+			// Provider creation
+			credential := w.config.Credentials[endpointKey]
+			w.State.providersMutex.Lock()
+			if _, ok := w.State.providers[credential.Provider]; !ok {
+				w.State.providers[credential.Provider] = NewProvider()
+			}
+			provider := w.State.providers[credential.Provider]
+			w.State.providersMutex.Unlock()
+
+			// Endpoint creation
+			provider.endpointsMutex.Lock()
+			if _, ok := provider.endpoints[endpointKey]; !ok {
+				service, err := ddns.NewService(credential.Provider, credential.RawSettings)
+				if err != nil {
+					panic(fmt.Sprintf("Error creating DNS Service for endpoint %s: %v\n", endpointKey, err))
+				}
+
+				provider.endpoints[endpointKey] = NewEndpoint(service)
+			}
+			endpoint := provider.endpoints[endpointKey]
+			provider.endpointsMutex.Unlock()
+
 			for _, hostnameKey := range hostnames {
-				// Provider creation
-				credential := w.config.Credentials[endpointKey]
-				w.State.providersMutex.Lock()
-				if _, ok := w.State.providers[credential.Provider]; !ok {
-					w.State.providers[credential.Provider] = NewProvider()
-				}
-				provider := w.State.providers[credential.Provider]
-				w.State.providersMutex.Unlock()
-
-				// Endpoint creation
-				provider.endpointsMutex.Lock()
-				if _, ok := provider.endpoints[endpointKey]; !ok {
-					service, err := ddns.NewService(credential.Provider, credential.RawSettings)
-					if err != nil {
-						panic(fmt.Sprintf("Error creating DNS Service for endpoint %s: %v\n", endpointKey, err))
-					}
-
-					provider.endpoints[endpointKey] = NewEndpoint(service)
-				}
-				endpoint := provider.endpoints[endpointKey]
-				provider.endpointsMutex.Unlock()
-
 				// Hostname creation
 				endpoint.hostnamesMutex.Lock()
 				if _, ok := endpoint.hostnames[hostnameKey]; !ok {
@@ -89,16 +88,7 @@ func (w *Worker) lookForChanges() {
 				hostname := endpoint.hostnames[hostnameKey]
 				endpoint.hostnamesMutex.Unlock()
 
-				// Task handling
-				prefixes := []netip.Prefix{}
-				for _, subnet := range task.Subnets {
-					prefix, err := netip.ParsePrefix(subnet)
-					if err != nil {
-						continue
-					}
-					prefixes = append(prefixes, prefix)
-				}
-				currentHosts := w.DiscWorker.Filter(task.MACAddresses, prefixes)
+				currentHosts := w.DiscWorker.Filter(task.MACAddresses, task.Subnets)
 				hostname.SetAddrCollection(currentHosts)
 			}
 		}

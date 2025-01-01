@@ -3,15 +3,12 @@ package config
 import (
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/xeipuuv/gojsonschema"
 )
@@ -19,106 +16,9 @@ import (
 //go:embed schema.json
 var configSchema []byte
 
-type IPv4Handler struct {
-	Interval time.Duration `json:"interval"`
-	Command  string        `json:"command"`
-	Args     []string      `json:"args"`
-}
-
-type Credential struct {
-	Provider     string          `json:"provider"`
-	DebounceTime time.Duration   `json:"debounce_time"`
-	RetryTime    time.Duration   `json:"retry_time"`
-	RawSettings  json.RawMessage `json:"settings"`
-}
-
-func (c *Credential) UnmarshalJSON(b []byte) error {
-	type Alias Credential
-	aux := &struct {
-		DebounceTime interface{} `json:"debounce_time"`
-		RetryTime    interface{} `json:"retry_time"`
-		*Alias
-	}{
-		Alias: (*Alias)(c),
-	}
-	if err := json.Unmarshal(b, &aux); err != nil {
-		return err
-	}
-
-	if aux.DebounceTime == nil {
-		c.DebounceTime = 10 * time.Second
-		return nil
-	}
-	if aux.RetryTime == nil {
-		c.RetryTime = 60 * time.Second
-		return nil
-	}
-
-	switch value := aux.DebounceTime.(type) {
-	case float64:
-		c.DebounceTime = time.Duration(value) * time.Second
-	case string:
-		var err error
-		c.DebounceTime, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("invalid debounce time")
-	}
-
-	switch value := aux.RetryTime.(type) {
-	case float64:
-		c.RetryTime = time.Duration(value) * time.Second
-	case string:
-		var err error
-		c.RetryTime, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("invalid retry time")
-	}
-
-	return nil
-}
-
-type Task struct {
-	Name         string              `json:"name"`
-	Subnets      []string            `json:"subnets"`
-	MACAddresses []net.HardwareAddr  `json:"mac_address"`
-	Endpoints    map[string][]string `json:"endpoints"`
-	IPv4         IPv4Handler         `json:"ipv4,omitempty"`
-}
-
 type Config struct {
 	Tasks       map[string]Task       `json:"tasks"`
 	Credentials map[string]Credential `json:"credentials"`
-}
-
-func (t *Task) UnmarshalJSON(data []byte) error {
-	type Alias Task
-	aux := &struct {
-		MACAddresses []string `json:"mac_address"`
-		*Alias
-	}{
-		Alias: (*Alias)(t),
-	}
-
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-
-	t.MACAddresses = make([]net.HardwareAddr, len(aux.MACAddresses))
-	for i, macAddress := range aux.MACAddresses {
-		parsedMAC, err := net.ParseMAC(macAddress)
-		if err != nil {
-			return fmt.Errorf("error parsing MAC address: %v", err)
-		}
-		t.MACAddresses[i] = parsedMAC
-	}
-
-	return nil
 }
 
 func (c *Config) PrettyPrint(prefix string) string {
@@ -143,7 +43,11 @@ func (c *Config) PrettyPrint(prefix string) string {
 			macAddresses[i] = mac.String()
 		}
 		result.WriteString(prefix + "            MAC Addresses: " + strings.Join(macAddresses, ", ") + "\n")
-		result.WriteString(prefix + "            Subnets: " + strings.Join(task.Subnets, ", ") + "\n")
+		subnets := make([]string, len(task.Subnets))
+		for i, subnet := range task.Subnets {
+			subnets[i] = subnet.String()
+		}
+		result.WriteString(prefix + "            Subnets: " + strings.Join(subnets, ", ") + "\n")
 		result.WriteString(prefix + "            Hostnames:\n")
 
 		// Sort endpoint keys
