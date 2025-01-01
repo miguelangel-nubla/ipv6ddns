@@ -14,15 +14,15 @@ type State struct {
 	providers      map[string]*Provider
 }
 
-func (state *State) PrettyPrint(prefix string) string {
+func (s *State) PrettyPrint(prefix string) string {
 	var result strings.Builder
 
 	fmt.Fprintf(&result, "%sDNS:\n", prefix)
 
-	state.providersMutex.RLock()
-	defer state.providersMutex.RUnlock()
-	providerKeys := make([]string, 0, len(state.providers))
-	for provider := range state.providers {
+	s.providersMutex.RLock()
+	defer s.providersMutex.RUnlock()
+	providerKeys := make([]string, 0, len(s.providers))
+	for provider := range s.providers {
 		providerKeys = append(providerKeys, provider)
 	}
 	sort.Strings(providerKeys)
@@ -30,7 +30,7 @@ func (state *State) PrettyPrint(prefix string) string {
 	for _, providerKey := range providerKeys {
 		fmt.Fprintf(&result, "%s    Provider: %s\n", prefix, providerKey)
 
-		provider := state.providers[providerKey]
+		provider := s.providers[providerKey]
 		provider.endpointsMutex.RLock()
 
 		endpointKeys := make([]string, 0, len(provider.endpoints))
@@ -52,7 +52,7 @@ func (state *State) PrettyPrint(prefix string) string {
 			sort.Strings(hostnamesKeys)
 
 			for _, hostnameKey := range hostnamesKeys {
-				fmt.Fprintf(&result, "%s            %s:", prefix, endpoint.service.Domain(hostnameKey))
+				fmt.Fprintf(&result, "%s            %s:", prefix, endpoint.Domain(hostnameKey))
 				hostname := endpoint.hostnames[hostnameKey]
 				hostname.mutex.RLock()
 
