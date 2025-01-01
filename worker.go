@@ -69,7 +69,22 @@ func (w *Worker) lookForChanges() {
 				// Hostname creation
 				endpoint.hostnamesMutex.Lock()
 				if _, ok := endpoint.hostnames[hostnameKey]; !ok {
-					endpoint.hostnames[hostnameKey] = NewHostname()
+					// capture references to the current values
+					currenthostnameKey := hostnameKey
+					currentEndpoint := endpoint
+					updateAction := func(addrCollection *ipv6disc.AddrCollection) error {
+						w.logger.Debugf("endpoint %s starting update of: %s", endpointKey, currenthostnameKey)
+
+						err := currentEndpoint.Update(currenthostnameKey, addrCollection)
+						if err != nil {
+							w.logger.Errorf("endpoint %s error updating %s: %s", endpointKey, currenthostnameKey, err)
+						} else {
+							w.logger.Infof("endpoint %s successfully updated %s: %v", endpointKey, currenthostnameKey, addrCollection.Strings())
+						}
+
+						return err
+					}
+					endpoint.hostnames[hostnameKey] = NewHostname(updateAction, credential.DebounceTime, credential.RetryTime)
 				}
 				hostname := endpoint.hostnames[hostnameKey]
 				endpoint.hostnamesMutex.Unlock()
@@ -83,29 +98,8 @@ func (w *Worker) lookForChanges() {
 					}
 					prefixes = append(prefixes, prefix)
 				}
-				currentHosts := w.DiscWorker.Filter(task.MACAddresses, prefixes)
-				if !hostname.AddrCollection.Filter6().Equal(currentHosts) {
-					// capture references to the current values
-					currenthostnameKey := hostnameKey
-					currentEndpoint := endpoint
-					action := func() error {
-						w.logger.Debugf("endpoint %s starting update of: %s", endpointKey, currenthostnameKey)
-
-						addrCollection, err := currentEndpoint.Update(currenthostnameKey)
-						if err != nil {
-							w.logger.Errorf("endpoint %s error updating %s: %s", endpointKey, currenthostnameKey, err)
-						} else {
-							w.logger.Infof("endpoint %s successfully updated %s: %v", endpointKey, currenthostnameKey, addrCollection.Strings())
-						}
-
-						return err
-					}
-					hostname.ScheduleUpdate(credential.DebounceTime, action)
-
-					hostname.mutex.Lock()
-					hostname.AddrCollection.Join(currentHosts)
-					hostname.mutex.Unlock()
-				}
+				currentIpv6Hosts := w.DiscWorker.Filter(task.MACAddresses, prefixes)
+				hostname.SetState(IPv6, currentIpv6Hosts)
 			}
 		}
 	}

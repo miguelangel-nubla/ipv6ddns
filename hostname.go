@@ -7,6 +7,13 @@ import (
 	"github.com/miguelangel-nubla/ipv6disc"
 )
 
+type AddressFamily string
+
+const (
+	IPv4 AddressFamily = "ipv4"
+	IPv6 AddressFamily = "ipv6"
+)
+
 type Hostname struct {
 	ipv6disc.AddrCollection
 
@@ -20,58 +27,58 @@ type Hostname struct {
 	updateRunning bool
 	updateError   error
 
-	updateAction        func() error
+	updateAction        func(*ipv6disc.AddrCollection) error
+	updateDebounceTime  time.Duration
 	updateRetryInterval time.Duration
 }
 
-func (hostname *Hostname) ScheduleUpdate(debounceTime time.Duration, action func() error) {
-	hostname.mutex.Lock()
-	// stop the current update timer if it exists
-	if hostname.nextUpdateTimer != nil {
-		hostname.nextUpdateTimer.Stop()
-		hostname.nextUpdateTime = time.Time{}
+func (h *Hostname) SetState(addressFamily AddressFamily, addrCollection *ipv6disc.AddrCollection) {
+	var oldHosts *ipv6disc.AddrCollection
+	switch addressFamily {
+	case IPv4:
+		oldHosts = h.AddrCollection.Filter4()
+	default:
+		oldHosts = h.AddrCollection.Filter6()
 	}
-	hostname.updateAction = action
-	hostname.updateRetryInterval = debounceTime
-	hostname.mutex.Unlock()
-	hostname.reScheduleUpdate()
+
+	if !oldHosts.Equal(addrCollection) {
+		h.AddrCollection.Join(addrCollection)
+		h.ScheduleUpdate(h.updateDebounceTime)
+	}
 }
 
-func (hostname *Hostname) update() {
-	hostname.mutex.Lock()
-	hostname.updateRunning = true
-	hostname.mutex.Unlock()
+func (h *Hostname) ScheduleUpdate(timeout time.Duration) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
 
-	// no mutex lock while working
-	err := hostname.updateAction()
+	// stop the current update timer if it exists
+	if h.nextUpdateTimer != nil {
+		h.nextUpdateTimer.Stop()
+		h.nextUpdateTime = time.Time{}
+	}
 
-	hostname.mutex.Lock()
-	hostname.updateError = err
-	if hostname.updateError == nil {
-		hostname.updatedTime = time.Now()
+	h.nextUpdateTimer = time.AfterFunc(timeout, h.update)
+	h.nextUpdateTime = time.Now().Add(timeout)
+}
+
+func (h *Hostname) update() {
+	h.updateRunning = true
+
+	h.updateError = h.updateAction(&h.AddrCollection)
+	if h.updateError == nil {
+		h.updatedTime = time.Now()
 	} else {
-		hostname.reScheduleUpdate()
-	}
-	hostname.updateRunning = false
-	hostname.mutex.Unlock()
-}
-
-func (hostname *Hostname) reScheduleUpdate() {
-	hostname.mutex.Lock()
-	defer hostname.mutex.Unlock()
-
-	// stop the current update timer if it exists
-	if hostname.nextUpdateTimer != nil {
-		hostname.nextUpdateTimer.Stop()
-		hostname.nextUpdateTime = time.Time{}
+		h.ScheduleUpdate(h.updateRetryInterval)
 	}
 
-	hostname.nextUpdateTimer = time.AfterFunc(hostname.updateRetryInterval, hostname.update)
-	hostname.nextUpdateTime = time.Now().Add(hostname.updateRetryInterval)
+	h.updateRunning = false
 }
 
-func NewHostname() *Hostname {
+func NewHostname(updateAction func(*ipv6disc.AddrCollection) error, updateDebounceTime time.Duration, updateRetryInterval time.Duration) *Hostname {
 	return &Hostname{
-		AddrCollection: *ipv6disc.NewAddrCollection(),
+		AddrCollection:      *ipv6disc.NewAddrCollection(),
+		updateAction:        updateAction,
+		updateDebounceTime:  updateDebounceTime,
+		updateRetryInterval: updateRetryInterval,
 	}
 }
