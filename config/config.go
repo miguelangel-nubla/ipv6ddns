@@ -38,6 +38,11 @@ func (c *Config) PrettyPrint(prefix string) string {
 	for _, name := range taskNames {
 		task := c.Tasks[name]
 		result.WriteString(prefix + "        " + name + ":\n")
+
+		if task.IPv4 != nil {
+			result.WriteString(task.IPv4.PrettyPrint(prefix + "            "))
+		}
+
 		macAddresses := make([]string, len(task.MACAddresses))
 		for i, mac := range task.MACAddresses {
 			macAddresses[i] = mac.String()

@@ -41,6 +41,9 @@ func (w *Worker) Start() error {
 
 func (w *Worker) lookForChanges() {
 	for _, task := range w.config.Tasks {
+		if task.IPv4 != nil && !task.IPv4.Running() {
+			task.IPv4.Start()
+		}
 		for endpointKey, hostnames := range task.Endpoints {
 			// Provider creation
 			credential := w.config.Credentials[endpointKey]
@@ -88,7 +91,10 @@ func (w *Worker) lookForChanges() {
 				hostname := endpoint.hostnames[hostnameKey]
 				endpoint.hostnamesMutex.Unlock()
 
-				currentHosts := w.DiscWorker.Filter(task.MACAddresses, task.Subnets)
+				currentHosts := w.DiscWorker.FilterMACs(task.MACAddresses).FilterSubnets(task.Subnets)
+				if task.IPv4 != nil {
+					currentHosts.Join(task.IPv4.AddrCollection)
+				}
 				hostname.SetAddrCollection(currentHosts)
 			}
 		}

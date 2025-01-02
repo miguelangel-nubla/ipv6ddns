@@ -29,6 +29,32 @@
                                 "type": "string"
                             }
                         }
+                    },
+                    "ipv4": {
+                        "type": "object",
+                        "properties": {
+                            "interval": {
+                                "type": "string",
+                                "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$",
+                                "description": "The interval at which to check for changes."
+                            },
+                            "command": {
+                                "type": "string",
+                                "description": "The command to execute."
+                            },
+                            "args": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "An array of IPv4 addresses."
+                            }
+                        },
+                        "required": [
+                            "interval",
+                            "command"
+                        ],
+                        "additionalProperties": false
                     }
                 },
                 "required": [
@@ -47,12 +73,42 @@
                     "provider": {
                         "type": "string"
                     },
+                    "settings": {
+                        "type": "object"
+                    },
                     "debounce_time": {
                         "type": "string",
                         "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$"
                     },
-                    "settings": {
-                        "type": "object"
+                    "retry_time": {
+                        "type": "string",
+                        "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$"
+                    },
+                    "ipv4": {
+                        "type": "object",
+                        "properties": {
+                            "interval": {
+                                "type": "string",
+                                "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$",
+                                "description": "The interval at which to check for changes."
+                            },
+                            "command": {
+                                "type": "string",
+                                "description": "The command to execute."
+                            },
+                            "args": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "An array of IPv4 addresses."
+                            }
+                        },
+                        "required": [
+                            "interval",
+                            "command"
+                        ],
+                        "additionalProperties": false
                     },
                     "additionalProperties": false
                 },

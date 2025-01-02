@@ -2,7 +2,6 @@ package ipv6ddns
 
 import (
 	"fmt"
-	"net/netip"
 	"sort"
 	"strings"
 	"sync"
@@ -73,20 +72,22 @@ func (s *State) PrettyPrint(prefix string) string {
 				var lastHw string
 				// Iterate over the already sorted arr
 				for _, addr := range hostname.AddrCollection.Get() {
-					ip := netip.AddrFrom16(addr.Addr.As16()).String()
+					ip := addr.WithZone("").String()
 					if lastIp != ip {
 						fmt.Fprintf(&result, "\n%s                [%s]", prefix, ip)
 						lastIp = ip
 						lastHw = ""
 					}
 
-					hw := addr.Hw.String()
-					if lastHw != hw {
-						fmt.Fprintf(&result, " from %s seen over", hw)
-						lastHw = hw
-					}
+					if addr.Is6() {
+						hw := addr.Hw.String()
+						if lastHw != hw {
+							fmt.Fprintf(&result, " from %s seen over", hw)
+							lastHw = hw
+						}
 
-					fmt.Fprintf(&result, " %s", addr.Addr.Zone())
+						fmt.Fprintf(&result, " %s", addr.Addr.Zone())
+					}
 				}
 
 				fmt.Fprint(&result, "\n")

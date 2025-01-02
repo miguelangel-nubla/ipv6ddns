@@ -12,7 +12,7 @@ type Task struct {
 	Subnets      []netip.Prefix      `json:"subnets"`
 	MACAddresses []net.HardwareAddr  `json:"mac_address"`
 	Endpoints    map[string][]string `json:"endpoints"`
-	IPv4         IPv4Handler         `json:"ipv4,omitempty"`
+	IPv4         *IPv4Handler        `json:"ipv4,omitempty"`
 }
 
 func (t *Task) UnmarshalJSON(data []byte) error {

@@ -70,7 +70,9 @@ This is the structure of the `config.json` file:
         "ttl": "1h", // if proxied over cloudflare this will have no effect
         "proxied": true
       }
-      "debounce_time": "60s", // optional, default 60s. time to wait before pushing updates
+      "debounce_time": "10s", // optional, default 60s. time to wait before pushing updates
+      "retry_time": "60s", // optional, default 60s. time to wait between retries on update error
+      "ipv4": "", // optional, also update IPv4 (A) records aquired from command run at the specified interval. expects one IPv4 per line in cleartext as output
     }
     // ...
     // more credentials if needed

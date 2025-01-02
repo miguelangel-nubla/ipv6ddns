@@ -5,8 +5,8 @@ github.com/bmatcuk/doublestar v1.1.1/go.mod h1:UD6OnuiIn0yFxxA2le/rnRU1G4RaI4UvF
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
-github.com/cloudflare/cloudflare-go v0.112.0 h1:caFwqXdGJCl3rjVMgbPEn8iCYAg9JsRYV3dIVQE5d7g=
-github.com/cloudflare/cloudflare-go v0.112.0/go.mod h1:QB55kuJ5ZTeLNFcLJePfMuBilhu/LDKpLBmKFQIoSZ0=
+github.com/cloudflare/cloudflare-go v0.113.0 h1:qnOXmA6RbgZ4rg5gNBK5QGk0Pzbv8pnUYV3C4+8CU6w=
+github.com/cloudflare/cloudflare-go v0.113.0/go.mod h1:Dlm4BAnycHc0i8yLxQZb9b+OlMwYOAoDJsUOEFgpVvo=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -69,8 +69,8 @@ github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6T
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mdlayher/ndp v1.1.0 h1:QylGKGVtH60sKZUE88+IW5ila1Z/M9/OXhWdsVKuscs=
 github.com/mdlayher/ndp v1.1.0/go.mod h1:FmgESgemgjl38vuOIyAHWUUL6vQKA/pQNkvXdWsdQFM=
-github.com/miguelangel-nubla/ipv6disc v0.2.1 h1:nl7AP6lmYq5890JEp11Pw2bb2JwNr+j1E9jOSSNMYkw=
-github.com/miguelangel-nubla/ipv6disc v0.2.1/go.mod h1:LGRJcRCVOZgCPdSj4jh+v6mpYhnveFGW7ekOC8e9M1w=
+github.com/miguelangel-nubla/ipv6disc v0.3.0 h1:ev6TN9Cvp624gGTnCHzGXIBCF6KRnr34meSXwlvJyWY=
+github.com/miguelangel-nubla/ipv6disc v0.3.0/go.mod h1:LGRJcRCVOZgCPdSj4jh+v6mpYhnveFGW7ekOC8e9M1w=
 github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 h1:RWengNIwukTxcDr9M+97sNutRR1RKhG96O6jWumTTnw=
 github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826/go.mod h1:TaXosZuwdSHYgviHp1DAtfrULt5eUgsSMsZf+YrPgl8=
 github.com/nsf/termbox-go v1.1.1 h1:nksUPLCb73Q++DwbYUBEglYBRPZyoXJdrj5L+TkjyZY=
