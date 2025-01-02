@@ -1,3 +1,4 @@
+//go:generate sh -c "echo -n 'package main\n\nconst version = \"'$(git describe --tags --always)'\"' > version.go"
 package main
 
 import (
@@ -5,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns"
@@ -14,6 +17,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+var showVersion bool
 var configFile string
 var logLevel string
 var lifetime time.Duration
@@ -21,6 +25,7 @@ var live bool
 var webserverPort int
 
 func init() {
+	flag.BoolVar(&showVersion, "version", false, "Show the current version")
 	flag.StringVar(&configFile, "config_file", "config.json", "Path to the configuration file, default: config.json")
 	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic) default: info")
 	flag.DurationVar(&lifetime, "lifetime", 4*time.Hour, "Time to keep a discovered host entry after it has been last seen, default: 4h")
@@ -30,6 +35,11 @@ func init() {
 
 func main() {
 	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("App Version: %s\n", version)
+		os.Exit(0)
+	}
 
 	sugar := initializeLogger()
 
@@ -50,7 +60,7 @@ func main() {
 		go func() {
 			http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/plain")
-				w.Write([]byte(worker.PrettyPrint("")))
+				w.Write([]byte(wrapPrettyPrint(worker, "", true)))
 			})
 			sugar.Infof("Starting web server on port %d", webserverPort)
 			if err := http.ListenAndServe(fmt.Sprintf(":%d", webserverPort), nil); err != nil {
@@ -63,7 +73,7 @@ func main() {
 		liveOutput := make(chan string)
 		go func() {
 			for {
-				liveOutput <- worker.PrettyPrint("")
+				liveOutput <- wrapPrettyPrint(worker, "    ", false)
 				time.Sleep(1 * time.Second)
 			}
 		}()
@@ -71,6 +81,13 @@ func main() {
 	} else {
 		select {}
 	}
+}
+
+func wrapPrettyPrint(worker *ipv6ddns.Worker, prefix string, hideSensible bool) string {
+	var result strings.Builder
+	fmt.Fprintf(&result, "%sipv6ddns %s Time: %s\n", prefix, version, time.Now().Format(time.RFC3339))
+	fmt.Fprint(&result, worker.PrettyPrint(prefix, hideSensible))
+	return result.String()
 }
 
 func initializeLogger() *zap.SugaredLogger {

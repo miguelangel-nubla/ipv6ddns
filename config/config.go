@@ -21,7 +21,7 @@ type Config struct {
 	Credentials map[string]Credential `json:"credentials"`
 }
 
-func (c *Config) PrettyPrint(prefix string) string {
+func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
 
 	fmt.Fprintf(&result, "%sConfig:\n", prefix)
@@ -93,10 +93,15 @@ func (c *Config) PrettyPrint(prefix string) string {
 		result.WriteString(prefix + "        Endpoint: " + alias + "\n")
 		result.WriteString(prefix + "            Provider: " + credential.Provider + "\n")
 		result.WriteString(prefix + "            Debounce time: " + credential.DebounceTime.String() + "\n")
+
 		result.WriteString(prefix + "            Settings: ")
-		bytes, _ := json.MarshalIndent(credential.RawSettings, "            ", "    ")
-		result.Write(bytes)
-		result.WriteString("\n")
+		if hideSensible {
+			result.WriteString("<sensible data hidden>\n")
+		} else {
+			bytes, _ := json.MarshalIndent(credential.RawSettings, "            ", "    ")
+			result.Write(bytes)
+			result.WriteString("\n")
+		}
 	}
 
 	return result.String()

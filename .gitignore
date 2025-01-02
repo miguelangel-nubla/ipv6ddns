@@ -1,5 +1,6 @@
 cmd/ipv6ddns/ipv6ddns
 cmd/ipv6ddns/ipv6ddns.exe
+cmd/ipv6ddns/version.go
 dist/
 config.json
 *.gen.go

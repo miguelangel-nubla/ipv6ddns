@@ -36,6 +36,7 @@ sudo ipv6ddns [flags]
 - `-log_level` (default "info"): Set the logging level (debug, info, warn, error, fatal, panic).
 - `-lifetime` (default "4h"): Time to keep a discovered host entry after it has been last seen.
 - `-live` (default false): Show the current state live on the terminal.
+- `-webserver_port` (default 0): If port specified you can connect to this port to view the same live output from a browser.
 
 Depending on your IPv6 network configuration, you will need to allow outside access to the hosts you want to expose.
 

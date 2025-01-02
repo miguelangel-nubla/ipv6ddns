@@ -101,11 +101,11 @@ func (w *Worker) lookForChanges() {
 	}
 }
 
-func (w *Worker) PrettyPrint(prefix string) string {
+func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
-	fmt.Fprint(&result, w.State.PrettyPrint(prefix))
-	fmt.Fprint(&result, w.DiscWorker.State.PrettyPrint(prefix))
-	fmt.Fprint(&result, w.config.PrettyPrint(prefix))
+	fmt.Fprint(&result, w.State.PrettyPrint(prefix, hideSensible))
+	fmt.Fprint(&result, w.DiscWorker.State.PrettyPrint(prefix, hideSensible))
+	fmt.Fprint(&result, w.config.PrettyPrint(prefix, hideSensible))
 	return result.String()
 }
 

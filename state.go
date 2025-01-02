@@ -13,7 +13,7 @@ type State struct {
 	providers      map[string]*Provider
 }
 
-func (s *State) PrettyPrint(prefix string) string {
+func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
 
 	fmt.Fprintf(&result, "%sDNS:\n", prefix)
@@ -65,7 +65,11 @@ func (s *State) PrettyPrint(prefix string) string {
 					fmt.Fprintf(&result, " (last update: %s)", hostname.updatedTime.Format(time.RFC3339))
 				}
 				if hostname.updateError != nil {
-					fmt.Fprintf(&result, " (last update error: %s)", hostname.updateError)
+					err := hostname.updateError
+					if hideSensible {
+						err = fmt.Errorf("<sensible data hidden>")
+					}
+					fmt.Fprintf(&result, " (last update error: %s)", err)
 				}
 
 				var lastIp string
