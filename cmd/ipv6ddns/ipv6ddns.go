@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns"
@@ -16,12 +18,14 @@ var configFile string
 var logLevel string
 var lifetime time.Duration
 var live bool
+var webserverPort int
 
 func init() {
 	flag.StringVar(&configFile, "config_file", "config.json", "Path to the configuration file, default: config.json")
 	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic) default: info")
 	flag.DurationVar(&lifetime, "lifetime", 4*time.Hour, "Time to keep a discovered host entry after it has been last seen, default: 4h")
 	flag.BoolVar(&live, "live", false, "Show the currrent state live on the terminal, default: false")
+	flag.IntVar(&webserverPort, "webserver_port", 0, "If port specified you can connect to this port to view the same live output from a browser, default: disabled")
 }
 
 func main() {
@@ -40,6 +44,19 @@ func main() {
 	err = worker.Start()
 	if err != nil {
 		sugar.Fatalf("can't start worker: %s", err)
+	}
+
+	if webserverPort > 0 {
+		go func() {
+			http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				w.Write([]byte(worker.PrettyPrint("")))
+			})
+			sugar.Infof("Starting web server on port %d", webserverPort)
+			if err := http.ListenAndServe(fmt.Sprintf(":%d", webserverPort), nil); err != nil {
+				sugar.Fatalf("web server failed: %s", err)
+			}
+		}()
 	}
 
 	if live {
