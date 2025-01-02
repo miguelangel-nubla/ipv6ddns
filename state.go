@@ -73,8 +73,11 @@ func (s *State) PrettyPrint(prefix string) string {
 				// Iterate over the already sorted arr
 				for _, addr := range hostname.AddrCollection.Get() {
 					ip := addr.WithZone("").String()
+					if addr.Is6() {
+						ip = "[" + ip + "]"
+					}
 					if lastIp != ip {
-						fmt.Fprintf(&result, "\n%s                [%s]", prefix, ip)
+						fmt.Fprintf(&result, "\n%s                %s", prefix, ip)
 						lastIp = ip
 						lastHw = ""
 					}
