@@ -95,7 +95,7 @@ func (w *Worker) lookForChanges() {
 				if task.IPv4 != nil {
 					currentHosts.Join(task.IPv4.AddrCollection)
 				}
-				hostname.SetAddrCollection(currentHosts)
+				hostname.SetAddrCollection(currentHosts.FilterValid())
 			}
 		}
 	}
