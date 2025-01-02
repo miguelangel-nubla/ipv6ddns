@@ -1,4 +1,3 @@
-//go:generate sh -c "echo -n 'package main\n\nconst version = \"'$(git describe --tags --always)'\"' > version.go"
 package main
 
 import (
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/cmd/version"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
 	"go.uber.org/zap"
@@ -37,7 +37,7 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Printf("App Version: %s\n", version)
+		fmt.Print(version.PrintVersion())
 		os.Exit(0)
 	}
 
@@ -73,7 +73,7 @@ func main() {
 		liveOutput := make(chan string)
 		go func() {
 			for {
-				liveOutput <- wrapPrettyPrint(worker, "    ", false)
+				liveOutput <- wrapPrettyPrint(worker, "", false)
 				time.Sleep(1 * time.Second)
 			}
 		}()
@@ -85,8 +85,8 @@ func main() {
 
 func wrapPrettyPrint(worker *ipv6ddns.Worker, prefix string, hideSensible bool) string {
 	var result strings.Builder
-	fmt.Fprintf(&result, "%sipv6ddns %s Time: %s\n", prefix, version, time.Now().Format(time.RFC3339))
 	fmt.Fprint(&result, worker.PrettyPrint(prefix, hideSensible))
+	fmt.Fprint(&result, prefix, version.PrintVersion())
 	return result.String()
 }
 
