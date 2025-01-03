@@ -18,6 +18,7 @@ type IPv4Handler struct {
 	Interval time.Duration `json:"interval"`
 	Command  string        `json:"command"`
 	Args     []string      `json:"args"`
+	Lifetime time.Duration `json:"lifetime"`
 	running  bool
 	ticker   *time.Ticker
 }
@@ -36,6 +37,7 @@ func (h *IPv4Handler) UnmarshalJSON(b []byte) error {
 	type Alias IPv4Handler
 	aux := &struct {
 		Interval interface{} `json:"interval"`
+		Lifetime interface{} `json:"lifetime"`
 		*Alias
 	}{
 		Alias: (*Alias)(h),
@@ -55,6 +57,18 @@ func (h *IPv4Handler) UnmarshalJSON(b []byte) error {
 		}
 	default:
 		return errors.New("invalid debounce time")
+	}
+	switch value := aux.Lifetime.(type) {
+	case float64:
+		h.Lifetime = time.Duration(value) * time.Second
+	case string:
+		var err error
+		h.Lifetime, err = time.ParseDuration(value)
+		if err != nil {
+			return err
+		}
+	default:
+		return errors.New("invalid lifetime")
 	}
 
 	h.AddrCollection = ipv6disc.NewAddrCollection()
@@ -100,7 +114,7 @@ func (h *IPv4Handler) runCommand() {
 			continue
 		}
 
-		addr := ipv6disc.NewAddr(net.HardwareAddr{0, 0, 0, 0, 0, 0}, netipAddr, 0, nil)
+		addr := ipv6disc.NewAddr(net.HardwareAddr{0, 0, 0, 0, 0, 0}, netipAddr, h.Lifetime, nil)
 		h.AddrCollection.Enlist(addr)
 	}
 }

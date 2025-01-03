@@ -22,12 +22,18 @@ func (e *InvalidInterfaceError) Error() string {
 
 type Worker struct {
 	*State
-	DiscWorker *ipv6disc.Worker
+	discWorker *ipv6disc.Worker
 	logger     *zap.SugaredLogger
 	config     config.Config
 }
 
 func (w *Worker) Start() error {
+	for _, task := range w.config.Tasks {
+		if task.IPv4 != nil && !task.IPv4.Running() {
+			task.IPv4.Start()
+		}
+	}
+
 	go func() {
 		for {
 			// @TODO: instead of proactively searching, be notified from ipv6disc.State.Enlist
@@ -36,14 +42,11 @@ func (w *Worker) Start() error {
 		}
 	}()
 
-	return w.DiscWorker.Start()
+	return w.discWorker.Start()
 }
 
 func (w *Worker) lookForChanges() {
 	for _, task := range w.config.Tasks {
-		if task.IPv4 != nil && !task.IPv4.Running() {
-			task.IPv4.Start()
-		}
 		for endpointKey, hostnames := range task.Endpoints {
 			// Provider creation
 			credential := w.config.Credentials[endpointKey]
@@ -91,7 +94,7 @@ func (w *Worker) lookForChanges() {
 				hostname := endpoint.hostnames[hostnameKey]
 				endpoint.hostnamesMutex.Unlock()
 
-				currentHosts := w.DiscWorker.FilterMACs(task.MACAddresses).FilterSubnets(task.Subnets)
+				currentHosts := w.discWorker.FilterMACs(task.MACAddresses).FilterSubnets(task.Subnets)
 				if task.IPv4 != nil {
 					currentHosts.Join(task.IPv4.AddrCollection)
 				}
@@ -104,7 +107,7 @@ func (w *Worker) lookForChanges() {
 func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
 	fmt.Fprint(&result, w.State.PrettyPrint(prefix, hideSensible))
-	fmt.Fprint(&result, w.DiscWorker.State.PrettyPrint(prefix, hideSensible))
+	fmt.Fprint(&result, w.discWorker.State.PrettyPrint(prefix, hideSensible))
 	fmt.Fprint(&result, w.config.PrettyPrint(prefix, hideSensible))
 	return result.String()
 }
@@ -112,7 +115,7 @@ func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, config config.Config) *Worker {
 	return &Worker{
 		State:      NewState(),
-		DiscWorker: ipv6disc.NewWorker(logger, rediscover, lifetime),
+		discWorker: ipv6disc.NewWorker(logger, rediscover, lifetime),
 		logger:     logger,
 		config:     config,
 	}

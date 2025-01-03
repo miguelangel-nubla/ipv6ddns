@@ -73,7 +73,16 @@ This is the structure of the `config.json` file:
       }
       "debounce_time": "10s", // optional, default 60s. time to wait before pushing updates
       "retry_time": "60s", // optional, default 60s. time to wait between retries on update error
-      "ipv4": "", // optional, also update IPv4 (A) records aquired from command run at the specified interval. expects one IPv4 per line in cleartext as output
+      "ipv4": { // optional, also update IPv4 (A) records aquired from command run at the specified interval. expects one IPv4 per line in cleartext as output
+        "interval": "10m",
+        "command": "printf",
+        "args": [
+          "%s\\n",
+          "192.168.0.12"
+          "192.168.0.34"
+        ],
+        "lifetime": "4h"
+      }
     }
     // ...
     // more credentials if needed

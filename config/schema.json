@@ -47,12 +47,18 @@
                                 "items": {
                                     "type": "string"
                                 },
-                                "description": "An array of IPv4 addresses."
+                                "description": "Command arguments"
+                            },
+                            "lifetime": {
+                                "type": "string",
+                                "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$",
+                                "description": "Time to keep a IPv4 host entry after it has been last received"
                             }
                         },
                         "required": [
                             "interval",
-                            "command"
+                            "command",
+                            "lifetime"
                         ],
                         "additionalProperties": false
                     }
@@ -83,32 +89,6 @@
                     "retry_time": {
                         "type": "string",
                         "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$"
-                    },
-                    "ipv4": {
-                        "type": "object",
-                        "properties": {
-                            "interval": {
-                                "type": "string",
-                                "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$",
-                                "description": "The interval at which to check for changes."
-                            },
-                            "command": {
-                                "type": "string",
-                                "description": "The command to execute."
-                            },
-                            "args": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "description": "An array of IPv4 addresses."
-                            }
-                        },
-                        "required": [
-                            "interval",
-                            "command"
-                        ],
-                        "additionalProperties": false
                     },
                     "additionalProperties": false
                 },
