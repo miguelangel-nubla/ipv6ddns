@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns"
-	"github.com/miguelangel-nubla/ipv6ddns/cmd/version"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
 	"go.uber.org/zap"
@@ -37,7 +36,7 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Print(version.PrintVersion())
+		fmt.Print(PrintVersion())
 		os.Exit(0)
 	}
 
@@ -86,7 +85,7 @@ func main() {
 func wrapPrettyPrint(worker *ipv6ddns.Worker, prefix string, hideSensible bool) string {
 	var result strings.Builder
 	fmt.Fprint(&result, worker.PrettyPrint(prefix, hideSensible))
-	fmt.Fprint(&result, prefix, version.PrintVersion())
+	fmt.Fprint(&result, prefix, PrintVersion())
 	return result.String()
 }
 
@@ -119,4 +118,14 @@ func getLogLevel(level string) (zapcore.Level, error) {
 		return zap.InfoLevel, err
 	}
 	return zapLevel, nil
+}
+
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
+func PrintVersion() string {
+	return fmt.Sprintf("ipv6ddns %s, commit %s, built at %s\n", version, commit, date)
 }
