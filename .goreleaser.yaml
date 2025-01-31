@@ -42,6 +42,8 @@ builds:
       - 7
 dockers:
   -
+    goos: linux
+    goarch: 386
     image_templates:
     - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-i386"
     dockerfile: 'Dockerfile.goreleaser'
@@ -58,6 +60,8 @@ dockers:
     extra_files:
     - LICENSE.txt
   -
+    goos: linux
+    goarch: amd64
     image_templates:
     - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-amd64"
     dockerfile: 'Dockerfile.goreleaser'
@@ -74,6 +78,9 @@ dockers:
     extra_files:
     - LICENSE.txt
   -
+    goos: linux
+    goarch: arm
+    goarm: 6
     image_templates:
     - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-armv6"
     dockerfile: 'Dockerfile.goreleaser'
@@ -90,6 +97,9 @@ dockers:
     extra_files:
     - LICENSE.txt
   -
+    goos: linux
+    goarch: arm
+    goarm: 7
     image_templates:
     - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-armv7"
     dockerfile: 'Dockerfile.goreleaser'
@@ -106,6 +116,8 @@ dockers:
     extra_files:
     - LICENSE.txt
   -
+    goos: linux
+    goarch: arm64
     image_templates:
     - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-arm64v8"
     dockerfile: 'Dockerfile.goreleaser'
@@ -162,7 +174,7 @@ archives:
       - README*
       - CHANGELOG*
       - cmd/ipv6ddns/example.config.json
-    format: tar.gz
+    formats: tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
@@ -172,7 +184,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
     - goos: windows
-      format: zip
+      formats: zip
 checksum:
   name_template: 'checksums.txt'
 snapshot:
