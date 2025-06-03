@@ -94,10 +94,12 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 		return fmt.Errorf("failed to read zone ID: %v", err)
 	}
 
+	fqdn := c.Domain(hostname)
+
 	// Create a new *ResourceContainer for the zone
 	rc := cloudflare.ZoneIdentifier(zoneID)
 	params := cloudflare.ListDNSRecordsParams{
-		Name: c.Domain(hostname),
+		Name: fqdn,
 	}
 	currentRecords, _, err := api.ListDNSRecords(context.Background(), rc, params)
 	if err != nil {
@@ -134,7 +136,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 		if !exists {
 			newRecord := cloudflare.CreateDNSRecordParams{
 				Type:    recordType,
-				Name:    c.Domain(hostname),
+				Name:    fqdn,
 				Content: ip,
 				TTL:     int(c.TTL.Seconds()),
 				Proxied: &c.Proxied,
@@ -224,5 +226,10 @@ func (d *Cloudflare) MarshalJSON() ([]byte, error) {
 func (c *Cloudflare) Domain(hostname string) string {
 	hostname = strings.Trim(hostname, ".")
 	zone := strings.Trim(c.Zone, ".")
+
+	if hostname == "" {
+		return zone
+	}
+
 	return strings.Join([]string{hostname, zone}, ".")
 }
