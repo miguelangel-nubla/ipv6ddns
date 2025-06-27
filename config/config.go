@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 var configSchema []byte
 
 type Config struct {
+	BaseDir     string                `json:"-"`
 	Tasks       map[string]Task       `json:"tasks"`
 	Credentials map[string]Credential `json:"credentials"`
 }
@@ -139,5 +141,8 @@ func NewConfig(filename string) (config Config, err error) {
 
 	byteValue, _ := io.ReadAll(jsonFile)
 	err = json.Unmarshal(byteValue, &config)
+
+	config.BaseDir = filepath.Dir(filename)
+
 	return config, err
 }

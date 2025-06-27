@@ -23,6 +23,7 @@ type IPv4Handler struct {
 	running  bool
 	ticker   *time.Ticker
 	logger   *zap.SugaredLogger
+	basedir  string
 }
 
 func (h *IPv4Handler) PrettyPrint(prefix string) string {
@@ -82,11 +83,12 @@ func (h *IPv4Handler) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (h *IPv4Handler) Start(sugaredLogger *zap.SugaredLogger) error {
+func (h *IPv4Handler) Start(baseDir string, sugaredLogger *zap.SugaredLogger) error {
 	if h.running {
 		return errors.New("already running")
 	}
 
+	h.basedir = baseDir
 	h.logger = sugaredLogger
 
 	h.ticker = time.NewTicker(h.Interval)
@@ -116,7 +118,7 @@ func (h *IPv4Handler) runCommand() {
 	timeout := h.Interval - 1*time.Second
 
 	h.logger.Debugf("running command %s %v with timeout %s", h.Command, h.Args, timeout)
-	output, err := cmd.RunCommandWithTimeout(timeout, h.Command, h.Args...)
+	output, err := cmd.RunCommandWithTimeout(timeout, h.basedir, h.Command, h.Args...)
 	if err != nil {
 		h.logger.Errorf("error running command %s %v: %s", h.Command, h.Args, err)
 		return

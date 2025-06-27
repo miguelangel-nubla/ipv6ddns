@@ -30,7 +30,7 @@ type Worker struct {
 func (w *Worker) Start() error {
 	for _, task := range w.config.Tasks {
 		if task.IPv4 != nil && !task.IPv4.Running() {
-			err := task.IPv4.Start(w.logger)
+			err := task.IPv4.Start(w.config.BaseDir, w.logger)
 			if err != nil {
 				return fmt.Errorf("error starting IPv4 handler for task %s: %w", task.Name, err)
 			}
