@@ -11,6 +11,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/cmd"
 	"github.com/miguelangel-nubla/ipv6disc"
+	"go.uber.org/zap"
 )
 
 type IPv4Handler struct {
@@ -21,6 +22,7 @@ type IPv4Handler struct {
 	Lifetime time.Duration `json:"lifetime"`
 	running  bool
 	ticker   *time.Ticker
+	logger   *zap.SugaredLogger
 }
 
 func (h *IPv4Handler) PrettyPrint(prefix string) string {
@@ -29,7 +31,11 @@ func (h *IPv4Handler) PrettyPrint(prefix string) string {
 	for _, arg := range h.Args {
 		fmt.Fprintf(&result, " %q", arg)
 	}
-	fmt.Fprintln(&result)
+	fmt.Fprintf(&result, "\n")
+	if h.AddrCollection != nil {
+		result.WriteString(h.AddrCollection.PrettyPrint(prefix + "  "))
+	}
+
 	return result.String()
 }
 
@@ -76,10 +82,13 @@ func (h *IPv4Handler) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (h *IPv4Handler) Start() {
+func (h *IPv4Handler) Start(sugaredLogger *zap.SugaredLogger) error {
 	if h.running {
-		return
+		return errors.New("already running")
 	}
+
+	h.logger = sugaredLogger
+
 	h.ticker = time.NewTicker(h.Interval)
 	h.running = true
 
@@ -90,7 +99,10 @@ func (h *IPv4Handler) Start() {
 			h.runCommand()
 		}
 	}()
+
+	return nil
 }
+
 func (h *IPv4Handler) Stop() {
 	h.ticker.Stop()
 	h.running = false
@@ -102,19 +114,30 @@ func (h *IPv4Handler) Running() bool {
 
 func (h *IPv4Handler) runCommand() {
 	timeout := h.Interval - 1*time.Second
+
+	h.logger.Debugf("running command %s %v with timeout %s", h.Command, h.Args, timeout)
 	output, err := cmd.RunCommandWithTimeout(timeout, h.Command, h.Args...)
 	if err != nil {
+		h.logger.Errorf("error running command %s %v: %s", h.Command, h.Args, err)
 		return
 	}
 
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		netipAddr, err := netip.ParseAddr(line)
-		if err != nil {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
 
+		netipAddr, err := netip.ParseAddr(line)
+		if err != nil {
+			h.logger.Errorf("failed to parse output from command %s %v: %s", h.Command, h.Args, err)
+			continue
+		} else {
+			h.logger.Debugf("parsed IPv4 address: %s", netipAddr)
+		}
+
 		addr := ipv6disc.NewAddr(net.HardwareAddr{0, 0, 0, 0, 0, 0}, netipAddr, h.Lifetime, nil)
-		h.AddrCollection.Enlist(addr)
+		h.AddrCollection.Seen(addr)
 	}
 }

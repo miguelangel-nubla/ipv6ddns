@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -27,12 +28,10 @@ func (c *Credential) UnmarshalJSON(b []byte) error {
 	}
 
 	if aux.DebounceTime == nil {
-		c.DebounceTime = 10 * time.Second
-		return nil
+		aux.DebounceTime = "10s"
 	}
 	if aux.RetryTime == nil {
-		c.RetryTime = 60 * time.Second
-		return nil
+		aux.RetryTime = "60s"
 	}
 
 	switch value := aux.DebounceTime.(type) {
@@ -45,7 +44,7 @@ func (c *Credential) UnmarshalJSON(b []byte) error {
 			return err
 		}
 	default:
-		return errors.New("invalid debounce time")
+		return errors.New("invalid debounce time: " + fmt.Sprintf("%#v", value))
 	}
 
 	switch value := aux.RetryTime.(type) {
@@ -58,7 +57,7 @@ func (c *Credential) UnmarshalJSON(b []byte) error {
 			return err
 		}
 	default:
-		return errors.New("invalid retry time")
+		return errors.New("invalid retry time: " + fmt.Sprintf("%#v", value))
 	}
 
 	return nil

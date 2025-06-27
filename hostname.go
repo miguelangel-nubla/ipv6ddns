@@ -26,10 +26,15 @@ type Hostname struct {
 }
 
 func (h *Hostname) SetAddrCollection(addrCollection *ipv6disc.AddrCollection) {
+	addrCollection = addrCollection.FilterValid()
 	if !h.AddrCollection.Equal(addrCollection) {
-		h.AddrCollection = *addrCollection.Copy()
+		h.AddrCollection.Join(addrCollection)
 		h.ScheduleUpdate(h.updateDebounceTime)
 	}
+
+	h.mutex.Lock()
+	h.AddrCollection = *h.AddrCollection.FilterValid()
+	h.mutex.Unlock()
 }
 
 func (h *Hostname) ScheduleUpdate(timeout time.Duration) {

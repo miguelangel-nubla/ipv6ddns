@@ -74,7 +74,7 @@ func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 
 				var lastIp string
 				var lastHw string
-				// Iterate over the already sorted arr
+				// Iterate over the already sorted array of addresses
 				for _, addr := range hostname.AddrCollection.Get() {
 					ip := addr.WithZone("").String()
 					if addr.Is6() {

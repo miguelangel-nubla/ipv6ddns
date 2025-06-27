@@ -73,6 +73,9 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 
 			// Iterate over sorted hostnames
 			for _, hostname := range sortedHostnames {
+				if hostname == "" {
+					hostname = "@"
+				}
 				result.WriteString(prefix + "                " + hostname + " (" + endpointKey + ")\n")
 			}
 		}

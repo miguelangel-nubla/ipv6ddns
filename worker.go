@@ -30,13 +30,16 @@ type Worker struct {
 func (w *Worker) Start() error {
 	for _, task := range w.config.Tasks {
 		if task.IPv4 != nil && !task.IPv4.Running() {
-			task.IPv4.Start()
+			err := task.IPv4.Start(w.logger)
+			if err != nil {
+				return fmt.Errorf("error starting IPv4 handler for task %s: %w", task.Name, err)
+			}
 		}
 	}
 
 	go func() {
 		for {
-			// @TODO: instead of proactively searching, be notified from ipv6disc.State.Enlist
+			// @TODO: instead of proactively searching, be notified from ipv6disc.AddrCollection.Seen
 			w.lookForChanges()
 			time.Sleep(1 * time.Second)
 		}
@@ -98,7 +101,7 @@ func (w *Worker) lookForChanges() {
 				if task.IPv4 != nil {
 					currentHosts.Join(task.IPv4.AddrCollection)
 				}
-				hostname.SetAddrCollection(currentHosts.FilterValid())
+				hostname.SetAddrCollection(currentHosts)
 			}
 		}
 	}

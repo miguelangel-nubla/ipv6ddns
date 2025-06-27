@@ -1,6 +1,6 @@
-# IPv6 DDNS Updater
+# Network wide IPv6 DDNS Updater
 
-This utility discovers the IPv6 addresses of specific hosts in your network and updates DNS records dynamically. [Details](#what-does-this-do)
+This utility discovers IPv6 addresses on your local network and updates DNS records dynamically. [Details](#what-does-this-do)
 
 If you have a special use case: [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc)
 
@@ -8,17 +8,17 @@ If you have a special use case: [ipv6disc](https://github.com/miguelangel-nubla/
 
 Download the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest) for your architecture.
 
-### Or build from source
-
-Ensure you have Go installed on your system. If not, follow the instructions on the official [Go website](https://golang.org/doc/install) to install it. Then:
-```
-go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
-```
-
 ### Or use the docker image
 This may or may not work on your system. I was able to make it work with host networking and without `ipv6:true` in `/etc/docker/daemon.json`???. If you have experience and can help with ipv6 docker please let me know.
 ```
 docker run -it --rm --network host -v ./config.json:/config.json gcr.io/miguelangel-nubla/ipv6ddns -live
+```
+
+### Or install from source
+
+Ensure you have Go installed on your system. If not, follow the instructions on the official [Go website](https://golang.org/doc/install) to install it. Then:
+```
+go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 ```
 
 ## Usage
@@ -56,6 +56,17 @@ This is the structure of the `config.json` file:
         "example-project": [ // name of the endpoint to use for this task, as configured on the credentials section at the bottom
           "test-webapp" // hostname whose AAAA records will be kept in sync. This results in updating test-webapp.example.com as defined by example-project settings
         ]
+      },
+      "lifetime": "4h",
+      "ipv4": { // optional, also update IPv4 (A) records aquired from command run at the specified interval. expects one IPv4 per line in cleartext as output
+        "interval": "10m",
+        "command": "printf",
+        "args": [
+          "%s\\n",
+          "192.168.0.12"
+          "192.168.0.34"
+        ],
+        "lifetime": "4h"
       }
     }
     // ...
@@ -71,18 +82,8 @@ This is the structure of the `config.json` file:
         "ttl": "1h", // if proxied over cloudflare this will have no effect
         "proxied": true
       }
-      "debounce_time": "10s", // optional, default 60s. time to wait before pushing updates
-      "retry_time": "60s", // optional, default 60s. time to wait between retries on update error
-      "ipv4": { // optional, also update IPv4 (A) records aquired from command run at the specified interval. expects one IPv4 per line in cleartext as output
-        "interval": "10m",
-        "command": "printf",
-        "args": [
-          "%s\\n",
-          "192.168.0.12"
-          "192.168.0.34"
-        ],
-        "lifetime": "4h"
-      }
+      "debounce_time": "10s", // optional, default 10s. time to wait before pushing updates
+      "retry_time": "60s" // optional, default 60s. time to wait between retries on update error
     }
     // ...
     // more credentials if needed
@@ -113,9 +114,9 @@ The available DDNS providers are:
 ## The problem
 Having a domain name `my-web.example.com` point to your application on an IPv6 network is both simpler and more challenging than doing it with regular IPv4.
 
-The classic method of directing traffic to your public IP address (i.e., your router) and then using NAT is no longer a good idea, nor necessary.
+The classic method of directing traffic to your public IPv4 address (i.e., your router) and then using NAT is no longer a good idea, nor necessary.
 
-IPv6 addresses are globally routable, which is nice, but you will need to know the exact IP, as different machines or even containers on the same host (and even different applications) will have different "public" IPs, or GUAs in IPv6 terminology.
+IPv6 addresses are globally routable, which is nice, but you will need to know the exact IPv6, as different machines or even containers on the same host (and even different applications) will have different "public" IPv6s, or GUAs in IPv6 terminology.
 
 In this scenario DNS names become almost mandatory, good luck trying to remember and type a different `https://[2001:0db8:85a3:0000:8a2e:0370:7334:abcd]` to access each one of your hosts.
 
@@ -126,10 +127,12 @@ You might be thinking well, I will just run a DDNS updater on my server? It turn
 
 Unfortunately yes. That is not a great idea. Aside from the inconvenience of forking and using your own container images, there will be systems that you will not be able to modify. Think about a device on your network that has no way of running a custom executable, like an appliance, or an IP camera.
 
-Wouldn't it be nice to have a utility anywhere on your network that detects the IPv6 of your desired hosts, identifies when they change, and updates the relevant DNS records accordingly?
+Wouldn't it be nice to have a single instance of a "DNS updater" anywhere on your network that detects the IPv6 of your desired hosts, identifies when they change, and updates the relevant DNS records accordingly?
 
 ## The solution
-This utility scans the network for the IPv6s of the hosts you want to expose, identified by their MAC address, and updates the corresponding DNS records automatically. This works for _all your network_, having the configuration and your credentials in a single place.
+This utility scans the network for the IPv6s of the hosts you want to expose, identified by their MAC address, and updates the corresponding DNS records automatically.
+
+This works for **_all your network_**, having the configuration and your credentials in a single place.
 
 ---
 
