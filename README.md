@@ -1,52 +1,73 @@
 # Network wide IPv6 DDNS Updater
 
-This utility discovers IPv6 addresses on your local network and updates DNS records dynamically. [Details](#what-does-this-do)
+This utility discovers IPv6 addresses on your local network and updates DNS records dynamically. [Here is a detailed explanation.](#what-does-this-do)
 
 If you have a special use case: [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc)
 
 ## Installation
 
-Download the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest) for your architecture.
-
-### Or use the docker image
-This may or may not work on your system. I was able to make it work with host networking and without `ipv6:true` in `/etc/docker/daemon.json`???. If you have experience and can help with ipv6 docker please let me know.
-```
-docker run -it --rm --network host -v ./config.json:/config.json gcr.io/miguelangel-nubla/ipv6ddns -live
-```
+Download and run the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest) for your architecture.
 
 ### Or install from source
 
 Ensure you have Go installed on your system. If not, follow the instructions on the official [Go website](https://golang.org/doc/install) to install it. Then:
-```
+```bash
 go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 ```
 
-## Usage
+### Or Use the Docker Image
 
-Adjust the configuration on config.json and run the binary with the desired flags:
+This may or may not work on your system—IPv6 in Docker can be tricky.
+Please do not attempt this unless you're prepared for extensive debugging and possibly making code changes.
 
->:warning: This utility needs to be executed as a superuser to be able to listen for IPv6 ICMP packets.
+I was able to get it working using **host networking** and **without** setting `"ipv6": true` in `/etc/docker/daemon.json`.
+
+If you have experience with Docker and IPv6 and can help improve this, please reach out—it's been a while since I last looked into it.
+
+```bash
+docker run -it --rm --network host -v ./config.json:/config.json gcr.io/miguelangel-nubla/ipv6ddns -live
 ```
-sudo ipv6ddns [flags]
-```
 
-### Flags
+## 🚀 Usage
 
-- `-config_file` (default "config.json"): Config file to use.
-- `-log_level` (default "info"): Set the logging level (debug, info, warn, error, fatal, panic).
-- `-lifetime` (default "4h"): Time to keep a discovered host entry after it has been last seen.
-- `-live` (default false): Show the current state live on the terminal.
-- `-webserver_port` (default 0): If port specified you can connect to this port to view the same live output from a browser.
+1. **Configure the Service**
 
-Depending on your IPv6 network configuration, you will need to allow outside access to the hosts you want to expose.
+   Edit the configuration file (`config.json`) to suit your environment. You can start with the provided [example config](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/cmd/ipv6ddns/example.config.json).
 
-The easiest way is to either specify allowed subnets or simply allow by destination MAC address.
+2. **Run the Binary**
+
+   > ⚠️ **Note:** This utility must be run with superuser privileges to listen for IPv6 ICMP packets.
+
+   Use the following command to start the service:
+
+   ```bash
+   sudo ipv6ddns [flags]
+   ```
+
+3. **Example Command**
+
+   Here's an example that runs the service with a custom config, enables the web interface on port 80, and sets the log level to debug:
+
+   ```bash
+   sudo ipv6ddns \
+     -config_file config.json \
+     -webserver_port 80 \
+     -log_level debug
+   ```
+
+4. **Access the Web report**
+
+   After starting the service, open your browser and go to:
+
+   ```
+   http://<your_host_ipv6_or_local_ip>
+   ```
 
 ## Configuration
 
 This is the structure of the `config.json` file:
 
-```
+```json
 { 
   "tasks": {
     "my_public_web_server": { // whichever name you like for this task, it is only for reference
@@ -57,16 +78,16 @@ This is the structure of the `config.json` file:
           "test-webapp" // hostname whose AAAA records will be kept in sync. This results in updating test-webapp.example.com as defined by example-project settings
         ]
       },
-      "lifetime": "4h",
-      "ipv4": { // optional, also update IPv4 (A) records aquired from command run at the specified interval. expects one IPv4 per line in cleartext as output
-        "interval": "10m",
+      "lifetime": "1h",
+      "ipv4": { // optional, also update IPv4 (A) records aquired from the command run at the specified interval. Expects one IPv4 per line in cleartext as output
+        "interval": "3m",
         "command": "printf",
         "args": [
           "%s\\n",
           "192.168.0.12"
           "192.168.0.34"
         ],
-        "lifetime": "4h"
+        "lifetime": "10m"
       }
     }
     // ...
@@ -100,12 +121,13 @@ The available DDNS providers are:
 - [Duckdns](https://www.duckdns.org/) (provider only allows a single AAAA record)
 - [Gravity](https://github.com/BeryJu/gravity) (hosted locally)
 
-- :rocket: **Adding your preferred provider is easy**:
-  - Take a provider from `ddns/` such as cloudflare.go as a template.
-  - Replace every reference to cloudflare with the new provider. This is case-sensitive.
-  - Replace the API calls with the ones your provider need.
-  - Test.
-  - Create a PR!
+- :rocket: **If you’re comfortable coding, adding support for your preferred provider is a breeze**:
+  - Use an existing provider in the `ddns/` directory (e.g., `cloudflare.go`) as a template.
+  - Replace all instances of `cloudflare` with your provider’s name — case-sensitive!
+  - Update the API logic in that file to match your provider's requirements.
+  - Test your implementation thoroughly.
+  - Verify that everything works correctly across multiple IP/prefix rotations.
+  - Submit a pull request!
 
 ---
 
@@ -123,7 +145,7 @@ In this scenario DNS names become almost mandatory, good luck trying to remember
 Technically, IPv6 addresses could be static, but part of the beauty of IPv6 is the ability to use and rotate multiple different IP addresses on demand. Even if you don't want to, some ISPs change your IPv6 prefix on router reboot or periodically.
 
 ## Rationale
-You might be thinking well, I will just run a DDNS updater on my server? It turns out that may not be really an option, remember each application has its own, *dynamic* IPv6? How do you indicate which IP should the DNS record point to? Does that mean the way to do that is to run the updater on the same container as your web server?
+You might be thinking well, I will just run a DDNS updater on my server? It turns out that may not be really an option. Depending on your enviroment and ISP, each host (or even application) may have its own, *dynamic* IPv6. How do you indicate which IP should the DNS record point to? Does that mean the way to do that is to run the updater on the same container as your target application?
 
 Unfortunately yes. That is not a great idea. Aside from the inconvenience of forking and using your own container images, there will be systems that you will not be able to modify. Think about a device on your network that has no way of running a custom executable, like an appliance, or an IP camera.
 
@@ -142,14 +164,24 @@ This works for **_all your network_**, having the configuration and your credent
 This utility allows you to move between IPv6 networks and to maintain inbound connectivity.
 You can have as many IPv6 addresses from different ISPs as you like and the AAAA records for your domain will be kept in sync.
 
-For example, you can have a fiber connection, a backup LTE connection, and Starlink on your roof. Your domain will have AAAA records for every WAN connection, inbound WAN failover will simply work.
+For example, you can have a FTTH connection, a backup LTE connection, and Starlink on your roof. Your domain will have updated AAAA records for every WAN connection, inbound WAN failover will simply work.
 
-## License
-
-This project is licensed under Apache License 2.0 
-
-It uses libraries from the following projects:
-- github.com/miguelangel-nubla/ipv6disc - Apache License 2.0
-- github.com/xeipuuv/gojsonschema - MIT License
-- go.uber.org/zap - MIT License
-- github.com/cloudflare/cloudflare-go - BSD 3-Clause License
+#### Roaming over IPv4
+While IPv4 is not the focus of this project, you can stil leverage it to do the same for regular IPv4 public IPs.
+```json
+...
+  "tasks": {
+    "myhome": {
+      "ipv4": {
+        "interval": "3m",
+        "command": "curl",
+        "args": [
+          "-s",
+          "--ipv4",
+          "ifconfig.me"
+        ],
+        "lifetime": "10m"
+      }
+...
+```
+For more advanced use cases just write a custom script that returns the IPv4s you need.

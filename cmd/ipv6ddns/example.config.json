@@ -1,48 +1,78 @@
-{ 
+{
   "tasks": {
-    "load_balancer_for_web_app": {
-      "subnets": ["2000::/3", "fd00::/8"],
-      "mac_address": ["00:11:22:33:44:55", "00:11:22:33:44:56"],
+    "myhome": {
+      "subnets": [
+        "2000::/3"
+      ],
+      "mac_address": [
+        "00:11:22:33:44:55"
+      ],
       "endpoints": {
-        "example-project": [
-          "test-webapp.example.com"
+        "mycloudflaresettings": [
+          ""
         ]
+      },
+      "ipv4": {
+        "interval": "3m",
+        "command": "curl",
+        "args": [
+          "-s",
+          "--ipv4",
+          "ifconfig.me"
+        ],
+        "lifetime": "10m"
       }
     },
-    "reverse_proxy": {
-      "subnets": ["2000::/3"],
-      "mac_address": ["00:11:22:33:44:57"],
+    "mylocalonlyserver": {
+      "subnets": [
+        "fc00::/7"
+      ],
+      "mac_address": [
+        "00:11:22:33:44:56"
+      ],
       "endpoints": {
-        "example-project": [
-          "test-proxy.example.com"
+        "mylocaldns": [
+          "myserver",
+          "*.myserver"
         ]
-      }
-    },
-    "local_iot_device": {
-      "subnets": ["fd00::/8"],
-      "mac_address": ["00:11:22:33:44:58"],
-      "endpoints": {
-        "other-project": [
-          "test-iot.example.com"
-        ]
+      },
+      "ipv4": {
+        "interval": "60s",
+        "command": "printf",
+        "args": [
+          "%s\\n",
+          "192.168.1.123"
+        ],
+        "lifetime": "4h"
       }
     }
   },
   "credentials": {
-    "example-project": {
-      "provider": "cloudflare",
+    "mylocaldns": {
+      "provider": "gravity",
+      "debounce_time": "10s",
       "settings": {
-        "api_token": "CLOUDFLARETOKEN",
-        "zone": "example.com",
-        "ttl": "1h",
-        "proxied": true
-      },
-      "debounce_time": "60s"
+        "server": "http://192.168.x.x",
+        "api_key": "mykey",
+        "zone": "myzone.",
+        "ttl": "10m"
+      }
     },
-    "other-project": {
+    "duckdns": {
       "provider": "duckdns",
+      "debounce_time": "10s",
       "settings": {
-        "api_token": "DUCKDNSTOKEN"
+        "api_token": "mytoken"
+      }
+    },
+    "mycloudflaresettings": {
+      "provider": "cloudflare",
+      "debounce_time": "10s",
+      "settings": {
+        "api_token": "mytoken",
+        "zone": "mydomain.tld",
+        "ttl": "1m",
+        "proxied": false
       }
     }
   }
