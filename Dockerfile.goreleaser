@@ -1,3 +1,14 @@
-FROM scratch
-ENTRYPOINT ["/ipv6ddns"]
+FROM alpine:3.20
+
+RUN apk add --no-cache \
+    bash \
+    iputils \
+    iproute2 \
+    curl \
+    ca-certificates \
+    bind-tools \
+ && update-ca-certificates
+
 COPY ipv6ddns /
+
+ENTRYPOINT ["/ipv6ddns"]
