@@ -11,6 +11,8 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
+	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/mikrotik"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -49,6 +51,14 @@ func main() {
 
 	rediscover := lifetime / 3
 	worker := ipv6ddns.NewWorker(sugar, rediscover, lifetime, config)
+
+	for _, pCfg := range config.Plugins {
+		p, err := plugins.Create(pCfg.Type, pCfg.Params, lifetime)
+		if err != nil {
+			sugar.Fatalf("can't create plugin %s: %s", pCfg.Type, err)
+		}
+		worker.RegisterPlugin(p)
+	}
 
 	err = worker.Start()
 	if err != nil {

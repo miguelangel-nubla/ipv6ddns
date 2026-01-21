@@ -48,6 +48,10 @@ func (w *Worker) Start() error {
 	return w.discWorker.Start()
 }
 
+func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {
+	w.discWorker.RegisterPlugin(p)
+}
+
 func (w *Worker) lookForChanges() {
 	for _, task := range w.config.Tasks {
 		for endpointKey, hostnames := range task.Endpoints {
@@ -111,6 +115,7 @@ func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
 	fmt.Fprint(&result, w.State.PrettyPrint(prefix, hideSensible))
 	fmt.Fprint(&result, w.discWorker.State.PrettyPrint(prefix, hideSensible))
+	fmt.Fprint(&result, w.discWorker.PrettyPrintStats(prefix))
 	fmt.Fprint(&result, w.config.PrettyPrint(prefix, hideSensible))
 	return result.String()
 }

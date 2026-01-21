@@ -21,6 +21,12 @@ type Config struct {
 	BaseDir     string                `json:"-"`
 	Tasks       map[string]Task       `json:"tasks"`
 	Credentials map[string]Credential `json:"credentials"`
+	Plugins     []PluginConfig        `json:"plugins"`
+}
+
+type PluginConfig struct {
+	Type   string `json:"type"`
+	Params string `json:"params"`
 }
 
 func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
@@ -106,6 +112,18 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 			bytes, _ := json.MarshalIndent(credential.RawSettings, "            ", "    ")
 			result.Write(bytes)
 			result.WriteString("\n")
+		}
+	}
+
+	if len(c.Plugins) > 0 {
+		result.WriteString(prefix + "    Plugins:\n")
+		for _, plugin := range c.Plugins {
+			result.WriteString(prefix + "        Type: " + plugin.Type + "\n")
+			if !hideSensible {
+				result.WriteString(prefix + "        Params: " + plugin.Params + "\n")
+			} else {
+				result.WriteString(prefix + "        Params: <sensible data hidden>\n")
+			}
 		}
 	}
 

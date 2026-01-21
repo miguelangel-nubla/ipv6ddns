@@ -139,7 +139,7 @@ func (h *IPv4Handler) runCommand() {
 			h.logger.Debugf("parsed IPv4 address: %s", netipAddr)
 		}
 
-		addr := ipv6disc.NewAddr(net.HardwareAddr{0, 0, 0, 0, 0, 0}, netipAddr, h.Lifetime, nil)
-		h.AddrCollection.Seen(addr)
+		addr := ipv6disc.NewAddr(net.HardwareAddr{0, 0, 0, 0, 0, 0}, netipAddr, "ipv4", h.Lifetime, nil)
+		h.AddrCollection.Seen(addr, "ipv4")
 	}
 }
