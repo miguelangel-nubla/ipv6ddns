@@ -21,7 +21,7 @@ type Config struct {
 	BaseDir     string                `json:"-"`
 	Tasks       map[string]Task       `json:"tasks"`
 	Credentials map[string]Credential `json:"credentials"`
-	Plugins     []PluginConfig        `json:"plugins"`
+	Plugins     []PluginConfig        `json:"discovery_plugins"`
 }
 
 type PluginConfig struct {
@@ -116,7 +116,7 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	}
 
 	if len(c.Plugins) > 0 {
-		result.WriteString(prefix + "    Plugins:\n")
+		result.WriteString(prefix + "    Discovery Plugins:\n")
 		for _, plugin := range c.Plugins {
 			result.WriteString(prefix + "        Type: " + plugin.Type + "\n")
 			if !hideSensible {

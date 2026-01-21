@@ -99,7 +99,7 @@
                 "additionalProperties": false
             }
         },
-        "plugins": {
+        "discovery_plugins": {
             "type": "array",
             "items": {
                 "type": "object",

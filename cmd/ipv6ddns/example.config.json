@@ -88,7 +88,7 @@
       }
     }
   },
-  "plugins": [
+  "discovery_plugins": [
     {
       "type": "mikrotik",
       "params": "192.168.1.1,admin,password,false"
