@@ -74,6 +74,18 @@
         "ttl": "1m",
         "proxied": false
       }
+    },
+    "myrouteros": {
+      "provider": "mikrotik",
+      "settings": {
+        "address": "192.168.88.1:8729",
+        "username": "admin",
+        "password": "password",
+        "zone": "lan",
+        "ttl": "5m",
+        "use_tls": true,
+        "fingerprint": "a1b2c3d4..."
+      }
     }
   },
   "plugins": [

@@ -93,7 +93,7 @@ func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 							lastHw = hw
 						}
 
-						fmt.Fprintf(&result, " %s", addr.Addr.Zone())
+						fmt.Fprintf(&result, " %s", strings.Join(addr.Sources, ","))
 					}
 				}
 

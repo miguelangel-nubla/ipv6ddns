@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/cloudflare/cloudflare-go v0.116.0
+	github.com/go-routeros/routeros/v3 v3.0.1
 	github.com/google/uuid v1.6.0
 	github.com/miguelangel-nubla/ipv6disc v0.4.1
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
@@ -18,7 +19,6 @@ require (
 	github.com/getkin/kin-openapi v0.128.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
-	github.com/go-routeros/routeros/v3 v3.0.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/invopop/yaml v0.3.1 // indirect
