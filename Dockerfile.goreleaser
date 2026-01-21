@@ -8,8 +8,8 @@ RUN apk add --no-cache \
     ca-certificates \
     bind-tools \
     jq \
- && update-ca-certificates
+    && update-ca-certificates
 
-COPY ipv6ddns /
+COPY ipv6ddns /usr/local/bin/ipv6ddns
 
-ENTRYPOINT ["/ipv6ddns"]
+ENTRYPOINT ["ipv6ddns"]
