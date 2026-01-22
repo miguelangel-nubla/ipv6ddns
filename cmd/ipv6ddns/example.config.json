@@ -87,6 +87,18 @@
         "ttl": "5m"
       }
     },
+    "mypfsensebox": {
+      "provider": "pfsense_restapi_unbound",
+      "settings": {
+        "address": "https://pfsense.local",
+        "tls_fingerprint": "<optional>a1b2c3d4...",
+        "key": "your_api_key",
+        "zone": "example.com",
+        "ttl": "1h"
+      },
+      "debounce_time": "5s",
+      "retry_time": "1m"
+    },
     "myopnsensebox": {
       "provider": "opnsense_unbound",
       "settings": {
