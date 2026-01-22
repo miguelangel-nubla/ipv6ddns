@@ -79,22 +79,22 @@
       "provider": "mikrotik",
       "settings": {
         "address": "192.168.88.1:8729",
+        "use_tls": true,
+        "tls_fingerprint": "<optional>a1b2c3d4...",
         "username": "admin",
         "password": "password",
         "zone": "lan",
-        "ttl": "5m",
-        "use_tls": true,
-        "tls_fingerprint": "a1b2c3d4..."
+        "ttl": "5m"
       }
     },
     "myopnsensebox": {
       "provider": "opnsense_unbound",
       "settings": {
         "address": "https://opnsense.local",
+        "tls_fingerprint": "<optional>a1b2c3d4...",
         "key": "your_api_key",
         "secret": "your_api_secret",
-        "zone": "example.com",
-        "tls_fingerprint": "a1b2c3d4..."
+        "zone": "example.com"
       },
       "debounce_time": "5s",
       "retry_time": "1m"
@@ -103,7 +103,15 @@
   "discovery_plugins": [
     {
       "type": "mikrotik",
-      "params": "192.168.1.1,admin,password,false"
+      "params": "mikrotik:192.168.88.1:8729,admin,password,true,<optional>a1b2c3d4..."
+    },
+    {
+      "type": "freebsd",
+      "params": "freebsd:pfsense.local,admin,,/path/to/id_rsa"
+    },
+    {
+      "type": "linux",
+      "params": "linux:[2001:db8::1]:2222,user,,/path/to/id_rsa"
     }
   ]
 }
