@@ -18,12 +18,12 @@ import (
 
 type Mikrotik struct {
 	Address        string        `json:"address"`
+	UseTLS         bool          `json:"use_tls"`
+	TLSFingerprint string        `json:"tls_fingerprint"`
 	Username       string        `json:"username"`
 	Password       string        `json:"password"`
 	Zone           string        `json:"zone"`
 	TTL            time.Duration `json:"ttl"`
-	UseTLS         bool          `json:"use_tls"`
-	TLSFingerprint string        `json:"tls_fingerprint"`
 }
 
 func init() {
@@ -47,6 +47,13 @@ func mikrotikValidateConfig(config json.RawMessage) {
 				"type": "string",
 				"minLength": 1
 			},
+			"use_tls": {
+				"type": "boolean"
+			},
+			"tls_fingerprint": {
+				"type": "string",
+				"pattern": "^[a-fA-F0-9]{64}$"
+			},
 			"username": {
 				"type": "string",
 				"minLength": 1
@@ -60,19 +67,13 @@ func mikrotikValidateConfig(config json.RawMessage) {
 			"ttl": {
 				"type": "string",
 				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			},
-			"use_tls": {
-				"type": "boolean"
-			},
-			"tls_fingerprint": {
-				"type": "string",
-				"pattern": "^[a-fA-F0-9]{64}$"
 			}
 		},
 		"required": [
 			"address",
 			"username",
 			"password",
+			"zone",
 			"ttl"
 		]
 	}

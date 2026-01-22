@@ -21,11 +21,11 @@ import (
 
 type OpnsenseUnbound struct {
 	Address        string        `json:"address"`
+	TLSFingerprint string        `json:"tls_fingerprint"`
 	Key            string        `json:"key"`
 	Secret         string        `json:"secret"`
 	Zone           string        `json:"zone"`
 	TTL            time.Duration `json:"ttl"`
-	TLSFingerprint string        `json:"tls_fingerprint"`
 }
 
 func init() {
@@ -49,6 +49,10 @@ func opnsenseUnboundValidateConfig(config json.RawMessage) {
 				"type": "string",
 				"minLength": 1
 			},
+			"tls_fingerprint": {
+				"type": "string",
+				"pattern": "^[a-fA-F0-9]{64}$"
+			},
 			"key": {
 				"type": "string",
 				"minLength": 1
@@ -63,16 +67,13 @@ func opnsenseUnboundValidateConfig(config json.RawMessage) {
 			"ttl": {
 				"type": "string",
 				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			},
-			"tls_fingerprint": {
-				"type": "string",
-				"pattern": "^[a-fA-F0-9]{64}$"
 			}
 		},
 		"required": [
 			"address",
 			"key",
 			"secret",
+			"zone",
 			"ttl"
 		]
 	}
