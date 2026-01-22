@@ -110,6 +110,17 @@
       },
       "debounce_time": "5s",
       "retry_time": "1m"
+    },
+    "myopenwrtrouter": {
+      "provider": "openwrt",
+      "settings": {
+        "address": "192.168.1.1:22",
+        "username": "root",
+        "password": "password",
+        "ssh_key": "<optional>/path/to/private/key",
+        "zone": "lan",
+        "ttl": "10m"
+      }
     }
   },
   "discovery_plugins": [

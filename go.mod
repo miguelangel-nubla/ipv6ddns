@@ -11,6 +11,7 @@ require (
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/xeipuuv/gojsonschema v1.2.0
 	go.uber.org/zap v1.27.1
+	golang.org/x/crypto v0.47.0
 )
 
 require (
