@@ -67,12 +67,31 @@ func main() {
 
 	if webserverPort > 0 {
 		go func() {
-			http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/" {
+					http.NotFound(w, r)
+					return
+				}
+				if r.Method != http.MethodGet {
+					http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+					return
+				}
 				w.Header().Set("Content-Type", "text/plain")
 				w.Write([]byte(wrapPrettyPrint(worker, "", true)))
 			})
+
+			server := &http.Server{
+				Addr:              fmt.Sprintf(":%d", webserverPort),
+				Handler:           mux,
+				ReadHeaderTimeout: 5 * time.Second,
+				ReadTimeout:       10 * time.Second,
+				WriteTimeout:      10 * time.Second,
+				IdleTimeout:       120 * time.Second,
+			}
+
 			sugar.Infof("Starting web server on port %d", webserverPort)
-			if err := http.ListenAndServe(fmt.Sprintf(":%d", webserverPort), nil); err != nil {
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				sugar.Fatalf("web server failed: %s", err)
 			}
 		}()
