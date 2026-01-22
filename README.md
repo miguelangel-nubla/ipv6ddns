@@ -2,18 +2,27 @@
 
 This utility discovers IPv6 addresses on your local network and updates DNS records dynamically. [Here is a detailed explanation.](#what-does-this-do)
 
-If you have a special use case: [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc)
+> **In a nutshell:** This tool keeps your domain names (like `myserver.example.com`) pointing to the correct IPv6 address of your devices, even if those addresses or ipv6 prefixes change, effectively acting as a Dynamic DNS client for your **entire** network.
+
+## 🏠 Why do I need this?
+
+Imagine you have a **Raspberry Pi** at home running a website, Home Assistant, or a game server. You want to access it from anywhere using a domain like `my-pi.example.com`.
+
+**The Problem:**
+Your Internet Service Provider (ISP) might change your home's IPv6 prefix occasionally (e.g., when you restart your router). When this happens, your Raspberry Pi gets a new IPv6 address, and `my-pi.example.com` stops working because it still points to the old address.
+
+**The Solution:**
+Instead of installing a DDNS updater on every single device (which can be tedious), you run **ipv6ddns** on *one* device in your network (like your router, a server, or the Pi itself).
+
+1.  **ipv6ddns** continuously watches the network.
+2.  It detects when your Raspberry Pi (identified by its unique **MAC address**) gets a new IPv6 address.
+3.  It automatically updates `my-pi.example.com` on your DNS provider (like Duckdns, Cloudflare, or your home router) to point to the new IP.
+
+Your setup keeps working, and you don't have to reconfigure anything when IPs change.
 
 ## Installation
 
 Download and run the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest) for your architecture.
-
-### Or install from source
-
-Ensure you have Go installed on your system. If not, follow the instructions on the official [Go website](https://golang.org/doc/install) to install it. Then:
-```bash
-go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
-```
 
 ### Or Use the Docker Image
 
@@ -26,6 +35,13 @@ If you have experience with Docker and IPv6 and can help improve this, please re
 
 ```bash
 docker run -it --rm --network host -v ./config.json:/config.json gcr.io/miguelangel-nubla/ipv6ddns -live
+```
+
+### Or install from source
+
+Ensure you have Go installed on your system. If not, follow the instructions on the official [Go website](https://golang.org/doc/install) to install it. Then:
+```bash
+go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 ```
 
 ## 🚀 Usage
@@ -51,67 +67,17 @@ docker run -it --rm --network host -v ./config.json:/config.json gcr.io/miguelan
    ```bash
    sudo ipv6ddns \
      -config_file config.json \
-     -webserver_port 80 \
+     -webserver_port 8053 \
      -log_level debug
    ```
 
 4. **Access the Web report**
 
-   After starting the service, open your browser and go to:
+   After starting the service, you can see the status of the service at:
 
    ```
-   http://<your_host_ipv6_or_local_ip>
+   http://<your_ip>:8053
    ```
-
-## Configuration
-
-This is the structure of the `config.json` file:
-
-```json
-{ 
-  "tasks": {
-    "my_public_web_server": { // whichever name you like for this task, it is only for reference
-      "subnets": ["2000::/3"], // only IPv6 addresses on these subnets will be updated into the DDNS provider. "2000::/3" is any GUA.
-      "mac_address": ["00:11:22:33:44:55", "00:11:22:33:44:56"], // MAC addresses of the hosts to look for
-      "endpoints": {
-        "example-project": [ // name of the endpoint to use for this task, as configured on the credentials section at the bottom
-          "test-webapp" // hostname whose AAAA records will be kept in sync. This results in updating test-webapp.example.com as defined by example-project settings
-        ]
-      },
-      "lifetime": "1h",
-      "ipv4": { // optional, also update IPv4 (A) records aquired from the command run at the specified interval. Expects one IPv4 per line in cleartext as output
-        "interval": "3m",
-        "command": "printf",
-        "args": [
-          "%s\\n",
-          "192.168.0.12"
-          "192.168.0.34"
-        ],
-        "lifetime": "10m"
-      }
-    }
-    // ...
-    // more task configurations if needed
-    // ...
-  },
-  "credentials": {
-    "example-project": { // name you will use to refer to this endpoint on the tasks
-      "provider": "cloudflare", // one of the supported providers
-      "settings": { // provider specific configuration
-        "api_token": "CLOUDFLARETOKEN",
-        "zone": "example.com",
-        "ttl": "1h", // if proxied over cloudflare this will have no effect
-        "proxied": true
-      }
-      "debounce_time": "10s", // optional, default 10s. time to wait before pushing updates
-      "retry_time": "60s" // optional, default 60s. time to wait between retries on update error
-    }
-    // ...
-    // more credentials if needed
-    // ...
-  }
-}
-```
 
 ## DDNS providers
 
@@ -120,7 +86,11 @@ The available DDNS providers are:
 - [Cloudflare](https://www.cloudflare.com/application-services/products/dns/) (free plan compatible)
 - [Duckdns](https://www.duckdns.org/) (provider only allows a single AAAA record)
 - [Gravity](https://github.com/BeryJu/gravity) (hosted locally)
-
+- [Mikrotik](https://mikrotik.com/) (RouterOS API)
+- [OpenWrt](https://openwrt.org/) (SSH + UCI)
+- [OPNsense](https://opnsense.org/) (Unbound DNS via API)
+- [pfSense](https://www.pfsense.org/) (Unbound DNS via REST API)
+- [Technitium](https://technitium.com/dns/) (HTTP API)
 - :rocket: **If you’re comfortable coding, adding support for your preferred provider is a breeze**:
   - Use an existing provider in the `ddns/` directory (e.g., `cloudflare.go`) as a template.
   - Replace all instances of `cloudflare` with your provider’s name — case-sensitive!
@@ -128,6 +98,69 @@ The available DDNS providers are:
   - Test your implementation thoroughly.
   - Verify that everything works correctly across multiple IP/prefix rotations.
   - Submit a pull request!
+
+## Configuration file
+
+The configuration is done via a `config.json` file. Below is a simplified example showing the structure.
+
+For a complete reference with all available options and more providers, check the [example.config.json](cmd/ipv6ddns/example.config.json).
+
+```json
+{ 
+  "tasks": {
+    // Whichever name you like for this task, it is only for reference
+    "my_public_web_server": {
+      // Only update IPv6 addresses within these subnets ("2000::/3" covers all Global Unicast Addresses)
+      "subnets": ["2000::/3"],
+      // MAC addresses of the hosts to monitor
+      "mac_address": ["00:11:22:33:44:55", "00:11:22:33:44:56"],
+      "endpoints": {
+        // "example-cloudflare" refers to a credential block defined below
+        "example-cloudflare": [
+          // This will update test-webapp.example.com
+          "test-webapp"
+        ]
+      },
+      "lifetime": "1h",
+      // Optional: Update IPv4 (A) records using an external command
+      "ipv4": {
+        "interval": "3m",
+        "command": "curl",
+        "args": ["-s", "--ipv4", "ifconfig.me"],
+        "lifetime": "10m"
+      }
+    }
+  },
+  "credentials": {
+    // Name you will use to refer to this endpoint on the tasks
+    "example-project": {
+      // One of the supported providers
+      "provider": "cloudflare",
+      // Provider specific configuration
+      "settings": {
+        "api_token": "CLOUDFLARETOKEN",
+        "zone": "example.com",
+        "ttl": "1h",
+        "proxied": true
+      },
+      // Optional, default 10s. time to wait before pushing updates
+      "debounce_time": "10s",
+      // Optional, default 60s. time to wait between retries on update error
+      "retry_time": "60s"
+    }
+    // ...
+    // More credentials if needed
+    // ...
+  },
+  // Optional: Discover hosts reading from network devices (pfSense, OPNsense, Mikrotik, etc.)
+  "discovery_plugins": [
+    {
+      "type": "mikrotik",
+      "params": "mikrotik:192.168.88.1:8729,admin,password,true,"
+    }
+  ]
+}
+```
 
 ---
 
@@ -182,6 +215,23 @@ While IPv4 is not the focus of this project, you can stil leverage it to do the 
         ],
         "lifetime": "10m"
       }
+    }
+  }
 ...
 ```
+
 For more advanced use cases just write a custom script that returns the IPv4s you need.
+
+```json
+...
+  "tasks": {
+    "myhome": {
+      "ipv4": {
+        "interval": "30s",
+        "command": "./print_desired_ipv4s.sh",
+        "args": [],
+        "lifetime": "4m"
+      }
+    }
+  }
+...

@@ -121,6 +121,16 @@
         "zone": "lan",
         "ttl": "10m"
       }
+    },
+    "mytechnitiumserver": {
+      "provider": "technitium",
+      "settings": {
+        "address": "http://127.0.0.1:5380",
+        "tls_fingerprint": "<optional>a1b2c3d4...",
+        "token": "mytoken",
+        "zone": "example.com",
+        "ttl": "5m"
+      }
     }
   },
   "discovery_plugins": [
