@@ -151,7 +151,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 		return fmt.Errorf("failed to fetch existing Host Overrides: %v", err)
 	}
 
-	fqdn := u.Domain(hostname)
+	fqdn := FQDN(hostname, u.Zone)
 	desiredIPs := make(map[string]bool)
 	for _, addr := range addrCollection.Get() {
 		ip := addr.WithZone("").String()
@@ -159,7 +159,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	}
 
 	// Filter existing overrides for this FQDN
-	hostPart, domainPart := u.splitFQDN(fqdn)
+	hostPart, domainPart := SplitFQDN(fqdn)
 
 	currentIPs := make(map[string][]string) // IP -> list of UUIDs
 	for _, row := range existingOverrides {
@@ -440,40 +440,5 @@ func (u *OpnsenseUnbound) MarshalJSON() ([]byte, error) {
 }
 
 func (c *OpnsenseUnbound) Domain(hostname string) string {
-	hostname = strings.Trim(hostname, ".")
-	zone := strings.Trim(c.Zone, ".")
-
-	if hostname == "" {
-		return zone
-	}
-
-	if zone != "" && strings.HasSuffix(hostname, zone) {
-		return hostname
-	}
-
-	if zone == "" {
-		return hostname
-	}
-
-	return strings.Join([]string{hostname, zone}, ".")
-}
-
-func (u *OpnsenseUnbound) splitFQDN(fqdn string) (string, string) {
-	fqdn = strings.Trim(fqdn, ".")
-	zone := strings.Trim(u.Zone, ".")
-
-	// If FQDN is exactly the zone, hostname is empty
-	if fqdn == zone {
-		return "", zone
-	}
-
-	// Always split at the first dot.
-	// OPNsense doesn't accept dots in the hostname field.
-	// So host1.sub1.example.com becomes Host: host1, Domain: sub1.example.com
-	parts := strings.SplitN(fqdn, ".", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-
-	return fqdn, ""
+	return FQDN(hostname, c.Zone)
 }

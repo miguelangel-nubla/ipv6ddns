@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -245,7 +244,5 @@ func (g *Gravity) MarshalJSON() ([]byte, error) {
 }
 
 func (g *Gravity) Domain(hostname string) string {
-	hostname = strings.Trim(hostname, ".")
-	zone := strings.Trim(g.Zone, ".")
-	return strings.Join([]string{hostname, zone}, ".")
+	return FQDN(hostname, g.Zone)
 }

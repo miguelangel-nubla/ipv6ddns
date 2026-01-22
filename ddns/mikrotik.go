@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/go-routeros/routeros/v3"
@@ -124,7 +123,7 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 	}
 	defer client.Close()
 
-	fqdn := m.Domain(hostname)
+	fqdn := FQDN(hostname, m.Zone)
 
 	// Fetch existing records for this hostname
 	reply, err := client.Run("/ip/dns/static/print", "?name="+fqdn)
@@ -242,16 +241,5 @@ func (m *Mikrotik) MarshalJSON() ([]byte, error) {
 }
 
 func (m *Mikrotik) Domain(hostname string) string {
-	hostname = strings.Trim(hostname, ".")
-	zone := strings.Trim(m.Zone, ".")
-
-	if zone == "" {
-		return hostname
-	}
-
-	if hostname == "" {
-		return zone
-	}
-
-	return strings.Join([]string{hostname, zone}, ".")
+	return FQDN(hostname, m.Zone)
 }

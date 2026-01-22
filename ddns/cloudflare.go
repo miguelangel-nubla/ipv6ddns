@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/cloudflare/cloudflare-go"
@@ -94,7 +93,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 		return fmt.Errorf("failed to read zone ID: %v", err)
 	}
 
-	fqdn := c.Domain(hostname)
+	fqdn := FQDN(hostname, c.Zone)
 
 	// Create a new *ResourceContainer for the zone
 	rc := cloudflare.ZoneIdentifier(zoneID)
@@ -224,12 +223,5 @@ func (d *Cloudflare) MarshalJSON() ([]byte, error) {
 }
 
 func (c *Cloudflare) Domain(hostname string) string {
-	hostname = strings.Trim(hostname, ".")
-	zone := strings.Trim(c.Zone, ".")
-
-	if hostname == "" {
-		return zone
-	}
-
-	return strings.Join([]string{hostname, zone}, ".")
+	return FQDN(hostname, c.Zone)
 }

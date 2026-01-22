@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 
 	"github.com/miguelangel-nubla/ipv6disc"
 	"github.com/xeipuuv/gojsonschema"
@@ -114,7 +113,5 @@ func (d *DuckDNS) PrettyPrint(prefix string) ([]byte, error) {
 }
 
 func (d *DuckDNS) Domain(hostname string) string {
-	hostname = strings.Trim(hostname, ".")
-	zone := "duckdns.org"
-	return strings.Join([]string{hostname, zone}, ".")
+	return FQDN(hostname, "duckdns.org")
 }
