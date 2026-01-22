@@ -34,7 +34,7 @@ I was able to get it working using **host networking** and **without** setting `
 If you have experience with Docker and IPv6 and can help improve this, please reach out—it's been a while since I last looked into it.
 
 ```bash
-docker run -it --rm --network host -v ./config.json:/config.json gcr.io/miguelangel-nubla/ipv6ddns -live
+docker run -it --rm --network host -v ./config.yaml:/config.yaml gcr.io/miguelangel-nubla/ipv6ddns -live
 ```
 
 ### Or install from source
@@ -48,7 +48,7 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 
 1. **Configure the Service**
 
-   Edit the configuration file (`config.json`) to suit your environment. You can start with the provided [example config](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/cmd/ipv6ddns/example.config.json).
+   Edit the configuration file (`config.yaml`) to suit your environment. You can start with the provided [example config](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/cmd/ipv6ddns/example.config.yaml).
 
 2. **Run the Binary**
 
@@ -66,7 +66,7 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 
    ```bash
    sudo ipv6ddns \
-     -config_file config.json \
+     -config_file config.yaml \
      -webserver_port 8053 \
      -log_level debug
    ```
@@ -101,65 +101,60 @@ The available DDNS providers are:
 
 ## Configuration file
 
-The configuration is done via a `config.json` file. Below is a simplified example showing the structure.
+The configuration is done via a `config.yaml` file. Below is a simplified example showing the structure.
 
-For a complete reference with all available options and more providers, check the [example.config.json](cmd/ipv6ddns/example.config.json).
+For a complete reference with all available options and more providers, check the [example.config.yaml](cmd/ipv6ddns/example.config.yaml).
 
-```json
-{ 
-  "tasks": {
-    // Whichever name you like for this task, it is only for reference
-    "my_public_web_server": {
-      // Only update IPv6 addresses within these subnets ("2000::/3" covers all Global Unicast Addresses)
-      "subnets": ["2000::/3"],
-      // MAC addresses of the hosts to monitor
-      "mac_address": ["00:11:22:33:44:55", "00:11:22:33:44:56"],
-      "endpoints": {
-        // "example-cloudflare" refers to a credential block defined below
-        "example-cloudflare": [
-          // This will update test-webapp.example.com
-          "test-webapp"
-        ]
-      },
-      "lifetime": "1h",
-      // Optional: Update IPv4 (A) records using an external command
-      "ipv4": {
-        "interval": "3m",
-        "command": "curl",
-        "args": ["-s", "--ipv4", "ifconfig.me"],
-        "lifetime": "10m"
-      }
-    }
-  },
-  "credentials": {
-    // Name you will use to refer to this endpoint on the tasks
-    "example-project": {
-      // One of the supported providers
-      "provider": "cloudflare",
-      // Provider specific configuration
-      "settings": {
-        "api_token": "CLOUDFLARETOKEN",
-        "zone": "example.com",
-        "ttl": "1h",
-        "proxied": true
-      },
-      // Optional, default 10s. time to wait before pushing updates
-      "debounce_time": "10s",
-      // Optional, default 60s. time to wait between retries on update error
-      "retry_time": "60s"
-    }
-    // ...
-    // More credentials if needed
-    // ...
-  },
-  // Optional: Discover hosts reading from network devices (pfSense, OPNsense, Mikrotik, etc.)
-  "discovery_plugins": [
-    {
-      "type": "mikrotik",
-      "params": "mikrotik:192.168.88.1:8729,admin,password,true,"
-    }
-  ]
-}
+```yaml
+tasks:
+  # Whichever name you like for this task, it is only for reference
+  my_public_web_server:
+    # Only update IPv6 addresses within these subnets ("2000::/3" covers all Global Unicast Addresses)
+    subnets:
+      - 2000::/3
+    # MAC addresses of the hosts to monitor
+    mac_address:
+      - 00:11:22:33:44:55
+      - 00:11:22:33:44:56
+    endpoints:
+      # "example-cloudflare" refers to a credential block defined below
+      example-cloudflare:
+        # This will update test-webapp.example.com
+        - test-webapp
+    lifetime: 1h
+    # Optional: Update IPv4 (A) records using an external command
+    ipv4:
+      interval: 3m
+      command: curl
+      args:
+        - -s
+        - --ipv4
+        - ifconfig.me
+      lifetime: 10m
+
+credentials:
+  # Name you will use to refer to this endpoint on the tasks
+  example-project:
+    # One of the supported providers
+    provider: cloudflare
+    # Provider specific configuration
+    settings:
+      api_token: CLOUDFLARETOKEN
+      zone: example.com
+      ttl: 1h
+      proxied: true
+    # Optional, default 10s. time to wait before pushing updates
+    debounce_time: 10s
+    # Optional, default 60s. time to wait between retries on update error
+    retry_time: 60s
+  # ...
+  # More credentials if needed
+  # ...
+
+# Optional: Discover hosts reading from network devices (pfSense, OPNsense, Mikrotik, etc.)
+discovery_plugins:
+  - type: mikrotik
+    params: mikrotik:192.168.88.1:8729,admin,password,true,
 ```
 
 ---
@@ -201,37 +196,31 @@ For example, you can have a FTTH connection, a backup LTE connection, and Starli
 
 #### Roaming over IPv4
 While IPv4 is not the focus of this project, you can stil leverage it to do the same for regular IPv4 public IPs.
-```json
+```yaml
 ...
-  "tasks": {
-    "myhome": {
-      "ipv4": {
-        "interval": "3m",
-        "command": "curl",
-        "args": [
-          "-s",
-          "--ipv4",
-          "ifconfig.me"
-        ],
-        "lifetime": "10m"
-      }
-    }
-  }
+tasks:
+  myhome:
+    ipv4:
+      interval: 3m
+      command: curl
+      args:
+        - -s
+        - --ipv4
+        - ifconfig.me
+      lifetime: 10m
 ...
 ```
 
 For more advanced use cases just write a custom script that returns the IPv4s you need.
 
-```json
+```yaml
 ...
-  "tasks": {
-    "myhome": {
-      "ipv4": {
-        "interval": "30s",
-        "command": "./print_desired_ipv4s.sh",
-        "args": [],
-        "lifetime": "4m"
-      }
-    }
-  }
+tasks:
+  myhome:
+    ipv4:
+      interval: 30s
+      command: ./print_desired_ipv4s.sh
+      args: []
+      lifetime: 4m
 ...
+```

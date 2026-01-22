@@ -27,7 +27,7 @@ var webserverPort int
 
 func init() {
 	flag.BoolVar(&showVersion, "version", false, "Show the current version")
-	flag.StringVar(&configFile, "config_file", "config.json", "Path to the configuration file, default: config.json")
+	flag.StringVar(&configFile, "config_file", "config.yaml", "Path to the configuration file, default: config.yaml")
 	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic) default: info")
 	flag.DurationVar(&lifetime, "lifetime", 1*time.Hour, "Time to keep a discovered host entry after it has been last seen, default: 1h")
 	flag.BoolVar(&live, "live", false, "Show the currrent state live on the terminal, default: false")

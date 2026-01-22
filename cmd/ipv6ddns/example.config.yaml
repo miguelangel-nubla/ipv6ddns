@@ -1,0 +1,109 @@
+tasks:
+  myhome:
+    ipv4:
+      args:
+      - -s
+      - --ipv4
+      - ifconfig.me
+      command: curl
+      interval: 3m
+      lifetime: 10m
+    mac_address:
+    - 00:11:22:33:44:55
+    subnets:
+    - 2000::/3
+    endpoints:
+      mycloudflaresettings:
+      - ""
+  mylocalonlyserver:
+    endpoints:
+      mylocaldns:
+      - myserver
+      - "*.myserver"
+    ipv4:
+      args:
+      - '%s\n'
+      - 192.168.1.123
+      command: printf
+      interval: 60s
+      lifetime: 4h
+    mac_address:
+    - 00:11:22:33:44:56
+    subnets:
+    - fc00::/7
+credentials:
+  duckdns:
+    debounce_time: 10s
+    provider: duckdns
+    settings:
+      api_token: mytoken
+  mycloudflaresettings:
+    debounce_time: 10s
+    provider: cloudflare
+    settings:
+      api_token: mytoken
+      proxied: false
+      ttl: 1m
+      zone: mydomain.tld
+  mylocaldns:
+    debounce_time: 10s
+    provider: gravity
+    settings:
+      api_key: mykey
+      server: http://192.168.x.x
+      ttl: 10m
+      zone: myzone.
+  myopenwrtrouter:
+    provider: openwrt
+    settings:
+      address: 192.168.1.1:22
+      password: password
+      ssh_key: <optional>/path/to/private/key
+      ttl: 10m
+      username: root
+      zone: lan
+  myopnsensebox:
+    debounce_time: 5s
+    provider: opnsense_unbound
+    retry_time: 1m
+    settings:
+      address: https://opnsense.local
+      key: your_api_key
+      secret: your_api_secret
+      tls_fingerprint: <optional>a1b2c3d4...
+      zone: example.com
+  mypfsensebox:
+    debounce_time: 5s
+    provider: pfsense_restapi_unbound
+    retry_time: 1m
+    settings:
+      address: https://pfsense.local
+      key: your_api_key
+      tls_fingerprint: <optional>a1b2c3d4...
+      ttl: 1h
+      zone: example.com
+  myrouteros:
+    provider: mikrotik
+    settings:
+      address: 192.168.88.1:8729
+      password: password
+      tls_fingerprint: <optional>a1b2c3d4...
+      ttl: 5m
+      use_tls: true
+      username: admin
+      zone: lan
+  mytechnitiumserver:
+    provider: technitium
+    settings:
+      address: http://127.0.0.1:5380
+      tls_fingerprint: <optional>a1b2c3d4...
+      token: mytoken
+      ttl: 5m
+      zone: example.com
+discovery_plugins:
+- params: mikrotik:192.168.88.1:8729,admin,password,true,<optional>a1b2c3d4...
+  type: mikrotik
+- params: freebsd:pfsense.local,admin,,/path/to/id_rsa
+  type: freebsd
+- params: linux:[2001:db8::1]:2222,user,,/path/to/id_rsa
+  type: linux

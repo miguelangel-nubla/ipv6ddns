@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/xeipuuv/gojsonschema"
+	"sigs.k8s.io/yaml"
 )
 
 //go:embed schema.json
@@ -130,9 +130,9 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	return result.String()
 }
 
-func validateConfig(configFile string) {
+func validateConfig(configData []byte) {
 	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewReferenceLoader("file://" + configFile)
+	dataLoader := gojsonschema.NewBytesLoader(configData)
 
 	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
 	if err != nil {
@@ -140,7 +140,7 @@ func validateConfig(configFile string) {
 	}
 
 	if !result.Valid() {
-		fmt.Printf("The JSON data is NOT valid. Errors:\n")
+		fmt.Printf("The configuration is NOT valid. Errors:\n")
 		for _, desc := range result.Errors() {
 			fmt.Printf("- %s\n", desc)
 		}
@@ -149,15 +149,20 @@ func validateConfig(configFile string) {
 }
 
 func NewConfig(filename string) (config Config, err error) {
-	validateConfig(filename)
-
-	jsonFile, err := os.Open(filename)
+	byteValue, err := os.ReadFile(filename)
 	if err != nil {
-		fmt.Println(err)
+		return config, err
 	}
-	defer jsonFile.Close()
 
-	byteValue, _ := io.ReadAll(jsonFile)
+	if strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
+		byteValue, err = yaml.YAMLToJSON(byteValue)
+		if err != nil {
+			return config, err
+		}
+	}
+
+	validateConfig(byteValue)
+
 	err = json.Unmarshal(byteValue, &config)
 
 	config.BaseDir = filepath.Dir(filename)

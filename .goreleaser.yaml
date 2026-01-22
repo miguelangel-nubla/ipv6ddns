@@ -173,7 +173,7 @@ archives:
       - LICENSE*
       - README*
       - CHANGELOG*
-      - cmd/ipv6ddns/example.config.json
+      - cmd/ipv6ddns/example.config.yaml
     formats: tar.gz
     name_template: >-
       {{ .ProjectName }}_
