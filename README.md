@@ -90,6 +90,7 @@ The available DDNS providers are:
 - [OpenWrt](https://openwrt.org/) (SSH + UCI)
 - [OPNsense](https://opnsense.org/) (Unbound DNS via API)
 - [pfSense](https://www.pfsense.org/) (Unbound DNS via REST API)
+- [Route53](https://aws.amazon.com/route53/) (AWS Route53 API)
 - [Technitium](https://technitium.com/dns/) (HTTP API)
 - :rocket: **If you’re comfortable coding, adding support for your preferred provider is a breeze**:
   - Use an existing provider in the `ddns/` directory (e.g., `cloudflare.go`) as a template.

@@ -100,6 +100,14 @@ credentials:
       token: mytoken
       ttl: 5m
       zone: example.com
+  myroute53:
+    provider: route53
+    settings:
+      access_key_id: AKIA...
+      secret_access_key: your_secret_key
+      region: us-east-1
+      hosted_zone_id: Z1234567890
+      ttl: 1h
 discovery_plugins:
 - params: mikrotik:192.168.88.1:8729,admin,password,true,<optional>a1b2c3d4...
   type: mikrotik
