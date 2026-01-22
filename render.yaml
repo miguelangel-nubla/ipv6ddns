@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: ipv6ddns
+    runtime: go
+    buildCommand: go generate ./... && go build -tags netgo -ldflags '-s -w' -o app
+    startCommand: ./app
