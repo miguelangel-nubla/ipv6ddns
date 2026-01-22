@@ -84,7 +84,7 @@
         "zone": "lan",
         "ttl": "5m",
         "use_tls": true,
-        "fingerprint": "a1b2c3d4..."
+        "tls_fingerprint": "a1b2c3d4..."
       }
     },
     "myopnsensebox": {
@@ -94,7 +94,7 @@
         "key": "your_api_key",
         "secret": "your_api_secret",
         "zone": "example.com",
-        "fingerprint": "a1b2c3d4..."
+        "tls_fingerprint": "a1b2c3d4..."
       },
       "debounce_time": "5s",
       "retry_time": "1m"

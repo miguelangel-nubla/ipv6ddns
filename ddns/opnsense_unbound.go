@@ -20,12 +20,12 @@ import (
 )
 
 type OpnsenseUnbound struct {
-	Address     string        `json:"address"`
-	Key         string        `json:"key"`
-	Secret      string        `json:"secret"`
-	Zone        string        `json:"zone"`
-	TTL         time.Duration `json:"ttl"`
-	Fingerprint string        `json:"fingerprint"`
+	Address        string        `json:"address"`
+	Key            string        `json:"key"`
+	Secret         string        `json:"secret"`
+	Zone           string        `json:"zone"`
+	TTL            time.Duration `json:"ttl"`
+	TLSFingerprint string        `json:"tls_fingerprint"`
 }
 
 func init() {
@@ -64,7 +64,7 @@ func opnsenseUnboundValidateConfig(config json.RawMessage) {
 				"type": "string",
 				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
 			},
-			"fingerprint": {
+			"tls_fingerprint": {
 				"type": "string",
 				"pattern": "^[a-fA-F0-9]{64}$"
 			}
@@ -125,13 +125,13 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 		hash := sha256.Sum256(leafCert.Raw)
 		fp := hex.EncodeToString(hash[:])
 
-		// 3. If fingerprint is provided, check if it matches
-		if u.Fingerprint != "" {
-			if fp == u.Fingerprint {
+		// 3. If tls_fingerprint is provided, check if it matches
+		if u.TLSFingerprint != "" {
+			if fp == u.TLSFingerprint {
 				// Fingerprint matched
 				return nil
 			}
-			fmt.Printf("Certificate fingerprint mismatch. Expected: %s, Found: %s\n", u.Fingerprint, fp)
+			fmt.Printf("Certificate fingerprint mismatch. Expected: %s, Found: %s\n", u.TLSFingerprint, fp)
 		}
 
 		// Both methods failed

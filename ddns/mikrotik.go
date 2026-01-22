@@ -18,13 +18,13 @@ import (
 )
 
 type Mikrotik struct {
-	Address     string        `json:"address"`
-	Username    string        `json:"username"`
-	Password    string        `json:"password"`
-	Zone        string        `json:"zone"`
-	TTL         time.Duration `json:"ttl"`
-	UseTLS      bool          `json:"use_tls"`
-	Fingerprint string        `json:"fingerprint"`
+	Address        string        `json:"address"`
+	Username       string        `json:"username"`
+	Password       string        `json:"password"`
+	Zone           string        `json:"zone"`
+	TTL            time.Duration `json:"ttl"`
+	UseTLS         bool          `json:"use_tls"`
+	TLSFingerprint string        `json:"tls_fingerprint"`
 }
 
 func init() {
@@ -65,7 +65,7 @@ func mikrotikValidateConfig(config json.RawMessage) {
 			"use_tls": {
 				"type": "boolean"
 			},
-			"fingerprint": {
+			"tls_fingerprint": {
 				"type": "string",
 				"pattern": "^[a-fA-F0-9]{64}$"
 			}
@@ -102,12 +102,12 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 
 	if m.UseTLS {
 		tlsConfig := &tls.Config{}
-		if m.Fingerprint != "" {
+		if m.TLSFingerprint != "" {
 			tlsConfig.InsecureSkipVerify = true
 			tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
 				for _, cert := range cs.PeerCertificates {
 					hash := sha256.Sum256(cert.Raw)
-					if hex.EncodeToString(hash[:]) == m.Fingerprint {
+					if hex.EncodeToString(hash[:]) == m.TLSFingerprint {
 						return nil
 					}
 				}
