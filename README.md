@@ -62,7 +62,7 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 
 3. **Example Command**
 
-   Here's an example that runs the service with a custom config, enables the web interface on port 80, and sets the log level to debug:
+   Here's an example that runs the service with a custom config, enables the web interface on port 8053, and sets the log level to debug:
 
    ```bash
    sudo ipv6ddns \
