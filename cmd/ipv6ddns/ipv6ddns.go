@@ -52,7 +52,7 @@ func main() {
 	rediscover := lifetime / 3
 	worker := ipv6ddns.NewWorker(sugar, rediscover, lifetime, config)
 
-	for _, pCfg := range config.Plugins {
+	for _, pCfg := range config.Discovery.Plugins {
 		p, err := plugins.Create(pCfg.Type, pCfg.Params, lifetime)
 		if err != nil {
 			sugar.Fatalf("can't create plugin %s: %s", pCfg.Type, err)

@@ -21,7 +21,13 @@ type Config struct {
 	BaseDir     string                `json:"-"`
 	Tasks       map[string]Task       `json:"tasks"`
 	Credentials map[string]Credential `json:"credentials"`
-	Plugins     []PluginConfig        `json:"discovery_plugins"`
+	Discovery   Discovery             `json:"discovery"`
+}
+
+type Discovery struct {
+	Listen  bool           `json:"listen"`
+	Active  bool           `json:"active"`
+	Plugins []PluginConfig `json:"plugins"`
 }
 
 type PluginConfig struct {
@@ -115,14 +121,17 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 		}
 	}
 
-	if len(c.Plugins) > 0 {
-		result.WriteString(prefix + "    Discovery Plugins:\n")
-		for _, plugin := range c.Plugins {
-			result.WriteString(prefix + "        Type: " + plugin.Type + "\n")
+	result.WriteString(prefix + "    Discovery:\n")
+	result.WriteString(prefix + "        Listen: " + fmt.Sprintf("%t", c.Discovery.Listen) + "\n")
+	result.WriteString(prefix + "        Active: " + fmt.Sprintf("%t", c.Discovery.Active) + "\n")
+	if len(c.Discovery.Plugins) > 0 {
+		result.WriteString(prefix + "        Plugins:\n")
+		for _, plugin := range c.Discovery.Plugins {
+			result.WriteString(prefix + "            Type: " + plugin.Type + "\n")
 			if !hideSensible {
-				result.WriteString(prefix + "        Params: " + plugin.Params + "\n")
+				result.WriteString(prefix + "            Params: " + plugin.Params + "\n")
 			} else {
-				result.WriteString(prefix + "        Params: <sensible data hidden>\n")
+				result.WriteString(prefix + "            Params: <sensible data hidden>\n")
 			}
 		}
 	}

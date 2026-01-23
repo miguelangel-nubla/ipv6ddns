@@ -108,10 +108,13 @@ credentials:
       region: us-east-1
       hosted_zone_id: Z1234567890
       ttl: 1h
-discovery_plugins:
-- params: mikrotik:192.168.88.1:8729,admin,password,true,<optional>a1b2c3d4...
-  type: mikrotik
-- params: freebsd:pfsense.local,admin,,/path/to/id_rsa
-  type: freebsd
-- params: linux:[2001:db8::1]:2222,user,,/path/to/id_rsa
-  type: linux
+discovery:
+  listen: true
+  active: true
+  plugins:
+    - params: mikrotik:90s,192.168.88.1:8729,admin,password,true,<optional>a1b2c3d4...
+      type: mikrotik
+    - params: freebsd:90s,pfsense.local,admin,,/path/to/id_rsa
+      type: freebsd
+    - params: linux:90s,[2001:db8::1]:2222,user,,/path/to/id_rsa
+      type: linux

@@ -123,7 +123,7 @@ func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, config config.Config) *Worker {
 	return &Worker{
 		State:      NewState(),
-		discWorker: ipv6disc.NewWorker(logger, rediscover, lifetime),
+		discWorker: ipv6disc.NewWorker(logger, rediscover, lifetime, config.Discovery.Listen, config.Discovery.Active),
 		logger:     logger,
 		config:     config,
 	}

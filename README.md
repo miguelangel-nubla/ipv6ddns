@@ -153,9 +153,10 @@ credentials:
   # ...
 
 # Optional: Discover hosts reading from network devices (pfSense, OPNsense, Mikrotik, etc.)
-discovery_plugins:
-  - type: mikrotik
-    params: mikrotik:192.168.88.1:8729,admin,password,true,
+discovery:
+  plugins:
+    - type: mikrotik
+      params: mikrotik:90s,192.168.88.1:8729,admin,password,true,
 ```
 
 ---

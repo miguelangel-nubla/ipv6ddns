@@ -99,24 +99,36 @@
                 "additionalProperties": false
             }
         },
-        "discovery_plugins": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "type": {
-                        "type": "string"
-                    },
-                    "params": {
-                        "type": "string"
-                    }
+        "discovery": {
+            "type": "object",
+            "properties": {
+                "listen": {
+                    "type": "boolean"
                 },
-                "required": [
-                    "type",
-                    "params"
-                ],
-                "additionalProperties": false
-            }
+                "active": {
+                    "type": "boolean"
+                },
+                "plugins": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "params": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "type",
+                            "params"
+                        ],
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "additionalProperties": false
         }
     },
     "required": [
