@@ -172,6 +172,10 @@ func NewConfig(filename string) (config Config, err error) {
 
 	validateConfig(byteValue)
 
+	// Set defaults
+	config.Discovery.Listen = true
+	config.Discovery.Active = true
+
 	err = json.Unmarshal(byteValue, &config)
 
 	config.BaseDir = filepath.Dir(filename)
