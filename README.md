@@ -219,14 +219,7 @@ tasks:
 
 For more advanced use cases just write a custom script that returns the IPv4s you need.
 
-```yaml
-...
-tasks:
-  myhome:
-    ipv4:
-      interval: 30s
-      command: ./print_desired_ipv4s.sh
-      args: []
-      lifetime: 4m
-...
-```
+If you want to do the same MAC to address auto discovery in IPv4:
+`ip neigh show | grep -i "00:11:22:33:44:55" | awk '{print $1}'`
+or
+`arp-scan --localnet | grep -i "00:11:22:33:44:55" | awk '{print $1}'`
