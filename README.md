@@ -121,6 +121,7 @@ The available DDNS providers are:
 - [pfSense](https://www.pfsense.org/) (Unbound DNS via REST API)
 - [Route53](https://aws.amazon.com/route53/) (AWS Route53 API)
 - [Technitium](https://technitium.com/dns/) (HTTP API)
+- [Windows DNS Server](https://learn.microsoft.com/en-us/windows-server/networking/dns/quickstart-install-configure-dns-server) (local or remote via SSH)
 - :rocket: **If you’re comfortable coding, adding support for your preferred provider is a breeze**:
   - Use an existing provider in the `ddns/` directory (e.g., `cloudflare.go`) as a template.
   - Replace all instances of `cloudflare` with your provider’s name — case-sensitive!

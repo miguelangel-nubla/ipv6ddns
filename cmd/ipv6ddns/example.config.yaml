@@ -108,6 +108,16 @@ credentials:
       region: us-east-1
       hosted_zone_id: Z1234567890
       ttl: 1h
+  mywindowsdnsserver:
+    provider: windows
+    settings:
+      # Optional: address to connect via SSH. If empty it will run locally on the Windows Server itself
+      address: 192.168.1.5
+      username: Administrator
+      password: password
+      ssh_key: <optional>/path/to/private/key
+      zone: example.com
+      ttl: 1h
 discovery:
   listen: true
   active: true
