@@ -21,7 +21,7 @@ builds:
       - openbsd
       # - plan9
       - solaris
-      # - windows # weird behaviour NDP packages not received
+      - windows # weird behaviour NDP packages not received
     goarch:
       - ppc64
       - 386
