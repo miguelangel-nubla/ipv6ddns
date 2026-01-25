@@ -2,23 +2,51 @@
 
 This utility discovers IPv6 addresses on your local network and updates DNS records dynamically. [Here is a detailed explanation.](#what-does-this-do)
 
-> **In a nutshell:** This tool keeps your domain names (like `myserver.example.com`) pointing to the correct IPv6 address of your devices, even if those addresses or ipv6 prefixes change, effectively acting as a Dynamic DNS client for your **entire** network.
+> [!TIP]
+> This tool keeps your domain names (like `myserver.example.com`) pointing to the correct IPv6 address of your devices, even if those addresses or ipv6 prefixes change, effectively acting as a Dynamic DNS client for your **entire** network.
 
-## 🏠 Why do I need this?
+## Why do I need this?
 
-Imagine you have a **Raspberry Pi** at home running a website, Home Assistant, or a game server. You want to access it from anywhere using a domain like `my-pi.example.com`.
+You have a server running a website, Home Assistant, self-hosted services, etc. You want to access it from anywhere using a domain like `myserver.example.com`.
 
 **The Problem:**
-Your Internet Service Provider (ISP) might change your home's IPv6 prefix occasionally (e.g., when you restart your router). When this happens, your Raspberry Pi gets a new IPv6 address, and `my-pi.example.com` stops working because it still points to the old address.
+Your Internet Service Provider (ISP) might change your home's IPv6 prefix occasionally (e.g., when you restart your router). When this happens, your server gets a new IPv6 address, and `myserver.example.com` stops working because it still points to the old address.
 
 **The Solution:**
-Instead of installing a DDNS updater on every single device (which can be tedious), you run **ipv6ddns** on *one* device in your network (like your router, a server, or the Pi itself).
+Instead of installing a DDNS updater on every single device (which can be tedious), you run **ipv6ddns** on *one* device in your network (like your router, a server, etc.).
 
 1.  **ipv6ddns** continuously watches the network.
-2.  It detects when your Raspberry Pi (identified by its unique **MAC address**) gets a new IPv6 address.
-3.  It automatically updates `my-pi.example.com` on your DNS provider (like Duckdns, Cloudflare, or your home router) to point to the new IP.
+2.  It detects when your server (identified by its unique **MAC address**) gets a new IPv6 address.
+3.  It automatically updates `myserver.example.com` on your DNS provider (like Duckdns, Cloudflare, or your home router) to point to the new IP.
 
 Your setup keeps working, and you don't have to reconfigure anything when IPs change.
+
+```
+DNS:
+    Provider: cloudflare
+        Endpoint: remotecf
+            mydomain.example.com: (last update: 2026-01-25T01:49:35Z)
+                203.0.113.99
+                2001:db8:1234:5678:abcd:ef01:2345:6789
+                2001:db8:1234:5678:9876:5432:10fe:dcba
+            ipv4.mydomain.example.com: (last update: 2026-01-25T01:53:06Z)
+                203.0.113.99
+    Provider: pfSense
+        Endpoint: local
+            *.local.internal.lan: (last update: 2026-01-25T01:22:03Z)
+                10.99.1.50
+Discovery:
+    aa:bb:cc:00:11:22
+        fd12:3456:789a::1 38m47s eth0
+        fe80::100:2eff:fe33:4455 59m37s gateway:10.99.1.1:8729,eth0
+    aa:bb:cc:00:33:44
+        2001:db8:1234:5678::1 41m37s eth0,eth1
+        2001:db8:aaaa:bbbb::3 -14h21m23s eth0
+        fe80::100:2eff:fe66:7788 59m59s eth1,eth0
+    12:34:56:78:90:ab
+        2001:db8:1234:5678:abcd:ef01:2345:6789 35m15s eth0,eth1
+        2001:db8:1234:5678:9876:5432:10fe:dcba 59m37s eth0,eth1,gateway:10.99.1.1:8729
+```
 
 ## Installation
 
@@ -52,7 +80,8 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
 
 2. **Run the Binary**
 
-   > ⚠️ **Note:** This utility must be run with superuser privileges to listen for IPv6 ICMP packets.
+   > [!IMPORTANT]
+   > This utility must be run with superuser privileges to listen for IPv6 ICMP packets.
 
    Use the following command to start the service:
 
