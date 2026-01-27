@@ -11,9 +11,8 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
-	"github.com/miguelangel-nubla/ipv6disc"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
-	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/mikrotik"
+	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -54,15 +53,9 @@ func main() {
 	worker := ipv6ddns.NewWorker(sugar, rediscover, lifetime, config)
 
 	for name, pCfg := range config.Discovery.Plugins {
-		p, err := plugins.Create(pCfg.Type, pCfg.Params, lifetime)
+		p, err := plugins.Create(pCfg.Type, name, pCfg.Params, lifetime)
 		if err != nil {
 			sugar.Fatalf("can't create plugin %s: %s", pCfg.Type, err)
-		}
-
-		// Wrap the plugin to override the name with the instance name from config
-		p = &PluginInstance{
-			Plugin: p,
-			name:   name,
 		}
 
 		worker.RegisterPlugin(p)
@@ -146,13 +139,4 @@ var (
 
 func PrintVersion() string {
 	return fmt.Sprintf("ipv6ddns %s, commit %s, built at %s\n", version, commit, date)
-}
-
-type PluginInstance struct {
-	ipv6disc.Plugin
-	name string
-}
-
-func (p *PluginInstance) Name() string {
-	return p.name
 }
