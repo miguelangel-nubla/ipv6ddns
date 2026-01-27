@@ -136,6 +136,8 @@ The configuration is done via a `config.yaml` file. Below is a simplified exampl
 
 For a complete reference with all available options and more providers, check the [example.config.yaml](cmd/ipv6ddns/example.config.yaml).
 
+For full details on the filtering system (Filter Sets, logic, and available keys), see [filtering](docs/filtering.md) docs.
+
 ```yaml
 tasks:
   # Whichever name you like for this task, it is only for reference
