@@ -61,7 +61,8 @@ filter:
 *   **`prefix`** (Single String): CIDR subnet. The address must be contained within this subnet.
     *   Example: `2001:db8::/32`
 *   **`suffix`** (Single String): The host part (suffix) of the address.
-    *   Example: `::1` (Matches `2001:db8::1`, `fe80::1`, etc.)
+    *   Case-insensitive. The filter matches against the lowercase, RFC 5952 canonical representation of the address.
+    *   Example: `::1` (Matches `2001:db8::1`, `fe80::1`, etc.) or `dead:beef` (Matches `...:DEAD:BEEF`)
 *   **`type`** (List of Strings): Match semantic IP types. All types must match.
     *   Values:
         *   `global`: Global Unicast Address (Publicly routable).

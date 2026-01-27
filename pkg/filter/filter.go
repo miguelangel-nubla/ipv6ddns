@@ -170,18 +170,18 @@ func isEUI64(addr *ipv6disc.Addr) bool {
 	return bytes.Equal(iid, eui64)
 }
 
-func CheckPrefix(ip netip.Addr, subnet netip.Prefix) bool {
-	if !subnet.IsValid() {
+func CheckPrefix(ip netip.Addr, prefix netip.Prefix) bool {
+	if !prefix.IsValid() {
 		return true
 	}
-	return subnet.Contains(ip)
+	return prefix.Contains(ip.WithZone(""))
 }
 
 func CheckSuffix(ip netip.Addr, suffix string) bool {
 	if suffix == "" {
 		return true
 	}
-	return strings.HasSuffix(ip.String(), suffix)
+	return strings.HasSuffix(ip.WithZone("").String(), strings.ToLower(suffix))
 }
 
 func CheckMask(ip netip.Addr, filters []string) bool {
