@@ -140,13 +140,15 @@ For a complete reference with all available options and more providers, check th
 tasks:
   # Whichever name you like for this task, it is only for reference
   my_public_web_server:
-    # Only update IPv6 addresses within these subnets ("2000::/3" covers all Global Unicast Addresses)
-    subnets:
-      - 2000::/3
-    # MAC addresses of the hosts to monitor
-    mac_address:
-      - 00:11:22:33:44:55
-      - 00:11:22:33:44:56
+    filter:
+      - mac:
+          address: "00:11:22:33:44:55"
+        ip:
+          # Only use Global Unicast Addresses (publicly routable)
+          type:
+            - global
+          # Optional: Exclude privacy extensions (temporary addresses) by ensuring it is EUI64 derived
+          # - eui64
     endpoints:
       # "example-cloudflare" refers to a credential block defined below
       example-cloudflare:
@@ -185,7 +187,8 @@ credentials:
 # Optional: Discover hosts reading from network devices (pfSense, OPNsense, Mikrotik, etc.)
 discovery:
   plugins:
-    - type: mikrotik
+    mikrotik-router:
+      type: mikrotik
       params: mikrotik:90s,192.168.88.1:8729,admin,password,true,
 
 # For more info on available plugins and their configuration refer to the ipv6disc project

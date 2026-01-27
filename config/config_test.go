@@ -20,8 +20,16 @@ func TestNewConfig(t *testing.T) {
 	jsonContent := `{
   "tasks": {
     "my_task": {
-      "subnets": ["2001:db8::/64"],
-      "mac_address": ["00:11:22:33:44:55"],
+      "filter": [
+        {
+          "ip": {
+            "prefix": "2001:db8::/64"
+          },
+          "mac": {
+            "address": "00:11:22:33:44:55"
+          }
+        }
+      ],
       "endpoints": {
         "my_credential": [
           "sub.domain.com"
@@ -43,10 +51,11 @@ func TestNewConfig(t *testing.T) {
 	yamlContent := `
 tasks:
   my_task:
-    subnets:
-      - "2001:db8::/64"
-    mac_address:
-      - "00:11:22:33:44:55"
+    filter:
+      - ip:
+          prefix: "2001:db8::/64"
+        mac:
+          address: "00:11:22:33:44:55"
     endpoints:
       my_credential:
         - sub.domain.com
@@ -93,6 +102,74 @@ credentials:
 
 		if _, ok := loadedConfig.Tasks["my_task"]; !ok {
 			t.Error("Expected 'my_task' to exist")
+		}
+	})
+
+	t.Run("Load Config Plugins Map", func(t *testing.T) {
+		yamlContent := `
+tasks: {}
+credentials: {}
+discovery:
+  plugins:
+    mikrotik-lan:
+      type: mikrotik
+      params: param1
+`
+		path := filepath.Join(tempDir, "config_plugins.yaml")
+		_ = os.WriteFile(path, []byte(yamlContent), 0644)
+
+		cfg, err := NewConfig(path)
+		if err != nil {
+			t.Fatalf("NewConfig failed: %v", err)
+		}
+
+		if len(cfg.Discovery.Plugins) != 1 {
+			t.Errorf("Expected 1 plugin, got %d", len(cfg.Discovery.Plugins))
+		}
+		if _, ok := cfg.Discovery.Plugins["mikrotik-lan"]; !ok {
+			t.Error("Expected plugin 'mikrotik-lan'")
+		}
+	})
+
+	t.Run("Load Config Nested Filters", func(t *testing.T) {
+		yamlContent := `
+tasks:
+  new_task:
+    filter:
+      - mac:
+          address: "00:11:22:33:44:66"
+        ip:
+          type: ["global", "eui64"]
+        source: ["mikrotik-lan"]
+    endpoints:
+      creds: ["host"]
+credentials:
+  creds:
+    provider: test
+    settings: {}
+`
+		path := filepath.Join(tempDir, "config_filters.yaml")
+		_ = os.WriteFile(path, []byte(yamlContent), 0644)
+
+		cfg, err := NewConfig(path)
+		if err != nil {
+			t.Fatalf("NewConfig failed: %v", err)
+		}
+
+		// Check filters
+		task := cfg.Tasks["new_task"]
+		if len(task.Filters) == 0 {
+			t.Fatal("No filters found")
+		}
+		f := task.Filters[0]
+		if f.MAC.Address != "00:11:22:33:44:66" {
+			t.Error("Filter MAC mismatch")
+		}
+		if len(f.IP.Type) != 2 {
+			t.Error("Filter IPType mismatch")
+		}
+		if len(f.Source) != 1 || f.Source[0] != "mikrotik-lan" {
+			t.Error("Filter Source mismatch")
 		}
 	})
 }

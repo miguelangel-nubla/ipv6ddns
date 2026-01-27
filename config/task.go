@@ -1,41 +1,31 @@
 package config
 
 import (
-	"encoding/json"
-	"fmt"
-	"net"
 	"net/netip"
 )
 
 type Task struct {
-	Name         string              `json:"name"`
-	Subnets      []netip.Prefix      `json:"subnets"`
-	MACAddresses []net.HardwareAddr  `json:"mac_address"`
-	Endpoints    map[string][]string `json:"endpoints"`
-	IPv4         *IPv4Handler        `json:"ipv4,omitempty"`
+	Name      string              `json:"name"`
+	Filters   []Filters           `json:"filter"`
+	Endpoints map[string][]string `json:"endpoints"`
+	IPv4      *IPv4Handler        `json:"ipv4,omitempty"`
 }
 
-func (t *Task) UnmarshalJSON(data []byte) error {
-	type Alias Task
-	aux := &struct {
-		MACAddresses []string `json:"mac_address"`
-		*Alias
-	}{
-		Alias: (*Alias)(t),
-	}
+type Filters struct {
+	MAC    MACFilters `json:"mac"`
+	IP     IPFilters  `json:"ip"`
+	Source []string   `json:"source"`
+}
 
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
+type MACFilters struct {
+	Address string   `json:"address"`
+	Mask    []string `json:"mask"`
+	Type    []string `json:"type"`
+}
 
-	t.MACAddresses = make([]net.HardwareAddr, len(aux.MACAddresses))
-	for i, macAddress := range aux.MACAddresses {
-		parsedMAC, err := net.ParseMAC(macAddress)
-		if err != nil {
-			return fmt.Errorf("error parsing MAC address: %v", err)
-		}
-		t.MACAddresses[i] = parsedMAC
-	}
-
-	return nil
+type IPFilters struct {
+	Type   []string     `json:"type"`
+	Prefix netip.Prefix `json:"prefix"`
+	Suffix string       `json:"suffix"`
+	Mask   []string     `json:"mask"`
 }

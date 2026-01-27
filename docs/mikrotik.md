@@ -18,7 +18,8 @@ The Mikrotik discovery plugin allows `ipv6ddns` to query the router's neighbor l
 ```yaml
 discovery:
   plugins:
-    - type: mikrotik
+    mikrotik-router:
+      type: mikrotik
       # Format: interval,address,username,password,use_tls[,tls_fingerprint]
       params: 60s,192.168.88.1:8729,admin,password,true
 ```

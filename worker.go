@@ -8,6 +8,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/filter"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
 )
@@ -101,7 +102,44 @@ func (w *Worker) lookForChanges() {
 				hostname := endpoint.hostnames[hostnameKey]
 				endpoint.hostnamesMutex.Unlock()
 
-				currentHosts := w.discWorker.FilterMACs(task.MACAddresses).FilterSubnets(task.Subnets)
+				currentHosts := ipv6disc.NewAddrCollection()
+				for _, collection := range w.discWorker.GetAll() {
+					for _, addr := range collection.Get() {
+						match := false
+						for _, f := range task.Filters {
+							if !filter.CheckMAC(addr.Hw, f.MAC.Address) {
+								continue
+							}
+							if !filter.CheckMACMask(addr.Hw, f.MAC.Mask) {
+								continue
+							}
+							if !filter.CheckMACType(addr.Hw, f.MAC.Type) {
+								continue
+							}
+							if !filter.CheckIPType(addr, f.IP.Type) {
+								continue
+							}
+							if !filter.CheckPrefix(addr.Addr, f.IP.Prefix) {
+								continue
+							}
+							if !filter.CheckSuffix(addr.Addr, f.IP.Suffix) {
+								continue
+							}
+							if !filter.CheckMask(addr.Addr, f.IP.Mask) {
+								continue
+							}
+							if !filter.CheckSource(addr, f.Source) {
+								continue
+							}
+							match = true
+							break
+						}
+
+						if match {
+							currentHosts.Add(addr)
+						}
+					}
+				}
 				if task.IPv4 != nil {
 					currentHosts.Join(task.IPv4.AddrCollection)
 				}

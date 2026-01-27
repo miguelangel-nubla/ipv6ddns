@@ -25,9 +25,9 @@ type Config struct {
 }
 
 type Discovery struct {
-	Listen  bool           `json:"listen"`
-	Active  bool           `json:"active"`
-	Plugins []PluginConfig `json:"plugins"`
+	Listen  bool                    `json:"listen"`
+	Active  bool                    `json:"active"`
+	Plugins map[string]PluginConfig `json:"plugins"`
 }
 
 type PluginConfig struct {
@@ -57,16 +57,42 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 			result.WriteString(task.IPv4.PrettyPrint(prefix + "            "))
 		}
 
-		macAddresses := make([]string, len(task.MACAddresses))
-		for i, mac := range task.MACAddresses {
-			macAddresses[i] = mac.String()
+		for _, filter := range task.Filters {
+			result.WriteString(prefix + "            - Filter Set:\n")
+			if filter.MAC.Address != "" || len(filter.MAC.Mask) > 0 || len(filter.MAC.Type) > 0 {
+				result.WriteString(prefix + "                MAC:\n")
+				if filter.MAC.Address != "" {
+					result.WriteString(prefix + "                    Address: " + filter.MAC.Address + "\n")
+				}
+				if len(filter.MAC.Mask) > 0 {
+					result.WriteString(prefix + "                    Mask: " + strings.Join(filter.MAC.Mask, ", ") + "\n")
+				}
+				if len(filter.MAC.Type) > 0 {
+					result.WriteString(prefix + "                    Type: " + strings.Join(filter.MAC.Type, ", ") + "\n")
+				}
+			}
+
+			if filter.IP.Prefix.IsValid() || filter.IP.Suffix != "" || len(filter.IP.Mask) > 0 || len(filter.IP.Type) > 0 {
+				result.WriteString(prefix + "                IP:\n")
+				if filter.IP.Prefix.IsValid() {
+					result.WriteString(prefix + "                    Prefix: " + filter.IP.Prefix.String() + "\n")
+				}
+				if filter.IP.Suffix != "" {
+					result.WriteString(prefix + "                    Suffix: " + filter.IP.Suffix + "\n")
+				}
+				if len(filter.IP.Mask) > 0 {
+					result.WriteString(prefix + "                    Mask: " + strings.Join(filter.IP.Mask, ", ") + "\n")
+				}
+				if len(filter.IP.Type) > 0 {
+					result.WriteString(prefix + "                    Type: " + strings.Join(filter.IP.Type, ", ") + "\n")
+				}
+			}
+
+			if len(filter.Source) > 0 {
+				result.WriteString(prefix + "                Source: " + strings.Join(filter.Source, ", ") + "\n")
+			}
 		}
-		result.WriteString(prefix + "            MAC Addresses: " + strings.Join(macAddresses, ", ") + "\n")
-		subnets := make([]string, len(task.Subnets))
-		for i, subnet := range task.Subnets {
-			subnets[i] = subnet.String()
-		}
-		result.WriteString(prefix + "            Subnets: " + strings.Join(subnets, ", ") + "\n")
+
 		result.WriteString(prefix + "            Hostnames:\n")
 
 		// Sort endpoint keys
@@ -126,12 +152,22 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	result.WriteString(prefix + "        Active: " + fmt.Sprintf("%t", c.Discovery.Active) + "\n")
 	if len(c.Discovery.Plugins) > 0 {
 		result.WriteString(prefix + "        Plugins:\n")
-		for _, plugin := range c.Discovery.Plugins {
-			result.WriteString(prefix + "            Type: " + plugin.Type + "\n")
+
+		// Sort plugin keys
+		pluginKeys := make([]string, 0, len(c.Discovery.Plugins))
+		for k := range c.Discovery.Plugins {
+			pluginKeys = append(pluginKeys, k)
+		}
+		sort.Strings(pluginKeys)
+
+		for _, name := range pluginKeys {
+			plugin := c.Discovery.Plugins[name]
+			result.WriteString(prefix + "            " + name + ":\n")
+			result.WriteString(prefix + "                Type: " + plugin.Type + "\n")
 			if !hideSensible {
-				result.WriteString(prefix + "            Params: " + plugin.Params + "\n")
+				result.WriteString(prefix + "                Params: " + plugin.Params + "\n")
 			} else {
-				result.WriteString(prefix + "            Params: <sensible data hidden>\n")
+				result.WriteString(prefix + "                Params: <sensible data hidden>\n")
 			}
 		}
 	}
