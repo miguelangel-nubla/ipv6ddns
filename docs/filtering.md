@@ -39,9 +39,11 @@ filter:
   - mac:
       address: "00:11:22:33:44:55"
 
-  # Set 2: Match ANY Global Dynamic IP (e.g. for a different device or fallback)
+  # Set 2: Match any Stable Global Dynamic IP
   - ip:
-      type: ["global", "eui64"]
+      type:
+        - global
+        - eui64
 ```
 
 ### Available keys
@@ -98,7 +100,8 @@ filter:
   - mac:
       address: "00:11:22:33:44:55"
     ip:
-      type: ["global"]
+      type:
+        - global
 ```
 
 ### 3. Common server setup (Public IP)
@@ -109,7 +112,9 @@ filter:
   - mac:
       address: "00:11:22:33:44:55"
     ip:
-      type: ["global", "eui64"]
+      type:
+        - global
+        - eui64
 ```
 
 ### 4. Multiple devices (OR logic)
