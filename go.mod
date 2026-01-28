@@ -10,7 +10,7 @@ require (
 	github.com/cloudflare/cloudflare-go v0.116.0
 	github.com/go-routeros/routeros/v3 v3.0.1
 	github.com/google/uuid v1.6.0
-	github.com/miguelangel-nubla/ipv6disc v0.8.1
+	github.com/miguelangel-nubla/ipv6disc v0.8.2
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/xeipuuv/gojsonschema v1.2.0

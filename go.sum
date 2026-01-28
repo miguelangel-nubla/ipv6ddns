@@ -100,8 +100,8 @@ github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6T
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mdlayher/ndp v1.1.0 h1:QylGKGVtH60sKZUE88+IW5ila1Z/M9/OXhWdsVKuscs=
 github.com/mdlayher/ndp v1.1.0/go.mod h1:FmgESgemgjl38vuOIyAHWUUL6vQKA/pQNkvXdWsdQFM=
-github.com/miguelangel-nubla/ipv6disc v0.8.1 h1:EukpoZ1XSC/8MCEJlnBu6M5KDbdlOdAgjvjaYjGFrRw=
-github.com/miguelangel-nubla/ipv6disc v0.8.1/go.mod h1:VMY3R/4vbaJ4vnbpont2nkjWZjoTFC7ovrJ2ga5dt3U=
+github.com/miguelangel-nubla/ipv6disc v0.8.2 h1:+3dqcn/HrQgdtf+VZufa8RsRKKnwatw+lbOmipEI1sY=
+github.com/miguelangel-nubla/ipv6disc v0.8.2/go.mod h1:VMY3R/4vbaJ4vnbpont2nkjWZjoTFC7ovrJ2ga5dt3U=
 github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 h1:RWengNIwukTxcDr9M+97sNutRR1RKhG96O6jWumTTnw=
 github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826/go.mod h1:TaXosZuwdSHYgviHp1DAtfrULt5eUgsSMsZf+YrPgl8=
 github.com/nsf/termbox-go v1.1.1 h1:nksUPLCb73Q++DwbYUBEglYBRPZyoXJdrj5L+TkjyZY=
