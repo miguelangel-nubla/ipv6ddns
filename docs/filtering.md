@@ -101,32 +101,36 @@ filter:
       type: ["global"]
 ```
 
-### 3. Multiple devices (OR logic)
-Update the same DNS record if EITHER Device A OR Device B is found.
-
-```yaml
-filter:
-  - mac:
-      address: "00:11:22:33:44:55" # Device A
-  - mac:
-      address: "aa:bb:cc:dd:ee:ff" # Device B
-```
-
-### 4. Advanced: Subnet + Suffix
-Match any address ending in `::5` that is also within your public prefix.
-
-```yaml
-filter:
-  - ip:
-      prefix: "2001:db8::/32"
-      suffix: "::5"
-```
-
-### 5. Common server setup (Public IP)
+### 3. Common server setup (Public IP)
 Servers often need a stable address. By requiring `global` (public) AND `eui64` (MAC-derived, static suffix), you avoid temporary privacy addresses.
 
 ```yaml
 filter:
-  - ip:
+  - mac:
+      address: "00:11:22:33:44:55"
+    ip:
       type: ["global", "eui64"]
+```
+
+### 4. Multiple devices (OR logic)
+Update the same DNS record if EITHER Device A OR Device B is found.
+
+```yaml
+filter:
+  # Filter set 1: Device A
+  - mac:
+      address: "00:11:22:33:44:55"
+  # Filter set 2: Device B
+  - mac:
+      address: "aa:bb:cc:dd:ee:ff"
+```
+
+### 5. Advanced: Prefix + Suffix
+Match any address ending in `::5` that is also within your static public prefix.
+
+```yaml
+filter:
+  - ip:
+      prefix: "2001:db8::/64"
+      suffix: "::5"
 ```
