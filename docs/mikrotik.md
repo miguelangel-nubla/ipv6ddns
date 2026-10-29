@@ -26,6 +26,15 @@ discovery:
 
 For more details on the parameters, refer to the [ipv6disc documentation](https://github.com/miguelangel-nubla/ipv6disc#plugins).
 
+### Requirements
+- **API User**: The plugin only reads the neighbor table (`/ipv6/neighbor/print`), so give it a dedicated read-only user, and optionally limit it to the address `ipv6ddns` connects from:
+  ```
+  /user group add name=ipv6ddns-discovery policy=read,api
+  /user add name=ipv6ddns-discovery group=ipv6ddns-discovery address=192.168.88.10/32 password=...
+  ```
+  If the same router is also the DNS provider, use a separate user for that (see below), so the discovery credentials can't change the router.
+- **API Service**: Ensure `api` (port 8728) or `api-ssl` (port 8729) service is enabled under `/ip/service`.
+
 ---
 
 ## DNS Provider
@@ -55,7 +64,7 @@ credentials:
 ```
 
 ### Requirements
-- **API User**: Create a user on the router with `read`, `write` and `api` permissions.
+- **API User**: Create a user on the router with `read`, `write` and `api` permissions (`write` is needed to manage `/ip/dns/static`).
 - **API Service**: Ensure `api` (port 8728) or `api-ssl` (port 8729) service is enabled under `/ip/service`.
 
 ---
