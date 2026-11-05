@@ -4,7 +4,7 @@ before:
     - go generate ./...
     - go mod tidy
 builds:
-  - main: cmd/ipv6ddns/ipv6ddns.go
+  - main: ./cmd/ipv6ddns
     env:
       - CGO_ENABLED=0
     goos:
