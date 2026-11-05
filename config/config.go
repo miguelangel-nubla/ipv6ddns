@@ -25,9 +25,11 @@ type Config struct {
 }
 
 type Discovery struct {
-	Listen  bool                    `json:"listen"`
-	Active  bool                    `json:"active"`
-	Plugins map[string]PluginConfig `json:"plugins"`
+	Listen bool `json:"listen"`
+	Active bool `json:"active"`
+	// Ask for the EUI-64 addresses the task filters want, rather than wait to see them.
+	SolicitEUI64 bool                    `json:"solicit_eui64"`
+	Plugins      map[string]PluginConfig `json:"plugins"`
 }
 
 type PluginConfig struct {
@@ -150,6 +152,7 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	result.WriteString(prefix + "    Discovery:\n")
 	result.WriteString(prefix + "        Listen: " + fmt.Sprintf("%t", c.Discovery.Listen) + "\n")
 	result.WriteString(prefix + "        Active: " + fmt.Sprintf("%t", c.Discovery.Active) + "\n")
+	result.WriteString(prefix + "        Solicit EUI-64: " + fmt.Sprintf("%t", c.Discovery.SolicitEUI64) + "\n")
 	if len(c.Discovery.Plugins) > 0 {
 		result.WriteString(prefix + "        Plugins:\n")
 

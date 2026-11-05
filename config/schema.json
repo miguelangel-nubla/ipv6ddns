@@ -165,6 +165,9 @@
                 "active": {
                     "type": "boolean"
                 },
+                "solicit_eui64": {
+                    "type": "boolean"
+                },
                 "plugins": {
                     "type": "object",
                     "patternProperties": {

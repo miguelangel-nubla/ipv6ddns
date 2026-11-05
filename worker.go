@@ -46,7 +46,15 @@ func (w *Worker) Start() error {
 		}
 	}()
 
-	return w.discWorker.Start()
+	if err := w.discWorker.Start(); err != nil {
+		return err
+	}
+
+	if w.config.Discovery.SolicitEUI64 {
+		go w.solicitEUI64Loop()
+	}
+
+	return nil
 }
 
 func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {

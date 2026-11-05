@@ -81,6 +81,15 @@ filter:
 *   **`source`** (List of Strings): Filter by the discovery plugin that found the address. All sources must have seen the address.
     *   Example: `["mikrotik-lan"]`
 
+### Addresses that stay quiet
+
+A host usually sends from its temporary addresses, so its stable one may never be seen, and routers don't list it. With `solicit_eui64: true` under `discovery`, every filter that names a `mac.address` and asks for the `eui64` type makes `ipv6ddns` work out that address on each /64 it is on and ask for it once a minute, with a neighbor solicitation. An address that answers is discovered as usual; one that doesn't is never published.
+
+```yaml
+discovery:
+  solicit_eui64: true
+```
+
 ## Examples
 
 ### 1. Simple: Track a specific device by MAC
