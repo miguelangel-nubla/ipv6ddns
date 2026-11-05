@@ -96,9 +96,20 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
    ```bash
    sudo ipv6ddns \
      -config_file config.yaml \
-     -webserver_port 8053 \
+     -webserver_listen 8053 \
      -log_level debug
    ```
+
+   `-webserver_listen` takes a comma-separated list of what to listen on, in any combination:
+
+   | Entry | Listens on |
+   |---|---|
+   | `8053`, `:8053` | that port, on all addresses |
+   | `192.0.2.1:8053`, `[2001:db8::1]:8053` | that address and port |
+   | `192.0.2.1`, `2001:db8::1`, `[2001:db8::1]` | that address, port 80 |
+   | `myhost:8053`, `myhost` | every address the name resolves to, at startup |
+
+   The report has no authentication: to keep it behind a reverse proxy, list only an address the proxy can reach.
 
 4. **Access the Web report**
 

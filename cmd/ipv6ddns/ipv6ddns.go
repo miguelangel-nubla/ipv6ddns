@@ -23,7 +23,7 @@ var configFile string
 var logLevel string
 var lifetime time.Duration
 var live bool
-var webserverPort int
+var webserverListen string
 
 func init() {
 	flag.BoolVar(&showVersion, "version", false, "Show the current version")
@@ -31,7 +31,7 @@ func init() {
 	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic) default: info")
 	flag.DurationVar(&lifetime, "lifetime", 1*time.Hour, "Time to keep a discovered host entry after it has been last seen, default: 1h")
 	flag.BoolVar(&live, "live", false, "Show the currrent state live on the terminal, default: false")
-	flag.IntVar(&webserverPort, "webserver_port", 0, "If port specified you can connect to this port to view the same live output from a browser, default: disabled")
+	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 80), default: disabled")
 }
 
 func main() {
@@ -66,17 +66,27 @@ func main() {
 		sugar.Fatalf("can't start worker: %s", err)
 	}
 
-	if webserverPort > 0 {
-		go func() {
-			http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "text/plain")
-				w.Write([]byte(wrapPrettyPrint(worker, "", true)))
-			})
-			sugar.Infof("Starting web server on port %d", webserverPort)
-			if err := http.ListenAndServe(fmt.Sprintf(":%d", webserverPort), nil); err != nil {
-				sugar.Fatalf("web server failed: %s", err)
-			}
-		}()
+	if webserverListen != "" {
+		addresses, err := parseListenList(webserverListen)
+		if err != nil {
+			sugar.Fatalf("webserver_listen: %s", err)
+		}
+		listeners, err := listenAll(addresses)
+		if err != nil {
+			sugar.Fatalf("web server failed: %s", err)
+		}
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.Write([]byte(wrapPrettyPrint(worker, "", true)))
+		})
+		for _, listener := range listeners {
+			go func() {
+				sugar.Infof("Starting web server on %s", listener.Addr())
+				if err := http.Serve(listener, nil); err != nil {
+					sugar.Fatalf("web server failed: %s", err)
+				}
+			}()
+		}
 	}
 
 	if live {
