@@ -174,15 +174,61 @@
                             "type": "object",
                             "properties": {
                                 "type": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "enum": ["linux", "freebsd", "mikrotik"]
                                 },
                                 "params": {
+                                    "type": "string",
+                                    "description": "The plugin params in one string, as for ipv6disc: or the fields below."
+                                },
+                                "interval": {
+                                    "type": "string",
+                                    "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
+                                },
+                                "address": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "username": {
                                     "type": "string"
+                                },
+                                "password": {
+                                    "type": "string"
+                                },
+                                "identity_file": {
+                                    "type": "string",
+                                    "description": "linux and freebsd: the SSH private key."
+                                },
+                                "host_key": {
+                                    "type": "string",
+                                    "pattern": "^(SHA256:[A-Za-z0-9+/]{43})?$",
+                                    "description": "linux and freebsd: the fingerprint of the host's SSH key."
+                                },
+                                "use_tls": {
+                                    "type": "boolean",
+                                    "description": "mikrotik: the API over TLS."
+                                },
+                                "tls_fingerprint": {
+                                    "type": "string",
+                                    "description": "mikrotik: the SHA-256 fingerprint of the router's certificate."
                                 }
                             },
                             "required": [
-                                "type",
-                                "params"
+                                "type"
+                            ],
+                            "oneOf": [
+                                {
+                                    "required": ["params"],
+                                    "not": {"anyOf": [
+                                        {"required": ["interval"]}, {"required": ["address"]}, {"required": ["username"]},
+                                        {"required": ["password"]}, {"required": ["identity_file"]}, {"required": ["host_key"]},
+                                        {"required": ["use_tls"]}, {"required": ["tls_fingerprint"]}
+                                    ]}
+                                },
+                                {
+                                    "required": ["interval", "address", "username"],
+                                    "not": {"required": ["params"]}
+                                }
                             ],
                             "additionalProperties": false
                         }

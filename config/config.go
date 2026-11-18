@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	"github.com/xeipuuv/gojsonschema"
 	"sigs.k8s.io/yaml"
 )
@@ -32,9 +33,53 @@ type Discovery struct {
 	Plugins      map[string]PluginConfig `json:"plugins"`
 }
 
+// PluginConfig is a discovery plugin: its params in one string, as ipv6disc takes them, or in
+// fields.
 type PluginConfig struct {
 	Type   string `json:"type"`
-	Params string `json:"params"`
+	Params string `json:"params,omitempty"`
+
+	Interval string `json:"interval,omitempty"`
+	Address  string `json:"address,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	// linux and freebsd.
+	IdentityFile string `json:"identity_file,omitempty"`
+	HostKey      string `json:"host_key,omitempty"`
+	// mikrotik.
+	UseTLS         bool   `json:"use_tls,omitempty"`
+	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
+}
+
+// PluginParams returns the params of the plugin in one string, for plugins.Create: its fields
+// joined, escaped so that any value can hold a comma.
+func (p PluginConfig) PluginParams() (string, error) {
+	if p.Params != "" {
+		return p.Params, nil
+	}
+	var values []string
+	switch p.Type {
+	case "linux", "freebsd":
+		if p.UseTLS || p.TLSFingerprint != "" {
+			return "", fmt.Errorf("a %s plugin has no use_tls or tls_fingerprint: they are mikrotik's", p.Type)
+		}
+		values = []string{p.Interval, p.Address, p.Username, p.Password, p.IdentityFile, p.HostKey}
+	case "mikrotik":
+		if p.IdentityFile != "" || p.HostKey != "" {
+			return "", fmt.Errorf("a mikrotik plugin has no identity_file or host_key: they are linux's and freebsd's")
+		}
+		values = []string{p.Interval, p.Address, p.Username, p.Password, "", p.TLSFingerprint}
+		if p.UseTLS {
+			values[4] = "true"
+		}
+	default:
+		return "", fmt.Errorf("unknown plugin type %s", p.Type)
+	}
+	// The optional values last: those left empty are left out.
+	for len(values) > 4 && values[len(values)-1] == "" {
+		values = values[:len(values)-1]
+	}
+	return plugins.JoinParams(values...), nil
 }
 
 func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
@@ -168,7 +213,11 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 			result.WriteString(prefix + "            " + name + ":\n")
 			result.WriteString(prefix + "                Type: " + plugin.Type + "\n")
 			if !hideSensible {
-				result.WriteString(prefix + "                Params: " + plugin.Params + "\n")
+				params, err := plugin.PluginParams()
+				if err != nil {
+					params = err.Error()
+				}
+				result.WriteString(prefix + "                Params: " + params + "\n")
 			} else {
 				result.WriteString(prefix + "                Params: <sensible data hidden>\n")
 			}
@@ -223,6 +272,12 @@ func NewConfig(filename string) (config Config, err error) {
 
 	if err := json.Unmarshal(byteValue, &config); err != nil {
 		return config, err
+	}
+
+	for name, plugin := range config.Discovery.Plugins {
+		if _, err := plugin.PluginParams(); err != nil {
+			return config, fmt.Errorf("plugin %s: %w", name, err)
+		}
 	}
 
 	for name, task := range config.Tasks {
