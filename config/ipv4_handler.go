@@ -31,11 +31,17 @@ type IPv4Handler struct {
 	basedir string
 }
 
-func (h *IPv4Handler) PrettyPrint(prefix string) string {
+// PrettyPrint shows the command and its addresses. hideSensible hides the arguments, which can
+// hold a token.
+func (h *IPv4Handler) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
 	fmt.Fprintf(&result, prefix+"IPv4 (%v): %s", h.Interval, h.Command)
-	for _, arg := range h.Args {
-		fmt.Fprintf(&result, " %q", arg)
+	if hideSensible && len(h.Args) > 0 {
+		result.WriteString(" <sensible data hidden>")
+	} else {
+		for _, arg := range h.Args {
+			fmt.Fprintf(&result, " %q", arg)
+		}
 	}
 	fmt.Fprintf(&result, "\n")
 	if h.AddrCollection != nil {

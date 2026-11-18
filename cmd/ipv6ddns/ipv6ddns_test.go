@@ -1,8 +1,14 @@
 package main
 
 import (
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,4 +97,76 @@ func TestExampleConfig(t *testing.T) {
 			t.Errorf("plugin %s: %v", name, err)
 		}
 	}
+}
+
+func TestStatusHandlerHidesSensibleData(t *testing.T) {
+	const secret = "SECRET-91c2"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	os.WriteFile(path, []byte(`
+tasks:
+  web:
+    filter:
+      - mac:
+          address: "00:11:22:33:44:55"
+    endpoints:
+      duck:
+        - www
+    ipv4:
+      interval: 1h
+      lifetime: 1h
+      command: curl
+      args: ["https://example.com/ip?key=`+secret+`"]
+credentials:
+  duck:
+    provider: duckdns
+    settings:
+      api_token: 01234567-89ab-cdef-0123-456789abcdef
+discovery:
+  plugins:
+    router:
+      type: mikrotik
+      params: 60s,192.0.2.1,admin,`+secret+`
+`), 0o600)
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	statusHandler(worker).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := response.Body.String()
+	for _, s := range []string{secret, "01234567-89ab-cdef-0123-456789abcdef"} {
+		if strings.Contains(body, s) {
+			t.Errorf("%s is on the page:\n%s", s, body)
+		}
+	}
+	if !strings.Contains(body, "www.duckdns.org") || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Errorf("not the status page: %s\n%s", response.Header().Get("Content-Type"), body)
+	}
+}
+
+func FuzzParseListenList(f *testing.F) {
+	for _, s := range []string{"8053", "192.0.2.1,[2001:db8::1]:8053", "myhost", "fe80::1%eth0", ",", "a:b:c"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, list string) {
+		addresses, err := parseListenList(list)
+		if err != nil {
+			return
+		}
+		for _, address := range addresses {
+			_, port, err := net.SplitHostPort(address)
+			if err != nil {
+				t.Errorf("%q gives %q: %v", list, address, err)
+				continue
+			}
+			if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+				t.Errorf("%q gives %q, with an invalid port", list, address)
+			}
+		}
+	})
 }

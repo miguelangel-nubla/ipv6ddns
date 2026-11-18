@@ -56,7 +56,7 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 		result.WriteString(prefix + "        " + name + ":\n")
 
 		if task.IPv4 != nil {
-			result.WriteString(task.IPv4.PrettyPrint(prefix + "            "))
+			result.WriteString(task.IPv4.PrettyPrint(prefix+"            ", hideSensible))
 		}
 
 		for _, filter := range task.Filters {
