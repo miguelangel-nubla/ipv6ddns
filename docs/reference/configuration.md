@@ -156,12 +156,12 @@ A plugin over SSH, linux or freebsd: with a password, an identity file, or both.
 |---|---|---|
 | `type` | string | The plugin type. |
 | `params` | string | Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead. |
-| `interval` | duration string | **Required.** How often the plugin reads the table. |
-| `address` | string | **Required.** The host, and its port if not the default: 192.168.1.1, [2001:db8::1]:2222. |
-| `username` | string | **Required.** The login. |
-| `password` | string | The login's password. Or an identity_file, or both. |
+| `interval` | duration string | **Required.** How often the table is read: 60s, 5m. |
+| `address` | string | **Required.** The host, with its port unless 22: 192.168.1.1, [2001:db8::1]:2222. |
+| `username` | string | **Required.** The SSH user. |
+| `password` | string | Its password. Or an identity_file, or both. |
 | `identity_file` | string | The SSH private key file. |
-| `host_key` | string | The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Without it, any key is accepted. |
+| `host_key` | string | The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted, and the log warns with the fingerprint seen. |
 
 ### `mikrotik`
 
@@ -171,9 +171,9 @@ A plugin over the Mikrotik API.
 |---|---|---|
 | `type` | string | The plugin type. |
 | `params` | string | Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead. |
-| `interval` | duration string | **Required.** How often the plugin reads the table. |
-| `address` | string | **Required.** The host, and its port if not the default: 192.168.1.1, [2001:db8::1]:2222. |
-| `username` | string | **Required.** The login. |
-| `password` | string | The login's password. |
-| `use_tls` | boolean | The API over TLS, port 8729 by default rather than 8728. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, in hex. |
+| `interval` | duration string | **Required.** How often the tables are read: 60s, 5m. |
+| `address` | string | **Required.** The router, with its port unless the default: 8728, or 8729 with TLS. |
+| `username` | string | **Required.** An API user: the read and api policies are enough. |
+| `password` | string | Its password. |
+| `use_tls` | boolean | true: the API over TLS, the api-ssl service. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, in hex, when it can't be verified otherwise. |

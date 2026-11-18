@@ -13,6 +13,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 )
 
 // Pages are the generated pages, by path from the repository's root.
@@ -151,15 +152,21 @@ func cell(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "|", `\|`), "\n", " ")
 }
 
-// table writes the properties of an object schema, in the order of keys.
-func table(b *strings.Builder, n *node, keys []string, defs map[string]*node, skip ...string) {
+// table writes the properties of an object schema, in the order of keys. described gives the
+// descriptions the schema leaves to another: the plugins', which ipv6disc has.
+func table(b *strings.Builder, n *node, keys []string, defs map[string]*node, described ...map[string]string) {
 	b.WriteString("| Key | Takes | |\n|---|---|---|\n")
 	for _, key := range keys {
 		p := n.Properties[key]
-		if p == nil || slices.Contains(skip, key) {
+		if p == nil {
 			continue
 		}
 		desc := p.Description
+		for _, d := range described {
+			if d[key] != "" {
+				desc = d[key]
+			}
+		}
 		if slices.Contains(n.Required, key) {
 			desc = "**Required.** " + desc
 		}
@@ -217,15 +224,39 @@ func Configuration() (string, error) {
 	table(&b, family, order(raw, "$defs", "family", "oneOf", "1", "properties"), defs)
 
 	b.WriteString("## Discovery plugins\n\n`discovery.plugins.<name>`\n\n" + discovery.Properties["plugins"].Description + " Each type takes its own keys only.\n\n")
-	for _, def := range []struct{ name, title string }{{"sshPlugin", "`linux`, `freebsd`"}, {"mikrotikPlugin", "`mikrotik`"}} {
+	for _, def := range pluginDefs {
 		fmt.Fprintf(&b, "### %s\n\n%s\n\n", def.title, defs[def.name].Description)
 		n := defs[def.name]
 		if n.Else != nil {
 			n.Required = n.Else.Required
 		}
-		table(&b, n, order(raw, "$defs", def.name, "properties"), defs)
+		described, err := PluginFieldDescriptions(def.pluginType)
+		if err != nil {
+			return "", err
+		}
+		table(&b, n, order(raw, "$defs", def.name, "properties"), defs, described)
 	}
 	return strings.TrimRight(b.String(), "\n") + "\n", nil
+}
+
+// pluginDefs are the schema's definitions of the plugins, with a type of each that ipv6disc has.
+var pluginDefs = []struct{ name, title, pluginType string }{
+	{"sshPlugin", "`linux`, `freebsd`", "linux"},
+	{"mikrotikPlugin", "`mikrotik`", "mikrotik"},
+}
+
+// PluginFieldDescriptions are the descriptions of a plugin type's params, as ipv6disc registers
+// them: the one place they are written.
+func PluginFieldDescriptions(pluginType string) (map[string]string, error) {
+	fields, err := plugins.Fields(pluginType)
+	if err != nil {
+		return nil, err
+	}
+	described := make(map[string]string)
+	for _, f := range fields {
+		described[f.Name] = f.Description
+	}
+	return described, nil
 }
 
 // asNode reads an additionalProperties that is a schema.
