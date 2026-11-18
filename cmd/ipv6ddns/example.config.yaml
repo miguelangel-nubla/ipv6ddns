@@ -9,10 +9,10 @@ tasks:
       interval: 3m
       lifetime: 10m
     filter:
-      mac: 
-        address: 00:11:22:33:44:55
-      ip:
-        prefix: 2000::/3
+      - mac:
+          address: 00:11:22:33:44:55
+        ip:
+          prefix: 2000::/3
     endpoints:
       mycloudflaresettings:
         - ""
@@ -29,14 +29,14 @@ tasks:
       interval: 60s
       lifetime: 4h
     filter:
-      mac:
-        address: 00:11:22:33:44:56
-      ip:
-        prefix: fc00::/7
-        type:
-          - eui64
-      source:
-        - mikrotik-lan
+      - mac:
+          address: 00:11:22:33:44:56
+        ip:
+          prefix: fc00::/7
+          type:
+            - eui64
+        source:
+          - mikrotik-lan
 credentials:
   duckdns:
     debounce_time: 10s
@@ -130,10 +130,12 @@ discovery:
   plugins:
     mikrotik-lan:
       type: mikrotik
-      params: mikrotik:90s,192.168.88.1:8729,admin,password,true,<optional>a1b2c3d4...
+      # interval,address,username,password[,use_tls[,tls_fingerprint]]
+      params: 90s,192.168.88.1:8729,admin,password,true
     pfsense-box:
       type: freebsd
-      params: freebsd:90s,pfsense.local,admin,,/path/to/id_rsa
+      # interval,address,username,password[,identity_file]
+      params: 90s,pfsense.local,admin,,/path/to/id_rsa
     linux-server:
       type: linux
-      params: linux:90s,[2001:db8::1]:2222,user,,/path/to/id_rsa
+      params: 90s,[2001:db8::1]:2222,user,,/path/to/id_rsa
