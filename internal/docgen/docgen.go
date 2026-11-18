@@ -167,8 +167,11 @@ func table(b *strings.Builder, n *node, keys []string, defs map[string]*node, de
 				desc = d[key]
 			}
 		}
-		if slices.Contains(n.Required, key) {
+		switch {
+		case slices.Contains(n.Required, key):
 			desc = "**Required.** " + desc
+		case n.Else != nil && slices.Contains(n.Else.Required, key):
+			desc = "**Required**, without `params`. " + desc
 		}
 		fmt.Fprintf(b, "| `%s` | %s | %s |\n", key, cell(typeOf(p, defs)), cell(desc))
 	}
@@ -185,7 +188,7 @@ func Configuration() (string, error) {
 	defs := root.Defs
 	var b strings.Builder
 	b.WriteString("# Configuration reference\n\n" + generated)
-	b.WriteString("The configuration file is YAML, or JSON. Every value takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds. A key the schema doesn't have is an error.\n\n")
+	b.WriteString("The configuration file is YAML, or JSON. Every string takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds. A key the schema doesn't have is an error.\n\n")
 
 	b.WriteString("## Top level\n\n")
 	table(&b, root, order(raw, "properties"), defs)
@@ -227,9 +230,8 @@ func Configuration() (string, error) {
 	for _, def := range pluginDefs {
 		fmt.Fprintf(&b, "### %s\n\n%s\n\n", def.title, defs[def.name].Description)
 		n := defs[def.name]
-		if n.Else != nil {
-			n.Required = n.Else.Required
-		}
+		// The type is required by the plugin's schema, around the type's.
+		n.Required = defs["plugin"].Required
 		described, err := PluginFieldDescriptions(def.pluginType)
 		if err != nil {
 			return "", err
@@ -270,7 +272,7 @@ func asNode(v any) *node {
 func Providers() (string, error) {
 	var b strings.Builder
 	b.WriteString("# DNS providers\n\n" + generated)
-	b.WriteString("A credential's `provider` is one of these, and its `settings` are those of the provider. An unknown setting is an error. Adding a provider: see [CONTRIBUTING](../../CONTRIBUTING.md).\n\n")
+	b.WriteString("A credential's `provider` is one of these, and its `settings` are those of the provider. An unknown setting is an error. A `ttl` is a duration string, as `5m`. Adding a provider: see [CONTRIBUTING](../../CONTRIBUTING.md).\n\n")
 	for _, name := range ddns.Providers() {
 		fmt.Fprintf(&b, "- [`%s`](#%s)\n", name, name)
 	}

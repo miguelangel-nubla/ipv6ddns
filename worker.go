@@ -95,6 +95,17 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		}
 	}
 
+	// The credentials no task names are checked too: a mistake shows at the start.
+	for _, name := range slices.Sorted(maps.Keys(cfg.Credentials)) {
+		credential := cfg.Credentials[name]
+		if provider, ok := w.State.providers[credential.Provider]; ok && provider.endpoints[name] != nil {
+			continue
+		}
+		if _, err := ddns.NewService(credential.Provider, credential.RawSettings); err != nil {
+			return nil, fmt.Errorf("error creating DNS service for endpoint %s: %w", name, err)
+		}
+	}
+
 	return w, nil
 }
 

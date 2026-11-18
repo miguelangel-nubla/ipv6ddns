@@ -43,9 +43,9 @@ credentials:
 
 ## Runs and lifetimes
 
-A source runs at start, then every `interval`, 5 minutes by default. An address it gave stays for its `lifetime`, by default three intervals, after the last run that gave it: a run that fails, or a service that is down for a while, doesn't take the record away. A static source never expires.
+A source runs at start, then every `interval`. An address it gave stays for its `lifetime` after the last run that gave it, so a run that fails, or a service down for a while, doesn't take the record away: the defaults are in the [reference](reference/configuration.md#sources). A static source never expires.
 
-The report and `/status.json` show each source's runs, failures and last error.
+`/status.json` shows each source's runs and failures; the log, its errors.
 
 ## A script of yours
 
@@ -60,4 +60,4 @@ sources:
     lifetime: 5m
 ```
 
-The image has `bash`, `curl`, `jq` and `dig` for such scripts. A task's `ipv4` block, from before sources, is such a command: it still works, and the log says how to move it.
+The image has the [tools](installation.md#with-docker-compose) such scripts usually need. A task's `ipv4` block, from before sources, is such a command: it still works, as a source named `<task>.ipv4`, and the log says how to move it.

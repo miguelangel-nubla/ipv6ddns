@@ -60,7 +60,7 @@ The network's public IPv4, which has no MAC, comes from a [source](sources.md).
 Some addresses are never seen without asking. With `solicit`, the hosts the filters want are asked once a minute:
 
 - **IPv6**: a host sends from its temporary addresses, so its stable one may never be seen, and routers don't list it. For each filter that names a `mac.address` and the `eui64` type, `ipv6ddns` works out that address on each /64 of the network and asks for it with a neighbor solicitation.
-- **IPv4**: a quiet host may be in no ARP table. For each filter that names a `mac.address` with `ip.family` 4, `ipv6ddns` asks that MAC, with ARP requests sent to it alone, for each address of the local subnets within the filter's `ip.prefix`, or all of them without one, up to 4096. Nothing is broadcast, though a switch that no longer knows where the MAC is floods the requests, as any frame to it. It needs Linux and `CAP_NET_RAW`.
+- **IPv4**: a quiet host may be in no ARP table. For each filter that names a `mac.address` with `ip.family` 4, `ipv6ddns` asks that MAC, with ARP requests sent to it alone, for each address of the local subnets within the filter's `ip.prefix`, up to 4096, or without one those the sweep would ask. Nothing is broadcast, though a switch that no longer knows where the MAC is floods the requests, as any frame to it. It needs Linux and `CAP_NET_RAW`.
 
 An address that answers is discovered as any other; one that doesn't is never published.
 
@@ -110,4 +110,4 @@ discovery:
       host_key: SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 ```
 
-Each type's keys are in the [reference](reference/configuration.md#discovery-plugins). Give an SSH plugin its `host_key`, from a trusted network with `ssh-keyscan -t ed25519 192.168.1.1 | ssh-keygen -lf -`: without it, any key is accepted, and the log warns with the fingerprint seen. The plugins read the tables of the families on, and only the entries confirmed recently, so that the addresses of hosts that left expire.
+Each type's keys are in the [reference](reference/configuration.md#discovery-plugins). Give an SSH plugin its `host_key`: [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc/blob/main/docs/plugins.md#ssh-host-keys) says how to get it. The plugins read the tables of the families on, and only the entries confirmed recently, so that the addresses of hosts that left expire.

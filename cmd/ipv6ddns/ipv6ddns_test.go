@@ -219,4 +219,14 @@ func TestApplyConfigSettings(t *testing.T) {
 	if err := applyConfigSettings(config.Config{LogLevel: "loud"}, map[string]bool{"lifetime": true}, level); err == nil {
 		t.Error("a bad log level: want an error")
 	}
+
+	// A zero lifetime in the file: an error, unless the flag gives one.
+	zero := config.Config{}
+	if err := applyConfigSettings(zero, map[string]bool{}, level); err == nil {
+		t.Error("lifetime 0: want an error")
+	}
+	lifetime = 30 * time.Minute
+	if err := applyConfigSettings(zero, map[string]bool{"lifetime": true}, level); err != nil || lifetime != 30*time.Minute {
+		t.Errorf("lifetime 0 and -lifetime 30m: %v, %s", err, lifetime)
+	}
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -267,4 +268,59 @@ func TestSchemaDescribesEverything(t *testing.T) {
 		}
 	}
 	walk(schema, "")
+}
+
+// The defaults the schema's descriptions say are the code's: the reference is made of them.
+func TestSchemaSaysTheDefaults(t *testing.T) {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(configSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	description := func(path ...string) string {
+		raw := schema.Properties[path[0]]
+		for _, p := range path[1:] {
+			var node map[string]json.RawMessage
+			json.Unmarshal(raw, &node)
+			raw = node[p]
+		}
+		var node struct {
+			Description string `json:"description"`
+		}
+		json.Unmarshal(raw, &node)
+		return node.Description
+	}
+	short := func(d time.Duration) string {
+		switch {
+		case d%time.Hour == 0:
+			return fmt.Sprintf("%dh", d/time.Hour)
+		case d%time.Minute == 0:
+			return fmt.Sprintf("%dm", d/time.Minute)
+		}
+		return d.String()
+	}
+
+	var credential Credential
+	if err := json.Unmarshal([]byte(`{"provider": "x", "settings": {}}`), &credential); err != nil {
+		t.Fatal(err)
+	}
+	source, err := Source{Type: SourceDNS}.withDefaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		path []string
+		want string
+	}{
+		{[]string{"lifetime"}, "Default: " + short(DefaultLifetime) + "."},
+		{[]string{"credentials", "additionalProperties", "properties", "debounce_time"}, "Default: " + short(credential.DebounceTime.Duration) + "."},
+		{[]string{"credentials", "additionalProperties", "properties", "retry_time"}, "Default: " + short(credential.RetryTime.Duration) + "."},
+		{[]string{"sources", "additionalProperties", "properties", "interval"}, "Default: " + short(source.Interval.Duration) + "."},
+		{[]string{"sources", "additionalProperties", "properties", "lifetime"}, fmt.Sprintf("Default: %d intervals.", source.Lifetime.Duration/source.Interval.Duration)},
+	} {
+		if got := description(c.path...); !strings.Contains(got, c.want) {
+			t.Errorf("%s: %q, want it to say %q", strings.Join(c.path, "."), got, c.want)
+		}
+	}
 }

@@ -11,19 +11,21 @@
 ```
 DNS:
     Provider: cloudflare
-        Endpoint: remotecf
-            mydomain.example.com: (last update: 2026-01-25T01:49:35Z)
-                203.0.113.99
-                2001:db8:1234:5678:abcd:ef01:2345:6789
+        Endpoint: cloudflare
+            www.example.com: (last update: 2026-01-25T01:49:35Z)
+                [2001:db8:1234:5678:abcd:ef01:2345:6789] from 12:34:56:78:90:ab seen over eth0,router
+                203.0.113.99 from source wan
     Provider: technitium
-        Endpoint: local
-            nas.lan.example.com: (last update: 2026-01-25T01:22:03Z)
-                192.168.1.50
-                fd12:3456:789a::1
+        Endpoint: home-dns
+            nas.home.example.com: (last update: 2026-01-25T01:22:03Z)
+                192.168.1.50 from 00:11:22:33:44:55 seen over eth0
+                [fd12:3456:789a::50] from 00:11:22:33:44:55 seen over eth0
 Discovery:
+    00:11:22:33:44:55
+        192.168.1.50 2m51s eth0
+        fd12:3456:789a::50 41m37s eth0
     12:34:56:78:90:ab
         2001:db8:1234:5678:abcd:ef01:2345:6789 35m15s eth0,router
-        192.168.1.50 2m51s eth0
 ```
 
 ## How it works
@@ -37,24 +39,9 @@ Discovery:
 
 ## Quick start
 
-With Docker, on the host's network:
+A `config.yaml`, for one server's global addresses at Cloudflare:
 
 ```yaml
-# compose.yaml
-services:
-  ipv6ddns:
-    image: ghcr.io/miguelangel-nubla/ipv6ddns:v0
-    network_mode: host
-    restart: unless-stopped
-    command: ["-config_file", "/config.yaml"]
-    volumes:
-      - ./config.yaml:/config.yaml:ro
-    environment:
-      CLOUDFLARE_TOKEN: ${CLOUDFLARE_TOKEN}
-```
-
-```yaml
-# config.yaml
 webserver_listen: 127.0.0.1:8053
 
 tasks:
@@ -78,7 +65,7 @@ credentials:
       proxied: false
 ```
 
-Then `docker compose up -d`, and the report is at `http://127.0.0.1:8053`. Other ways to run it, and what discovery needs from the container: [installation](docs/installation.md).
+Run it with Docker as the [installation](docs/installation.md#with-docker-compose) says, on the host's network, with `CLOUDFLARE_TOKEN` in its environment; the report is then at `http://127.0.0.1:8053`.
 
 ## Documentation
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 )
 
 var (
@@ -54,8 +55,19 @@ func TestDocExamples(t *testing.T) {
 			if err := os.WriteFile(path, []byte(block), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := config.NewConfig(path); err != nil {
+			cfg, err := config.NewConfig(path)
+			if err != nil {
 				t.Errorf("%s, example %d: %v\n%s", file, i+1, err, block)
+				continue
+			}
+			// The providers check their settings themselves; a form from before warns.
+			for name, credential := range cfg.Credentials {
+				if _, err := ddns.NewService(credential.Provider, credential.RawSettings); err != nil {
+					t.Errorf("%s, example %d, credential %s: %v", file, i+1, name, err)
+				}
+			}
+			if len(cfg.Warnings) > 0 {
+				t.Errorf("%s, example %d: a deprecated form: %v", file, i+1, cfg.Warnings)
 			}
 			checked++
 		}

@@ -82,7 +82,7 @@ filter:
 
 #### `filter.source`
 
-*   **`source`** (List of Strings): Filter by the discovery plugin that found the address. All sources must have seen the address.
+*   **`source`** (List of Strings): Filter by what saw the address: a plugin's name, or a local interface's. All sources must have seen the address.
     *   Example: `["mikrotik-lan"]`
 
 Addresses without a MAC, as the network's public IPv4, don't go through filters: a task gets them from the [sources](sources.md) it names, in its `sources`.

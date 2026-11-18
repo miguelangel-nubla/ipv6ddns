@@ -2,7 +2,7 @@
 
 <!-- Generated from the schemas by `go test ./internal/docgen -update`: edit them, not this page. -->
 
-The configuration file is YAML, or JSON. Every value takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds. A key the schema doesn't have is an error.
+The configuration file is YAML, or JSON. Every string takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds. A key the schema doesn't have is an error.
 
 ## Top level
 
@@ -154,11 +154,11 @@ A plugin over SSH, linux or freebsd: with a password, an identity file, or both.
 
 | Key | Takes | |
 |---|---|---|
-| `type` | string | The plugin type. |
+| `type` | string | **Required.** The plugin type. |
 | `params` | string | Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead. |
-| `interval` | duration string | **Required.** How often the table is read: 60s, 5m. |
-| `address` | string | **Required.** The host, with its port unless 22: 192.168.1.1, [2001:db8::1]:2222. |
-| `username` | string | **Required.** The SSH user. |
+| `interval` | duration string | **Required**, without `params`. How often the table is read: 60s, 5m. |
+| `address` | string | **Required**, without `params`. The host, with its port unless 22: 192.168.1.1, [2001:db8::1]:2222. |
+| `username` | string | **Required**, without `params`. The SSH user. |
 | `password` | string | Its password. Or an identity_file, or both. |
 | `identity_file` | string | The SSH private key file. |
 | `host_key` | string | The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted, and the log warns with the fingerprint seen. |
@@ -169,11 +169,11 @@ A plugin over the Mikrotik API.
 
 | Key | Takes | |
 |---|---|---|
-| `type` | string | The plugin type. |
+| `type` | string | **Required.** The plugin type. |
 | `params` | string | Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead. |
-| `interval` | duration string | **Required.** How often the tables are read: 60s, 5m. |
-| `address` | string | **Required.** The router, with its port unless the default: 8728, or 8729 with TLS. |
-| `username` | string | **Required.** An API user: the read and api policies are enough. |
+| `interval` | duration string | **Required**, without `params`. How often the tables are read: 60s, 5m. |
+| `address` | string | **Required**, without `params`. The router, with its port unless the default: 8728, or 8729 with TLS. |
+| `username` | string | **Required**, without `params`. An API user: the read and api policies are enough. |
 | `password` | string | Its password. |
 | `use_tls` | boolean | true: the API over TLS, the api-ssl service. |
 | `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, in hex, when it can't be verified otherwise. |

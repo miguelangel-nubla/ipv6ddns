@@ -2,7 +2,7 @@
 
 <!-- Generated from the schemas by `go test ./internal/docgen -update`: edit them, not this page. -->
 
-A credential's `provider` is one of these, and its `settings` are those of the provider. An unknown setting is an error. Adding a provider: see [CONTRIBUTING](../../CONTRIBUTING.md).
+A credential's `provider` is one of these, and its `settings` are those of the provider. An unknown setting is an error. A `ttl` is a duration string, as `5m`. Adding a provider: see [CONTRIBUTING](../../CONTRIBUTING.md).
 
 - [`cloudflare`](#cloudflare)
 - [`duckdns`](#duckdns)
@@ -43,7 +43,7 @@ Gravity, a DNS server for the home network, over its API.
 | `server` | string | **Required.** Its address: http://gravity.lan. |
 | `api_key` | string | **Required.** An API key. |
 | `zone` | string | **Required.** The zone, with its final dot: home.lan. |
-| `ttl` | string | **Required.** The records' TTL: 5m, 1h. |
+| `ttl` | string | Unused: Gravity has no TTL per record. Kept so that the configurations giving it load. |
 
 ## mikrotik
 
@@ -71,7 +71,7 @@ OpenWrt's dnsmasq, over SSH and UCI.
 | `ssh_key` | string | The SSH private key file. |
 | `host_key` | string | The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen. |
 | `zone` | string | **Required.** The zone of the names: lan. |
-| `ttl` | string | **Required.** The records' TTL: 5m, 1h. |
+| `ttl` | string | Unused: dnsmasq's records have no TTL of their own. Kept so that the configurations giving it load. |
 
 ## opnsense_unbound
 

@@ -90,7 +90,8 @@ func eui64Targets(tasks map[string]config.Task, prefixes []netip.Prefix) []netip
 // wanted tells whether the filter takes the address, of the MAC: its IP rules, by the filter's own
 // checks.
 func wanted(f config.Filters, mac net.HardwareAddr, target netip.Addr) bool {
-	addr := ipv6disc.NewAddr(mac, target, "", time.Minute, nil)
+	// The checks read the address and its MAC only: no timers.
+	addr := &ipv6disc.Addr{Addr: target, Hw: mac}
 	return filter.CheckIPType(addr, f.IP.Type) && filter.CheckPrefix(target, f.IP.Prefix) &&
 		filter.CheckSuffix(target, f.IP.Suffix) && filter.CheckMask(target, f.IP.Mask)
 }

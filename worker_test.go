@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -125,5 +126,16 @@ func TestNewWorker(t *testing.T) {
 	cfg.Credentials["duck"] = config.Credential{Provider: "duckdns", RawSettings: json.RawMessage(`{}`)}
 	if _, err := NewWorker(zap.NewNop().Sugar(), cfg); err == nil {
 		t.Error("invalid settings: want an error")
+	}
+}
+
+// A credential no task names is checked at the start too.
+func TestUnusedCredentialsAreChecked(t *testing.T) {
+	cfg := config.Config{
+		Discovery:   config.DefaultDiscovery(),
+		Credentials: map[string]config.Credential{"unused": {Provider: "cloudflare", RawSettings: []byte(`{"zone": "example.com"}`)}},
+	}
+	if _, err := NewWorker(zap.NewNop().Sugar(), cfg); err == nil || !strings.Contains(err.Error(), "unused") {
+		t.Errorf("got %v, want the unused credential's error", err)
 	}
 }
