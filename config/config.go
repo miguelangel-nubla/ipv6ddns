@@ -280,12 +280,33 @@ func validateConfig(configData []byte) error {
 	if !result.Valid() {
 		var errs strings.Builder
 		errs.WriteString("the configuration is not valid:")
-		for _, desc := range result.Errors() {
+		for _, desc := range specificErrors(result.Errors()) {
 			fmt.Fprintf(&errs, "\n- %s", desc)
 		}
 		return errors.New(errs.String())
 	}
 	return nil
+}
+
+// combinatorErrors are the errors saying only that a part of a combination failed: noise beside
+// the error of that part.
+var combinatorErrors = map[string]bool{
+	"number_one_of": true, "number_any_of": true, "number_all_of": true,
+	"condition_then": true, "condition_else": true,
+}
+
+// specificErrors leaves out the combinator errors, unless there is nothing else.
+func specificErrors(all []gojsonschema.ResultError) []gojsonschema.ResultError {
+	var specific []gojsonschema.ResultError
+	for _, e := range all {
+		if !combinatorErrors[e.Type()] {
+			specific = append(specific, e)
+		}
+	}
+	if len(specific) == 0 {
+		return all
+	}
+	return specific
 }
 
 func NewConfig(filename string) (config Config, err error) {
@@ -318,9 +339,19 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 
-	for name, plugin := range config.Discovery.Plugins {
-		if _, err := plugin.PluginParams(); err != nil {
+	var pluginWarnings []string
+	for _, name := range slices.Sorted(maps.Keys(config.Discovery.Plugins)) {
+		plugin := config.Discovery.Plugins[name]
+		params, err := plugin.PluginParams()
+		if err == nil {
+			// The plugin type's own checks, as when it is made: nothing runs yet.
+			_, err = plugins.Create(plugin.Type, name, params, DefaultLifetime)
+		}
+		if err != nil {
 			return config, fmt.Errorf("plugin %s: %w", name, err)
+		}
+		if plugin.Params != "" {
+			pluginWarnings = append(pluginWarnings, fmt.Sprintf("discovery.plugins.%s.params is deprecated, and goes in v1.0: give its fields, as interval, address, username", name))
 		}
 	}
 
@@ -332,7 +363,7 @@ func NewConfig(filename string) (config Config, err error) {
 	if err != nil {
 		return config, err
 	}
-	config.Warnings = append(discoveryWarnings, config.Warnings...)
+	config.Warnings = slices.Concat(discoveryWarnings, pluginWarnings, config.Warnings)
 
 	for name, task := range config.Tasks {
 		task.Name = name

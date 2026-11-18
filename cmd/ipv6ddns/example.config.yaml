@@ -191,5 +191,7 @@ discovery:
       # host_key: SHA256:...
     linux-server:
       type: linux
-      # Or all in one string: interval,address,username,password[,identity_file[,host_key]]
-      params: 90s,[2001:db8::1]:2222,user,,/path/to/id_rsa
+      interval: 90s
+      address: "[2001:db8::1]:2222"
+      username: user
+      identity_file: /path/to/id_rsa      # instead of a password, or besides it

@@ -1,11 +1,15 @@
 package config
 
 import (
+	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins/linux"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins/mikrotik"
 )
@@ -91,6 +95,77 @@ func TestPluginConfigs(t *testing.T) {
 			t.Errorf("%s: want an error", name)
 		} else if strings.Contains(err.Error(), "panic") {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	// What is wrong is said, without the schema's combinations around it.
+	for plugin, want := range map[string]string{
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n":                                                   "password is required",
+		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n":                                                      "needs a password or an identity file",
+		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n      identity_file: /k\n      use_tls: true\n":        "use_tls is not allowed",
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      password: p\n      tls_fingerprint: nothex\n": "tls_fingerprint",
+		"      type: mikrotik\n      params: 60s\n":                                                                                          "invalid mikrotik config",
+	} {
+		_, err := load(plugin)
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "Must validate") {
+			t.Errorf("%q: got %v, want an error with %q only", plugin, err, want)
+		}
+	}
+
+	// The params in one string still work, with a warning.
+	cfg, err = load("      type: linux\n      params: 60s,a,b,c\n")
+	if err != nil || len(cfg.Warnings) != 1 || !strings.Contains(cfg.Warnings[0], "params is deprecated") {
+		t.Errorf("params: %v, warnings %v", err, cfg.Warnings)
+	}
+}
+
+// The schema's plugin fields are those the plugin types of ipv6disc register, and requires the
+// same of them.
+func TestPluginSchemaMatchesTheTypes(t *testing.T) {
+	var schema struct {
+		Defs map[string]struct {
+			Properties map[string]any `json:"properties"`
+			OneOf      []struct {
+				Required []string `json:"required"`
+			} `json:"oneOf"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(configSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	defs := map[string]string{"linux": "sshPlugin", "freebsd": "sshPlugin", "mikrotik": "mikrotikPlugin"}
+	if !slices.Equal(slices.Sorted(maps.Keys(defs)), plugins.Types()) {
+		t.Fatalf("the schema has %v, ipv6disc %v", slices.Sorted(maps.Keys(defs)), plugins.Types())
+	}
+	for typeName, def := range defs {
+		fields, err := plugins.Fields(typeName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names, required []string
+		for _, f := range fields {
+			names = append(names, f.Name)
+			if f.Required {
+				required = append(required, f.Name)
+			}
+		}
+		d := schema.Defs[def]
+		var properties []string
+		for name := range d.Properties {
+			if name != "type" && name != "params" {
+				properties = append(properties, name)
+			}
+		}
+		slices.Sort(names)
+		slices.Sort(properties)
+		if !slices.Equal(names, properties) {
+			t.Errorf("%s: the schema's fields %v, ipv6disc's %v", typeName, properties, names)
+		}
+		// The second way, by fields, requires what the type does.
+		schemaRequired := slices.Sorted(slices.Values(d.OneOf[1].Required))
+		slices.Sort(required)
+		if !slices.Equal(schemaRequired, required) {
+			t.Errorf("%s: the schema requires %v, ipv6disc %v", typeName, schemaRequired, required)
 		}
 	}
 }

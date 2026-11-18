@@ -106,8 +106,7 @@
                         "type": "object",
                         "properties": {
                             "interval": {
-                                "type": "string",
-                                "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$",
+                                "$ref": "#/$defs/duration",
                                 "description": "The interval at which to check for changes."
                             },
                             "command": {
@@ -122,8 +121,7 @@
                                 "description": "Command arguments"
                             },
                             "lifetime": {
-                                "type": "string",
-                                "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$",
+                                "$ref": "#/$defs/duration",
                                 "description": "Time to keep a IPv4 host entry after it has been last received"
                             }
                         },
@@ -161,12 +159,10 @@
                         "type": "object"
                     },
                     "debounce_time": {
-                        "type": "string",
-                        "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$"
+                        "$ref": "#/$defs/duration"
                     },
                     "retry_time": {
-                        "type": "string",
-                        "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$"
+                        "$ref": "#/$defs/duration"
                     }
                 },
                 "required": [
@@ -180,208 +176,19 @@
             "type": "object",
             "properties": {
                 "ipv6": {
-                    "oneOf": [
-                        {
-                            "type": "boolean"
-                        },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "enabled": {
-                                    "type": "boolean"
-                                },
-                                "listen": {
-                                    "type": "boolean",
-                                    "description": "Passive local discovery: NDP for IPv6, the kernel's neighbor table for IPv4. Default: true."
-                                },
-                                "active": {
-                                    "type": "boolean",
-                                    "description": "Probing every host: multicast for IPv6, a broadcast ARP sweep for IPv4. Default: true."
-                                },
-                                "solicit": {
-                                    "type": "boolean",
-                                    "description": "Asking the hosts the filters want: their EUI-64 address for IPv6, ARP to their MAC alone for IPv4. Default: false."
-                                },
-                                "lifetime": {
-                                    "oneOf": [
-                                        {
-                                            "type": "string",
-                                            "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
-                                        },
-                                        {
-                                            "type": "number",
-                                            "minimum": 0
-                                        }
-                                    ],
-                                    "description": "How long the family's addresses stay after they were last seen, the plugins' too. Default: the lifetime of the configuration."
-                                }
-                            },
-                            "additionalProperties": false
-                        }
-                    ],
+                    "$ref": "#/$defs/family",
                     "description": "IPv6 discovery: true, false, or the ways. Default: listen and active."
                 },
                 "ipv4": {
-                    "oneOf": [
-                        {
-                            "type": "boolean"
-                        },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "enabled": {
-                                    "type": "boolean"
-                                },
-                                "listen": {
-                                    "type": "boolean",
-                                    "description": "Passive local discovery: NDP for IPv6, the kernel's neighbor table for IPv4. Default: true."
-                                },
-                                "active": {
-                                    "type": "boolean",
-                                    "description": "Probing every host: multicast for IPv6, a broadcast ARP sweep for IPv4. Default: true."
-                                },
-                                "solicit": {
-                                    "type": "boolean",
-                                    "description": "Asking the hosts the filters want: their EUI-64 address for IPv6, ARP to their MAC alone for IPv4. Default: false."
-                                },
-                                "lifetime": {
-                                    "oneOf": [
-                                        {
-                                            "type": "string",
-                                            "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
-                                        },
-                                        {
-                                            "type": "number",
-                                            "minimum": 0
-                                        }
-                                    ],
-                                    "description": "How long the family's addresses stay after they were last seen, the plugins' too. Default: the lifetime of the configuration."
-                                }
-                            },
-                            "additionalProperties": false
-                        }
-                    ],
+                    "$ref": "#/$defs/family",
                     "description": "IPv4 discovery: true, false, or the ways. Default: off. Filters take IPv4 addresses only with ip.family 4."
                 },
                 "plugins": {
                     "type": "object",
-                    "patternProperties": {
-                        ".+": {
-                            "type": "object",
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": [
-                                        "linux",
-                                        "freebsd",
-                                        "mikrotik"
-                                    ]
-                                },
-                                "params": {
-                                    "type": "string",
-                                    "description": "The plugin params in one string, as for ipv6disc: or the fields below."
-                                },
-                                "interval": {
-                                    "type": "string",
-                                    "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
-                                },
-                                "address": {
-                                    "type": "string",
-                                    "minLength": 1
-                                },
-                                "username": {
-                                    "type": "string"
-                                },
-                                "password": {
-                                    "type": "string"
-                                },
-                                "identity_file": {
-                                    "type": "string",
-                                    "description": "linux and freebsd: the SSH private key."
-                                },
-                                "host_key": {
-                                    "type": "string",
-                                    "pattern": "^(SHA256:[A-Za-z0-9+/]{43})?$",
-                                    "description": "linux and freebsd: the fingerprint of the host's SSH key."
-                                },
-                                "use_tls": {
-                                    "type": "boolean",
-                                    "description": "mikrotik: the API over TLS."
-                                },
-                                "tls_fingerprint": {
-                                    "type": "string",
-                                    "description": "mikrotik: the SHA-256 fingerprint of the router's certificate."
-                                }
-                            },
-                            "required": [
-                                "type"
-                            ],
-                            "oneOf": [
-                                {
-                                    "required": [
-                                        "params"
-                                    ],
-                                    "not": {
-                                        "anyOf": [
-                                            {
-                                                "required": [
-                                                    "interval"
-                                                ]
-                                            },
-                                            {
-                                                "required": [
-                                                    "address"
-                                                ]
-                                            },
-                                            {
-                                                "required": [
-                                                    "username"
-                                                ]
-                                            },
-                                            {
-                                                "required": [
-                                                    "password"
-                                                ]
-                                            },
-                                            {
-                                                "required": [
-                                                    "identity_file"
-                                                ]
-                                            },
-                                            {
-                                                "required": [
-                                                    "host_key"
-                                                ]
-                                            },
-                                            {
-                                                "required": [
-                                                    "use_tls"
-                                                ]
-                                            },
-                                            {
-                                                "required": [
-                                                    "tls_fingerprint"
-                                                ]
-                                            }
-                                        ]
-                                    }
-                                },
-                                {
-                                    "required": [
-                                        "interval",
-                                        "address",
-                                        "username"
-                                    ],
-                                    "not": {
-                                        "required": [
-                                            "params"
-                                        ]
-                                    }
-                                }
-                            ],
-                            "additionalProperties": false
-                        }
-                    }
+                    "additionalProperties": {
+                        "$ref": "#/$defs/plugin"
+                    },
+                    "description": "Plugins reading the neighbor tables of routers and hosts, by name."
                 },
                 "listen": {
                     "type": "boolean",
@@ -396,46 +203,15 @@
                     "description": "Deprecated: discovery.ipv6.solicit."
                 },
                 "interfaces": {
-                    "oneOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "minLength": 1
-                            }
-                        }
-                    ],
+                    "$ref": "#/$defs/stringList",
                     "description": "The interfaces the local discovery, of both families, runs on: names, or patterns as en*. Default: all."
                 },
                 "exclude_interfaces": {
-                    "oneOf": [
-                        {
-                            "type": "string"
-                        },
-                        {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "minLength": 1
-                            }
-                        }
-                    ],
+                    "$ref": "#/$defs/stringList",
                     "description": "The interfaces the local discovery doesn't run on: names, or patterns as docker*, veth*."
                 },
                 "rediscover": {
-                    "oneOf": [
-                        {
-                            "type": "string",
-                            "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
-                        },
-                        {
-                            "type": "number",
-                            "minimum": 0
-                        }
-                    ],
+                    "$ref": "#/$defs/duration",
                     "description": "How often the active discovery probes every host: a duration, or seconds. Default: a third of the lifetime."
                 }
             },
@@ -468,13 +244,11 @@
                         "description": "http and dns: the families to find. Default: 4."
                     },
                     "interval": {
-                        "type": "string",
-                        "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$",
+                        "$ref": "#/$defs/duration",
                         "description": "How often it runs. Default: 5m."
                     },
                     "lifetime": {
-                        "type": "string",
-                        "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$",
+                        "$ref": "#/$defs/duration",
                         "description": "How long an address stays after the last run that gave it. Default: 3 intervals."
                     },
                     "urls": {
@@ -509,16 +283,7 @@
             }
         },
         "lifetime": {
-            "oneOf": [
-                {
-                    "type": "string",
-                    "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
-                },
-                {
-                    "type": "number",
-                    "minimum": 0
-                }
-            ],
+            "$ref": "#/$defs/duration",
             "description": "How long a discovered address stays after it was last seen, unless its family says: a duration, or seconds. Default: 1h. The -lifetime flag, given, wins."
         },
         "log_level": {
@@ -535,6 +300,31 @@
             "description": "Logging level. Default: info. The -log_level flag, given, wins."
         },
         "webserver_listen": {
+            "$ref": "#/$defs/stringList",
+            "description": "Serve the state to a browser, on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053. A list, or comma separated. The -webserver_listen flag, given, wins."
+        }
+    },
+    "required": [
+        "tasks",
+        "credentials"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+        "duration": {
+            "description": "A duration, as 90s, 1m30s or 1h, or a number of seconds.",
+            "oneOf": [
+                {
+                    "type": "string",
+                    "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$"
+                },
+                {
+                    "type": "number",
+                    "minimum": 0
+                }
+            ]
+        },
+        "stringList": {
+            "description": "A list, or one string of comma separated values. Numbers, as ports, are taken as written.",
             "oneOf": [
                 {
                     "type": [
@@ -552,13 +342,271 @@
                         "minLength": 1
                     }
                 }
+            ]
+        },
+        "family": {
+            "description": "How a family is discovered: true, false, or an object of the ways, each defaulting as true sets it.",
+            "oneOf": [
+                {
+                    "type": "boolean"
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "listen": {
+                            "type": "boolean",
+                            "description": "Passive local discovery: NDP for IPv6, the kernel's neighbor table for IPv4. Default: true."
+                        },
+                        "active": {
+                            "type": "boolean",
+                            "description": "Probing every host: multicast for IPv6, a broadcast ARP sweep for IPv4. Default: true."
+                        },
+                        "solicit": {
+                            "type": "boolean",
+                            "description": "Asking the hosts the filters want: their EUI-64 address for IPv6, ARP to their MAC alone for IPv4. Default: false."
+                        },
+                        "lifetime": {
+                            "$ref": "#/$defs/duration",
+                            "description": "How long the family's addresses stay after they were last seen, the plugins' too. Default: the lifetime of the configuration."
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "sshPlugin": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "params": {
+                    "type": "string",
+                    "description": "Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead."
+                },
+                "interval": {
+                    "$ref": "#/$defs/duration",
+                    "description": "How often the plugin reads the table."
+                },
+                "address": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The host, and its port if not the default: 192.168.1.1, [2001:db8::1]:2222."
+                },
+                "username": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "password": {
+                    "type": "string"
+                },
+                "identity_file": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The SSH private key file."
+                },
+                "host_key": {
+                    "type": "string",
+                    "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
+                    "description": "The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Without it, any key is accepted."
+                }
+            },
+            "additionalProperties": false,
+            "oneOf": [
+                {
+                    "required": [
+                        "params"
+                    ],
+                    "not": {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "interval"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "address"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "username"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "password"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "identity_file"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "host_key"
+                                ]
+                            }
+                        ]
+                    }
+                },
+                {
+                    "required": [
+                        "interval",
+                        "address",
+                        "username"
+                    ],
+                    "not": {
+                        "required": [
+                            "params"
+                        ]
+                    }
+                }
             ],
-            "description": "Serve the state to a browser, on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053. A list, or comma separated. The -webserver_listen flag, given, wins."
+            "description": "A plugin over SSH, linux or freebsd: with a password, an identity file, or both."
+        },
+        "mikrotikPlugin": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "params": {
+                    "type": "string",
+                    "description": "Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead."
+                },
+                "interval": {
+                    "$ref": "#/$defs/duration",
+                    "description": "How often the plugin reads the table."
+                },
+                "address": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The host, and its port if not the default: 192.168.1.1, [2001:db8::1]:2222."
+                },
+                "username": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "password": {
+                    "type": "string"
+                },
+                "use_tls": {
+                    "type": "boolean",
+                    "description": "The API over TLS, port 8729 by default rather than 8728."
+                },
+                "tls_fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9A-Fa-f]{2}(:?[0-9A-Fa-f]{2}){31}$",
+                    "description": "The SHA-256 fingerprint of the router's certificate, in hex."
+                }
+            },
+            "additionalProperties": false,
+            "oneOf": [
+                {
+                    "required": [
+                        "params"
+                    ],
+                    "not": {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "interval"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "address"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "username"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "password"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "use_tls"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "tls_fingerprint"
+                                ]
+                            }
+                        ]
+                    }
+                },
+                {
+                    "required": [
+                        "interval",
+                        "address",
+                        "username",
+                        "password"
+                    ],
+                    "not": {
+                        "required": [
+                            "params"
+                        ]
+                    }
+                }
+            ],
+            "description": "A plugin over the Mikrotik API."
+        },
+        "plugin": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "linux",
+                        "freebsd",
+                        "mikrotik"
+                    ]
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "type": {
+                                "enum": [
+                                    "linux",
+                                    "freebsd"
+                                ]
+                            }
+                        }
+                    },
+                    "then": {
+                        "$ref": "#/$defs/sshPlugin"
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "type": {
+                                "const": "mikrotik"
+                            }
+                        }
+                    },
+                    "then": {
+                        "$ref": "#/$defs/mikrotikPlugin"
+                    }
+                }
+            ]
         }
-    },
-    "required": [
-        "tasks",
-        "credentials"
-    ],
-    "additionalProperties": false
+    }
 }
