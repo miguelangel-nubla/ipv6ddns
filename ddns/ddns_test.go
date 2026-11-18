@@ -17,19 +17,22 @@ import (
 	"github.com/miguelangel-nubla/ipv6disc"
 )
 
+// validSettings are settings each provider takes.
+var validSettings = map[string]string{
+	"cloudflare":              `{"api_token": "t", "zone": "example.com", "ttl": "5m", "proxied": false}`,
+	"duckdns":                 `{"api_token": "01234567-89ab-cdef-0123-456789abcdef"}`,
+	"gravity":                 `{"server": "http://gravity", "api_key": "k", "zone": "example.com.", "ttl": "5m"}`,
+	"mikrotik":                `{"address": "192.0.2.1", "username": "u", "password": "p", "zone": "lan", "ttl": "5m"}`,
+	"openwrt":                 `{"address": "192.0.2.1", "username": "root", "password": "p", "zone": "lan", "ttl": "5m"}`,
+	"route53":                 `{"access_key_id": "a", "secret_access_key": "s", "region": "eu-west-1", "hosted_zone_id": "Z1", "ttl": "5m"}`,
+	"technitium":              `{"address": "https://dns", "token": "t", "zone": "example.com", "ttl": "5m"}`,
+	"windows":                 `{"zone": "example.com"}`,
+	"opnsense_unbound":        `{"address": "https://fw", "key": "k", "secret": "s", "zone": "lan", "ttl": "5m"}`,
+	"pfsense_restapi_unbound": `{"address": "https://fw", "key": "k", "zone": "lan", "ttl": "5m"}`,
+}
+
 func TestNewService(t *testing.T) {
-	valid := map[string]string{
-		"cloudflare":              `{"api_token": "t", "zone": "example.com", "ttl": "5m", "proxied": false}`,
-		"duckdns":                 `{"api_token": "01234567-89ab-cdef-0123-456789abcdef"}`,
-		"gravity":                 `{"server": "http://gravity", "api_key": "k", "zone": "example.com.", "ttl": "5m"}`,
-		"mikrotik":                `{"address": "192.0.2.1", "username": "u", "password": "p", "zone": "lan", "ttl": "5m"}`,
-		"openwrt":                 `{"address": "192.0.2.1", "username": "root", "password": "p", "zone": "lan", "ttl": "5m"}`,
-		"route53":                 `{"access_key_id": "a", "secret_access_key": "s", "region": "eu-west-1", "hosted_zone_id": "Z1", "ttl": "5m"}`,
-		"technitium":              `{"address": "https://dns", "token": "t", "zone": "example.com", "ttl": "5m"}`,
-		"windows":                 `{"zone": "example.com"}`,
-		"opnsense_unbound":        `{"address": "https://fw", "key": "k", "secret": "s", "zone": "lan", "ttl": "5m"}`,
-		"pfsense_restapi_unbound": `{"address": "https://fw", "key": "k", "zone": "lan", "ttl": "5m"}`,
-	}
+	valid := validSettings
 	for provider := range providers {
 		settings, ok := valid[provider]
 		if !ok {
@@ -192,5 +195,20 @@ func TestWindowsHelpers(t *testing.T) {
 	}
 	if windowsRecordName("") != "@" || windowsRecordName("host") != "host" {
 		t.Error("windowsRecordName")
+	}
+}
+
+// A setting no provider has, as a typo, is an error rather than ignored.
+func TestUnknownSettingsAreRefused(t *testing.T) {
+	for provider, settings := range validSettings {
+		var withTypo map[string]any
+		if err := json.Unmarshal([]byte(settings), &withTypo); err != nil {
+			t.Fatal(err)
+		}
+		withTypo["tll"] = "5m"
+		raw, _ := json.Marshal(withTypo)
+		if _, err := NewService(provider, raw); err == nil || !strings.Contains(err.Error(), "tll") {
+			t.Errorf("%s: a setting with a typo: got %v, want an error naming it", provider, err)
+		}
 	}
 }
