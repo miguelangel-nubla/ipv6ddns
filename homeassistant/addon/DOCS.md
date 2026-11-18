@@ -11,8 +11,9 @@ the network's public IPv4.
    [README](https://github.com/miguelangel-nubla/hassio-repository) says, and
    install ipv6ddns.
 2. Start it. It writes a starting `config.yaml` in its folder,
-   `/addon_configs/<id>_ipv6ddns`, and discovers: its page lists the hosts of
-   the network and their MAC addresses.
+   `addon_configs/<id>_ipv6ddns`, called `app_configs` in recent versions of
+   Home Assistant, and discovers: its page lists the hosts of the network and
+   their MAC addresses.
 3. Edit that `config.yaml`, with the File editor or Studio Code Server add-on,
    and restart the add-on.
 
@@ -41,5 +42,6 @@ discovered. It is served to Home Assistant only, not to the network.
 The add-on is on the host's network, with the `NET_RAW` capability, so that
 discovery hears and probes the network as ipv6ddns on the host would. The
 [plugins](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/discovery.md#plugins)
-read your routers' tables besides. If Home Assistant runs other containers'
-bridges on its host, leave them out with `discovery.exclude_interfaces`.
+read your routers' tables besides. The starting configuration leaves out the
+bridges of Home Assistant's own containers, `hassio`, `docker0` and `veth*`,
+with `discovery.exclude_interfaces`: keep that.

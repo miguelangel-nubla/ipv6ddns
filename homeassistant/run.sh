@@ -1,12 +1,13 @@
 #!/bin/sh
 # The start of the Home Assistant add-on: the configuration is config.yaml in the add-on's folder,
-# /addon_configs/<id>_ipv6ddns, at /config here; the add-on's options are /data/options.json.
+# addon_configs/<id>_ipv6ddns (app_configs in recent versions), at /config here; the add-on's
+# options are /data/options.json.
 set -eu
 
 config=/config/config.yaml
 if [ ! -f "$config" ]; then
 	cp /usr/share/ipv6ddns/config.yaml "$config"
-	echo "ipv6ddns: no configuration yet: wrote a starting one, config.yaml in the add-on's folder of /addon_configs. Edit it, and restart the add-on." >&2
+	echo "ipv6ddns: no configuration yet: wrote a starting one, config.yaml in the add-on's folder, addon_configs/<id>_ipv6ddns (app_configs in recent versions). Edit it, and restart the add-on." >&2
 fi
 
 log_level=$(jq -r '.log_level // "info"' /data/options.json 2>/dev/null || echo info)
