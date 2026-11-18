@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/miguelangel-nubla/ipv6disc"
 )
@@ -45,54 +46,93 @@ const duckDNSSettingsSchema = `
 	}
 	`
 
+// Update sets the name's A and AAAA records to the first address of each family. DuckDNS takes
+// one of each, and fills in an IPv4 left out with the requester's, the machine running this,
+// unless an IPv6 is given: it never sees an empty address, and a record of a family without
+// addresses is cleared.
 func (d *DuckDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	v4 := addrCollection.Filter4().Get()
-	var ipv4 string
-	if len(v4) == 0 {
-		ipv4 = ""
-	} else {
-		ipv4 = v4[0].String()
+	var ipv4, ipv6 string
+	if v4 := addrCollection.Filter4().Get(); len(v4) > 0 {
+		ipv4 = v4[0].WithZone("").String()
 	}
-	v6 := addrCollection.Filter6().Get()
-	var ipv6 string
-	if len(v6) == 0 {
-		ipv6 = ""
-	} else {
+	if v6 := addrCollection.Filter6().Get(); len(v6) > 0 {
 		ipv6 = v6[0].WithZone("").String()
 	}
 
+	clear := url.Values{"clear": {"true"}}
+	if ipv4 == "" && ipv6 == "" {
+		_, err := d.request(hostname, clear)
+		return err
+	}
+
+	params := url.Values{}
+	if ipv4 != "" {
+		params.Set("ip", ipv4)
+	}
+	if ipv6 != "" {
+		params.Set("ipv6", ipv6)
+	}
+	current, err := d.request(hostname, params)
+	if err != nil {
+		return err
+	}
+
+	// DuckDNS keeps the record of a family left out. It can only clear both: clear them, and
+	// set the addresses again.
+	if ipv4 == "" && current.ipv4 != "" || ipv6 == "" && current.ipv6 != "" {
+		if _, err := d.request(hostname, clear); err != nil {
+			return err
+		}
+		if _, err := d.request(hostname, params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// duckDNSRecords are the addresses DuckDNS has for a name after an update.
+type duckDNSRecords struct {
+	ipv4, ipv6 string
+}
+
+// request runs an update with params, and returns the addresses DuckDNS has after it, from its
+// verbose answer: OK, the IPv4, the IPv6, and UPDATED or NOCHANGE, a line each.
+func (d *DuckDNS) request(hostname string, params url.Values) (duckDNSRecords, error) {
 	baseURL := "https://www.duckdns.org/update"
 	if d.updateURL != "" {
 		baseURL = d.updateURL
 	}
-	params := url.Values{}
-	params.Add("token", d.APIToken)
-	params.Add("domains", hostname)
-	params.Add("ip", ipv4)
-	params.Add("ipv6", ipv6)
+	params.Set("token", d.APIToken)
+	params.Set("domains", hostname)
+	params.Set("verbose", "true")
 
-	updateURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
-	resp, err := newHTTPClient(nil).Get(updateURL)
+	resp, err := newHTTPClient(nil).Get(baseURL + "?" + params.Encode())
 	if err != nil {
-		return fmt.Errorf("failed to update record: %w", withoutURL(err))
+		return duckDNSRecords{}, fmt.Errorf("failed to update record: %w", withoutURL(err))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("received non-200 status code: %d", resp.StatusCode)
+		return duckDNSRecords{}, fmt.Errorf("received non-200 status code: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response body: %v", err)
+		return duckDNSRecords{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	responseBody := string(body)
-	if responseBody != "OK" {
-		return fmt.Errorf("response body does not contain 'OK': %s", responseBody)
+	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
+	if lines[0] != "OK" {
+		return duckDNSRecords{}, fmt.Errorf("update refused: %s", strings.TrimSpace(string(body)))
 	}
-
-	return nil
+	var records duckDNSRecords
+	if len(lines) > 1 {
+		records.ipv4 = strings.TrimSpace(lines[1])
+	}
+	if len(lines) > 2 {
+		records.ipv6 = strings.TrimSpace(lines[2])
+	}
+	return records, nil
 }
 
 func (d *DuckDNS) Domain(hostname string) string {
