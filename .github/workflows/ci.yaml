@@ -42,6 +42,12 @@ jobs:
         name: Install aioesphomeapi
         run: pip install aioesphomeapi==46.30.1
       -
+        # For the test of discovery to announce on loopback, and not on the runner's network.
+        name: Multicast on loopback
+        run: |
+          sudo ip link set lo multicast on
+          sudo ip route add 224.0.0.0/4 dev lo
+      -
         name: Vet
         run: go vet ./...
       -
