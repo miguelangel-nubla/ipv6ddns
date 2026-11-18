@@ -18,7 +18,7 @@ With a `homeassistant` block, ipv6ddns is a device of Home Assistant's ESPHome i
      key: ${file:homeassistant.key}
    ```
 
-2. Home Assistant finds the device by mDNS, `ipv6ddns`, under *Settings → Devices & services → Discovered*. Add it, and give it the key. Where mDNS doesn't reach, as across VLANs, add the ESPHome integration by hand with ipv6ddns' address and port 6053.
+2. Home Assistant finds the device by mDNS, `ipv6ddns`, under *Settings → Devices & services → Discovered*. Add it, and give it the key. Where mDNS doesn't reach, as across VLANs, or with `announce: false`, add the ESPHome integration by hand with ipv6ddns' address and port 6053.
 
 The keys of the block, its name and port among them, are in the [reference](reference/configuration.md#top-level).
 
