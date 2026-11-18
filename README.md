@@ -120,7 +120,9 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
      -log_level debug
    ```
 
-   `-webserver_listen` takes a comma-separated list of what to listen on, in any combination:
+   `-lifetime` (default 1h), `-log_level` and `-webserver_listen` can be in the configuration file instead, as `lifetime`, `log_level` and `webserver_listen`: a flag given on the command line wins.
+
+   `-webserver_listen` takes a comma-separated list of what to listen on, in any combination (in the file, a list too):
 
    | Entry | Listens on |
    |---|---|
@@ -364,7 +366,8 @@ Each family is discovered the same ways, `true` turning them on as by default, `
 | **Plugins** | the routers' IPv6 neighbor tables | their ARP tables |
 | `listen` (default true) | NDP, and the answers of the protocols | the kernel's neighbor table: netlink on Linux, `arp -an` on macOS and the BSDs |
 | `active` (default true), probing every host | multicast ping, SSDP, WS-Discovery | a sweep: a UDP packet to each address of the local subnets (a /22 at most, or the /24 of the address), so the kernel resolves the quiet hosts. It broadcasts an ARP request for each address |
-| `solicit` (default false), asking the hosts the filters want | a neighbor solicitation for the EUI-64 address of each MAC an `eui64` filter names | ARP requests to each MAC an IPv4 filter names, alone, for every address of the local subnets: nothing broadcast. Linux, `CAP_NET_RAW` |
+| `solicit` (default false), asking the hosts the filters want | a neighbor solicitation for the EUI-64 address of each MAC an `eui64` filter names | ARP requests to each MAC an IPv4 filter names, alone, for the addresses of the local subnets in the filter's `ip.prefix` (all of them without one): nothing broadcast. Linux, `CAP_NET_RAW` |
+| `lifetime` | how long the family's addresses stay after they were last seen, the plugins' too | the same. Default: the top-level `lifetime` |
 
 `active` needs `listen`, which reads its answers. To find the IPv4 hosts you name without broadcasting:
 
@@ -373,6 +376,18 @@ discovery:
   ipv4:
     active: false
     solicit: true
+```
+
+The local discovery runs on every interface, unless `discovery.interfaces` names those it runs on, and `discovery.exclude_interfaces` those it doesn't: names, or patterns as `docker*`. In a container on the host's network, leave out the bridges of the others, so that they don't count as discovered hosts and the ARP requests stay off them:
+
+```yaml
+lifetime: 1h
+discovery:
+  exclude_interfaces: [docker*, br-*, veth*]
+  ipv4:
+    active: false
+    solicit: true
+    lifetime: 3m      # a device that leaves loses its A record within minutes
 ```
 
 The `listen`, `active` and `solicit_eui64` keys of `discovery`, from before, still work: they are `ipv6.listen`, `ipv6.active` and `ipv6.solicit`, and the log says so.

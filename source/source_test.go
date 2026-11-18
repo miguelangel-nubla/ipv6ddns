@@ -177,7 +177,13 @@ func TestSourceKeepsAddressesForTheirLifetime(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.Start(ctx, zap.NewNop().Sugar())
+	ran := make(chan struct{}, 1)
+	s.Start(ctx, zap.NewNop().Sugar(), func() { ran <- struct{}{} })
+	select {
+	case <-ran:
+	case <-time.After(3 * time.Second):
+		t.Fatal("not told of the run")
+	}
 
 	deadline := time.Now().Add(3 * time.Second)
 	for len(s.Addresses().Get()) == 0 {

@@ -5,7 +5,44 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 )
+
+// DefaultLifetime is how long a discovered address stays after it was last seen, by default.
+const DefaultLifetime = time.Hour
+
+// StringList is a list of strings: in the configuration, a list, or one string of comma separated
+// values. A number, as a port, is taken as written.
+type StringList []string
+
+func (l *StringList) UnmarshalJSON(b []byte) error {
+	var values []json.RawMessage
+	if err := json.Unmarshal(b, &values); err != nil {
+		values = []json.RawMessage{b}
+	}
+	*l = nil
+	for _, raw := range values {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			var number json.Number
+			if err := json.Unmarshal(raw, &number); err != nil {
+				return fmt.Errorf("not a string or a list of them: %s", b)
+			}
+			value = number.String()
+		}
+		for _, v := range strings.Split(value, ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				*l = append(*l, v)
+			}
+		}
+	}
+	return nil
+}
 
 // Family is how a family's addresses are discovered: the same for IPv6 and IPv4. It is true,
 // false, or an object of the ways, each defaulting as in true.
@@ -21,6 +58,9 @@ type Family struct {
 	// Asking the hosts the filters want, which aren't otherwise found. IPv6: a neighbor
 	// solicitation for the EUI-64 address of their MAC. IPv4: ARP requests to their MAC alone.
 	Solicit bool `json:"solicit"`
+	// How long the family's addresses stay after they were last seen, the plugins' too: the
+	// lifetime of the configuration when not given.
+	Lifetime duration.Duration `json:"lifetime"`
 
 	// Whether the configuration has it, rather than the default.
 	set bool
@@ -86,6 +126,14 @@ func (d *Discovery) setUpDiscovery() ([]string, error) {
 	for name, f := range map[string]Family{"ipv6": d.IPv6, "ipv4": d.IPv4} {
 		if f.Enabled && f.Active && !f.Listen {
 			errs = append(errs, fmt.Errorf("discovery.%s: active needs listen, which reads its answers", name))
+		}
+		if f.Lifetime.Duration < 0 {
+			errs = append(errs, fmt.Errorf("discovery.%s: a negative lifetime", name))
+		}
+	}
+	for _, pattern := range slices.Concat(d.Interfaces, d.ExcludeInterfaces) {
+		if _, err := path.Match(pattern, ""); err != nil {
+			errs = append(errs, fmt.Errorf("discovery: invalid interface pattern %q", pattern))
 		}
 	}
 	return warnings, errors.Join(errs...)

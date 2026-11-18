@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	"github.com/xeipuuv/gojsonschema"
 	"sigs.k8s.io/yaml"
@@ -26,6 +27,13 @@ type Config struct {
 	Credentials map[string]Credential `json:"credentials"`
 	Discovery   Discovery             `json:"discovery"`
 	Sources     map[string]Source     `json:"sources,omitempty"`
+
+	// The settings that are flags too: a flag given wins. Lifetime is how long a discovered
+	// address stays after it was last seen, unless its family says.
+	Lifetime        duration.Duration `json:"lifetime"`
+	LogLevel        string            `json:"log_level,omitempty"`
+	WebserverListen StringList        `json:"webserver_listen,omitempty"`
+
 	// What in the configuration to change, as a deprecated setting: NewConfig sets them, to log.
 	Warnings []string `json:"-"`
 }
@@ -36,6 +44,10 @@ type Discovery struct {
 	IPv6    Family                  `json:"ipv6"`
 	IPv4    Family                  `json:"ipv4"`
 	Plugins map[string]PluginConfig `json:"plugins"`
+	// The interfaces the local discovery runs on, and those it doesn't: names or patterns, as
+	// "docker*". None means all. The plugins aren't concerned.
+	Interfaces        StringList `json:"interfaces,omitempty"`
+	ExcludeInterfaces StringList `json:"exclude_interfaces,omitempty"`
 
 	// Deprecated: ipv6.listen, ipv6.active and ipv6.solicit. NewConfig moves them there.
 	Listen       *bool `json:"listen,omitempty"`
@@ -220,7 +232,17 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 			result.WriteString(prefix + "        " + family.name + ": off\n")
 			continue
 		}
-		fmt.Fprintf(&result, "%s        %s: listen %t, active %t, solicit %t\n", prefix, family.name, family.f.Listen, family.f.Active, family.f.Solicit)
+		fmt.Fprintf(&result, "%s        %s: listen %t, active %t, solicit %t", prefix, family.name, family.f.Listen, family.f.Active, family.f.Solicit)
+		if family.f.Lifetime.Duration > 0 {
+			fmt.Fprintf(&result, ", lifetime %s", family.f.Lifetime.Duration)
+		}
+		result.WriteString("\n")
+	}
+	if len(c.Discovery.Interfaces) > 0 {
+		fmt.Fprintf(&result, "%s        Interfaces: %s\n", prefix, strings.Join(c.Discovery.Interfaces, ", "))
+	}
+	if len(c.Discovery.ExcludeInterfaces) > 0 {
+		fmt.Fprintf(&result, "%s        Excluded interfaces: %s\n", prefix, strings.Join(c.Discovery.ExcludeInterfaces, ", "))
 	}
 	if len(c.Discovery.Plugins) > 0 {
 		result.WriteString(prefix + "        Plugins:\n")
@@ -292,6 +314,7 @@ func NewConfig(filename string) (config Config, err error) {
 
 	// Set defaults
 	config.Discovery = DefaultDiscovery()
+	config.Lifetime = duration.Duration{Duration: DefaultLifetime}
 
 	if err := json.Unmarshal(byteValue, &config); err != nil {
 		return config, err

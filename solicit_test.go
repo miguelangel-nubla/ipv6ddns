@@ -1,6 +1,7 @@
 package ipv6ddns
 
 import (
+	"fmt"
 	"net"
 	"net/netip"
 	"slices"
@@ -68,22 +69,37 @@ func TestEUI64Targets(t *testing.T) {
 }
 
 func TestIPv4SolicitTargets(t *testing.T) {
-	filter := func(mac string, families ...int) config.Filters {
+	filter := func(mac, prefix string, families ...int) config.Filters {
 		var f config.Filters
 		f.MAC.Address = mac
 		f.IP.Family = families
+		if prefix != "" {
+			f.IP.Prefix = netip.MustParsePrefix(prefix)
+		}
 		return f
 	}
 	tasks := map[string]config.Task{
-		"a": {Filters: []config.Filters{filter("00:11:22:33:44:01", 4), filter("00:11:22:33:44:02")}}, // the second: IPv6 only
-		"b": {Filters: []config.Filters{filter("00:11:22:33:44:03", 4, 6), filter("00:11:22:33:44:01", 4)}},
-		"c": {Filters: []config.Filters{filter("", 4), filter("nope", 4)}},
+		// The second: IPv6 only.
+		"a": {Filters: []config.Filters{filter("00:11:22:33:44:01", "10.2.3.0/24", 4), filter("00:11:22:33:44:02", "")}},
+		"b": {Filters: []config.Filters{
+			filter("00:11:22:33:44:03", "", 4, 6),
+			filter("00:11:22:33:44:01", "192.168.1.7/24", 4),
+			filter("00:11:22:33:44:01", "10.2.3.0/24", 4),
+		}},
+		"c": {Filters: []config.Filters{filter("", "", 4), filter("nope", "", 4)}},
+		// An IPv6 prefix takes no IPv4 address; a filter without a prefix asks everywhere.
+		"d": {Filters: []config.Filters{filter("00:11:22:33:44:04", "2001:db8::/64", 4), filter("00:11:22:33:44:05", "10.0.0.0/8", 4), filter("00:11:22:33:44:05", "", 4)}},
 	}
 	var got []string
-	for _, mac := range ipv4SolicitTargets(tasks) {
-		got = append(got, mac.String())
+	for _, target := range ipv4SolicitTargets(tasks) {
+		got = append(got, fmt.Sprint(target.MAC, target.Prefixes))
 	}
-	if want := []string{"00:11:22:33:44:01", "00:11:22:33:44:03"}; !slices.Equal(got, want) {
+	want := []string{
+		"00:11:22:33:44:01 [10.2.3.0/24 192.168.1.0/24]",
+		"00:11:22:33:44:03 []",
+		"00:11:22:33:44:05 []",
+	}
+	if !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
