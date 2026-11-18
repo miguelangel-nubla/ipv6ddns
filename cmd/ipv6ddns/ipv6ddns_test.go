@@ -86,6 +86,8 @@ func TestListenAll(t *testing.T) {
 }
 
 func TestExampleConfig(t *testing.T) {
+	// The example takes the router's password from the environment.
+	t.Setenv("ROUTER_PASSWORD", "example")
 	cfg, err := config.NewConfig("example.config.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +96,11 @@ func TestExampleConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, p := range cfg.Discovery.Plugins {
-		if _, err := plugins.Create(p.Type, name, p.Params, time.Hour); err != nil {
+		params, err := p.PluginParams()
+		if err != nil {
+			t.Fatalf("plugin %s: %v", name, err)
+		}
+		if _, err := plugins.Create(p.Type, name, params, time.Hour); err != nil {
 			t.Errorf("plugin %s: %v", name, err)
 		}
 	}

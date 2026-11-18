@@ -64,7 +64,11 @@ func main() {
 	}
 
 	for name, pCfg := range config.Discovery.Plugins {
-		p, err := plugins.Create(pCfg.Type, name, pCfg.Params, lifetime)
+		params, err := pCfg.PluginParams()
+		if err != nil {
+			sugar.Fatalf("plugin %s: %s", name, err)
+		}
+		p, err := plugins.Create(pCfg.Type, name, params, lifetime)
 		if err != nil {
 			sugar.Fatalf("can't create plugin %s: %s", pCfg.Type, err)
 		}
