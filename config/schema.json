@@ -314,8 +314,7 @@
             "description": "A duration, as 90s, 1m30s or 1h, or a number of seconds.",
             "oneOf": [
                 {
-                    "type": "string",
-                    "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$"
+                    "$ref": "#/$defs/durationString"
                 },
                 {
                     "type": "number",
@@ -388,7 +387,7 @@
                     "description": "Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead."
                 },
                 "interval": {
-                    "$ref": "#/$defs/duration",
+                    "$ref": "#/$defs/durationString",
                     "description": "How often the plugin reads the table."
                 },
                 "address": {
@@ -415,60 +414,19 @@
                 }
             },
             "additionalProperties": false,
-            "oneOf": [
-                {
-                    "required": [
-                        "params"
-                    ],
-                    "not": {
-                        "anyOf": [
-                            {
-                                "required": [
-                                    "interval"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "address"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "username"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "password"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "identity_file"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "host_key"
-                                ]
-                            }
-                        ]
-                    }
-                },
-                {
-                    "required": [
-                        "interval",
-                        "address",
-                        "username"
-                    ],
-                    "not": {
-                        "required": [
-                            "params"
-                        ]
-                    }
-                }
-            ],
-            "description": "A plugin over SSH, linux or freebsd: with a password, an identity file, or both."
+            "description": "A plugin over SSH, linux or freebsd: with a password, an identity file, or both.",
+            "if": {
+                "required": [
+                    "params"
+                ]
+            },
+            "else": {
+                "required": [
+                    "interval",
+                    "address",
+                    "username"
+                ]
+            }
         },
         "mikrotikPlugin": {
             "type": "object",
@@ -481,7 +439,7 @@
                     "description": "Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead."
                 },
                 "interval": {
-                    "$ref": "#/$defs/duration",
+                    "$ref": "#/$defs/durationString",
                     "description": "How often the plugin reads the table."
                 },
                 "address": {
@@ -507,61 +465,19 @@
                 }
             },
             "additionalProperties": false,
-            "oneOf": [
-                {
-                    "required": [
-                        "params"
-                    ],
-                    "not": {
-                        "anyOf": [
-                            {
-                                "required": [
-                                    "interval"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "address"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "username"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "password"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "use_tls"
-                                ]
-                            },
-                            {
-                                "required": [
-                                    "tls_fingerprint"
-                                ]
-                            }
-                        ]
-                    }
-                },
-                {
-                    "required": [
-                        "interval",
-                        "address",
-                        "username",
-                        "password"
-                    ],
-                    "not": {
-                        "required": [
-                            "params"
-                        ]
-                    }
-                }
-            ],
-            "description": "A plugin over the Mikrotik API."
+            "description": "A plugin over the Mikrotik API.",
+            "if": {
+                "required": [
+                    "params"
+                ]
+            },
+            "else": {
+                "required": [
+                    "interval",
+                    "address",
+                    "username"
+                ]
+            }
         },
         "plugin": {
             "type": "object",
@@ -607,6 +523,11 @@
                     }
                 }
             ]
+        },
+        "durationString": {
+            "type": "string",
+            "pattern": "^(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+)$",
+            "description": "A duration, as 90s, 1m30s or 1h."
         }
     }
 }

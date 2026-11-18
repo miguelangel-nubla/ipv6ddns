@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -187,8 +188,8 @@ func TestDurationPattern(t *testing.T) {
 			t.Errorf("%q: %v", d, err)
 		}
 	}
-	for _, d := range []string{"10", "soon", "1d"} {
-		if err := validateConfig(config(d)); err == nil {
+	for _, d := range []string{"10", "soon", "1d", "s", ".s", "ms"} {
+		if err := validateConfig(config(d)); err == nil || !strings.Contains(err.Error(), "not a duration, as 90s") {
 			t.Errorf("%q: want an error", d)
 		}
 	}

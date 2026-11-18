@@ -255,7 +255,7 @@ A plugin reads the neighbor table of a router or a host, as ipv6disc does: `linu
 | `host_key` | linux, freebsd | The host's SSH key fingerprint, `SHA256:...`, to verify it. Without it, any key is accepted, and the log warns with the fingerprint seen |
 | `use_tls`, `tls_fingerprint` | mikrotik | The API over TLS, and the SHA-256 fingerprint of the router's certificate |
 
-`interval`, `address` and `username` are needed, and a `password` for `mikrotik`, a `password` or an `identity_file` for the others: the configuration is checked as it loads, each plugin with only its type's fields, so a mistake is told at the start, not when the plugin connects.
+`interval`, `address` and `username` are needed, and for `linux` and `freebsd` a `password` or an `identity_file`: the configuration is checked as it loads, each plugin with only its type's fields, so a mistake is told at the start, not when the plugin connects.
 
 `params`, ipv6disc's string of them all, `interval,address,username,password,...`, still works, with a warning: it goes in v1.0.
 

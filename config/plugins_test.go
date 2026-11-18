@@ -100,7 +100,9 @@ func TestPluginConfigs(t *testing.T) {
 
 	// What is wrong is said, without the schema's combinations around it.
 	for plugin, want := range map[string]string{
-		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n":                                                   "password is required",
+		"      type: linux\n": "interval is required",
+		"      type: linux\n      params: 60s,a,b,c\n      address: a\n":                                                                     "not both",
+		"      type: mikrotik\n      interval: 60\n      address: a\n      username: u\n":                                                    "interval",
 		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n":                                                      "needs a password or an identity file",
 		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n      identity_file: /k\n      use_tls: true\n":        "use_tls is not allowed",
 		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      password: p\n      tls_fingerprint: nothex\n": "tls_fingerprint",
@@ -125,9 +127,9 @@ func TestPluginSchemaMatchesTheTypes(t *testing.T) {
 	var schema struct {
 		Defs map[string]struct {
 			Properties map[string]any `json:"properties"`
-			OneOf      []struct {
+			Else       struct {
 				Required []string `json:"required"`
-			} `json:"oneOf"`
+			} `json:"else"`
 		} `json:"$defs"`
 	}
 	if err := json.Unmarshal(configSchema, &schema); err != nil {
@@ -161,8 +163,8 @@ func TestPluginSchemaMatchesTheTypes(t *testing.T) {
 		if !slices.Equal(names, properties) {
 			t.Errorf("%s: the schema's fields %v, ipv6disc's %v", typeName, properties, names)
 		}
-		// The second way, by fields, requires what the type does.
-		schemaRequired := slices.Sorted(slices.Values(d.OneOf[1].Required))
+		// Without params, by fields, it requires what the type does.
+		schemaRequired := slices.Sorted(slices.Values(d.Else.Required))
 		slices.Sort(required)
 		if !slices.Equal(schemaRequired, required) {
 			t.Errorf("%s: the schema requires %v, ipv6disc %v", typeName, schemaRequired, required)

@@ -281,6 +281,11 @@ func validateConfig(configData []byte) error {
 		var errs strings.Builder
 		errs.WriteString("the configuration is not valid:")
 		for _, desc := range specificErrors(result.Errors()) {
+			// A duration's pattern, in words.
+			if desc.Type() == "pattern" && strings.Contains(desc.Description(), "ns|us") {
+				fmt.Fprintf(&errs, "\n- %s: not a duration, as 90s, 1m30s or 1h", desc.Field())
+				continue
+			}
 			fmt.Fprintf(&errs, "\n- %s", desc)
 		}
 		return errors.New(errs.String())
