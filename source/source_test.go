@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
 	"golang.org/x/net/dns/dnsmessage"
 )
@@ -227,5 +229,37 @@ func TestStatusHidesTheError(t *testing.T) {
 	}
 	if got := s.Status(false); !strings.Contains(got.LastError, "SECRET") {
 		t.Errorf("shown: %+v", got)
+	}
+}
+
+// A run that works replaces the addresses; one that fails keeps them, for their lifetime.
+func TestSourceRunReplacesWhatChanged(t *testing.T) {
+	cfg := config.Source{Type: config.SourceStatic}
+	cfg.Interval.Duration, cfg.Lifetime.Duration = time.Hour, 3*time.Hour
+	var give []netip.Addr
+	var fail error
+	s := &Source{name: "test", config: cfg, addrs: ipv6disc.NewAddrCollection(), trigger: make(chan struct{}, 1),
+		fetch: func(context.Context) ([]netip.Addr, error) { return give, fail }}
+	run := func(err error, addrs ...string) []string {
+		give, fail = nil, err
+		for _, a := range addrs {
+			give = append(give, netip.MustParseAddr(a))
+		}
+		s.run(context.Background(), zap.NewNop().Sugar())
+		got := s.Addresses().Strings()
+		slices.Sort(got)
+		return got
+	}
+	if got := run(nil, "203.0.113.7"); !slices.Equal(got, []string{"203.0.113.7"}) {
+		t.Errorf("first: %v", got)
+	}
+	if got := run(nil, "198.51.100.9"); !slices.Equal(got, []string{"198.51.100.9"}) {
+		t.Errorf("the address changed: %v, want the new one alone", got)
+	}
+	if got := run(errors.New("down")); !slices.Equal(got, []string{"198.51.100.9"}) {
+		t.Errorf("a failed run: %v, want the last kept", got)
+	}
+	if got := run(errors.New("IPv6: down"), "198.51.100.10"); !slices.Equal(got, []string{"198.51.100.10", "198.51.100.9"}) {
+		t.Errorf("a run failed for a part: %v, want both kept", got)
 	}
 }

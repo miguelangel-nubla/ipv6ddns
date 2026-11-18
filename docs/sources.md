@@ -44,7 +44,7 @@ credentials:
 
 ## Runs and lifetimes
 
-A source runs at start, then every `interval`. An address it gave stays for its `lifetime` after the last run that gave it, so a run that fails, or a service down for a while, doesn't take the record away: the defaults are in the [reference](reference/configuration.md#sources). A static source never expires.
+A source runs at start, then every `interval`; a `homeassistant` one also as soon as its entity changes. A run that works gives the source's addresses: one it no longer gives, as the public address before the ISP changed it, goes at once. A run that fails keeps them for their `lifetime` after the last run that gave them, so a service down for a while doesn't take the record away: the defaults are in the [reference](reference/configuration.md#sources). A static source never expires.
 
 `/status.json` shows each source's runs and failures; the log, its errors.
 
