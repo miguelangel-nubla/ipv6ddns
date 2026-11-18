@@ -40,14 +40,16 @@ type target struct {
 
 func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, cfg config.Config) (*Worker, error) {
 	w := &Worker{
-		State:      NewState(),
-		discWorker: ipv6disc.NewWorker(logger, rediscover, lifetime, cfg.Discovery.Listen, cfg.Discovery.Active),
-		logger:     logger,
-		config:     cfg,
-		sources:    make(map[string]*source.Source),
-	}
-	if cfg.Discovery.IPv4 {
-		w.discWorker.State.EnableIPv4()
+		State: NewState(),
+		discWorker: ipv6disc.NewWorker(logger, ipv6disc.Config{
+			Lifetime:   lifetime,
+			Rediscover: rediscover,
+			IPv6:       ipv6disc.Family{Enabled: cfg.Discovery.IPv6.Enabled, Listen: cfg.Discovery.IPv6.Listen, Active: cfg.Discovery.IPv6.Active},
+			IPv4:       ipv6disc.Family{Enabled: cfg.Discovery.IPv4.Enabled, Listen: cfg.Discovery.IPv4.Listen, Active: cfg.Discovery.IPv4.Active},
+		}),
+		logger:  logger,
+		config:  cfg,
+		sources: make(map[string]*source.Source),
 	}
 
 	for name, sourceConfig := range cfg.Sources {
@@ -166,11 +168,11 @@ func (w *Worker) Start(ctx context.Context) error {
 		}
 	}()
 
-	if w.config.Discovery.SolicitEUI64 {
+	if d := w.config.Discovery; d.IPv6.Enabled && d.IPv6.Solicit || d.IPv4.Enabled && d.IPv4.Solicit {
 		w.running.Add(1)
 		go func() {
 			defer w.running.Done()
-			w.solicitEUI64Loop(ctx)
+			w.solicitLoop(ctx)
 		}()
 	}
 

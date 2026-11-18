@@ -179,14 +179,63 @@
         "discovery": {
             "type": "object",
             "properties": {
-                "listen": {
-                    "type": "boolean"
+                "ipv6": {
+                    "oneOf": [
+                        {
+                            "type": "boolean"
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "listen": {
+                                    "type": "boolean",
+                                    "description": "Passive local discovery: NDP for IPv6, the kernel's neighbor table for IPv4. Default: true."
+                                },
+                                "active": {
+                                    "type": "boolean",
+                                    "description": "Probing every host: multicast for IPv6, a broadcast ARP sweep for IPv4. Default: true."
+                                },
+                                "solicit": {
+                                    "type": "boolean",
+                                    "description": "Asking the hosts the filters want: their EUI-64 address for IPv6, ARP to their MAC alone for IPv4. Default: false."
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    ],
+                    "description": "IPv6 discovery: true, false, or the ways. Default: listen and active."
                 },
-                "active": {
-                    "type": "boolean"
-                },
-                "solicit_eui64": {
-                    "type": "boolean"
+                "ipv4": {
+                    "oneOf": [
+                        {
+                            "type": "boolean"
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "listen": {
+                                    "type": "boolean",
+                                    "description": "Passive local discovery: NDP for IPv6, the kernel's neighbor table for IPv4. Default: true."
+                                },
+                                "active": {
+                                    "type": "boolean",
+                                    "description": "Probing every host: multicast for IPv6, a broadcast ARP sweep for IPv4. Default: true."
+                                },
+                                "solicit": {
+                                    "type": "boolean",
+                                    "description": "Asking the hosts the filters want: their EUI-64 address for IPv6, ARP to their MAC alone for IPv4. Default: false."
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    ],
+                    "description": "IPv4 discovery: true, false, or the ways. Default: off. Filters take IPv4 addresses only with ip.family 4."
                 },
                 "plugins": {
                     "type": "object",
@@ -308,9 +357,17 @@
                         }
                     }
                 },
-                "ipv4": {
+                "listen": {
                     "type": "boolean",
-                    "description": "Discover IPv4 neighbors too: the plugins' ARP tables, and the kernel's. Filters take them only with ip.family 4."
+                    "description": "Deprecated: discovery.ipv6.listen."
+                },
+                "active": {
+                    "type": "boolean",
+                    "description": "Deprecated: discovery.ipv6.active."
+                },
+                "solicit_eui64": {
+                    "type": "boolean",
+                    "description": "Deprecated: discovery.ipv6.solicit."
                 }
             },
             "additionalProperties": false

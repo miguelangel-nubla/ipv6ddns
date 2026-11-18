@@ -66,3 +66,24 @@ func TestEUI64Targets(t *testing.T) {
 		t.Errorf("the same address in two tasks: got %v, want it once", got)
 	}
 }
+
+func TestIPv4SolicitTargets(t *testing.T) {
+	filter := func(mac string, families ...int) config.Filters {
+		var f config.Filters
+		f.MAC.Address = mac
+		f.IP.Family = families
+		return f
+	}
+	tasks := map[string]config.Task{
+		"a": {Filters: []config.Filters{filter("00:11:22:33:44:01", 4), filter("00:11:22:33:44:02")}}, // the second: IPv6 only
+		"b": {Filters: []config.Filters{filter("00:11:22:33:44:03", 4, 6), filter("00:11:22:33:44:01", 4)}},
+		"c": {Filters: []config.Filters{filter("", 4), filter("nope", 4)}},
+	}
+	var got []string
+	for _, mac := range ipv4SolicitTargets(tasks) {
+		got = append(got, mac.String())
+	}
+	if want := []string{"00:11:22:33:44:01", "00:11:22:33:44:03"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}

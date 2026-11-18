@@ -341,7 +341,7 @@ A device's local IPv4 address, as `192.168.1.10`, has its MAC, so discovery find
 
 ```yaml
 discovery:
-  ipv4: true            # off by default
+  ipv4: true            # off by default; or the ways, below
 tasks:
   nas:
     filter:
@@ -354,6 +354,25 @@ tasks:
       local-dns: [nas]
 ```
 
-With it, the plugins read their router's ARP table too, and the local discovery the kernel's: through netlink on Linux, with `arp -an` on macOS and the BSDs. With active discovery, it first sends a UDP packet to each address of the local subnets (a /22 at most, or the /24 of the address), so the kernel resolves the hosts that stay quiet.
-
 A filter without `ip.family` keeps taking IPv6 only: turning `discovery.ipv4` on doesn't take a device's private IPv4 to a public DNS.
+
+#### Discovery, family by family
+Each family is discovered the same ways, `true` turning them on as by default, `false` turning the family off:
+
+| | `ipv6` (default on) | `ipv4` (default off) |
+|---|---|---|
+| **Plugins** | the routers' IPv6 neighbor tables | their ARP tables |
+| `listen` (default true) | NDP, and the answers of the protocols | the kernel's neighbor table: netlink on Linux, `arp -an` on macOS and the BSDs |
+| `active` (default true), probing every host | multicast ping, SSDP, WS-Discovery | a sweep: a UDP packet to each address of the local subnets (a /22 at most, or the /24 of the address), so the kernel resolves the quiet hosts. It broadcasts an ARP request for each address |
+| `solicit` (default false), asking the hosts the filters want | a neighbor solicitation for the EUI-64 address of each MAC an `eui64` filter names | ARP requests to each MAC an IPv4 filter names, alone, for every address of the local subnets: nothing broadcast. Linux, `CAP_NET_RAW` |
+
+`active` needs `listen`, which reads its answers. To find the IPv4 hosts you name without broadcasting:
+
+```yaml
+discovery:
+  ipv4:
+    active: false
+    solicit: true
+```
+
+The `listen`, `active` and `solicit_eui64` keys of `discovery`, from before, still work: they are `ipv6.listen`, `ipv6.active` and `ipv6.solicit`, and the log says so.

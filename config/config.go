@@ -31,14 +31,16 @@ type Config struct {
 }
 
 type Discovery struct {
-	Listen bool `json:"listen"`
-	Active bool `json:"active"`
-	// Ask for the EUI-64 addresses the task filters want, rather than wait to see them.
-	SolicitEUI64 bool `json:"solicit_eui64"`
-	// Discover IPv4 neighbors too: the plugins read their router's ARP table, and the local
-	// discovery the kernel's. Filters take them only with ip.family 4.
-	IPv4    bool                    `json:"ipv4"`
+	// How each family is discovered. Default: IPv6 by listening and active probes, no IPv4.
+	// Filters take IPv4 addresses only with ip.family 4.
+	IPv6    Family                  `json:"ipv6"`
+	IPv4    Family                  `json:"ipv4"`
 	Plugins map[string]PluginConfig `json:"plugins"`
+
+	// Deprecated: ipv6.listen, ipv6.active and ipv6.solicit. NewConfig moves them there.
+	Listen       *bool `json:"listen,omitempty"`
+	Active       *bool `json:"active,omitempty"`
+	SolicitEUI64 *bool `json:"solicit_eui64,omitempty"`
 }
 
 // PluginConfig is a discovery plugin: its params in one string, as ipv6disc takes them, or in
@@ -210,10 +212,16 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	}
 
 	result.WriteString(prefix + "    Discovery:\n")
-	result.WriteString(prefix + "        Listen: " + fmt.Sprintf("%t", c.Discovery.Listen) + "\n")
-	result.WriteString(prefix + "        Active: " + fmt.Sprintf("%t", c.Discovery.Active) + "\n")
-	result.WriteString(prefix + "        Solicit EUI-64: " + fmt.Sprintf("%t", c.Discovery.SolicitEUI64) + "\n")
-	result.WriteString(prefix + "        IPv4: " + fmt.Sprintf("%t", c.Discovery.IPv4) + "\n")
+	for _, family := range []struct {
+		name string
+		f    Family
+	}{{"IPv6", c.Discovery.IPv6}, {"IPv4", c.Discovery.IPv4}} {
+		if !family.f.Enabled {
+			result.WriteString(prefix + "        " + family.name + ": off\n")
+			continue
+		}
+		fmt.Fprintf(&result, "%s        %s: listen %t, active %t, solicit %t\n", prefix, family.name, family.f.Listen, family.f.Active, family.f.Solicit)
+	}
 	if len(c.Discovery.Plugins) > 0 {
 		result.WriteString(prefix + "        Plugins:\n")
 
@@ -283,8 +291,7 @@ func NewConfig(filename string) (config Config, err error) {
 	}
 
 	// Set defaults
-	config.Discovery.Listen = true
-	config.Discovery.Active = true
+	config.Discovery = DefaultDiscovery()
 
 	if err := json.Unmarshal(byteValue, &config); err != nil {
 		return config, err
@@ -296,10 +303,15 @@ func NewConfig(filename string) (config Config, err error) {
 		}
 	}
 
+	discoveryWarnings, err := config.Discovery.setUpDiscovery()
+	if err != nil {
+		return config, err
+	}
 	config.Warnings, err = config.setUpSources()
 	if err != nil {
 		return config, err
 	}
+	config.Warnings = append(discoveryWarnings, config.Warnings...)
 
 	for name, task := range config.Tasks {
 		task.Name = name

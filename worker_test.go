@@ -100,6 +100,7 @@ func equal(a, b []string) bool {
 
 func TestNewWorker(t *testing.T) {
 	cfg := config.Config{
+		Discovery: config.DefaultDiscovery(),
 		Tasks: map[string]config.Task{
 			"a": {Name: "a", Endpoints: map[string][]string{"duck": {"home", "nas"}}},
 			"b": {Name: "b", Endpoints: map[string][]string{"duck": {"nas"}}},

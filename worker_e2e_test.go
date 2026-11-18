@@ -103,6 +103,7 @@ const (
 
 func TestWorkerUpdatesFromDiscovery(t *testing.T) {
 	cfg := config.Config{
+		Discovery: config.DefaultDiscovery(),
 		Tasks: map[string]config.Task{
 			"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas", "web"}}},
 			"b": {Name: "b", Filters: []config.Filters{macFilter(macB)}, Endpoints: map[string][]string{"dns": {"nas"}}},
@@ -153,6 +154,7 @@ func TestWorkerUpdatesFromDiscovery(t *testing.T) {
 
 func TestWorkerRetriesFailedUpdates(t *testing.T) {
 	cfg := config.Config{
+		Discovery:   config.DefaultDiscovery(),
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("retry", time.Millisecond, 20*time.Millisecond)},
 	}
@@ -198,7 +200,7 @@ func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	cfg := config.Config{
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("hidden", time.Millisecond, time.Hour)},
-		Discovery:   config.Discovery{Plugins: map[string]config.PluginConfig{"router": {Type: "mikrotik", Params: "60s,192.0.2.1,admin," + secret}}},
+		Discovery:   config.Discovery{IPv6: config.DefaultDiscovery().IPv6, Plugins: map[string]config.PluginConfig{"router": {Type: "mikrotik", Params: "60s,192.0.2.1,admin," + secret}}},
 		Sources:     map[string]config.Source{"wan": wan},
 	}
 	credential := cfg.Credentials["dns"]
@@ -247,6 +249,7 @@ func (b *blockingService) Update(hostname string, addresses *ipv6disc.AddrCollec
 
 func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
 	cfg := config.Config{
+		Discovery:   config.DefaultDiscovery(),
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("shutdown", time.Millisecond, time.Millisecond)},
 	}
@@ -295,6 +298,7 @@ func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
 
 func TestStatusAndMetrics(t *testing.T) {
 	cfg := config.Config{
+		Discovery:   config.DefaultDiscovery(),
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas", `we"ird`}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("status", time.Millisecond, time.Hour)},
 	}
@@ -379,6 +383,7 @@ func (s *warningService) Warnings() []string {
 func TestProviderWarningsAreLogged(t *testing.T) {
 	core, logs := observer.New(zap.WarnLevel)
 	cfg := config.Config{
+		Discovery:   config.DefaultDiscovery(),
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("warning", time.Millisecond, time.Hour)},
 	}
@@ -416,7 +421,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 		Credentials: map[string]config.Credential{"dns": fakeCredential("sources", time.Millisecond, time.Hour)},
 		Sources:     map[string]config.Source{"wan": wan},
 		// The IPv4 neighbors discovered: still, a filter without family leaves them out.
-		Discovery: config.Discovery{IPv4: true},
+		Discovery: config.Discovery{IPv6: config.DefaultDiscovery().IPv6, IPv4: config.Family{Enabled: true}},
 	}
 	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
 	if err != nil {
@@ -463,7 +468,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 
 func TestDiscoveryIPv4(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
-		cfg := config.Config{Discovery: config.Discovery{IPv4: enabled}}
+		cfg := config.Config{Discovery: config.Discovery{IPv6: config.DefaultDiscovery().IPv6, IPv4: config.Family{Enabled: enabled}}}
 		w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -475,5 +480,16 @@ func TestDiscoveryIPv4(t *testing.T) {
 		if _, registered := w.discWorker.GetAll()[macA]; registered != enabled {
 			t.Errorf("discovery.ipv4 %v: an IPv4 neighbor registered: %v", enabled, registered)
 		}
+	}
+}
+
+func TestWorkerDiscoveryFamilies(t *testing.T) {
+	cfg := config.Config{Discovery: config.Discovery{IPv6: config.Family{}, IPv4: config.Family{Enabled: true}}}
+	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.discWorker.State.IPv6() || !w.discWorker.State.IPv4() {
+		t.Errorf("IPv6 off, IPv4 on: the state takes IPv6 %v, IPv4 %v", w.discWorker.State.IPv6(), w.discWorker.State.IPv4())
 	}
 }
