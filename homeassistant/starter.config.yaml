@@ -1,0 +1,28 @@
+# ipv6ddns: the names to keep, and the DNS providers to keep them at.
+#
+# Until you add tasks, it only discovers: the add-on's page lists the hosts of the network and their
+# MAC addresses, to choose from. Every key: https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md
+#
+# An example, the global IPv6 addresses of one host, at Cloudflare:
+#
+# tasks:
+#   webserver:
+#     filter:
+#       - mac:
+#           address: "00:11:22:33:44:55"
+#         ip:
+#           type: [global]
+#     endpoints:
+#       cloudflare: [www]        # www.example.com
+#
+# credentials:
+#   cloudflare:
+#     provider: cloudflare
+#     settings:
+#       api_token: ${file:/config/cloudflare_token}   # a file beside this one
+#       zone: example.com
+#       ttl: 1h
+#       proxied: false
+
+tasks: {}
+credentials: {}

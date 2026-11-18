@@ -16,6 +16,14 @@ var (
 	envRef    = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 )
 
+// The add-on's starting configuration loads, and says nothing deprecated.
+func TestAddonStarterConfig(t *testing.T) {
+	cfg, err := config.NewConfig(filepath.Join("..", "..", "homeassistant", "starter.config.yaml"))
+	if err != nil || len(cfg.Warnings) > 0 {
+		t.Errorf("%v, warnings %v", err, cfg.Warnings)
+	}
+}
+
 // Every configuration in the documentation loads: the examples stay true to the schema and the
 // code. A block of a filter alone is taken as a task's; one of Docker Compose is left out.
 func TestDocExamples(t *testing.T) {

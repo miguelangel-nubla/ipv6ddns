@@ -1,0 +1,31 @@
+---
+name: ipv6ddns
+# The release publishing it stamps its version, and the image.
+version: dev
+slug: ipv6ddns
+description: >-
+  Keeps the DNS records of the devices of your network, found by their MAC
+  address, wherever their IPv6 and IPv4 addresses move
+url: https://github.com/miguelangel-nubla/ipv6ddns
+# Home Assistant supports these two only, since 2025.12.
+arch:
+  - aarch64
+  - amd64
+init: false
+# Discovery listens to the network, and probes it, with raw sockets.
+host_network: true
+privileged:
+  - NET_RAW
+# config.yaml, and the files it names, in /addon_configs/<id>_ipv6ddns.
+map:
+  - addon_config:rw
+# The report, on the add-on's page.
+ingress: true
+ingress_port: 8053
+panel_icon: mdi:dns
+panel_title: ipv6ddns
+options:
+  log_level: info
+schema:
+  log_level: list(debug|info|warn|error)
+image: ghcr.io/miguelangel-nubla/ipv6ddns-addon
