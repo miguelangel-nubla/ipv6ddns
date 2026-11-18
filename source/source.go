@@ -120,11 +120,16 @@ func (s *Source) run(ctx context.Context, logger *zap.SugaredLogger) {
 		return // stopping
 	}
 	// What a run gives stays, even when it failed for a part, as for one family of two.
+	current := make(map[netip.Addr]bool, len(addrs))
 	for _, ip := range addrs {
 		s.addrs.Seen(ipv6disc.NewAddr(nil, ip, s.name, s.config.Lifetime.Duration, nil), s.name)
+		current[ip.WithZone("")] = true
 	}
 	for _, addr := range s.addrs.Get() {
-		if !addr.Valid() {
+		// A run that worked says what the source has now: an address it no longer gives, as the
+		// public address before the ISP changed it, goes at once. A failed run keeps them for
+		// their lifetime, through an outage of the service asked.
+		if !addr.Valid() || err == nil && !current[addr.WithZone("")] {
 			s.addrs.Remove(addr)
 		}
 	}
