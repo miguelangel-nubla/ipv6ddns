@@ -109,7 +109,17 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
    | `192.0.2.1`, `2001:db8::1`, `[2001:db8::1]` | that address, port 80 |
    | `myhost:8053`, `myhost` | every address the name resolves to, at startup |
 
-   The report has no authentication: to keep it behind a reverse proxy, list only an address the proxy can reach.
+   The report has no authentication: to keep it behind a reverse proxy, list only an address the proxy can reach. It hides the credentials, plugin params, IPv4 command arguments and update errors.
+
+   Besides the report at `/`, the server answers:
+
+   | Path | Serves |
+   |---|---|
+   | `/healthz` | `ok`, while the process runs: for container health checks |
+   | `/status.json` | the host names, their addresses and updates, and the discovered hosts, as JSON |
+   | `/metrics` | the same as Prometheus metrics: addresses, updates by result, last success |
+
+   It stops on SIGINT or SIGTERM, giving the DNS updates running up to 30s to end.
 
 4. **Access the Web report**
 
@@ -127,7 +137,7 @@ The available DDNS providers are:
 - [Duckdns](https://www.duckdns.org/) (provider only allows a single AAAA record)
 - [Gravity](https://github.com/BeryJu/gravity) (hosted locally)
 - [Mikrotik](https://mikrotik.com/) (RouterOS API) - [Setup Guide](docs/mikrotik.md)
-- [OpenWrt](https://openwrt.org/) (SSH + UCI)
+- [OpenWrt](https://openwrt.org/) (SSH + UCI). Set `host_key` to the router's SSH key fingerprint, as for the Windows provider over SSH: without it, any key is accepted.
 - [OPNsense](https://opnsense.org/) (Unbound DNS via API)
 - [pfSense](https://www.pfsense.org/) (Unbound DNS via REST API)
 - [Route53](https://aws.amazon.com/route53/) (AWS Route53 API)

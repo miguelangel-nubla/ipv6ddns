@@ -65,6 +65,9 @@ credentials:
       address: 192.168.1.1:22
       password: password
       ssh_key: <optional>/path/to/private/key
+      # Recommended: the fingerprint of the host's SSH key. Without it any key is accepted, and
+      # the log warns with the fingerprint seen. To get it: ssh-keyscan HOST | ssh-keygen -lf -
+      # host_key: SHA256:...
       ttl: 10m
       username: root
       zone: lan
@@ -122,6 +125,9 @@ credentials:
       username: Administrator
       password: password
       ssh_key: <optional>/path/to/private/key
+      # Recommended: the fingerprint of the host's SSH key. Without it any key is accepted, and
+      # the log warns with the fingerprint seen. To get it: ssh-keyscan HOST | ssh-keygen -lf -
+      # host_key: SHA256:...
       zone: example.com
       ttl: 1h
 discovery:
