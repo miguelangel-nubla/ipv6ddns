@@ -199,8 +199,15 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.logger.Warn(warning)
 	}
 
-	if err := w.discWorker.Start(ctx); err != nil {
-		return err
+	// Without plugins nor a family listening, there is nothing to discover: the names get the
+	// addresses of their sources only, as the public address of the network, or Home Assistant's.
+	d := w.config.Discovery
+	if len(d.Plugins) > 0 || d.IPv6.Enabled && d.IPv6.Listen || d.IPv4.Enabled && d.IPv4.Listen {
+		if err := w.discWorker.Start(ctx); err != nil {
+			return err
+		}
+	} else {
+		w.logger.Info("no discovery: no plugins, and no family listens; the names get the addresses of their sources")
 	}
 	if h := w.homeAssistant; h != nil {
 		if err := h.serve(ctx, w.logger.Errorf); err != nil {
