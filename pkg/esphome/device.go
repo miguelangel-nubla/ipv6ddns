@@ -343,6 +343,10 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		return true, nil
 	case msgDeviceInfoRequest:
 		return false, c.write(msgDeviceInfoResponse, d.deviceInfo())
+	case msgDeviceCapabilitiesRequest:
+		// None: no Bluetooth proxy, voice assistant, Z-Wave proxy or wizard. Home Assistant waits
+		// for it, from devices of API 1.15 on.
+		return false, c.write(msgDeviceCapabilitiesResponse, nil)
 	case msgListEntitiesRequest:
 		d.mutex.Lock()
 		list := make([]outgoing, 0, len(d.entities))

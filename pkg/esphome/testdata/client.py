@@ -41,7 +41,10 @@ async def main(port, key):
 
     client = APIClient("127.0.0.1", port, None, noise_psk=key)
     await client.connect(login=True)
-    info = await client.device_info()
+    # As Home Assistant's ESPHome manager does, in homeassistant/components/esphome/manager.py.
+    info, entities, _ = await client.device_info_and_list_entities()
+    capabilities = await client.device_capabilities_compat(info)
+    out(capabilities=str(capabilities))
     out(
         info=dict(
             name=info.name,
@@ -56,7 +59,6 @@ async def main(port, key):
         )
     )
 
-    entities, _ = await client.list_entities_services()
     keys = {}
     for e in entities:
         keys[e.object_id] = e.key
@@ -73,13 +75,11 @@ async def main(port, key):
         if states.get("echo") == "got:203.0.113.9" and states.get("pressed") is True:
             done.set()
 
-    client.subscribe_states(on_state)
-
     def on_state_sub(entity_id, attribute):
         out(asked=dict(entity_id=entity_id, attribute=attribute))
         client.send_home_assistant_state(entity_id, attribute, "203.0.113.9")
 
-    client.subscribe_home_assistant_states(on_state_sub)
+    client.subscribe_home_assistant_states_and_services(on_state, lambda call: None, on_state_sub)
     client.button_command(keys["update"])
 
     try:
