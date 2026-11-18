@@ -1,35 +1,109 @@
 package ddns
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 )
 
 const duckToken = "01234567-89ab-cdef-0123-456789abcdef"
 
+// fakeDuckDNS answers updates as the DuckDNS spec says: an IPv4 left out is the requester's,
+// unless an IPv6 is given; clear empties both records; verbose tells them.
+type fakeDuckDNS struct {
+	mutex      sync.Mutex
+	ipv4, ipv6 string
+	requests   []url.Values
+	refuse     bool
+}
+
+const requesterIPv4 = "203.0.113.7"
+
+func (f *fakeDuckDNS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	q := r.URL.Query()
+	f.requests = append(f.requests, q)
+	if f.refuse || q.Get("token") != duckToken || q.Get("domains") != "nas" {
+		w.Write([]byte("KO"))
+		return
+	}
+	switch {
+	case q.Get("clear") == "true":
+		f.ipv4, f.ipv6 = "", ""
+	default:
+		ip, ipv6 := q.Get("ip"), q.Get("ipv6")
+		if addr, err := netip.ParseAddr(ip); err == nil && addr.Is6() {
+			f.ipv6, ip = ip, ""
+		}
+		if ipv6 != "" {
+			f.ipv6 = ipv6
+		}
+		switch {
+		case ip != "":
+			f.ipv4 = ip
+		case ipv6 == "":
+			f.ipv4 = requesterIPv4 // detected
+		}
+	}
+	if q.Get("verbose") == "true" {
+		fmt.Fprintf(w, "OK\n%s\n%s\nUPDATED", f.ipv4, f.ipv6)
+		return
+	}
+	w.Write([]byte("OK"))
+}
+
 func TestDuckDNSUpdate(t *testing.T) {
-	var got url.Values
-	reply := "OK"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.URL.Query()
-		w.Write([]byte(reply))
-	}))
+	for _, tt := range []struct {
+		name               string
+		before             [2]string
+		addresses          []string
+		wantIPv4, wantIPv6 string
+	}{
+		// DuckDNS takes one address of each family: the first.
+		{"both", [2]string{}, []string{"2001:db8::10", "192.0.2.9", "2001:db8::9", "192.0.2.10"}, "192.0.2.9", "2001:db8::9"},
+		{"IPv6 only, with an IPv4 before", [2]string{"192.0.2.1", "2001:db8::1"}, []string{"2001:db8::9"}, "", "2001:db8::9"},
+		{"IPv6 only", [2]string{}, []string{"2001:db8::9"}, "", "2001:db8::9"},
+		{"IPv4 only, with an IPv6 before", [2]string{"192.0.2.1", "2001:db8::1"}, []string{"192.0.2.9"}, "192.0.2.9", ""},
+		{"no addresses", [2]string{"192.0.2.1", "2001:db8::1"}, nil, "", ""},
+	} {
+		fake := &fakeDuckDNS{ipv4: tt.before[0], ipv6: tt.before[1]}
+		server := httptest.NewServer(fake)
+		service := &DuckDNS{APIToken: duckToken, updateURL: server.URL}
+
+		if err := service.Update("nas", collectionWith(tt.addresses...)); err != nil {
+			t.Errorf("%s: %v", tt.name, err)
+		}
+		if fake.ipv4 != tt.wantIPv4 || fake.ipv6 != tt.wantIPv6 {
+			t.Errorf("%s: got %q and %q, want %q and %q", tt.name, fake.ipv4, fake.ipv6, tt.wantIPv4, tt.wantIPv6)
+		}
+		for _, q := range fake.requests {
+			for _, key := range []string{"ip", "ipv6"} {
+				if v, ok := q[key]; ok && v[0] == "" {
+					t.Errorf("%s: a request with an empty %s, which DuckDNS takes as the requester's: %v", tt.name, key, q)
+				}
+			}
+		}
+
+		// Once right, an update is one request.
+		fake.requests = nil
+		service.Update("nas", collectionWith(tt.addresses...))
+		if len(fake.requests) != 1 {
+			t.Errorf("%s: the second update made %d requests, want 1", tt.name, len(fake.requests))
+		}
+		server.Close()
+	}
+}
+
+func TestDuckDNSRefused(t *testing.T) {
+	server := httptest.NewServer(&fakeDuckDNS{refuse: true})
 	defer server.Close()
 	service := &DuckDNS{APIToken: duckToken, updateURL: server.URL}
-
-	// DuckDNS takes one address of each family: the first.
-	if err := service.Update("nas", collectionWith("2001:db8::10", "192.0.2.9", "2001:db8::9", "192.0.2.10")); err != nil {
-		t.Fatal(err)
-	}
-	want := url.Values{"token": {duckToken}, "domains": {"nas"}, "ip": {"192.0.2.9"}, "ipv6": {"2001:db8::9"}}
-	if got.Encode() != want.Encode() {
-		t.Errorf("got %v, want %v", got, want)
-	}
-
-	reply = "KO"
 	if err := service.Update("nas", collectionWith("2001:db8::9")); err == nil {
 		t.Error("a KO answer: want an error")
 	}
