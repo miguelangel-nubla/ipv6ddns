@@ -1,0 +1,6 @@
+---
+configuration:
+  log_level:
+    name: Log level
+    description: >-
+      How much the log says: debug adds every address seen again.

@@ -110,3 +110,21 @@ jobs:
       -
         name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
+
+  addon:
+    # The Home Assistant add-on's manifest, as the Supervisor reads it.
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Lint the add-on
+        uses: frenck/action-addon-linter@d51677290aef26cdfc835271dd3c7343ce502809 # v2.21.2
+        with:
+          path: homeassistant/addon
+      -
+        name: Check the start script
+        run: sh -n homeassistant/run.sh

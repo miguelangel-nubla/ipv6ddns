@@ -54,3 +54,23 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  addon-repository:
+    # Tell the add-on repository that a version exists, once its images do: it publishes it to Home
+    # Assistant. Needs the secret DISPATCH_TOKEN, a token allowed to dispatch to that repository;
+    # without it, nothing is told. Not for a prerelease, as v1.0.0-rc.1.
+    needs: goreleaser
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+    steps:
+      -
+        if: env.DISPATCH_TOKEN != ''
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $DISPATCH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/miguelangel-nubla/hassio-repository/dispatches \
+            -d '{"event_type":"update","client_payload":{"app":"ipv6ddns"}}'

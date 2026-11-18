@@ -47,6 +47,7 @@ dockers_v2:
       - "ghcr.io/miguelangel-nubla/{{ .ProjectName }}"
     tags:
       - "{{ .Tag }}"
+      - "{{ .Version }}"
       - "v{{ .Major }}"
       - "v{{ .Major }}.{{ .Minor }}"
       - latest
@@ -67,6 +68,35 @@ dockers_v2:
       org.opencontainers.image.licenses: Apache-2.0
     flags:
       - "--pull"
+      - "--target=ipv6ddns"
+  # The Home Assistant add-on: the same, started from its options. It pulls the tag of its version,
+  # without the v.
+  -
+    id: addon
+    images:
+      - "ghcr.io/miguelangel-nubla/{{ .ProjectName }}-addon"
+    tags:
+      - "{{ .Version }}"
+      - latest
+    # The architectures of the add-on: Home Assistant's.
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - homeassistant/run.sh
+      - homeassistant/starter.config.yaml
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }} Home Assistant add-on"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.url: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+      org.opencontainers.image.source: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+      org.opencontainers.image.licenses: Apache-2.0
+    flags:
+      - "--pull"
+      - "--target=addon"
 
 archives:
   - 
