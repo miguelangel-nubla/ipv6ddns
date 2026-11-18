@@ -1,0 +1,76 @@
+# Configuration
+
+The configuration is one file, YAML or JSON, given with `-config_file`. Every key is in the [configuration reference](reference/configuration.md); the [example configuration](../cmd/ipv6ddns/example.config.yaml) has most of them at work.
+
+## Its parts
+
+```yaml
+tasks:          # the names to keep, and which addresses they get
+  nas:
+    filter:     # the addresses discovery finds that are the task's
+      - mac:
+          address: "00:11:22:33:44:55"
+    sources: [wan]          # and those of these sources
+    endpoints:
+      home-dns: [nas]       # the names: nas, at the home-dns credential
+
+credentials:    # the DNS providers, and their settings
+  home-dns:
+    provider: technitium
+    settings:
+      address: http://127.0.0.1:5380
+      token: ${TECHNITIUM_TOKEN}
+      zone: home.example.com
+      ttl: 5m
+
+sources:        # addresses without a MAC
+  wan:
+    type: dns
+
+discovery:      # how hosts are found: IPv6 by default
+  ipv4: true
+```
+
+- A **task** gives names their addresses. Its [filters](filtering.md) choose, among the addresses [discovery](discovery.md) finds, those of the task; its `sources` add the addresses of [sources](sources.md). Its `endpoints` say which names, at which credentials, get them. A name in several tasks gets the addresses of all.
+- A **credential** is a DNS provider with its settings: those of each provider are in the [providers reference](reference/providers.md). Its `debounce_time` gathers the changes of a moment into one update, and a failed update is retried after `retry_time`.
+- **Sources** and **discovery** find the addresses.
+
+An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`, `""` is the zone itself, `"*.nas"` a wildcard.
+
+## Secrets
+
+Any value takes:
+
+| | |
+|---|---|
+| `${NAME}` | The environment variable `NAME` |
+| `${file:PATH}` | The content of a file, without its final newline, as Docker and Kubernetes give secrets. A relative path is from the configuration file |
+| `$${` | A literal `${` |
+
+```yaml
+credentials:
+  cloudflare:
+    provider: cloudflare
+    settings:
+      api_token: ${file:/run/secrets/cloudflare_token}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+```
+
+A variable or a file that isn't there is an error, which names the key, not the value.
+
+## Validation
+
+The configuration is checked as it loads, against its [schema](../config/schema.json): an unknown key, as a typo, a wrong type, a missing required key, or a plugin with the keys of another type, stops the start with what is wrong and where. The providers' settings and the plugins are checked by their own code too, so a mistake shows at the start, rather than at the first update.
+
+## The forms from before
+
+These still work, each with a warning in the log that says what to write instead. They go in v1.0.
+
+| From before | Now |
+|---|---|
+| `discovery.listen`, `discovery.active` | [`discovery.ipv6.listen`, `.active`](discovery.md#families-and-ways), and the same of `ipv4` when it is `true` |
+| `discovery.solicit_eui64` | `discovery.ipv6.solicit` |
+| A task's `ipv4` block, a command | A [command source](sources.md), named in the task's `sources` |
+| A plugin's `params`, one string | Its [fields](reference/configuration.md#discovery-plugins) |

@@ -3,7 +3,7 @@
 `ipv6ddns` offers deep integration with Mikrotik RouterOS. It can be used as:
 
 1.  **DNS Provider**: Automatically creates static DNS records (`/ip/dns/static`) for discovered hosts (e.g., `nas.lan` -> `fd00::1`).
-2.  **Discovery Source**: Uses the router's neighbor table to find active IPv6 hosts on the network.
+2.  **Discovery Plugin**: Uses the router's neighbor tables to find the hosts of the network, IPv6, and IPv4 with `discovery.ipv4`.
 3.  **Container Host**: Runs directly on the router, removing the need for a separate server.
 
 **Example Scenario:**
@@ -27,10 +27,10 @@ discovery:
       use_tls: true
 ```
 
-For more details on the parameters, refer to the [ipv6disc documentation](https://github.com/miguelangel-nubla/ipv6disc#plugins).
+Its keys are in the [reference](reference/configuration.md#mikrotik).
 
 ### Requirements
-- **API User**: The plugin only reads the neighbor table (`/ipv6/neighbor/print`), so give it a dedicated read-only user, and optionally limit it to the address `ipv6ddns` connects from:
+- **API User**: The plugin only reads the neighbor tables (`/ipv6/neighbor/print`, and `/ip/arp/print` for IPv4), so give it a dedicated read-only user, and optionally limit it to the address `ipv6ddns` connects from:
   ```
   /user group add name=ipv6ddns-discovery policy=read,api
   /user add name=ipv6ddns-discovery group=ipv6ddns-discovery address=192.168.88.10/32 password=...
@@ -94,7 +94,7 @@ Upload your `config.yaml` to the router (e.g., via SFTP or Drag & Drop on WinBox
 ### 4. Create and start the Container
 
 The container image is available at:
-`ghcr.io/miguelangel-nubla/ipv6ddns:latest`
+`ghcr.io/miguelangel-nubla/ipv6ddns:v0`
 
 You just need to create a container with this image and mount the config file at `/config.yaml`.
 

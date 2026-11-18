@@ -23,6 +23,9 @@ import (
 //go:embed schema.json
 var configSchema []byte
 
+// Schema returns the JSON schema of the configuration.
+func Schema() []byte { return configSchema }
+
 type Config struct {
 	BaseDir     string                `json:"-"`
 	Tasks       map[string]Task       `json:"tasks"`
