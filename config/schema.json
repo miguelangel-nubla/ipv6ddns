@@ -307,6 +307,10 @@
                             "additionalProperties": false
                         }
                     }
+                },
+                "ipv4": {
+                    "type": "boolean",
+                    "description": "Discover IPv4 neighbors too: the plugins' ARP tables, and the kernel's. Filters take them only with ip.family 4."
                 }
             },
             "additionalProperties": false

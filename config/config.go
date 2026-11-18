@@ -34,8 +34,11 @@ type Discovery struct {
 	Listen bool `json:"listen"`
 	Active bool `json:"active"`
 	// Ask for the EUI-64 addresses the task filters want, rather than wait to see them.
-	SolicitEUI64 bool                    `json:"solicit_eui64"`
-	Plugins      map[string]PluginConfig `json:"plugins"`
+	SolicitEUI64 bool `json:"solicit_eui64"`
+	// Discover IPv4 neighbors too: the plugins read their router's ARP table, and the local
+	// discovery the kernel's. Filters take them only with ip.family 4.
+	IPv4    bool                    `json:"ipv4"`
+	Plugins map[string]PluginConfig `json:"plugins"`
 }
 
 // PluginConfig is a discovery plugin: its params in one string, as ipv6disc takes them, or in
@@ -210,6 +213,7 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	result.WriteString(prefix + "        Listen: " + fmt.Sprintf("%t", c.Discovery.Listen) + "\n")
 	result.WriteString(prefix + "        Active: " + fmt.Sprintf("%t", c.Discovery.Active) + "\n")
 	result.WriteString(prefix + "        Solicit EUI-64: " + fmt.Sprintf("%t", c.Discovery.SolicitEUI64) + "\n")
+	result.WriteString(prefix + "        IPv4: " + fmt.Sprintf("%t", c.Discovery.IPv4) + "\n")
 	if len(c.Discovery.Plugins) > 0 {
 		result.WriteString(prefix + "        Plugins:\n")
 
