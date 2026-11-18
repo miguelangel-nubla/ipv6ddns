@@ -102,7 +102,7 @@
                             },
                             "additionalProperties": false
                         },
-                        "description": "Filter sets: an address any of them matches is the task's. Within a set, every rule must match. See docs/filtering.md."
+                        "description": "Filter sets: an address any of them matches is the task's. Within a set, every rule must match."
                     },
                     "endpoints": {
                         "type": "object",
@@ -119,22 +119,22 @@
                         "properties": {
                             "interval": {
                                 "$ref": "#/$defs/duration",
-                                "description": "The interval at which to check for changes."
+                                "description": "How often the command runs."
                             },
                             "command": {
                                 "type": "string",
-                                "description": "The command to execute."
+                                "description": "The command, printing the addresses one per line."
                             },
                             "args": {
                                 "type": "array",
                                 "items": {
                                     "type": "string"
                                 },
-                                "description": "Command arguments"
+                                "description": "Its arguments."
                             },
                             "lifetime": {
                                 "$ref": "#/$defs/duration",
-                                "description": "Time to keep a IPv4 host entry after it has been last received"
+                                "description": "How long an address stays after the last run that gave it."
                             }
                         },
                         "required": [
@@ -143,7 +143,7 @@
                             "lifetime"
                         ],
                         "additionalProperties": false,
-                        "description": "Deprecated: a command source, in sources."
+                        "description": "Deprecated, and goes in v1.0: a command source, in sources, does the same."
                     },
                     "sources": {
                         "type": "array",
@@ -210,19 +210,19 @@
                 },
                 "listen": {
                     "type": "boolean",
-                    "description": "Deprecated: discovery.ipv6.listen."
+                    "description": "Deprecated, and goes in v1.0: discovery.ipv6.listen, and ipv4.listen unless ipv4 has its ways."
                 },
                 "active": {
                     "type": "boolean",
-                    "description": "Deprecated: discovery.ipv6.active."
+                    "description": "Deprecated, and goes in v1.0: discovery.ipv6.active, and ipv4.active unless ipv4 has its ways."
                 },
                 "solicit_eui64": {
                     "type": "boolean",
-                    "description": "Deprecated: discovery.ipv6.solicit."
+                    "description": "Deprecated, and goes in v1.0: discovery.ipv6.solicit."
                 },
                 "interfaces": {
                     "$ref": "#/$defs/stringList",
-                    "description": "The interfaces the local discovery, of both families, runs on: names, or patterns as en*. Default: all."
+                    "description": "The interfaces the local discovery of both families runs on: names, or patterns as en*. Default: all."
                 },
                 "exclude_interfaces": {
                     "$ref": "#/$defs/stringList",
@@ -230,7 +230,7 @@
                 },
                 "rediscover": {
                     "$ref": "#/$defs/duration",
-                    "description": "How often the active discovery probes every host: a duration, or seconds. Default: a third of the lifetime."
+                    "description": "How often the active discovery probes every host. Default: a third of the shortest lifetime of the families that probe."
                 }
             },
             "additionalProperties": false,
@@ -306,7 +306,7 @@
         },
         "lifetime": {
             "$ref": "#/$defs/duration",
-            "description": "How long a discovered address stays after it was last seen, unless its family says: a duration, or seconds. Default: 1h. The -lifetime flag, given, wins."
+            "description": "How long a discovered address stays after it was last seen, unless its family says. Default: 1h. The -lifetime flag, given, wins."
         },
         "log_level": {
             "type": "string",
@@ -319,11 +319,11 @@
                 "panic",
                 "fatal"
             ],
-            "description": "Logging level. Default: info. The -log_level flag, given, wins."
+            "description": "The logging level. Default: info. The -log_level flag, given, wins."
         },
         "webserver_listen": {
             "$ref": "#/$defs/stringList",
-            "description": "Serve the state to a browser, on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053. A list, or comma separated. The -webserver_listen flag, given, wins."
+            "description": "Serve the report, /status.json and /metrics on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, myhost. The -webserver_listen flag, given, wins."
         }
     },
     "required": [
@@ -380,7 +380,7 @@
                         },
                         "listen": {
                             "type": "boolean",
-                            "description": "Passive local discovery: NDP for IPv6, the kernel's neighbor table for IPv4. Default: true."
+                            "description": "Passive local discovery: NDP for IPv6, the kernel's neighbor table for IPv4. Active probing and IPv6 solicitation need it. Default: true."
                         },
                         "active": {
                             "type": "boolean",
@@ -392,7 +392,7 @@
                         },
                         "lifetime": {
                             "$ref": "#/$defs/duration",
-                            "description": "How long the family's addresses stay after they were last seen, the plugins' too. Default: the lifetime of the configuration."
+                            "description": "How long the family's addresses stay after they were last seen, whatever found them. Default: the top-level lifetime."
                         }
                     },
                     "additionalProperties": false
