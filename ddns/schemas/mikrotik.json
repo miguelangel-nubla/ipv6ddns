@@ -1,0 +1,47 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "Mikrotik RouterOS static DNS, /ip/dns/static, over its API. See docs/mikrotik.md.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "address": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The router, with a port unless the default: 8728, or 8729 with TLS."
+        },
+        "use_tls": {
+            "type": "boolean",
+            "description": "The API over TLS, the api-ssl service."
+        },
+        "tls_fingerprint": {
+            "type": "string",
+            "pattern": "^([a-fA-F0-9]{64})?$",
+            "description": "The SHA-256 fingerprint of the server's certificate, in hex, when it can't be verified otherwise. Without it, the certificate must be valid."
+        },
+        "username": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A user with the read, write and api policies."
+        },
+        "password": {
+            "type": "string",
+            "description": "Its password."
+        },
+        "zone": {
+            "type": "string",
+            "description": "The zone of the names: lan."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL: 5m, 1h."
+        }
+    },
+    "required": [
+        "address",
+        "username",
+        "password",
+        "zone",
+        "ttl"
+    ]
+}

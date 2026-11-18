@@ -48,7 +48,7 @@ func init() {
 
 func NewRoute53(settings json.RawMessage) (Service, error) {
 	var service Route53
-	if err := decodeSettings(settings, route53SettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "route53", &service); err != nil {
 		return nil, err
 	}
 
@@ -83,43 +83,6 @@ func (r *Route53) client(ctx context.Context) (*route53.Client, string, error) {
 	}
 	return client, r.zone, nil
 }
-
-const route53SettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"access_key_id": {
-				"type": "string",
-				"minLength": 1
-			},
-			"secret_access_key": {
-				"type": "string",
-				"minLength": 1
-			},
-			"region": {
-				"type": "string",
-				"minLength": 1
-			},
-			"hosted_zone_id": {
-				"type": "string",
-				"minLength": 1
-			},
-			"ttl": {
-				"type": "string",
-				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			}
-		},
-		"required": [
-			"access_key_id",
-			"secret_access_key",
-			"region",
-			"hosted_zone_id",
-			"ttl"
-		]
-	}
-	`
 
 func (r *Route53) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	ctx := context.Background()

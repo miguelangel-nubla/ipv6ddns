@@ -36,52 +36,11 @@ func init() {
 
 func NewOpenWrt(settings json.RawMessage) (Service, error) {
 	var service OpenWrt
-	if err := decodeSettings(settings, openwrtSettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "openwrt", &service); err != nil {
 		return nil, err
 	}
 	return &service, nil
 }
-
-const openwrtSettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"address": {
-				"type": "string",
-				"minLength": 1
-			},
-			"username": {
-				"type": "string",
-				"minLength": 1
-			},
-			"password": {
-				"type": "string"
-			},
-			"ssh_key": {
-				"type": "string"
-			},
-			"host_key": {
-				"type": "string",
-				"pattern": "` + hostKeyPattern + `"
-			},
-			"zone": {
-				"type": "string"
-			},
-			"ttl": {
-				"type": "string",
-				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			}
-		},
-		"required": [
-			"address",
-			"username",
-			"zone",
-			"ttl"
-		]
-	}
-	`
 
 func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	dial := o.dial

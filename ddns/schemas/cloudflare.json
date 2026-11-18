@@ -1,0 +1,33 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "Cloudflare DNS, over its API: the free plan works.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "api_token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "An API token with Zone.DNS edit on the zone."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The zone: example.com."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL: 5m, 1h. 1s is Cloudflare's automatic."
+        },
+        "proxied": {
+            "type": "boolean",
+            "description": "Whether the records go through Cloudflare's proxy."
+        }
+    },
+    "required": [
+        "api_token",
+        "zone",
+        "ttl",
+        "proxied"
+    ]
+}

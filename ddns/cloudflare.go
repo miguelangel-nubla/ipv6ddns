@@ -26,42 +26,11 @@ func init() {
 
 func NewCloudflare(settings json.RawMessage) (Service, error) {
 	var service Cloudflare
-	if err := decodeSettings(settings, cloudflareSettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "cloudflare", &service); err != nil {
 		return nil, err
 	}
 	return &service, nil
 }
-
-const cloudflareSettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"api_token": {
-				"type": "string",
-				"minLength": 1
-			},
-			"zone": {
-				"type": "string",
-				"minLength": 1
-			},
-			"ttl": {
-				"type": "string",
-				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			},
-			"proxied": {
-				"type": "boolean"
-			}
-		},
-		"required": [
-			"api_token",
-			"zone",
-			"ttl",
-			"proxied"
-		]
-	}
-	`
 
 func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	// Initialize the Cloudflare API with the provided API token

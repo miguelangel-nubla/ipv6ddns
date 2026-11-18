@@ -1,0 +1,42 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "Windows DNS Server, with PowerShell: on the server itself, or over SSH.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The zone."
+        },
+        "address": {
+            "type": "string",
+            "description": "The server over SSH. Empty: ipv6ddns runs on it."
+        },
+        "username": {
+            "type": "string",
+            "description": "The SSH user."
+        },
+        "password": {
+            "type": "string",
+            "description": "Its password, or an ssh_key."
+        },
+        "ssh_key": {
+            "type": "string",
+            "description": "The SSH private key file."
+        },
+        "host_key": {
+            "type": "string",
+            "pattern": "^(SHA256:[A-Za-z0-9+/]{43})?$",
+            "description": "The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL: 5m, 1h. Default: the zone's."
+        }
+    },
+    "required": [
+        "zone"
+    ]
+}

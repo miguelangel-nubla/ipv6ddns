@@ -41,32 +41,11 @@ func init() {
 
 func NewWindowsDNS(settings json.RawMessage) (Service, error) {
 	var service WindowsDNS
-	if err := decodeSettings(settings, windowsSettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "windows", &service); err != nil {
 		return nil, err
 	}
 	return &service, nil
 }
-
-const windowsSettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"zone": { "type": "string", "minLength": 1 },
-			"address": { "type": "string" },
-			"username": { "type": "string" },
-			"password": { "type": "string" },
-			"ssh_key": { "type": "string" },
-			"host_key": { "type": "string", "pattern": "` + hostKeyPattern + `" },
-			"ttl": {
-				"type": "string",
-				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			}
-		},
-		"required": [ "zone" ]
-	}
-	`
 
 func (w *WindowsDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	var runner WindowsRunner

@@ -16,13 +16,15 @@
                                     "type": "object",
                                     "properties": {
                                         "address": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "description": "The MAC address, exactly: 00:11:22:33:44:55."
                                         },
                                         "mask": {
                                             "type": "array",
                                             "items": {
                                                 "type": "string"
-                                            }
+                                            },
+                                            "description": "VALUE/MASK pairs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's."
                                         },
                                         "type": {
                                             "type": "array",
@@ -34,10 +36,12 @@
                                                     "unicast",
                                                     "multicast"
                                                 ]
-                                            }
+                                            },
+                                            "description": "MAC types, all of which must apply: global, local, unicast, multicast."
                                         }
                                     },
-                                    "additionalProperties": false
+                                    "additionalProperties": false,
+                                    "description": "Rules on the MAC address of the host."
                                 },
                                 "ip": {
                                     "type": "object",
@@ -55,19 +59,23 @@
                                                     "cgnat",
                                                     "link_local"
                                                 ]
-                                            }
+                                            },
+                                            "description": "Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6 privacy)."
                                         },
                                         "prefix": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "description": "A prefix the address must be in: 2001:db8::/32, 192.168.1.0/24."
                                         },
                                         "suffix": {
-                                            "type": "string"
+                                            "type": "string",
+                                            "description": "The end of the address, in its canonical lower case form: ::1, dead:beef."
                                         },
                                         "mask": {
                                             "type": "array",
                                             "items": {
                                                 "type": "string"
-                                            }
+                                            },
+                                            "description": "VALUE/MASK pairs, all of which the address must match."
                                         },
                                         "family": {
                                             "type": "array",
@@ -81,17 +89,20 @@
                                             "description": "4, 6 or both. Default: 6."
                                         }
                                     },
-                                    "additionalProperties": false
+                                    "additionalProperties": false,
+                                    "description": "Rules on the address."
                                 },
                                 "source": {
                                     "type": "array",
                                     "items": {
                                         "type": "string"
-                                    }
+                                    },
+                                    "description": "Names of what must all have seen the address: discovery plugins, or local interfaces."
                                 }
                             },
                             "additionalProperties": false
-                        }
+                        },
+                        "description": "Filter sets: an address any of them matches is the task's. Within a set, every rule must match. See docs/filtering.md."
                     },
                     "endpoints": {
                         "type": "object",
@@ -100,7 +111,8 @@
                             "items": {
                                 "type": "string"
                             }
-                        }
+                        },
+                        "description": "The host names to update, by credential: a name in the credential's zone, \"\" for the zone itself, \"*.name\" for a wildcard."
                     },
                     "ipv4": {
                         "type": "object",
@@ -145,7 +157,8 @@
                     "endpoints"
                 ],
                 "additionalProperties": false
-            }
+            },
+            "description": "The host names to keep, by task name: the addresses its filters match, and those of the sources it names, go to the host names of its endpoints."
         },
         "credentials": {
             "type": "object",
@@ -153,16 +166,20 @@
                 "type": "object",
                 "properties": {
                     "provider": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The DNS provider: see the providers reference."
                     },
                     "settings": {
-                        "type": "object"
+                        "type": "object",
+                        "description": "The provider's settings: see the providers reference. An unknown one is an error."
                     },
                     "debounce_time": {
-                        "$ref": "#/$defs/duration"
+                        "$ref": "#/$defs/duration",
+                        "description": "How long to wait for more changes before updating. Default: 10s."
                     },
                     "retry_time": {
-                        "$ref": "#/$defs/duration"
+                        "$ref": "#/$defs/duration",
+                        "description": "How long to wait before retrying a failed update. Default: 1m."
                     }
                 },
                 "required": [
@@ -170,7 +187,8 @@
                     "settings"
                 ],
                 "additionalProperties": false
-            }
+            },
+            "description": "The DNS providers to update, by credential name, which tasks' endpoints name."
         },
         "discovery": {
             "type": "object",
@@ -215,11 +233,12 @@
                     "description": "How often the active discovery probes every host: a duration, or seconds. Default: a third of the lifetime."
                 }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "How hosts are discovered: on the local links, and by plugins reading routers' tables."
         },
         "sources": {
             "type": "object",
-            "description": "Named sources of addresses without a MAC: the public address of the network, a command's output, a fixed list.",
+            "description": "Sources of addresses without a MAC, as the network's public IPv4, by name, which tasks name in their sources.",
             "additionalProperties": {
                 "type": "object",
                 "properties": {
@@ -230,7 +249,8 @@
                             "dns",
                             "command",
                             "static"
-                        ]
+                        ],
+                        "description": "dns: the public address, as OpenDNS's or Google's resolvers see it. http: from echo services over HTTPS, or urls. command: the addresses a command prints, one per line. static: the addresses listed."
                     },
                     "family": {
                         "type": "array",
@@ -260,13 +280,15 @@
                         "description": "http: the echo services to ask, in order."
                     },
                     "command": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "command: the program to run, from the configuration's directory."
                     },
                     "args": {
                         "type": "array",
                         "items": {
                             "type": "string"
-                        }
+                        },
+                        "description": "command: its arguments."
                     },
                     "addresses": {
                         "type": "array",
@@ -353,7 +375,8 @@
                     "type": "object",
                     "properties": {
                         "enabled": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "Whether the family is discovered at all. Default: true in an object."
                         },
                         "listen": {
                             "type": "boolean",
@@ -380,7 +403,8 @@
             "type": "object",
             "properties": {
                 "type": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "The plugin type."
                 },
                 "params": {
                     "type": "string",
@@ -397,10 +421,12 @@
                 },
                 "username": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "description": "The login."
                 },
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "The login's password. Or an identity_file, or both."
                 },
                 "identity_file": {
                     "type": "string",
@@ -432,7 +458,8 @@
             "type": "object",
             "properties": {
                 "type": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "The plugin type."
                 },
                 "params": {
                     "type": "string",
@@ -449,10 +476,12 @@
                 },
                 "username": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "description": "The login."
                 },
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "The login's password."
                 },
                 "use_tls": {
                     "type": "boolean",
@@ -491,7 +520,8 @@
                         "linux",
                         "freebsd",
                         "mikrotik"
-                    ]
+                    ],
+                    "description": "The plugin type: linux or freebsd (pfSense, OPNsense) over SSH, mikrotik over its API."
                 }
             },
             "allOf": [

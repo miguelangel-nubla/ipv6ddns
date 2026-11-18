@@ -1,10 +1,13 @@
 package ddns
 
 import (
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
+	"slices"
 	"strings"
 
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -47,9 +50,29 @@ func NewService(provider string, settings json.RawMessage) (Service, error) {
 	return service, nil
 }
 
+// The JSON schema of each provider's settings, schemas/<provider>.json: what decodeSettings checks,
+// and what the providers reference is made of.
+//
+//go:embed schemas/*.json
+var settingsSchemas embed.FS
+
+// SettingsSchema returns the JSON schema of a provider's settings.
+func SettingsSchema(provider string) ([]byte, error) {
+	return settingsSchemas.ReadFile("schemas/" + provider + ".json")
+}
+
+// Providers returns the names of the providers, sorted.
+func Providers() []string {
+	return slices.Sorted(maps.Keys(providers))
+}
+
 // decodeSettings checks settings against the provider's JSON schema, and reads them into v.
-func decodeSettings(settings json.RawMessage, schema string, v any) error {
-	result, err := gojsonschema.Validate(gojsonschema.NewStringLoader(schema), gojsonschema.NewBytesLoader(settings))
+func decodeSettings(settings json.RawMessage, provider string, v any) error {
+	schema, err := SettingsSchema(provider)
+	if err != nil {
+		return err
+	}
+	result, err := gojsonschema.Validate(gojsonschema.NewBytesLoader(schema), gojsonschema.NewBytesLoader(settings))
 	if err != nil {
 		return fmt.Errorf("invalid settings: %w", err)
 	}

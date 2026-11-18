@@ -1,0 +1,40 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "AWS Route 53, over its API.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "access_key_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "An access key allowed route53:GetHostedZone, ListResourceRecordSets and ChangeResourceRecordSets on the zone."
+        },
+        "secret_access_key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Its secret."
+        },
+        "region": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The API's region: us-east-1."
+        },
+        "hosted_zone_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The hosted zone's ID: Z123...."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL: 5m, 1h."
+        }
+    },
+    "required": [
+        "access_key_id",
+        "secret_access_key",
+        "region",
+        "hosted_zone_id",
+        "ttl"
+    ]
+}

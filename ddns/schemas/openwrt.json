@@ -1,0 +1,46 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "OpenWrt's dnsmasq, over SSH and UCI.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "address": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The router, with a port unless 22."
+        },
+        "username": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The SSH user."
+        },
+        "password": {
+            "type": "string",
+            "description": "Its password, or an ssh_key."
+        },
+        "ssh_key": {
+            "type": "string",
+            "description": "The SSH private key file."
+        },
+        "host_key": {
+            "type": "string",
+            "pattern": "^(SHA256:[A-Za-z0-9+/]{43})?$",
+            "description": "The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen."
+        },
+        "zone": {
+            "type": "string",
+            "description": "The zone of the names: lan."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL: 5m, 1h."
+        }
+    },
+    "required": [
+        "address",
+        "username",
+        "zone",
+        "ttl"
+    ]
+}

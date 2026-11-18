@@ -28,53 +28,11 @@ func init() {
 
 func NewMikrotik(settings json.RawMessage) (Service, error) {
 	var service Mikrotik
-	if err := decodeSettings(settings, mikrotikSettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "mikrotik", &service); err != nil {
 		return nil, err
 	}
 	return &service, nil
 }
-
-const mikrotikSettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"address": {
-				"type": "string",
-				"minLength": 1
-			},
-			"use_tls": {
-				"type": "boolean"
-			},
-			"tls_fingerprint": {
-				"type": "string",
-				"pattern": "^([a-fA-F0-9]{64})?$"
-			},
-			"username": {
-				"type": "string",
-				"minLength": 1
-			},
-			"password": {
-				"type": "string"
-			},
-			"zone": {
-				"type": "string"
-			},
-			"ttl": {
-				"type": "string",
-				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			}
-		},
-		"required": [
-			"address",
-			"username",
-			"password",
-			"zone",
-			"ttl"
-		]
-	}
-	`
 
 func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
