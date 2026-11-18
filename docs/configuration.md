@@ -39,7 +39,7 @@ An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`,
 
 ## Secrets
 
-Any value takes:
+Any string value takes:
 
 | | |
 |---|---|
@@ -70,7 +70,7 @@ These still work, each with a warning in the log that says what to write instead
 
 | From before | Now |
 |---|---|
-| `discovery.listen`, `discovery.active` | [`discovery.ipv6.listen`, `.active`](discovery.md#families-and-ways), and the same of `ipv4` when it is `true` |
+| `discovery.listen`, `discovery.active` (an error beside `discovery.ipv6`) | [`discovery.ipv6.listen`, `.active`](discovery.md#families-and-ways), and the same of `ipv4` when it is `true` |
 | `discovery.solicit_eui64` | `discovery.ipv6.solicit` |
-| A task's `ipv4` block, a command | A [command source](sources.md), named in the task's `sources` |
+| A task's `ipv4` block, a command | A [command source](sources.md), named in the task's `sources`: until then, it is a source named `<task>.ipv4` |
 | A plugin's `params`, one string | Its [fields](reference/configuration.md#discovery-plugins) |

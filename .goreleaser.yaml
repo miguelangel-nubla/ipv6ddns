@@ -75,6 +75,8 @@ archives:
       - README*
       - CHANGELOG*
       - cmd/ipv6ddns/example.config.yaml
+      - docs/**/*
+      - CONTRIBUTING*
     formats: tar.gz
     name_template: >-
       {{ .ProjectName }}_

@@ -68,7 +68,7 @@ credentials:
 
 ### Requirements
 - **API User**: Create a user on the router with `read`, `write` and `api` permissions (`write` is needed to manage `/ip/dns/static`).
-- **API Service**: Ensure `api` (port 8728) or `api-ssl` (port 8729) service is enabled under `/ip/service`.
+- **API Service**: as for the [discovery plugin](#requirements).
 
 ---
 

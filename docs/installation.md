@@ -11,7 +11,7 @@
 
 Local discovery listens to the network and sends probes, which needs raw sockets:
 
-- **Root**, or the `CAP_NET_RAW` capability, for the binary.
+- **Root**, or the `CAP_NET_RAW` capability, for the binary: `sudo setcap cap_net_raw+ep $(command -v ipv6ddns)` lets another user run it.
 - **In Docker**:
   - **The host's network**, `network_mode: host` or `--network host`: in a network of its own, the container sees none of the hosts. Docker's `"ipv6": true` in `daemon.json` is about the networks Docker makes, not the host's, and isn't needed.
   - **`NET_RAW`**, which Docker grants by default but other runtimes, or a Kubernetes `securityContext`, can drop. Without it, discovery logs `operation not permitted`.
@@ -37,7 +37,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8053/healthz"]
 ```
 
-The health check needs `webserver_listen` to include `127.0.0.1:8053`. The image has `bash`, `curl`, `jq`, `dig` and `ip` for the scripts of [command sources](sources.md).
+The health check needs the web server reachable at `127.0.0.1:8053`: `webserver_listen` `8053`, `:8053` or `127.0.0.1:8053`. The image has `bash`, `curl`, `jq`, `dig` and `ip` for the scripts of [command sources](sources.md).
 
 ## Flags
 
@@ -45,7 +45,7 @@ The health check needs `webserver_listen` to include `127.0.0.1:8053`. The image
 |---|---|
 | `-config_file` | The configuration file, YAML or JSON. Default: `config.yaml` |
 | `-lifetime` | How long a discovered address stays after it was last seen. Default: 1h |
-| `-log_level` | `debug`, `info`, `warn`, `error`. Default: `info` |
+| `-log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal`. Default: `info` |
 | `-webserver_listen` | Where to serve the web report: below |
 | `-live` | Show the report in the terminal, updating, instead of the log |
 | `-version` | Print the version |
@@ -63,13 +63,13 @@ The health check needs `webserver_listen` to include `127.0.0.1:8053`. The image
 | `192.0.2.1`, `2001:db8::1`, `[2001:db8::1]` | that address, port 80 |
 | `myhost:8053`, `myhost` | every address the name resolves to, at start |
 
-The report has no authentication: behind a reverse proxy, list only an address the proxy reaches. It hides the credentials, the plugins' and commands' arguments, and the update errors.
+The report has no authentication: behind a reverse proxy, list only an address the proxy reaches. It hides the credentials, the plugins' params, the commands' arguments, and the errors of the updates and of the sources.
 
 | Path | Serves |
 |---|---|
-| `/` | The report, as text: the names and their records, and the discovered hosts |
+| `/` | The report, as text: the names and their records, the discovered hosts, and the configuration |
 | `/healthz` | `ok`, while the process runs: for health checks |
-| `/status.json` | The same as the report, as JSON |
+| `/status.json` | The state, as JSON: the names and their records, the discovered hosts, and the sources' runs |
 | `/metrics` | Prometheus metrics: the addresses of each name, the updates by result, the last success |
 
 ## Stopping

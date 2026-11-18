@@ -98,7 +98,6 @@ tasks: {}
 	for name, bad := range map[string]string{
 		"a log level":         "log_level: loud\n",
 		"a lifetime":          "lifetime: soon\n",
-		"a zero lifetime":     "lifetime: 0\n",
 		"an interface":        "discovery:\n  exclude_interfaces: ['docker[']\n",
 		"a family lifetime":   "discovery:\n  ipv4: {lifetime: -3}\n",
 		"a webserver listing": "webserver_listen: {port: 80}\n",

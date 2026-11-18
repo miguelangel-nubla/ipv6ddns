@@ -22,13 +22,12 @@
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "The records' TTL: 5m, 1h."
+            "description": "Unused: Gravity has no TTL per record. Kept so that the configurations giving it load."
         }
     },
     "required": [
         "server",
         "api_key",
-        "zone",
-        "ttl"
+        "zone"
     ]
 }
