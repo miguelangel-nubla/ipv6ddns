@@ -114,7 +114,10 @@ discovery:
   plugins:
     mikrotik-lan:
       type: mikrotik
-      params: param1
+      interval: 60s
+      address: 192.0.2.1
+      username: admin
+      password: secret
 `
 		path := filepath.Join(tempDir, "config_plugins.yaml")
 		_ = os.WriteFile(path, []byte(yamlContent), 0644)

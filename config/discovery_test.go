@@ -16,7 +16,7 @@ func TestDiscoveryFamilies(t *testing.T) {
 	}{
 		"the default":   {"", on, Family{}, 0},
 		"ipv4 true":     {"discovery:\n  ipv4: true\n", on, on, 0},
-		"ipv6 false":    {"discovery:\n  ipv6: false\n  plugins: {r: {type: linux, params: '60s,a,b,c'}}\n", Family{}, Family{}, 0},
+		"ipv6 false":    {"discovery:\n  ipv6: false\n  plugins: {r: {type: linux, interval: 60s, address: a, username: b, password: c}}\n", Family{}, Family{}, 0},
 		"some ways":     {"discovery:\n  ipv4:\n    active: false\n    solicit: true\n", on, Family{Enabled: true, Listen: true, Solicit: true}, 0},
 		"ipv4 disabled": {"discovery:\n  ipv4:\n    enabled: false\n    solicit: true\n", on, Family{Solicit: true, Listen: true, Active: true}, 0},
 		"ipv6 solicit":  {"discovery:\n  ipv6:\n    solicit: true\n", Family{Enabled: true, Listen: true, Active: true, Solicit: true}, Family{}, 0},
