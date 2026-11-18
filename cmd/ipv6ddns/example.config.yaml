@@ -151,12 +151,18 @@ credentials:
       # host_key: SHA256:...
       zone: example.com
       ttl: 1h
+# The same ways for each family: listen, passive; active, probing every host; solicit, asking the
+# hosts the filters want. The plugins read the tables of the families on.
 discovery:
-  listen: true
-  active: true
-  # IPv4 neighbors too: the plugins' ARP tables, and the kernel's. Filters take them only with
-  # ip.family 4, as the mynas task.
-  ipv4: true
+  ipv6:
+    listen: true      # NDP
+    active: true      # multicast ping, SSDP, WS-Discovery
+    solicit: true     # the EUI-64 addresses eui64 filters want
+  # Off by default. Filters take IPv4 addresses only with ip.family 4, as the mynas task.
+  ipv4:
+    listen: true      # the kernel's ARP table
+    active: false     # a sweep of the subnets would broadcast an ARP request for each address
+    solicit: true     # ARP to the MACs IPv4 filters name, alone
   plugins:
     mikrotik-lan:
       type: mikrotik

@@ -211,7 +211,7 @@ func TestNewConfigChecks(t *testing.T) {
 	if c := cfg.Credentials["duck"]; c.DebounceTime.Duration != 10*time.Second || c.RetryTime.Duration != time.Minute {
 		t.Errorf("default times: %+v", c)
 	}
-	if !cfg.Discovery.Listen || !cfg.Discovery.Active {
+	if d := cfg.Discovery; !d.IPv6.Enabled || !d.IPv6.Listen || !d.IPv6.Active || d.IPv6.Solicit || d.IPv4.Enabled {
 		t.Errorf("discovery defaults: %+v", cfg.Discovery)
 	}
 

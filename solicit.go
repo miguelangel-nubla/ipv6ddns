@@ -2,6 +2,8 @@ package ipv6ddns
 
 import (
 	"context"
+	"errors"
+	"maps"
 	"net"
 	"net/netip"
 	"slices"
@@ -14,15 +16,33 @@ import (
 
 const solicitInterval = time.Minute
 
-// solicitEUI64Loop asks for the EUI-64 addresses the tasks want. A stable address that sends no
-// traffic is never seen otherwise, as hosts send from their temporary ones: routers don't learn it.
-func (w *Worker) solicitEUI64Loop(ctx context.Context) {
+// solicitLoop asks, every solicitInterval, for the addresses the tasks want which aren't otherwise
+// found. IPv6: the EUI-64 addresses, as a stable address that sends no traffic is never seen, hosts
+// sending from their temporary ones. IPv4: the addresses of the MACs IPv4 filters name, by ARP to
+// each alone, so a quiet host is found with nothing broadcast.
+func (w *Worker) solicitLoop(ctx context.Context) {
+	d := w.config.Discovery
+	solicitIPv6, solicitIPv4 := d.IPv6.Enabled && d.IPv6.Solicit, d.IPv4.Enabled && d.IPv4.Solicit
+	macs := ipv4SolicitTargets(w.config.Tasks)
+
 	ticker := time.NewTicker(solicitInterval)
 	defer ticker.Stop()
 	for {
-		for _, target := range eui64Targets(w.config.Tasks, w.discWorker.Prefixes()) {
-			if _, err := w.discWorker.Solicit(target); err != nil {
-				w.logger.Errorf("error soliciting %s: %s", target, err)
+		if solicitIPv6 {
+			for _, target := range eui64Targets(w.config.Tasks, w.discWorker.Prefixes()) {
+				if _, err := w.discWorker.Solicit(target); err != nil {
+					w.logger.Errorf("error soliciting %s: %s", target, err)
+				}
+			}
+		}
+		if solicitIPv4 && len(macs) > 0 {
+			_, err := w.discWorker.SolicitIPv4(ctx, macs)
+			switch {
+			case errors.Is(err, errors.ErrUnsupported):
+				w.logger.Warnf("no IPv4 solicitation: %s", err)
+				solicitIPv4 = false
+			case err != nil && ctx.Err() == nil:
+				w.logger.Errorf("error soliciting IPv4 addresses: %s", err)
 			}
 		}
 		select {
@@ -92,4 +112,25 @@ func eui64Address(prefix netip.Prefix, mac net.HardwareAddr) (netip.Addr, bool) 
 	addr[14] = mac[4]
 	addr[15] = mac[5]
 	return netip.AddrFrom16(addr), true
+}
+
+// ipv4SolicitTargets returns the MACs to ask for their IPv4 addresses: those a task's filter names
+// and takes IPv4 addresses of.
+func ipv4SolicitTargets(tasks map[string]config.Task) []net.HardwareAddr {
+	seen := make(map[string]bool)
+	var macs []net.HardwareAddr
+	for _, name := range slices.Sorted(maps.Keys(tasks)) {
+		for _, f := range tasks[name].Filters {
+			if f.MAC.Address == "" || !slices.Contains(f.IP.Family, 4) {
+				continue
+			}
+			mac, err := net.ParseMAC(f.MAC.Address)
+			if err != nil || seen[mac.String()] {
+				continue
+			}
+			seen[mac.String()] = true
+			macs = append(macs, mac)
+		}
+	}
+	return macs
 }
