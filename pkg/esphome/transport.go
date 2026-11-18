@@ -26,6 +26,7 @@ import (
 //     the protobuf message.
 
 const (
+	plaintextIndicator = 0x00
 	frameIndicator     = 0x01
 	handshakeOK        = 0x00
 	handshakeReject    = 0x01
@@ -85,10 +86,41 @@ func reject(w io.Writer, reason string) {
 	writeFrame(w, append([]byte{handshakeReject}, reason...))
 }
 
-// handshake answers a client's handshake as the device of name and mac, with key: the 32 bytes of
-// the encryption key, the base64 of which the user gives Home Assistant.
-func handshake(conn net.Conn, name string, mac net.HardwareAddr, key []byte) (*secureConn, error) {
+// msgConn is a connection past its handshake, encrypted or not.
+type msgConn interface {
+	ReadMessage() (uint16, []byte, error)
+	WriteMessage(msgType uint16, data []byte) error
+}
+
+// zeroKey is the key of a device without one, which Home Assistant connects with to give it one: a
+// Noise handshake still, so that the key it gives can't be read off the network, though a known
+// key authenticates nobody.
+var zeroKey = make([]byte, 32)
+
+// accept answers a connection as the device of name and mac. With a key, the client must
+// prove it, by the Noise handshake. Without one, as ESPHome's devices whose key Home Assistant
+// gives, the first byte says: 0x00 the plaintext protocol, 0x01 Noise with the zero key, for Home
+// Assistant to give the key. trusted is a connection with the key.
+func accept(conn net.Conn, name string, mac net.HardwareAddr, key []byte) (c msgConn, trusted bool, err error) {
 	r := bufio.NewReader(conn)
+	first, err := r.Peek(1)
+	if err != nil {
+		return nil, false, err
+	}
+	if key == nil {
+		if first[0] == plaintextIndicator {
+			return &plainConn{conn: conn, r: r}, false, nil
+		}
+		sc, err := noiseHandshake(conn, r, name, mac, zeroKey)
+		return sc, false, err
+	}
+	sc, err := noiseHandshake(conn, r, name, mac, key)
+	return sc, err == nil, err
+}
+
+// noiseHandshake answers a client's Noise handshake as the device of name and mac, with key: the 32
+// bytes of the encryption key, the base64 of which the user gives Home Assistant.
+func noiseHandshake(conn net.Conn, r *bufio.Reader, name string, mac net.HardwareAddr, key []byte) (*secureConn, error) {
 	hello, err := readFrame(r, maxHandshakeFrame)
 	if errors.Is(err, errUnencrypted) {
 		reject(conn, rejectBadIndicator)
@@ -180,4 +212,45 @@ func (c *secureConn) WriteMessage(msgType uint16, data []byte) error {
 		return err
 	}
 	return writeFrame(c.conn, encrypted)
+}
+
+// plainConn is the plaintext protocol: every message is 0x00, its length and its type, each a
+// varint, and the protobuf.
+type plainConn struct {
+	conn net.Conn
+	r    *bufio.Reader
+}
+
+func (c *plainConn) ReadMessage() (uint16, []byte, error) {
+	indicator, err := c.r.ReadByte()
+	if err != nil {
+		return 0, nil, err
+	}
+	if indicator != plaintextIndicator {
+		return 0, nil, errors.New("a plaintext message without its indicator")
+	}
+	size, err := binary.ReadUvarint(c.r)
+	if err != nil {
+		return 0, nil, err
+	}
+	msgType, err := binary.ReadUvarint(c.r)
+	if err != nil {
+		return 0, nil, err
+	}
+	if size > maxDataFrame || msgType > 0xffff {
+		return 0, nil, fmt.Errorf("a message of %d bytes, of type %d", size, msgType)
+	}
+	data := make([]byte, size)
+	if _, err := io.ReadFull(c.r, data); err != nil {
+		return 0, nil, err
+	}
+	return uint16(msgType), data, nil
+}
+
+func (c *plainConn) WriteMessage(msgType uint16, data []byte) error {
+	frame := []byte{plaintextIndicator}
+	frame = binary.AppendUvarint(frame, uint64(len(data)))
+	frame = binary.AppendUvarint(frame, uint64(msgType))
+	_, err := c.conn.Write(append(frame, data...))
+	return err
 }

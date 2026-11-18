@@ -2,8 +2,14 @@ package ipv6ddns
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,21 +51,98 @@ type nameEntities struct {
 	problem               *esphome.BinarySensor
 }
 
-func newHomeAssistant(cfg config.HomeAssistant) (*homeAssistant, error) {
-	key, err := esphome.ParseKey(cfg.Key)
-	if err != nil {
-		return nil, err
+// newHomeAssistant makes the device: with the configuration's key, fixed, its MAC from it; or with
+// the state file, its MAC from the identity kept there, and the key Home Assistant gives kept there.
+// baseDir is the configuration's folder, which a relative state file is in.
+func newHomeAssistant(cfg config.HomeAssistant, baseDir string) (*homeAssistant, error) {
+	device := &esphome.Device{
+		Name: cfg.Name, FriendlyName: cfg.FriendlyName,
+		Manufacturer: "ipv6ddns", Model: "Network wide DDNS updater",
+		Project: "miguelangel-nubla.ipv6ddns", ProjectVersion: Version,
+	}
+	if cfg.Key != "" {
+		key, err := esphome.ParseKey(cfg.Key)
+		if err != nil {
+			return nil, err
+		}
+		device.Key, device.MAC = key, esphome.MACFrom(key)
+	} else {
+		path := cfg.StateFile
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(baseDir, path)
+		}
+		state, err := loadDeviceState(path)
+		if err != nil {
+			return nil, fmt.Errorf("homeassistant: %w", err)
+		}
+		device.MAC, device.Key = esphome.MACFrom(state.Identity), state.Key
+		device.OnKey = func(key []byte) error {
+			state.Key = key
+			return state.save(path)
+		}
 	}
 	return &homeAssistant{
 		config: cfg,
-		device: &esphome.Device{
-			Name: cfg.Name, FriendlyName: cfg.FriendlyName, MAC: esphome.MACFromKey(key), Key: key,
-			Manufacturer: "ipv6ddns", Model: "Network wide DDNS updater",
-			Project: "miguelangel-nubla.ipv6ddns", ProjectVersion: Version,
-		},
+		device: device,
 		states: make(map[string]string),
 		names:  make(map[haName]nameEntities),
 	}, nil
+}
+
+// deviceState is what a device whose key Home Assistant gives keeps: its identity, which its MAC
+// comes from, so that Home Assistant knows it whatever its key; and the key, once given.
+type deviceState struct {
+	Identity []byte `json:"identity"`
+	Key      []byte `json:"key,omitempty"`
+}
+
+// loadDeviceState reads the state file, or makes a new identity and writes it, the first time: a
+// state file ipv6ddns can't write is an error at the start, rather than when Home Assistant gives
+// the key.
+func loadDeviceState(path string) (*deviceState, error) {
+	var state deviceState
+	content, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(content, &state); err != nil || len(state.Identity) != 32 || state.Key != nil && len(state.Key) != 32 {
+			return nil, fmt.Errorf("the state file %s isn't one: delete it, and Home Assistant sees a new device", path)
+		}
+		return &state, nil
+	case errors.Is(err, fs.ErrNotExist):
+		state.Identity = make([]byte, 32)
+		rand.Read(state.Identity)
+		if err := state.save(path); err != nil {
+			return nil, fmt.Errorf("%w: without a key in the configuration, the key Home Assistant gives is kept there; set state_file to a file ipv6ddns can write", err)
+		}
+		return &state, nil
+	default:
+		return nil, err
+	}
+}
+
+// save writes the state, readable by its owner only, whole or not at all.
+func (s *deviceState) save(path string) error {
+	content, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func stateKey(entity, attribute string) string { return entity + "\x00" + attribute }

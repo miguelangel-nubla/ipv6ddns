@@ -34,6 +34,8 @@ const (
 	msgHomeAssistantStateResponse          = 40
 	msgListEntitiesButtonResponse          = 61
 	msgButtonCommandRequest                = 62
+	msgNoiseEncryptionSetKeyRequest        = 124
+	msgNoiseEncryptionSetKeyResponse       = 125
 	msgDeviceCapabilitiesRequest           = 149
 	msgDeviceCapabilitiesResponse          = 150
 )

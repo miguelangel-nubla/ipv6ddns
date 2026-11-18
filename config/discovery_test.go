@@ -121,10 +121,16 @@ func TestHomeAssistantConfig(t *testing.T) {
 		t.Errorf("the source: %+v", s)
 	}
 
+	given, err := loadConfig(t, "homeassistant: {}\ntasks: {}\n"+duckCredential)
+	if err != nil || given.HomeAssistant.Key != "" || given.HomeAssistant.StateFile != "homeassistant.state" {
+		t.Errorf("without a key: %v, %+v", err, given.HomeAssistant)
+	}
+
 	for name, c := range map[string]struct{ config, want string }{
 		"a source without the block": {"sources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\n", "needs the homeassistant block"},
 		"a source without an entity": {"homeassistant: {key: " + key + "}\nsources:\n  wan:\n    type: homeassistant\n", "entity"},
 		"a short key":                {"homeassistant: {key: c2hvcnQ=}\n", "key"},
+		"a key and a state file":     {"homeassistant: {key: " + key + ", state_file: x.state}\n", "not both"},
 		"a name with capitals":       {"homeassistant: {key: " + key + ", name: IPv6DDNS}\n", "name"},
 	} {
 		if _, err := loadConfig(t, c.config+"tasks: {}\n"+duckCredential); err == nil || !strings.Contains(err.Error(), c.want) {

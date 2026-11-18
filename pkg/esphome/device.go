@@ -32,14 +32,21 @@ type Device struct {
 	// MAC identifies the device to Home Assistant: keep it the same, or Home Assistant sees
 	// another device.
 	MAC net.HardwareAddr
-	// Key is the encryption key: 32 bytes, which the user gives Home Assistant in base64.
+	// Key is the encryption key: 32 bytes, which the user gives Home Assistant in base64. Without
+	// one, and with OnKey, Home Assistant gives it, as to ESPHome's devices: it connects without,
+	// makes a key, and gives it over Noise with the zero key; OnKey keeps it, and the device takes
+	// it at once.
 	Key []byte
+	// OnKey keeps a key Home Assistant gives, or forgets it when nil: the device's next start must
+	// have it. Without OnKey, the device's key is fixed, and one Home Assistant gives is refused.
+	OnKey func(key []byte) error
 	// Who made it, and what: project is "author.name", as ESPHome's project_name.
 	Manufacturer, Model, Project, ProjectVersion string
 
 	Logger *zap.SugaredLogger
 
 	mutex         sync.Mutex
+	keyChanged    chan struct{} // closed and replaced when the key changes
 	entities      []*entity
 	subscriptions []subscription
 	conns         map[*connection]struct{}
@@ -212,6 +219,57 @@ func (d *Device) update(e *entity, set func(*entity) bool) {
 	}
 }
 
+// key returns the device's key: nil without one.
+func (d *Device) key() []byte {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	return d.Key
+}
+
+// HasKey tells whether the device has its key, set or given by Home Assistant.
+func (d *Device) HasKey() bool { return d.key() != nil }
+
+// keyChange returns a channel closed at the next change of the key.
+func (d *Device) keyChange() <-chan struct{} {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	if d.keyChanged == nil {
+		d.keyChanged = make(chan struct{})
+	}
+	return d.keyChanged
+}
+
+// setKey takes a key Home Assistant gave, or forgets it: OnKey keeps it first.
+func (d *Device) setKey(key []byte) error {
+	if err := d.OnKey(key); err != nil {
+		return err
+	}
+	d.mutex.Lock()
+	d.Key = key
+	if d.keyChanged != nil {
+		close(d.keyChanged)
+	}
+	d.keyChanged = make(chan struct{})
+	d.mutex.Unlock()
+	return nil
+}
+
+// closeUntrusted ends the connections without the key, after it changed: Home Assistant's own
+// reconnects with it.
+func (d *Device) closeUntrusted() {
+	d.mutex.Lock()
+	var untrusted []*connection
+	for c := range d.conns {
+		if !c.trusted {
+			untrusted = append(untrusted, c)
+		}
+	}
+	d.mutex.Unlock()
+	for _, c := range untrusted {
+		c.close()
+	}
+}
+
 // Connected tells whether Home Assistant is connected, and follows the device's states.
 func (d *Device) Connected() bool {
 	d.mutex.Lock()
@@ -226,8 +284,11 @@ func (d *Device) Connected() bool {
 
 // Serve answers Home Assistant's connections on ln, until ctx is done.
 func (d *Device) Serve(ctx context.Context, ln net.Listener) error {
-	if len(d.Key) != 32 {
-		return errors.New("the device needs a key of 32 bytes")
+	if d.Key != nil && len(d.Key) != 32 {
+		return errors.New("the device's key must be of 32 bytes")
+	}
+	if d.Key == nil && d.OnKey == nil {
+		return errors.New("the device needs a key, or OnKey for Home Assistant to give it one")
 	}
 	if len(d.MAC) != 6 {
 		return errors.New("the device needs a MAC of 6 bytes")
@@ -266,10 +327,14 @@ type outgoing struct {
 }
 
 type connection struct {
-	sc     *secureConn
-	mutex  sync.Mutex
-	states bool
+	sc      msgConn
+	conn    net.Conn
+	mutex   sync.Mutex
+	states  bool
+	trusted bool // with the device's key: only then are Home Assistant's states and commands taken
 }
+
+func (c *connection) close() { c.conn.Close() }
 
 func (c *connection) statesSubscribed() bool {
 	c.mutex.Lock()
@@ -294,12 +359,12 @@ func (d *Device) serveConn(ctx context.Context, conn net.Conn) {
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
 
-	sc, err := handshake(conn, d.Name, d.MAC, d.Key)
+	sc, trusted, err := accept(conn, d.Name, d.MAC, d.key())
 	if err != nil {
 		d.logf("%s: %s", conn.RemoteAddr(), err)
 		return
 	}
-	c := &connection{sc: sc}
+	c := &connection{sc: sc, conn: conn, trusted: trusted}
 	d.mutex.Lock()
 	d.conns[c] = struct{}{}
 	d.mutex.Unlock()
@@ -379,6 +444,10 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		return false, nil
 	case msgSubscribeHomeAssistantStatesRequest:
+		if !c.trusted {
+			// States from a client without the key would be anyone's: not asked.
+			return false, nil
+		}
 		d.mutex.Lock()
 		subs := append([]subscription(nil), d.subscriptions...)
 		d.mutex.Unlock()
@@ -389,6 +458,9 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		return false, nil
 	case msgHomeAssistantStateResponse:
+		if !c.trusted {
+			return false, nil
+		}
 		f, err := parse(data)
 		if err != nil {
 			return false, err
@@ -404,6 +476,10 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		return false, nil
 	case msgButtonCommandRequest:
+		if !c.trusted {
+			d.logf("a button pressed without the key: ignored")
+			return false, nil
+		}
 		f, err := parse(data)
 		if err != nil {
 			return false, err
@@ -421,9 +497,57 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 			go press()
 		}
 		return false, nil
+	case msgNoiseEncryptionSetKeyRequest:
+		f, err := parse(data)
+		if err != nil {
+			return false, err
+		}
+		ok := d.takeKey(c, f.strings[1])
+		if err := c.write(msgNoiseEncryptionSetKeyResponse, message{}.bool(1, ok)); err != nil {
+			return false, err
+		}
+		if ok {
+			d.closeUntrusted()
+		}
+		return false, nil
 	}
 	// The rest, as the logs and services subscriptions: nothing to do.
 	return false, nil
+}
+
+// takeKey takes the key Home Assistant gives: over Noise, with the zero key while the device has
+// none, or with the key, to change it; never in plaintext. An empty one forgets it, with the key
+// only. It tells whether the key was taken.
+func (d *Device) takeKey(c *connection, encoded string) bool {
+	if d.OnKey == nil {
+		d.logf("a key given, but the device's is fixed: refused")
+		return false
+	}
+	_, plain := c.sc.(*plainConn)
+	if plain || !c.trusted && d.HasKey() {
+		d.logf("a key given without encryption, or without the key: refused")
+		return false
+	}
+	if encoded == "" {
+		if !c.trusted {
+			return false
+		}
+		if err := d.setKey(nil); err != nil {
+			d.logf("forgetting the key: %s", err)
+			return false
+		}
+		return true
+	}
+	key, err := ParseKey(encoded)
+	if err != nil || string(key) == string(zeroKey) {
+		d.logf("a key given that isn't one: refused")
+		return false
+	}
+	if err := d.setKey(key); err != nil {
+		d.logf("keeping the key: %s", err)
+		return false
+	}
+	return true
 }
 
 func (d *Device) deviceInfo() []byte {
@@ -437,7 +561,8 @@ func (d *Device) deviceInfo() []byte {
 		string(9, d.ProjectVersion).
 		string(12, d.Manufacturer).
 		string(13, d.FriendlyName).
-		bool(19, true) // api_encryption_supported
+		bool(19, true).          // api_encryption_supported
+		bool(26, d.OnKey != nil) // api_encryption_provisionable: Home Assistant gives the key
 }
 
 func listMessage(e *entity) outgoing {
