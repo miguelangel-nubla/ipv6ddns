@@ -77,6 +77,7 @@ Run it with Docker as the [installation](docs/installation.md#with-docker-compos
 | [Discovery](docs/discovery.md) | How hosts are found: IPv6 and IPv4, plugins, interfaces, lifetimes |
 | [Sources](docs/sources.md) | The public IPv4, and addresses without a MAC |
 | [Home Assistant](homeassistant/addon/DOCS.md) | The add-on, and [how it is made](docs/home-assistant.md) |
+| [Home Assistant integration](docs/home-assistant-integration.md) | ipv6ddns as a device in Home Assistant, and entities' states as addresses |
 | [Mikrotik](docs/mikrotik.md) | RouterOS as a DNS provider, a discovery plugin, and a container host |
 | [Configuration reference](docs/reference/configuration.md) | Every key, generated from the schema |
 | [Providers reference](docs/reference/providers.md) | Every provider's settings |

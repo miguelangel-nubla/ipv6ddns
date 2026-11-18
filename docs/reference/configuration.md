@@ -15,6 +15,7 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 | `lifetime` | duration | How long a discovered address stays after it was last seen, unless its family says. Default: 1h. The -lifetime flag, given, wins. |
 | `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | The logging level. Default: info. The -log_level flag, given, wins. |
 | `webserver_listen` | list, or comma separated | Serve the report, /status.json and /metrics on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, myhost. The -webserver_listen flag, given, wins. |
+| `homeassistant` | object | Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md. |
 
 ## Tasks
 
@@ -102,7 +103,7 @@ Sources of addresses without a MAC, as the network's public IPv4, by name, which
 
 | Key | Takes | |
 |---|---|---|
-| `type` | `http`, `dns`, `command`, `static` | **Required.** dns: the public address, as OpenDNS's or Google's resolvers see it. http: from echo services over HTTPS, or urls. command: the addresses a command prints, one per line. static: the addresses listed. |
+| `type` | `http`, `dns`, `command`, `static`, `homeassistant` | **Required.** dns: the public address, as OpenDNS's or Google's resolvers see it. http: from echo services over HTTPS, or urls. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block. |
 | `family` | list of `4`, `6` | http and dns: the families to find. Default: 4. |
 | `interval` | duration | How often it runs. Default: 5m. |
 | `lifetime` | duration | How long an address stays after the last run that gave it. Default: 3 intervals. |
@@ -110,6 +111,8 @@ Sources of addresses without a MAC, as the network's public IPv4, by name, which
 | `command` | string | command: the program to run, from the configuration's directory. |
 | `args` | list of string | command: its arguments. |
 | `addresses` | list of string | static: the addresses. |
+| `entity` | string | homeassistant: the entity, as sensor.wan_ip. |
+| `attribute` | string | homeassistant: the attribute of the entity to read, rather than its state. |
 
 ## Discovery
 

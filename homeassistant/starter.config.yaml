@@ -41,6 +41,12 @@
 tasks: {}
 credentials: {}
 
+# ipv6ddns as a device of Home Assistant's ESPHome integration: Home Assistant finds it, and shows
+# each name's addresses, last update and problems, with a button to update now; and homeassistant
+# sources read its entities. Its encryption key is made the first time, in homeassistant.key.
+homeassistant:
+  key: ${file:homeassistant.key}
+
 discovery:
   # Home Assistant's own containers, on its bridges, aren't hosts of the network.
   exclude_interfaces: [hassio, docker0, "veth*"]

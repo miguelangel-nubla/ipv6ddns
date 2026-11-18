@@ -31,6 +31,8 @@ type Worker struct {
 	sources map[string]*source.Source
 	// A value tells the worker to match again; changes coming faster are matched once.
 	rematch chan struct{}
+	// The device of Home Assistant's ESPHome integration, without the homeassistant block nil.
+	homeAssistant *homeAssistant
 	// The goroutines Start starts, for Shutdown.
 	running sync.WaitGroup
 }
@@ -66,12 +68,26 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		rematch: make(chan struct{}, 1),
 	}
 
+	// Home Assistant's states for its sources; nil, not a nil *homeAssistant, without it.
+	var states source.HomeAssistantStates
+	if cfg.HomeAssistant != nil {
+		h, err := newHomeAssistant(*cfg.HomeAssistant)
+		if err != nil {
+			return nil, err
+		}
+		h.device.Logger = logger
+		w.homeAssistant, states = h, h
+	}
+
 	for name, sourceConfig := range cfg.Sources {
-		s, err := source.New(name, sourceConfig, cfg.BaseDir)
+		s, err := source.New(name, sourceConfig, cfg.BaseDir, states)
 		if err != nil {
 			return nil, err
 		}
 		w.sources[name] = s
+		if sourceConfig.Type == config.SourceHomeAssistant {
+			w.homeAssistant.subscribe(sourceConfig.Entity, sourceConfig.Attribute, s.Trigger)
+		}
 	}
 
 	targets := make(map[*Hostname]*target)
@@ -93,6 +109,20 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 				t.tasks = append(t.tasks, task)
 			}
 		}
+	}
+
+	if w.homeAssistant != nil {
+		var names []haName
+		for _, providerKey := range slices.Sorted(maps.Keys(w.State.providers)) {
+			provider := w.State.providers[providerKey]
+			for _, endpointKey := range slices.Sorted(maps.Keys(provider.endpoints)) {
+				endpoint := provider.endpoints[endpointKey]
+				for _, hostnameKey := range slices.Sorted(maps.Keys(endpoint.hostnames)) {
+					names = append(names, haName{endpointKey, hostnameKey, endpoint.Domain(hostnameKey)})
+				}
+			}
+		}
+		w.homeAssistant.addEntities(names, w.updateNow)
 	}
 
 	// The credentials no task names are checked too: a mistake shows at the start.
@@ -172,6 +202,16 @@ func (w *Worker) Start(ctx context.Context) error {
 	if err := w.discWorker.Start(ctx); err != nil {
 		return err
 	}
+	if h := w.homeAssistant; h != nil {
+		if err := h.serve(ctx, w.logger.Errorf); err != nil {
+			return err
+		}
+		w.running.Add(1)
+		go func() {
+			defer w.running.Done()
+			h.follow(ctx, func() Status { return w.Status(false) })
+		}()
+	}
 	changes, unsubscribe := w.discWorker.State.Subscribe()
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
 		w.sources[name].Start(ctx, w.logger, w.askRematch)
@@ -236,6 +276,13 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 
 func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {
 	w.discWorker.RegisterPlugin(p)
+}
+
+// updateNow updates every name now, as Home Assistant's button asks.
+func (w *Worker) updateNow() {
+	for _, t := range w.targets {
+		t.hostname.ScheduleUpdate(0)
+	}
 }
 
 // askRematch tells the worker to match again, at once.

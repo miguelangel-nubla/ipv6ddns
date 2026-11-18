@@ -9,6 +9,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
 )
 
 var (
@@ -20,15 +21,24 @@ var (
 // uncommented.
 func TestAddonStarterConfig(t *testing.T) {
 	path := filepath.Join("..", "..", "homeassistant", "starter.config.yaml")
-	cfg, err := config.NewConfig(path)
-	if err != nil || len(cfg.Warnings) > 0 {
-		t.Errorf("%v, warnings %v", err, cfg.Warnings)
-	}
-
+	// As the add-on's start leaves it: the key beside the configuration.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "homeassistant.key"), []byte(esphome.GenerateKey()+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	starter := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(starter, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.NewConfig(starter)
+	if err != nil || len(cfg.Warnings) > 0 {
+		t.Errorf("%v, warnings %v", err, cfg.Warnings)
+	}
+
 	// The example: the commented lines after the one that ends with "At Cloudflare:", up to the
 	// end of the comment.
 	var example []string
@@ -77,7 +87,7 @@ func TestDocExamples(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i, m := range yamlBlock.FindAllStringSubmatch(string(content), -1) {
-			block := m[1]
+			block := dedent(m[1])
 			if strings.HasPrefix(block, "services:") || strings.HasPrefix(block, "# compose.yaml") {
 				continue
 			}
@@ -93,9 +103,23 @@ func TestDocExamples(t *testing.T) {
 			for _, ref := range envRef.FindAllStringSubmatch(block, -1) {
 				t.Setenv(ref[1], "example")
 			}
-			// A file a ${file:...} names: one with a value.
-			block = regexp.MustCompile(`\$\{file:[^}]*\}`).ReplaceAllString(block, "example")
-			path := filepath.Join(t.TempDir(), "config.yaml")
+			// A file a ${file:...} names: beside the configuration when relative, with a key in a
+			// key's, as the add-on makes it; an absolute one, a value.
+			dir := t.TempDir()
+			for _, ref := range regexp.MustCompile(`\$\{file:([^}]*)\}`).FindAllStringSubmatch(block, -1) {
+				if filepath.IsAbs(ref[1]) {
+					block = strings.ReplaceAll(block, ref[0], "example")
+					continue
+				}
+				value := "example"
+				if strings.HasSuffix(ref[1], ".key") {
+					value = esphome.GenerateKey()
+				}
+				if err := os.WriteFile(filepath.Join(dir, ref[1]), []byte(value+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(dir, "config.yaml")
 			if err := os.WriteFile(path, []byte(block), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -129,4 +153,25 @@ func indent(s, prefix string) string {
 		}
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// dedent takes off the indentation all of a block's lines have, as a block in a list item's.
+func dedent(block string) string {
+	lines := strings.Split(block, "\n")
+	common := -1
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		n := len(l) - len(strings.TrimLeft(l, " "))
+		if common < 0 || n < common {
+			common = n
+		}
+	}
+	for i, l := range lines {
+		if len(l) >= common && common > 0 {
+			lines[i] = l[common:]
+		}
+	}
+	return strings.Join(lines, "\n")
 }

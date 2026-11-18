@@ -22,6 +22,9 @@ const (
 	SourceCommand = "command"
 	// SourceStatic is a fixed list of addresses.
 	SourceStatic = "static"
+	// SourceHomeAssistant is the state of a Home Assistant entity, or of its attribute: the
+	// addresses in it. It needs the homeassistant block, through which Home Assistant sends it.
+	SourceHomeAssistant = "homeassistant"
 )
 
 // Source is a named source of addresses that have no MAC, for the tasks that name it: the public
@@ -42,6 +45,9 @@ type Source struct {
 	Args    []string `json:"args,omitempty"`
 	// static.
 	Addresses []string `json:"addresses,omitempty"`
+	// homeassistant: the entity, as "sensor.wan_ip", and its attribute, or its state when empty.
+	Entity    string `json:"entity,omitempty"`
+	Attribute string `json:"attribute,omitempty"`
 }
 
 const (
@@ -80,6 +86,10 @@ func (s Source) withDefaults() (Source, error) {
 		// It gives the same addresses at every run: they never expire.
 		s.Interval.Duration = staticSourceInterval
 		s.Lifetime.Duration = 3 * staticSourceInterval
+	case SourceHomeAssistant:
+		if s.Entity == "" {
+			return s, fmt.Errorf("a homeassistant source needs an entity")
+		}
 	default:
 		return s, fmt.Errorf("unknown source type %q", s.Type)
 	}
