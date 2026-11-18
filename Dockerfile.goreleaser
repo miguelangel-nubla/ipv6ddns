@@ -11,6 +11,7 @@ RUN apk add --no-cache \
     jq \
     && update-ca-certificates
 
-COPY ipv6ddns /usr/local/bin/ipv6ddns
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/ipv6ddns /usr/local/bin/ipv6ddns
 
 ENTRYPOINT ["ipv6ddns"]
