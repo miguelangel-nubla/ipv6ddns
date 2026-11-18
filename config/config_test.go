@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNewConfig(t *testing.T) {
@@ -172,4 +173,52 @@ credentials:
 			t.Error("Filter Source mismatch")
 		}
 	})
+}
+
+func TestDurationPattern(t *testing.T) {
+	config := func(d string) []byte {
+		return []byte(`{"tasks": {}, "credentials": {"c": {"provider": "duckdns", "settings": {}, "debounce_time": "` + d + `"}}}`)
+	}
+	for _, d := range []string{"10s", "0", ".5s", "1h30m", "1.5m"} {
+		if err := validateConfig(config(d)); err != nil {
+			t.Errorf("%q: %v", d, err)
+		}
+	}
+	for _, d := range []string{"10", "soon", "1d"} {
+		if err := validateConfig(config(d)); err == nil {
+			t.Errorf("%q: want an error", d)
+		}
+	}
+}
+
+func TestNewConfigChecks(t *testing.T) {
+	dir := t.TempDir()
+	write := func(content string) string {
+		path := filepath.Join(dir, "config.json")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	cfg, err := NewConfig(write(`{"tasks": {"web": {"endpoints": {"duck": ["www"]}}}, "credentials": {"duck": {"provider": "duckdns", "settings": {}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tasks["web"].Name != "web" {
+		t.Errorf("task name: got %q", cfg.Tasks["web"].Name)
+	}
+	if c := cfg.Credentials["duck"]; c.DebounceTime.Duration != 10*time.Second || c.RetryTime.Duration != time.Minute {
+		t.Errorf("default times: %+v", c)
+	}
+	if !cfg.Discovery.Listen || !cfg.Discovery.Active {
+		t.Errorf("discovery defaults: %+v", cfg.Discovery)
+	}
+
+	if _, err := NewConfig(write(`{"tasks": {"web": {"endpoints": {"nope": ["www"]}}}, "credentials": {}}`)); err == nil {
+		t.Error("an endpoint with no credential: want an error")
+	}
+	if _, err := NewConfig(write(`{"tasks": {}, "credentials": {}, "unknown": 1}`)); err == nil {
+		t.Error("an unknown key: want an error")
+	}
 }

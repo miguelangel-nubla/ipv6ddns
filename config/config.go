@@ -3,8 +3,8 @@ package config
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -178,22 +178,21 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	return result.String()
 }
 
-func validateConfig(configData []byte) {
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader(configData)
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
+func validateConfig(configData []byte) error {
+	result, err := gojsonschema.Validate(gojsonschema.NewBytesLoader(configSchema), gojsonschema.NewBytesLoader(configData))
 	if err != nil {
-		log.Fatal(err.Error())
+		return err
 	}
 
 	if !result.Valid() {
-		fmt.Printf("The configuration is NOT valid. Errors:\n")
+		var errs strings.Builder
+		errs.WriteString("the configuration is not valid:")
 		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
+			fmt.Fprintf(&errs, "\n- %s", desc)
 		}
-		os.Exit(1)
+		return errors.New(errs.String())
 	}
+	return nil
 }
 
 func NewConfig(filename string) (config Config, err error) {
@@ -209,15 +208,29 @@ func NewConfig(filename string) (config Config, err error) {
 		}
 	}
 
-	validateConfig(byteValue)
+	if err := validateConfig(byteValue); err != nil {
+		return config, err
+	}
 
 	// Set defaults
 	config.Discovery.Listen = true
 	config.Discovery.Active = true
 
-	err = json.Unmarshal(byteValue, &config)
+	if err := json.Unmarshal(byteValue, &config); err != nil {
+		return config, err
+	}
+
+	for name, task := range config.Tasks {
+		task.Name = name
+		config.Tasks[name] = task
+		for endpoint := range task.Endpoints {
+			if _, ok := config.Credentials[endpoint]; !ok {
+				return config, fmt.Errorf("task %s: no credential %s for its endpoint", name, endpoint)
+			}
+		}
+	}
 
 	config.BaseDir = filepath.Dir(filename)
 
-	return config, err
+	return config, nil
 }

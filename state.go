@@ -2,15 +2,47 @@ package ipv6ddns
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 )
 
+// State holds the host names to update, by provider and endpoint. It is built once, so its maps
+// don't change after.
 type State struct {
-	providersMutex sync.RWMutex
-	providers      map[string]*Provider
+	providers map[string]*Provider
+}
+
+type Provider struct {
+	endpoints map[string]*Endpoint
+}
+
+// Endpoint is a credential: a DNS service, with the host names it updates.
+type Endpoint struct {
+	ddns.Service
+	hostnames map[string]*Hostname
+}
+
+func NewState() *State {
+	return &State{
+		providers: make(map[string]*Provider),
+	}
+}
+
+func NewProvider() *Provider {
+	return &Provider{
+		endpoints: make(map[string]*Endpoint),
+	}
+}
+
+func NewEndpoint(service ddns.Service) *Endpoint {
+	return &Endpoint{
+		Service:   service,
+		hostnames: make(map[string]*Hostname),
+	}
 }
 
 func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
@@ -18,101 +50,51 @@ func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 
 	fmt.Fprintf(&result, "%sDNS:\n", prefix)
 
-	s.providersMutex.RLock()
-	defer s.providersMutex.RUnlock()
-	providerKeys := make([]string, 0, len(s.providers))
-	for provider := range s.providers {
-		providerKeys = append(providerKeys, provider)
-	}
-	sort.Strings(providerKeys)
-
-	for _, providerKey := range providerKeys {
+	for _, providerKey := range slices.Sorted(maps.Keys(s.providers)) {
 		fmt.Fprintf(&result, "%s    Provider: %s\n", prefix, providerKey)
-
 		provider := s.providers[providerKey]
-		provider.endpointsMutex.RLock()
 
-		endpointKeys := make([]string, 0, len(provider.endpoints))
-		for endpoint := range provider.endpoints {
-			endpointKeys = append(endpointKeys, endpoint)
-		}
-		sort.Strings(endpointKeys)
-
-		for _, endpointKey := range endpointKeys {
+		for _, endpointKey := range slices.Sorted(maps.Keys(provider.endpoints)) {
 			fmt.Fprintf(&result, "%s        Endpoint: %s\n", prefix, endpointKey)
-
 			endpoint := provider.endpoints[endpointKey]
-			endpoint.hostnamesMutex.RLock()
 
-			hostnamesKeys := make([]string, 0, len(endpoint.hostnames))
-			for hostname := range endpoint.hostnames {
-				hostnamesKeys = append(hostnamesKeys, hostname)
-			}
-			sort.Strings(hostnamesKeys)
-
-			for _, hostnameKey := range hostnamesKeys {
+			for _, hostnameKey := range slices.Sorted(maps.Keys(endpoint.hostnames)) {
 				fmt.Fprintf(&result, "%s            %s:", prefix, endpoint.Domain(hostnameKey))
-				hostname := endpoint.hostnames[hostnameKey]
-				hostname.mutex.RLock()
-
-				if hostname.updateRunning {
-					fmt.Fprint(&result, " (update running)")
-				}
-				if !hostname.nextUpdateTime.IsZero() && hostname.nextUpdateTime.After(time.Now()) {
-					fmt.Fprintf(&result, " (next update: %v)", time.Until(hostname.nextUpdateTime).Round(time.Second))
-				}
-				if !hostname.updatedTime.IsZero() {
-					fmt.Fprintf(&result, " (last update: %s)", hostname.updatedTime.Format(time.RFC3339))
-				}
-				if hostname.updateError != nil {
-					err := hostname.updateError
-					if hideSensible {
-						err = fmt.Errorf("<sensible data hidden>")
-					}
-					fmt.Fprintf(&result, " (last update error: %s)", err)
-				}
-
-				var lastIp string
-				var lastHw string
-				// Iterate over the already sorted array of addresses
-				for _, addr := range hostname.AddrCollection.Get() {
-					ip := addr.WithZone("").String()
-					if addr.Is6() {
-						ip = "[" + ip + "]"
-					}
-					if lastIp != ip {
-						fmt.Fprintf(&result, "\n%s                %s", prefix, ip)
-						lastIp = ip
-						lastHw = ""
-					}
-
-					if addr.Is6() {
-						hw := addr.Hw.String()
-						if lastHw != hw {
-							fmt.Fprintf(&result, " from %s seen over", hw)
-							lastHw = hw
-						}
-
-						fmt.Fprintf(&result, " %s", strings.Join(addr.Sources(), ","))
-					}
-				}
-
-				fmt.Fprint(&result, "\n")
-
-				hostname.mutex.RUnlock()
+				writeHostnameStatus(&result, prefix+"                ", endpoint.hostnames[hostnameKey].status(), hideSensible)
 			}
-
-			endpoint.hostnamesMutex.RUnlock()
 		}
-
-		provider.endpointsMutex.RUnlock()
 	}
 
 	return result.String()
 }
 
-func NewState() *State {
-	return &State{
-		providers: make(map[string]*Provider),
+func writeHostnameStatus(result *strings.Builder, prefix string, status hostnameStatus, hideSensible bool) {
+	if status.updateRunning {
+		fmt.Fprint(result, " (update running)")
 	}
+	if status.nextUpdateTime.After(time.Now()) {
+		fmt.Fprintf(result, " (next update: %v)", time.Until(status.nextUpdateTime).Round(time.Second))
+	}
+	if !status.updatedTime.IsZero() {
+		fmt.Fprintf(result, " (last update: %s)", status.updatedTime.Format(time.RFC3339))
+	}
+	if status.updateError != nil {
+		err := status.updateError.Error()
+		if hideSensible {
+			err = "<sensible data hidden>"
+		}
+		fmt.Fprintf(result, " (last update error: %s)", err)
+	}
+
+	// One line per address, with the MAC and the sources of an IPv6 one.
+	for _, addr := range status.addrs.Get() {
+		ip := addr.WithZone("").String()
+		if addr.Is6() {
+			fmt.Fprintf(result, "\n%s[%s] from %s seen over %s", prefix, ip, addr.Hw, strings.Join(addr.Sources(), ","))
+		} else {
+			fmt.Fprintf(result, "\n%s%s", prefix, ip)
+		}
+	}
+
+	fmt.Fprint(result, "\n")
 }

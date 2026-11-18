@@ -94,7 +94,7 @@
                         "properties": {
                             "interval": {
                                 "type": "string",
-                                "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$",
+                                "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$",
                                 "description": "The interval at which to check for changes."
                             },
                             "command": {
@@ -110,7 +110,7 @@
                             },
                             "lifetime": {
                                 "type": "string",
-                                "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$",
+                                "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$",
                                 "description": "Time to keep a IPv4 host entry after it has been last received"
                             }
                         },
@@ -141,13 +141,12 @@
                     },
                     "debounce_time": {
                         "type": "string",
-                        "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$"
+                        "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$"
                     },
                     "retry_time": {
                         "type": "string",
-                        "format": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+?$"
-                    },
-                    "additionalProperties": false
+                        "pattern": "^(0|([0-9]*(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+)$"
+                    }
                 },
                 "required": [
                     "provider",
