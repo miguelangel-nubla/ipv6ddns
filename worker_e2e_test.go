@@ -415,13 +415,13 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 		},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("sources", time.Millisecond, time.Hour)},
 		Sources:     map[string]config.Source{"wan": wan},
+		// The IPv4 neighbors discovered: still, a filter without family leaves them out.
+		Discovery: config.Discovery{IPv4: true},
 	}
 	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The IPv4 neighbors discovered: still, a filter without family leaves them out.
-	w.discWorker.State.EnableIPv4()
 	fakeServicesMutex.Lock()
 	service := fakeServices["sources"]
 	fakeServicesMutex.Unlock()
@@ -458,5 +458,22 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 	}
 	if page := w.State.PrettyPrint("", true); !strings.Contains(page, "203.0.113.7 from source wan") {
 		t.Errorf("the source isn't on the page:\n%s", page)
+	}
+}
+
+func TestDiscoveryIPv4(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		cfg := config.Config{Discovery: config.Discovery{IPv4: enabled}}
+		w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := w.discWorker.State.IPv4(); got != enabled {
+			t.Errorf("discovery.ipv4 %v: the state takes IPv4: %v", enabled, got)
+		}
+		register(w, macA, "192.168.1.10", time.Hour)
+		if _, registered := w.discWorker.GetAll()[macA]; registered != enabled {
+			t.Errorf("discovery.ipv4 %v: an IPv4 neighbor registered: %v", enabled, registered)
+		}
 	}
 }

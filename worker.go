@@ -46,6 +46,9 @@ func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime tim
 		config:     cfg,
 		sources:    make(map[string]*source.Source),
 	}
+	if cfg.Discovery.IPv4 {
+		w.discWorker.State.EnableIPv4()
+	}
 
 	for name, sourceConfig := range cfg.Sources {
 		s, err := source.New(name, sourceConfig, cfg.BaseDir)

@@ -336,7 +336,24 @@ The `ipv4` block of a task, from before sources, still works: it becomes a comma
 
 For more advanced use cases just write a custom script that prints the addresses you need, for a command source.
 
-If you want to do the same MAC to address auto discovery in IPv4:
-`ip neigh show | grep -i "00:11:22:33:44:55" | awk '{print $1}'`
-or
-`arp-scan --localnet | grep -i "00:11:22:33:44:55" | awk '{print $1}'`
+#### Local IPv4 addresses, by MAC
+A device's local IPv4 address, as `192.168.1.10`, has its MAC, so discovery finds it as it finds IPv6 ones, with `discovery.ipv4`:
+
+```yaml
+discovery:
+  ipv4: true            # off by default
+tasks:
+  nas:
+    filter:
+      - mac:
+          address: "00:11:22:33:44:55"
+        ip:
+          family: [4]   # a filter takes IPv6 only unless it says
+          type: [private]
+    endpoints:
+      local-dns: [nas]
+```
+
+With it, the plugins read their router's ARP table too, and the local discovery the kernel's: through netlink on Linux, with `arp -an` on macOS and the BSDs. With active discovery, it first sends a UDP packet to each address of the local subnets (a /22 at most, or the /24 of the address), so the kernel resolves the hosts that stay quiet.
+
+A filter without `ip.family` keeps taking IPv6 only: turning `discovery.ipv4` on doesn't take a device's private IPv4 to a public DNS.
