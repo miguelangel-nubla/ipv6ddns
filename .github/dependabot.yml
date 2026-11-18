@@ -13,6 +13,11 @@ updates:
       aws:
         patterns:
           - github.com/aws/*
+      # The generator and the runtime of its code move together: a newer generator writes code
+      # an older runtime lacks.
+      oapi-codegen:
+        patterns:
+          - github.com/oapi-codegen/*
   - package-ecosystem: github-actions
     directory: /
     schedule:
