@@ -32,6 +32,7 @@ type config struct {
 	Items    []inner          `json:"items"`
 	Tasks    map[string]inner `json:"tasks"`
 	Settings json.RawMessage  `json:"settings"`
+	//lint:ignore U1000 an unexported field, which the check must skip
 	internal string
 }
 

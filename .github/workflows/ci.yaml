@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+  # Weekly too: new vulnerabilities, and new Go releases, come without a commit.
+  schedule:
+    - cron: '47 4 * * 1'
 
 permissions:
   contents: read
@@ -15,12 +18,12 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       -
         name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v7
         with:
           go-version: 'stable'
           check-latest: true
@@ -36,7 +39,7 @@ jobs:
       -
         # The binary as the release builds it, for this platform only.
         name: Build
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -48,10 +51,10 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       -
         name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v7
         with:
           go-version: 'stable'
           check-latest: true
@@ -61,3 +64,42 @@ jobs:
       -
         name: Test
         run: GOARCH=386 go test ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v7
+      -
+        name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: Generate
+        run: go generate ./...
+      -
+        name: Staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+  # Vulnerabilities in the code the module calls, of its dependencies and of Go.
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v7
+      -
+        name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: Generate
+        run: go generate ./...
+      -
+        name: Govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
