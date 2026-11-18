@@ -16,7 +16,8 @@ init: false
 host_network: true
 privileged:
   - NET_RAW
-# config.yaml, and the files it names, in /addon_configs/<id>_ipv6ddns.
+# config.yaml, and the files it names, in addon_configs/<id>_ipv6ddns (app_configs in recent
+# versions).
 map:
   - addon_config:rw
 # The report, on the add-on's page.

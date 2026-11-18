@@ -26,3 +26,7 @@
 
 tasks: {}
 credentials: {}
+
+discovery:
+  # Home Assistant's own containers, on its bridges, aren't hosts of the network.
+  exclude_interfaces: [hassio, docker0, "veth*"]
