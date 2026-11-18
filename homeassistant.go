@@ -159,11 +159,13 @@ func (h *homeAssistant) serve(ctx context.Context, errorf func(string, ...any)) 
 	if err != nil {
 		return fmt.Errorf("homeassistant: %w", err)
 	}
-	go func() {
-		if err := h.device.Advertise(ctx, h.config.Port, nil); err != nil {
-			errorf("homeassistant: %s: Home Assistant won't discover it, add it by its address", err)
-		}
-	}()
+	if h.config.Announces() {
+		go func() {
+			if err := h.device.Advertise(ctx, h.config.Port, nil); err != nil {
+				errorf("homeassistant: %s: Home Assistant won't discover it, add it by its address", err)
+			}
+		}()
+	}
 	go func() {
 		if err := h.device.Serve(ctx, ln); err != nil {
 			errorf("homeassistant: %s", err)

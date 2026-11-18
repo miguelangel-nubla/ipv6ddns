@@ -20,7 +20,12 @@ type HomeAssistant struct {
 	FriendlyName string `json:"friendly_name,omitempty"`
 	// The port Home Assistant connects to. Default: ESPHome's, 6053.
 	Port int `json:"port,omitempty"`
+	// Whether the device announces itself by mDNS, for Home Assistant to find it. Default: true.
+	Announce *bool `json:"announce,omitempty"`
 }
+
+// Announces tells whether the device announces itself by mDNS.
+func (h HomeAssistant) Announces() bool { return h.Announce == nil || *h.Announce }
 
 var deviceName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,29}[a-z0-9])?$`)
 

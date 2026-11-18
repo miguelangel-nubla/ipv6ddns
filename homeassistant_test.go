@@ -47,7 +47,7 @@ func TestHomeAssistantIntegration(t *testing.T) {
 		Tasks:         map[string]config.Task{"web": {Name: "web", Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"web"}}}},
 		Credentials:   map[string]config.Credential{"dns": fakeCredential("homeassistant", time.Millisecond, time.Hour)},
 		Sources:       map[string]config.Source{"wan": wan},
-		HomeAssistant: &config.HomeAssistant{Key: key, Name: "ipv6ddns-test", FriendlyName: "ipv6ddns test", Port: port},
+		HomeAssistant: &config.HomeAssistant{Key: key, Name: "ipv6ddns-test", FriendlyName: "ipv6ddns test", Port: port, Announce: new(bool)},
 	}
 	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
