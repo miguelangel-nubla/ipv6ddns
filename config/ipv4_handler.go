@@ -10,20 +10,25 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/cmd"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
 )
 
+// IPv4Handler runs a command that prints IPv4 addresses, one per line, at every interval. The
+// addresses stay for their lifetime after the last run that printed them.
 type IPv4Handler struct {
-	*ipv6disc.AddrCollection
-	Interval time.Duration `json:"interval"`
-	Command  string        `json:"command"`
-	Args     []string      `json:"args"`
-	Lifetime time.Duration `json:"lifetime"`
-	running  bool
-	ticker   *time.Ticker
-	logger   *zap.SugaredLogger
-	basedir  string
+	*ipv6disc.AddrCollection `json:"-"`
+
+	Interval duration.Duration `json:"interval"`
+	Command  string            `json:"command"`
+	Args     []string          `json:"args"`
+	Lifetime duration.Duration `json:"lifetime"`
+
+	running bool
+	stop    chan struct{}
+	logger  *zap.SugaredLogger
+	basedir string
 }
 
 func (h *IPv4Handler) PrettyPrint(prefix string) string {
@@ -41,45 +46,19 @@ func (h *IPv4Handler) PrettyPrint(prefix string) string {
 }
 
 func (h *IPv4Handler) UnmarshalJSON(b []byte) error {
-	type Alias IPv4Handler
-	aux := &struct {
-		Interval interface{} `json:"interval"`
-		Lifetime interface{} `json:"lifetime"`
-		*Alias
-	}{
-		Alias: (*Alias)(h),
-	}
-	if err := json.Unmarshal(b, &aux); err != nil {
+	type plain IPv4Handler
+	var handler plain
+	if err := json.Unmarshal(b, &handler); err != nil {
 		return err
 	}
-
-	switch value := aux.Interval.(type) {
-	case float64:
-		h.Interval = time.Duration(value) * time.Second
-	case string:
-		var err error
-		h.Interval, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("invalid debounce time")
+	if handler.Interval.Duration <= 0 {
+		return fmt.Errorf("invalid ipv4 interval %s: it must be positive", handler.Interval)
 	}
-	switch value := aux.Lifetime.(type) {
-	case float64:
-		h.Lifetime = time.Duration(value) * time.Second
-	case string:
-		var err error
-		h.Lifetime, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("invalid lifetime")
+	if handler.Lifetime.Duration <= 0 {
+		return fmt.Errorf("invalid ipv4 lifetime %s: it must be positive", handler.Lifetime)
 	}
-
+	*h = IPv4Handler(handler)
 	h.AddrCollection = ipv6disc.NewAddrCollection()
-
 	return nil
 }
 
@@ -90,15 +69,20 @@ func (h *IPv4Handler) Start(baseDir string, sugaredLogger *zap.SugaredLogger) er
 
 	h.basedir = baseDir
 	h.logger = sugaredLogger
-
-	h.ticker = time.NewTicker(h.Interval)
+	h.stop = make(chan struct{})
 	h.running = true
 
 	go func() {
-		h.runCommand()
+		ticker := time.NewTicker(h.Interval.Duration)
+		defer ticker.Stop()
 
-		for range h.ticker.C {
+		for {
 			h.runCommand()
+			select {
+			case <-ticker.C:
+			case <-h.stop:
+				return
+			}
 		}
 	}()
 
@@ -106,16 +90,23 @@ func (h *IPv4Handler) Start(baseDir string, sugaredLogger *zap.SugaredLogger) er
 }
 
 func (h *IPv4Handler) Stop() {
-	h.ticker.Stop()
-	h.running = false
+	if h.running {
+		close(h.stop)
+		h.running = false
+	}
 }
 
 func (h *IPv4Handler) Running() bool {
 	return h.running
 }
 
+// commandTimeout leaves the command a second less than the interval, so runs don't overlap.
+func (h *IPv4Handler) commandTimeout() time.Duration {
+	return max(h.Interval.Duration-time.Second, h.Interval.Duration/2)
+}
+
 func (h *IPv4Handler) runCommand() {
-	timeout := h.Interval - 1*time.Second
+	timeout := h.commandTimeout()
 
 	h.logger.Debugf("running command %s %v with timeout %s", h.Command, h.Args, timeout)
 	output, err := cmd.RunCommandWithTimeout(timeout, h.basedir, h.Command, h.Args...)
@@ -124,8 +115,7 @@ func (h *IPv4Handler) runCommand() {
 		return
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	for _, line := range strings.Split(string(output), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -135,11 +125,17 @@ func (h *IPv4Handler) runCommand() {
 		if err != nil {
 			h.logger.Errorf("failed to parse output from command %s %v: %s", h.Command, h.Args, err)
 			continue
-		} else {
-			h.logger.Debugf("parsed IPv4 address: %s", netipAddr)
 		}
+		h.logger.Debugf("parsed IPv4 address: %s", netipAddr)
 
-		addr := ipv6disc.NewAddr(net.HardwareAddr{0, 0, 0, 0, 0, 0}, netipAddr, "ipv4", h.Lifetime, nil)
+		addr := ipv6disc.NewAddr(net.HardwareAddr{0, 0, 0, 0, 0, 0}, netipAddr, "ipv4", h.Lifetime.Duration, nil)
 		h.AddrCollection.Seen(addr, "ipv4")
+	}
+
+	// Forget the addresses gone for longer than their lifetime.
+	for _, addr := range h.AddrCollection.Get() {
+		if !addr.Valid() {
+			h.AddrCollection.Remove(addr)
+		}
 	}
 }

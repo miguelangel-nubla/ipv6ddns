@@ -33,7 +33,7 @@ func init() {
 	flag.StringVar(&configFile, "config_file", "config.yaml", "Path to the configuration file, default: config.yaml")
 	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic) default: info")
 	flag.DurationVar(&lifetime, "lifetime", 1*time.Hour, "Time to keep a discovered host entry after it has been last seen, default: 1h")
-	flag.BoolVar(&live, "live", false, "Show the currrent state live on the terminal, default: false")
+	flag.BoolVar(&live, "live", false, "Show the current state live on the terminal, default: false")
 	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 80), default: disabled")
 }
 
@@ -53,7 +53,10 @@ func main() {
 	}
 
 	rediscover := lifetime / 3
-	worker := ipv6ddns.NewWorker(sugar, rediscover, lifetime, config)
+	worker, err := ipv6ddns.NewWorker(sugar, rediscover, lifetime, config)
+	if err != nil {
+		sugar.Fatalf("error in config: %s", err)
+	}
 
 	for name, pCfg := range config.Discovery.Plugins {
 		p, err := plugins.Create(pCfg.Type, name, pCfg.Params, lifetime)
@@ -78,14 +81,15 @@ func main() {
 		if err != nil {
 			sugar.Fatalf("web server failed: %s", err)
 		}
-		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/plain")
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.Write([]byte(wrapPrettyPrint(worker, "", true)))
 		})
 		for _, listener := range listeners {
 			go func() {
 				sugar.Infof("Starting web server on %s", listener.Addr())
-				if err := http.Serve(listener, nil); err != nil {
+				if err := http.Serve(listener, mux); err != nil {
 					sugar.Fatalf("web server failed: %s", err)
 				}
 			}()
@@ -129,10 +133,7 @@ func initializeLogger() *zap.SugaredLogger {
 	cfg.ErrorOutputPaths = []string{"stderr"}
 	cfg.EncoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
 
-	logger := zap.Must(cfg.Build())
-	defer logger.Sync()
-
-	return logger.Sugar()
+	return zap.Must(cfg.Build()).Sugar()
 }
 
 func getLogLevel(level string) (zapcore.Level, error) {

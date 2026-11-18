@@ -4,6 +4,13 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/miguelangel-nubla/ipv6ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
+	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
+	"go.uber.org/zap"
 )
 
 func TestParseListenList(t *testing.T) {
@@ -68,5 +75,20 @@ func TestListenAll(t *testing.T) {
 	}
 	if _, err := listenAll([]string{addresses[0]}); err == nil {
 		t.Error("listening twice on one address: want an error")
+	}
+}
+
+func TestExampleConfig(t *testing.T) {
+	cfg, err := config.NewConfig("example.config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg); err != nil {
+		t.Fatal(err)
+	}
+	for name, p := range cfg.Discovery.Plugins {
+		if _, err := plugins.Create(p.Type, name, p.Params, time.Hour); err != nil {
+			t.Errorf("plugin %s: %v", name, err)
+		}
 	}
 }

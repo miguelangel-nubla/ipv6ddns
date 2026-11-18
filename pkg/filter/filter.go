@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -230,16 +231,10 @@ func CheckSource(addr *ipv6disc.Addr, filters []string) bool {
 	if len(filters) == 0 {
 		return true
 	}
-	// For every filter, we must find a matching source.
+	// Every source the filter names must have seen the address.
+	sources := addr.Sources()
 	for _, f := range filters {
-		found := false
-		for _, source := range addr.Sources() {
-			if source == f {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(sources, f) {
 			return false
 		}
 	}

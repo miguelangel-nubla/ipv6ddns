@@ -2,53 +2,136 @@ package ipv6ddns
 
 import (
 	"fmt"
-	"net"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
-	"github.com/miguelangel-nubla/ipv6ddns/pkg/filter"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
 )
 
-type InvalidInterfaceError struct {
-	iface *net.Interface
-}
-
-func (e *InvalidInterfaceError) Error() string {
-	return fmt.Sprintf("invalid interface: %s", e.iface.Name)
-}
+// lookInterval is how often the worker matches the discovered addresses against the tasks.
+const lookInterval = time.Second
 
 type Worker struct {
 	*State
 	discWorker *ipv6disc.Worker
 	logger     *zap.SugaredLogger
 	config     config.Config
+	targets    []*target
+}
+
+// target is a host name at an endpoint, with the tasks that give it addresses. A name in more than
+// one task gets the addresses of all of them.
+type target struct {
+	hostname *Hostname
+	tasks    []config.Task
+}
+
+func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, cfg config.Config) (*Worker, error) {
+	w := &Worker{
+		State:      NewState(),
+		discWorker: ipv6disc.NewWorker(logger, rediscover, lifetime, cfg.Discovery.Listen, cfg.Discovery.Active),
+		logger:     logger,
+		config:     cfg,
+	}
+
+	targets := make(map[*Hostname]*target)
+	for _, taskName := range slices.Sorted(maps.Keys(cfg.Tasks)) {
+		task := cfg.Tasks[taskName]
+		for _, endpointKey := range slices.Sorted(maps.Keys(task.Endpoints)) {
+			endpoint, err := w.endpoint(endpointKey)
+			if err != nil {
+				return nil, err
+			}
+			for _, hostnameKey := range task.Endpoints[endpointKey] {
+				hostname := w.hostname(endpointKey, endpoint, hostnameKey)
+				t, ok := targets[hostname]
+				if !ok {
+					t = &target{hostname: hostname}
+					targets[hostname] = t
+					w.targets = append(w.targets, t)
+				}
+				t.tasks = append(t.tasks, task)
+			}
+		}
+	}
+
+	return w, nil
+}
+
+// endpoint returns the endpoint of a credential, making its service the first time.
+func (w *Worker) endpoint(endpointKey string) (*Endpoint, error) {
+	credential, ok := w.config.Credentials[endpointKey]
+	if !ok {
+		return nil, fmt.Errorf("no credential %s", endpointKey)
+	}
+
+	provider, ok := w.State.providers[credential.Provider]
+	if !ok {
+		provider = NewProvider()
+		w.State.providers[credential.Provider] = provider
+	}
+
+	endpoint, ok := provider.endpoints[endpointKey]
+	if !ok {
+		service, err := ddns.NewService(credential.Provider, credential.RawSettings)
+		if err != nil {
+			return nil, fmt.Errorf("error creating DNS service for endpoint %s: %w", endpointKey, err)
+		}
+		endpoint = NewEndpoint(service)
+		provider.endpoints[endpointKey] = endpoint
+	}
+	return endpoint, nil
+}
+
+func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey string) *Hostname {
+	if hostname, ok := endpoint.hostnames[hostnameKey]; ok {
+		return hostname
+	}
+
+	credential := w.config.Credentials[endpointKey]
+	updateAction := func(addrCollection *ipv6disc.AddrCollection) error {
+		w.logger.Debugf("endpoint %s starting update of: %s", endpointKey, hostnameKey)
+
+		err := endpoint.Update(hostnameKey, addrCollection)
+		if err != nil {
+			w.logger.Errorf("endpoint %s error updating %s: %s", endpointKey, hostnameKey, err)
+		} else {
+			w.logger.Infof("endpoint %s successfully updated %s: %v", endpointKey, hostnameKey, addrCollection.Strings())
+		}
+
+		return err
+	}
+	hostname := NewHostname(updateAction, credential.DebounceTime.Duration, credential.RetryTime.Duration)
+	endpoint.hostnames[hostnameKey] = hostname
+	return hostname
 }
 
 func (w *Worker) Start() error {
-	for _, task := range w.config.Tasks {
+	for _, taskName := range slices.Sorted(maps.Keys(w.config.Tasks)) {
+		task := w.config.Tasks[taskName]
 		if task.IPv4 != nil && !task.IPv4.Running() {
-			err := task.IPv4.Start(w.config.BaseDir, w.logger)
-			if err != nil {
-				return fmt.Errorf("error starting IPv4 handler for task %s: %w", task.Name, err)
+			if err := task.IPv4.Start(w.config.BaseDir, w.logger); err != nil {
+				return fmt.Errorf("error starting IPv4 handler for task %s: %w", taskName, err)
 			}
 		}
+	}
+
+	if err := w.discWorker.Start(); err != nil {
+		return err
 	}
 
 	go func() {
 		for {
 			// @TODO: instead of proactively searching, be notified from ipv6disc.AddrCollection.Seen
 			w.lookForChanges()
-			time.Sleep(1 * time.Second)
+			time.Sleep(lookInterval)
 		}
 	}()
-
-	if err := w.discWorker.Start(); err != nil {
-		return err
-	}
 
 	if w.config.Discovery.SolicitEUI64 {
 		go w.solicitEUI64Loop()
@@ -61,100 +144,33 @@ func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {
 	w.discWorker.RegisterPlugin(p)
 }
 
+// lookForChanges gives each host name the addresses its tasks match now.
 func (w *Worker) lookForChanges() {
-	for _, task := range w.config.Tasks {
-		for endpointKey, hostnames := range task.Endpoints {
-			// Provider creation
-			credential := w.config.Credentials[endpointKey]
-			w.State.providersMutex.Lock()
-			if _, ok := w.State.providers[credential.Provider]; !ok {
-				w.State.providers[credential.Provider] = NewProvider()
-			}
-			provider := w.State.providers[credential.Provider]
-			w.State.providersMutex.Unlock()
+	var discovered []*ipv6disc.Addr
+	for _, collection := range w.discWorker.GetAll() {
+		discovered = append(discovered, collection.Get()...)
+	}
 
-			// Endpoint creation
-			provider.endpointsMutex.Lock()
-			if _, ok := provider.endpoints[endpointKey]; !ok {
-				service, err := ddns.NewService(credential.Provider, credential.RawSettings)
-				if err != nil {
-					panic(fmt.Sprintf("Error creating DNS Service for endpoint %s: %v\n", endpointKey, err))
-				}
+	for _, t := range w.targets {
+		t.hostname.SetAddrCollection(matching(t.tasks, discovered))
+	}
+}
 
-				provider.endpoints[endpointKey] = NewEndpoint(service)
-			}
-			endpoint := provider.endpoints[endpointKey]
-			provider.endpointsMutex.Unlock()
-
-			for _, hostnameKey := range hostnames {
-				// Hostname creation
-				endpoint.hostnamesMutex.Lock()
-				if _, ok := endpoint.hostnames[hostnameKey]; !ok {
-					// capture references to the current values
-					currenthostnameKey := hostnameKey
-					currentEndpoint := endpoint
-					updateAction := func(addrCollection *ipv6disc.AddrCollection) error {
-						w.logger.Debugf("endpoint %s starting update of: %s", endpointKey, currenthostnameKey)
-
-						err := currentEndpoint.Update(currenthostnameKey, addrCollection)
-						if err != nil {
-							w.logger.Errorf("endpoint %s error updating %s: %s", endpointKey, currenthostnameKey, err)
-						} else {
-							w.logger.Infof("endpoint %s successfully updated %s: %v", endpointKey, currenthostnameKey, addrCollection.Strings())
-						}
-
-						return err
-					}
-					endpoint.hostnames[hostnameKey] = NewHostname(updateAction, credential.DebounceTime, credential.RetryTime)
-				}
-				hostname := endpoint.hostnames[hostnameKey]
-				endpoint.hostnamesMutex.Unlock()
-
-				currentHosts := ipv6disc.NewAddrCollection()
-				for _, collection := range w.discWorker.GetAll() {
-					for _, addr := range collection.Get() {
-						match := false
-						for _, f := range task.Filters {
-							if !filter.CheckMAC(addr.Hw, f.MAC.Address) {
-								continue
-							}
-							if !filter.CheckMACMask(addr.Hw, f.MAC.Mask) {
-								continue
-							}
-							if !filter.CheckMACType(addr.Hw, f.MAC.Type) {
-								continue
-							}
-							if !filter.CheckIPType(addr, f.IP.Type) {
-								continue
-							}
-							if !filter.CheckPrefix(addr.Addr, f.IP.Prefix) {
-								continue
-							}
-							if !filter.CheckSuffix(addr.Addr, f.IP.Suffix) {
-								continue
-							}
-							if !filter.CheckMask(addr.Addr, f.IP.Mask) {
-								continue
-							}
-							if !filter.CheckSource(addr, f.Source) {
-								continue
-							}
-							match = true
-							break
-						}
-
-						if match {
-							currentHosts.Add(addr)
-						}
-					}
-				}
-				if task.IPv4 != nil {
-					currentHosts.Join(task.IPv4.AddrCollection)
-				}
-				hostname.SetAddrCollection(currentHosts)
+// matching returns the addresses that the filters of any of the tasks match, and the IPv4
+// addresses of the tasks.
+func matching(tasks []config.Task, discovered []*ipv6disc.Addr) *ipv6disc.AddrCollection {
+	result := ipv6disc.NewAddrCollection()
+	for _, task := range tasks {
+		for _, addr := range discovered {
+			if task.Match(addr) {
+				result.Add(addr)
 			}
 		}
+		if task.IPv4 != nil {
+			result.Join(task.IPv4.AddrCollection)
+		}
 	}
+	return result
 }
 
 func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
@@ -164,13 +180,4 @@ func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 	fmt.Fprint(&result, w.discWorker.PrettyPrintStats(prefix))
 	fmt.Fprint(&result, w.config.PrettyPrint(prefix, hideSensible))
 	return result.String()
-}
-
-func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, config config.Config) *Worker {
-	return &Worker{
-		State:      NewState(),
-		discWorker: ipv6disc.NewWorker(logger, rediscover, lifetime, config.Discovery.Listen, config.Discovery.Active),
-		logger:     logger,
-		config:     config,
-	}
 }
