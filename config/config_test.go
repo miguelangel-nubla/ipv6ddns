@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,4 +226,43 @@ func TestNewConfigChecks(t *testing.T) {
 	if _, err := NewConfig(write(`{"tasks": {}, "credentials": {}, "unknown": 1}`)); err == nil {
 		t.Error("an unknown key: want an error")
 	}
+}
+
+// Every setting of the schema says what it is: the configuration reference is made of them.
+func TestSchemaDescribesEverything(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal(configSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	var walk func(node any, path string)
+	walk = func(node any, path string) {
+		o, ok := node.(map[string]any)
+		if !ok {
+			return
+		}
+		if props, ok := o["properties"].(map[string]any); ok {
+			for name, prop := range props {
+				p, _ := prop.(map[string]any)
+				if _, ok := p["description"]; !ok {
+					t.Errorf("%s.%s: no description", path, name)
+				}
+				walk(prop, path+"."+name)
+			}
+		}
+		for _, key := range []string{"additionalProperties", "items"} {
+			walk(o[key], path+"[]")
+		}
+		for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+			alts, _ := o[key].([]any)
+			for _, alt := range alts {
+				walk(alt, path)
+			}
+		}
+		if defs, ok := o["$defs"].(map[string]any); ok {
+			for name, def := range defs {
+				walk(def, "$defs."+name)
+			}
+		}
+	}
+	walk(schema, "")
 }

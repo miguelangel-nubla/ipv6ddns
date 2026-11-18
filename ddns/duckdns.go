@@ -24,28 +24,11 @@ func init() {
 
 func NewDuckDNS(settings json.RawMessage) (Service, error) {
 	var service DuckDNS
-	if err := decodeSettings(settings, duckDNSSettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "duckdns", &service); err != nil {
 		return nil, err
 	}
 	return &service, nil
 }
-
-const duckDNSSettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"api_token": {
-				"type": "string",
-				"pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$"
-			}
-		},
-		"required": [
-			"api_token"
-		]
-	}
-	`
 
 // Update sets the name's A and AAAA records to the first address of each family. DuckDNS takes
 // one of each, and fills in an IPv4 left out with the requester's, the machine running this,

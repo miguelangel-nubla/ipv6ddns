@@ -140,9 +140,6 @@ type sshTarget struct {
 	HostKey string
 }
 
-// hostKeyPattern is the JSON schema pattern of a host key fingerprint.
-const hostKeyPattern = `^(SHA256:[A-Za-z0-9+/]{43})?$`
-
 // dialSSH connects to the target, port 22 unless it says, with the private key and the password,
 // whichever are given. It returns the fingerprint of the key the host showed, which must be the
 // target's when it has one.

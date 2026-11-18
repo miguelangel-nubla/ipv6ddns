@@ -27,47 +27,11 @@ func init() {
 
 func NewTechnitium(settings json.RawMessage) (Service, error) {
 	var service Technitium
-	if err := decodeSettings(settings, technitiumSettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "technitium", &service); err != nil {
 		return nil, err
 	}
 	return &service, nil
 }
-
-const technitiumSettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"address": {
-				"type": "string",
-				"minLength": 1
-			},
-			"tls_fingerprint": {
-				"type": "string",
-				"pattern": "^([a-fA-F0-9]{64})?$"
-			},
-			"token": {
-				"type": "string",
-				"minLength": 1
-			},
-			"zone": {
-				"type": "string",
-				"minLength": 1
-			},
-			"ttl": {
-				"type": "string",
-				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			}
-		},
-		"required": [
-			"address",
-			"token",
-			"zone",
-			"ttl"
-		]
-	}
-	`
 
 type technitiumResponse struct {
 	Status       string `json:"status"`

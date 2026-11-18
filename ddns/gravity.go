@@ -26,43 +26,11 @@ func init() {
 
 func NewGravity(settings json.RawMessage) (Service, error) {
 	var service Gravity
-	if err := decodeSettings(settings, gravitySettingsSchema, &service); err != nil {
+	if err := decodeSettings(settings, "gravity", &service); err != nil {
 		return nil, err
 	}
 	return &service, nil
 }
-
-const gravitySettingsSchema = `
-	{
-		"$schema": "http://json-schema.org/draft-07/schema#",
-		"type": "object",
-		"additionalProperties": false,
-		"properties": {
-			"server": {
-				"type": "string",
-				"minLength": 1
-			},
-			"api_key": {
-				"type": "string",
-				"minLength": 1
-			},
-			"zone": {
-				"type": "string",
-				"minLength": 1
-			},
-			"ttl": {
-				"type": "string",
-				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
-			}
-		},
-		"required": [
-		    "server",
-			"api_key",
-			"zone",
-			"ttl"
-		]
-	}
-	`
 
 func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	requestEditors := []gravity.RequestEditorFn{
