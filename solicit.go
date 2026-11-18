@@ -1,6 +1,7 @@
 package ipv6ddns
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"slices"
@@ -15,14 +16,20 @@ const solicitInterval = time.Minute
 
 // solicitEUI64Loop asks for the EUI-64 addresses the tasks want. A stable address that sends no
 // traffic is never seen otherwise, as hosts send from their temporary ones: routers don't learn it.
-func (w *Worker) solicitEUI64Loop() {
+func (w *Worker) solicitEUI64Loop(ctx context.Context) {
+	ticker := time.NewTicker(solicitInterval)
+	defer ticker.Stop()
 	for {
 		for _, target := range eui64Targets(w.config.Tasks, w.discWorker.Prefixes()) {
 			if _, err := w.discWorker.Solicit(target); err != nil {
 				w.logger.Errorf("error soliciting %s: %s", target, err)
 			}
 		}
-		time.Sleep(solicitInterval)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -8,8 +11,10 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns"
@@ -67,11 +72,16 @@ func main() {
 		worker.RegisterPlugin(p)
 	}
 
-	err = worker.Start()
+	// Stops on SIGINT and SIGTERM, letting the updates running end.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err = worker.Start(ctx)
 	if err != nil {
 		sugar.Fatalf("can't start worker: %s", err)
 	}
 
+	var servers []*http.Server
 	if webserverListen != "" {
 		addresses, err := parseListenList(webserverListen)
 		if err != nil {
@@ -81,12 +91,12 @@ func main() {
 		if err != nil {
 			sugar.Fatalf("web server failed: %s", err)
 		}
-		mux := http.NewServeMux()
-		mux.Handle("/", statusHandler(worker))
 		for _, listener := range listeners {
+			server := &http.Server{Handler: webHandler(worker), ReadHeaderTimeout: 10 * time.Second}
+			servers = append(servers, server)
 			go func() {
 				sugar.Infof("Starting web server on %s", listener.Addr())
-				if err := http.Serve(listener, mux); err != nil {
+				if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					sugar.Fatalf("web server failed: %s", err)
 				}
 			}()
@@ -97,14 +107,54 @@ func main() {
 		liveOutput := make(chan string)
 		go func() {
 			for {
-				liveOutput <- wrapPrettyPrint(worker, "", false)
+				select {
+				case liveOutput <- wrapPrettyPrint(worker, "", false):
+				case <-ctx.Done():
+					return
+				}
 				time.Sleep(1 * time.Second)
 			}
 		}()
+		// The terminal takes the keys, Ctrl-C too: it returns on them.
 		terminal.LiveOutput(liveOutput)
-	} else {
-		select {}
+		stop()
 	}
+	<-ctx.Done()
+
+	sugar.Info("stopping")
+	shutdown, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	for _, server := range servers {
+		server.Shutdown(shutdown)
+	}
+	if err := worker.Shutdown(shutdown); err != nil {
+		sugar.Errorf("%s: the updates still running are cut", err)
+	}
+}
+
+// shutdownTimeout is how long the updates running get to end, when stopping.
+const shutdownTimeout = 30 * time.Second
+
+// webHandler serves the state: as text, JSON and Prometheus metrics, with the sensible data
+// hidden, as the server has no authentication. /healthz answers while the process runs.
+func webHandler(worker *ipv6ddns.Worker) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", statusHandler(worker))
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("GET /status.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		encoder := json.NewEncoder(w)
+		encoder.SetIndent("", "  ")
+		encoder.Encode(worker.Status(true))
+	})
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		worker.Status(true).WriteMetrics(w)
+	})
+	return mux
 }
 
 // statusHandler serves the state, with the sensible data hidden: the page has no authentication.

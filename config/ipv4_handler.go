@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/cmd"
@@ -25,10 +26,11 @@ type IPv4Handler struct {
 	Args     []string          `json:"args"`
 	Lifetime duration.Duration `json:"lifetime"`
 
-	running bool
-	stop    chan struct{}
-	logger  *zap.SugaredLogger
-	basedir string
+	running  bool
+	stop     chan struct{}
+	stopOnce sync.Once
+	logger   *zap.SugaredLogger
+	basedir  string
 }
 
 // PrettyPrint shows the command and its addresses. hideSensible hides the arguments, which can
@@ -52,8 +54,12 @@ func (h *IPv4Handler) PrettyPrint(prefix string, hideSensible bool) string {
 }
 
 func (h *IPv4Handler) UnmarshalJSON(b []byte) error {
-	type plain IPv4Handler
-	var handler plain
+	var handler struct {
+		Interval duration.Duration `json:"interval"`
+		Command  string            `json:"command"`
+		Args     []string          `json:"args"`
+		Lifetime duration.Duration `json:"lifetime"`
+	}
 	if err := json.Unmarshal(b, &handler); err != nil {
 		return err
 	}
@@ -63,7 +69,7 @@ func (h *IPv4Handler) UnmarshalJSON(b []byte) error {
 	if handler.Lifetime.Duration <= 0 {
 		return fmt.Errorf("invalid ipv4 lifetime %s: it must be positive", handler.Lifetime)
 	}
-	*h = IPv4Handler(handler)
+	h.Interval, h.Command, h.Args, h.Lifetime = handler.Interval, handler.Command, handler.Args, handler.Lifetime
 	h.AddrCollection = ipv6disc.NewAddrCollection()
 	return nil
 }
@@ -95,10 +101,10 @@ func (h *IPv4Handler) Start(baseDir string, sugaredLogger *zap.SugaredLogger) er
 	return nil
 }
 
+// Stop stops the command's runs. It can be called more than once.
 func (h *IPv4Handler) Stop() {
-	if h.running {
-		close(h.stop)
-		h.running = false
+	if h.stop != nil {
+		h.stopOnce.Do(func() { close(h.stop) })
 	}
 }
 

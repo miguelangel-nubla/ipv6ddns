@@ -19,6 +19,10 @@ type Hostname struct {
 	nextUpdateTimer *time.Timer
 	updateRunning   bool
 	updateError     error
+	updates         int
+	failures        int
+	// No more updates once stopped.
+	stopped bool
 
 	// One update at a time.
 	updateMutex sync.Mutex
@@ -35,6 +39,8 @@ type hostnameStatus struct {
 	nextUpdateTime time.Time
 	updateRunning  bool
 	updateError    error
+	updates        int
+	failures       int
 }
 
 // SetAddrCollection sets the addresses the name should have. The valid ones only count, and a
@@ -57,6 +63,10 @@ func (h *Hostname) ScheduleUpdate(timeout time.Duration) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
+	if h.stopped {
+		return
+	}
+
 	if h.nextUpdateTimer != nil {
 		h.nextUpdateTimer.Stop()
 	}
@@ -70,6 +80,10 @@ func (h *Hostname) update() {
 	defer h.updateMutex.Unlock()
 
 	h.mutex.Lock()
+	if h.stopped {
+		h.mutex.Unlock()
+		return
+	}
 	h.updateRunning = true
 	addrs := h.addrs
 	h.mutex.Unlock()
@@ -79,14 +93,35 @@ func (h *Hostname) update() {
 	h.mutex.Lock()
 	h.updateRunning = false
 	h.updateError = err
+	h.updates++
 	if err == nil {
 		h.updatedTime = time.Now()
+	} else {
+		h.failures++
 	}
 	h.mutex.Unlock()
 
 	if err != nil {
 		h.ScheduleUpdate(h.updateRetryInterval)
 	}
+}
+
+// Stop cancels the update scheduled, and keeps more from being: one running goes on, Wait waits
+// for it.
+func (h *Hostname) Stop() {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.stopped = true
+	if h.nextUpdateTimer != nil {
+		h.nextUpdateTimer.Stop()
+	}
+	h.nextUpdateTime = time.Time{}
+}
+
+// Wait returns once no update runs.
+func (h *Hostname) Wait() {
+	h.updateMutex.Lock()
+	defer h.updateMutex.Unlock()
 }
 
 func (h *Hostname) status() hostnameStatus {
@@ -99,6 +134,8 @@ func (h *Hostname) status() hostnameStatus {
 		nextUpdateTime: h.nextUpdateTime,
 		updateRunning:  h.updateRunning,
 		updateError:    h.updateError,
+		updates:        h.updates,
+		failures:       h.failures,
 	}
 }
 

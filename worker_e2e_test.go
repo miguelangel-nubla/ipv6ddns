@@ -1,10 +1,12 @@
 package ipv6ddns
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // fakeService records the updates of a fake provider, made by its settings: {"id": "..."}.
@@ -227,5 +230,174 @@ func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	}
 	if hidden := w.PrettyPrint("", true); strings.Contains(hidden, secret) {
 		t.Errorf("the secret is on the page:\n%s", hidden)
+	}
+}
+
+// blockingService holds its updates until release is closed.
+type blockingService struct {
+	fakeService
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingService) Update(hostname string, addresses *ipv6disc.AddrCollection) error {
+	b.started <- struct{}{}
+	<-b.release
+	return b.fakeService.Update(hostname, addresses)
+}
+
+func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
+	cfg := config.Config{
+		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
+		Credentials: map[string]config.Credential{"dns": fakeCredential("shutdown", time.Millisecond, time.Millisecond)},
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocking := &blockingService{fakeService: fakeService{updates: map[string][][]string{}}, started: make(chan struct{}, 1), release: make(chan struct{})}
+	w.providers["fake"].endpoints["dns"].Service = blocking
+
+	register(w, macA, "2001:db8::a", time.Hour)
+	w.lookForChanges()
+	select {
+	case <-blocking.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no update started")
+	}
+
+	// The update runs: a short shutdown gives up on it.
+	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := w.Shutdown(short); err == nil {
+		t.Error("shutdown returned while an update runs")
+	}
+
+	// No update starts once stopping, though the addresses change.
+	register(w, macA, "2001:db8::a2", time.Hour)
+	w.lookForChanges()
+
+	close(blocking.release)
+	if err := w.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-blocking.started:
+		t.Error("an update started after stopping")
+	default:
+	}
+	blocking.mutex.Lock()
+	defer blocking.mutex.Unlock()
+	if got := blocking.updates["nas"]; len(got) != 1 {
+		t.Errorf("got updates %v, want the one that was running", got)
+	}
+}
+
+func TestStatusAndMetrics(t *testing.T) {
+	cfg := config.Config{
+		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas", `we"ird`}}}},
+		Credentials: map[string]config.Credential{"dns": fakeCredential("status", time.Millisecond, time.Hour)},
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeServicesMutex.Lock()
+	service := fakeServices["status"]
+	fakeServicesMutex.Unlock()
+	service.fail = errors.New("denied for token SECRET")
+
+	register(w, macA, "2001:db8::a", time.Hour)
+	w.lookForChanges()
+	service.waitFor(t, "nas", "2001:db8::a")
+	deadline := time.Now().Add(3 * time.Second)
+	for w.Status(false).Hostnames[0].Failures == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no failure counted")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	status := w.Status(true)
+	if len(status.Hostnames) != 2 || len(status.Discovered) != 1 {
+		t.Fatalf("status: %+v", status)
+	}
+	nas := status.Hostnames[0]
+	if nas.Hostname != "nas" || nas.Domain != "nas.fake" || len(nas.Addresses) != 1 || nas.Failures != 1 || nas.LastError != "<sensible data hidden>" {
+		t.Errorf("nas: %+v", nas)
+	}
+	if got := w.Status(false).Hostnames[0].LastError; !strings.Contains(got, "SECRET") {
+		t.Errorf("the error shown: %q", got)
+	}
+	if d := status.Discovered[0]; d.MAC != macA || d.Addresses[0].Address != "2001:db8::a" || d.Addresses[0].Sources[0] != "eth0" {
+		t.Errorf("discovered: %+v", d)
+	}
+
+	var metrics strings.Builder
+	if err := status.WriteMetrics(&metrics); err != nil {
+		t.Fatal(err)
+	}
+	out := metrics.String()
+	for _, want := range []string{
+		`ipv6ddns_hostname_addresses{provider="fake",endpoint="dns",hostname="nas.fake"} 1`,
+		`ipv6ddns_hostname_updates_total{provider="fake",endpoint="dns",hostname="nas.fake",result="failure"} 1`,
+		`ipv6ddns_hostname_last_update_failed{provider="fake",endpoint="dns",hostname="nas.fake"} 1`,
+		`hostname="we\"ird.fake"`,
+		"ipv6ddns_discovered_hosts 1\n",
+		"ipv6ddns_discovered_addresses 1\n",
+		"# TYPE ipv6ddns_hostname_updates_total counter\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %s in the metrics:\n%s", want, out)
+		}
+	}
+	// Every sample line is a name, optional labels and a number.
+	sample := regexp.MustCompile(`^[a-z0-9_]+(\{([a-z_]+="([^"\\]|\\.)*",?)+\})? -?[0-9.]+$`)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasPrefix(line, "# ") && !sample.MatchString(line) {
+			t.Errorf("not a sample: %q", line)
+		}
+	}
+}
+
+// warningService is a provider with a warning, once.
+type warningService struct {
+	fakeService
+	warned bool
+}
+
+func (s *warningService) Warnings() []string {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.warned {
+		return nil
+	}
+	s.warned = true
+	return []string{"the host key is not verified"}
+}
+
+func TestProviderWarningsAreLogged(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	cfg := config.Config{
+		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
+		Credentials: map[string]config.Credential{"dns": fakeCredential("warning", time.Millisecond, time.Hour)},
+	}
+	w, err := NewWorker(zap.New(core).Sugar(), time.Minute, time.Hour, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &warningService{fakeService: fakeService{updates: map[string][][]string{}}}
+	w.providers["fake"].endpoints["dns"].Service = service
+
+	register(w, macA, "2001:db8::a", time.Hour)
+	w.lookForChanges()
+	service.waitFor(t, "nas", "2001:db8::a")
+	register(w, macA, "2001:db8::a2", time.Hour)
+	w.lookForChanges()
+	service.waitFor(t, "nas", "2001:db8::a", "2001:db8::a2")
+
+	if got := logs.FilterMessageSnippet("host key is not verified").Len(); got != 1 {
+		t.Errorf("got the warning %d times, want once", got)
 	}
 }
