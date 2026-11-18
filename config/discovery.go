@@ -118,7 +118,7 @@ func (d *Discovery) setUpDiscovery() ([]string, error) {
 			d.IPv6.Solicit = *value
 		}
 		newKey := map[string]string{"listen": "listen", "active": "active", "solicit_eui64": "solicit"}[key]
-		warnings = append(warnings, fmt.Sprintf("discovery.%s is deprecated: it is discovery.ipv6.%s", key, newKey))
+		warnings = append(warnings, fmt.Sprintf("discovery.%s is deprecated, and goes in v1.0: it is discovery.ipv6.%s", key, newKey))
 	}
 	d.Listen, d.Active, d.SolicitEUI64 = nil, nil, nil
 

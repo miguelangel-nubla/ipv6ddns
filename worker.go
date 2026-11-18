@@ -42,7 +42,16 @@ type target struct {
 	tasks    []config.Task
 }
 
-func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime time.Duration, cfg config.Config) (*Worker, error) {
+// NewWorker makes the worker of the configuration; Start runs it. A lifetime or a rediscovery
+// interval left zero is the default: an hour, and a third of the lifetime.
+func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
+	lifetime, rediscover := cfg.Lifetime.Duration, cfg.Discovery.Rediscover.Duration
+	if lifetime == 0 {
+		lifetime = config.DefaultLifetime
+	}
+	if rediscover == 0 {
+		rediscover = lifetime / 3
+	}
 	w := &Worker{
 		State: NewState(),
 		discWorker: ipv6disc.NewWorker(logger, ipv6disc.Config{

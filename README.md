@@ -120,7 +120,7 @@ go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns
      -log_level debug
    ```
 
-   `-lifetime` (default 1h), `-log_level` and `-webserver_listen` can be in the configuration file instead, as `lifetime`, `log_level` and `webserver_listen`: a flag given on the command line wins.
+   `-lifetime` (default 1h), `-log_level` and `-webserver_listen` can be in the configuration file instead, as `lifetime`, `log_level` and `webserver_listen`, and how often the active discovery probes as `discovery.rediscover` (default: a third of the lifetime): a flag given on the command line wins.
 
    `-webserver_listen` takes a comma-separated list of what to listen on, in any combination (in the file, a list too):
 
@@ -334,7 +334,7 @@ tasks:
 | `command` | The addresses a `command` with `args` prints, one per line |
 | `static` | The `addresses` listed |
 
-The `ipv4` block of a task, from before sources, still works: it becomes a command source, and the log says how to move it.
+The `ipv4` block of a task, from before sources, still works: it becomes a command source, and the log says how to move it. It goes in v1.0.
 
 For more advanced use cases just write a custom script that prints the addresses you need, for a command source.
 
@@ -390,4 +390,4 @@ discovery:
     lifetime: 3m      # a device that leaves loses its A record within minutes
 ```
 
-The `listen`, `active` and `solicit_eui64` keys of `discovery`, from before, still work: they are `ipv6.listen`, `ipv6.active` and `ipv6.solicit`, and the log says so.
+The `listen`, `active` and `solicit_eui64` keys of `discovery`, from before, still work: they are `ipv6.listen`, `ipv6.active` and `ipv6.solicit`, and the log says so. They go in v1.0.

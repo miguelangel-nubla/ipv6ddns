@@ -92,7 +92,7 @@ func TestExampleConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg); err != nil {
+	if _, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), cfg); err != nil {
 		t.Fatal(err)
 	}
 	for name, p := range cfg.Discovery.Plugins {
@@ -138,7 +138,7 @@ discovery:
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	worker, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

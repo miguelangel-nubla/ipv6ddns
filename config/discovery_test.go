@@ -60,6 +60,7 @@ webserver_listen: [8053, "[::1]:8054"]
 discovery:
   interfaces: [eth0, "br-*"]
   exclude_interfaces: "docker*,veth*"
+  rediscover: 5m
   ipv4:
     lifetime: 3m
 tasks: {}
@@ -73,6 +74,9 @@ tasks: {}
 	d := cfg.Discovery
 	if !slices.Equal(d.Interfaces, []string{"eth0", "br-*"}) || !slices.Equal(d.ExcludeInterfaces, []string{"docker*", "veth*"}) {
 		t.Errorf("interfaces: %v, excluding %v", d.Interfaces, d.ExcludeInterfaces)
+	}
+	if d.Rediscover.Duration != 5*time.Minute {
+		t.Errorf("rediscover: %s", d.Rediscover)
 	}
 	if d.IPv4.Lifetime.Duration != 3*time.Minute || !d.IPv4.Enabled || d.IPv6.Lifetime.Duration != 0 {
 		t.Errorf("family lifetimes: IPv4 %+v, IPv6 %+v", d.IPv4, d.IPv6)
