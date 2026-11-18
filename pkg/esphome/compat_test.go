@@ -206,3 +206,109 @@ func TestHomeAssistantGivesTheKey(t *testing.T) {
 		t.Errorf("the key kept: %x, the device has one: %v", kept, d.HasKey())
 	}
 }
+
+// Home Assistant discovers the device, with python-zeroconf, as its zeroconf integration does:
+// listening only, without a query, so that the device must announce itself, as RFC 6762 has a
+// new service do, to be found, as by a Home Assistant that queries an hour apart; then its
+// announcement says it needs its key once Home Assistant gave it. On loopback only, so that the
+// test announces nothing on the network it runs in: where loopback carries multicast, as in CI,
+// which turns it on.
+func TestHomeAssistantDiscovers(t *testing.T) {
+	py := python(t)
+	lo := multicastLoopback(t)
+	mac, _ := net.ParseMAC("02:00:5e:10:00:03")
+	d := &Device{Name: "ipv6ddns-discover-test", FriendlyName: "discover test", MAC: mac,
+		Project: "miguelangel-nubla.ipv6ddns", ProjectVersion: "1.2.3", OnKey: func([]byte) error { return nil }}
+
+	cmd := exec.Command(py, "testdata/discover.py", d.Name, "30")
+	cmd.Stderr = os.Stderr
+	stdout, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	lines := bufio.NewScanner(stdout)
+	if !lines.Scan() || lines.Text() != "ready" {
+		t.Fatalf("the listener: %q", lines.Text())
+	}
+	type record struct {
+		Port int               `json:"port"`
+		TXT  map[string]string `json:"txt"`
+	}
+	records := make(chan record, 16)
+	go func() {
+		for lines.Scan() {
+			var r record
+			if json.Unmarshal(lines.Bytes(), &r) == nil {
+				records <- r
+			}
+		}
+		close(records)
+	}()
+	next := func(what string, ok func(record) bool) record {
+		deadline := time.After(10 * time.Second)
+		for {
+			select {
+			case r, open := <-records:
+				if !open {
+					t.Fatalf("%s: the listener ended", what)
+				}
+				if ok(r) {
+					return r
+				}
+			case <-deadline:
+				t.Fatalf("%s: not announced", what)
+			}
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go d.Advertise(ctx, 6053, []net.IP{net.IPv4(127, 0, 0, 1)}, []net.Interface{*lo})
+
+	next("the port", func(r record) bool { return r.Port == 6053 })
+	txt := next("the TXT records", func(r record) bool { return r.TXT != nil }).TXT
+	if txt["mac"] != "02005e100003" || txt["friendly_name"] != "discover test" {
+		t.Errorf("announced: %v", txt)
+	}
+	if _, needsKey := txt["api_encryption"]; needsKey {
+		t.Errorf("without a key, the device says it needs one: %v", txt)
+	}
+
+	key, _ := ParseKey(GenerateKey())
+	if err := d.setKey(key); err != nil {
+		t.Fatal(err)
+	}
+	next("the key", func(r record) bool { return r.TXT["api_encryption"] == "Noise_NNpsk0_25519_ChaChaPoly_SHA256" })
+}
+
+// multicastLoopback is the loopback interface, where it carries IPv4 multicast: on Linux, with
+// "ip link set lo multicast on" and a route of 224.0.0.0/4 to it, as CI does; macOS has no route.
+func multicastLoopback(t *testing.T) *net.Interface {
+	skip := func(why string) {
+		if os.Getenv("ESPHOME_COMPAT_REQUIRED") != "" {
+			t.Fatal(why)
+		}
+		t.Skip(why)
+	}
+	ifaces, _ := net.Interfaces()
+	for i := range ifaces {
+		if ifaces[i].Flags&net.FlagLoopback == 0 {
+			continue
+		}
+		if ifaces[i].Flags&net.FlagMulticast == 0 {
+			skip("loopback carries no multicast: ip link set lo multicast on")
+		}
+		conn, err := net.DialUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 9})
+		if err == nil {
+			_, err = conn.Write([]byte{0})
+			conn.Close()
+		}
+		if err != nil {
+			skip("no multicast route to loopback: ip route add 224.0.0.0/4 dev lo: " + err.Error())
+		}
+		return &ifaces[i]
+	}
+	skip("no loopback interface")
+	return nil
+}
