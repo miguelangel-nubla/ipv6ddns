@@ -32,6 +32,43 @@ The add-on's own option:
 
 The lifetime, and everything else, are in `config.yaml`.
 
+## Publishing Home Assistant itself
+
+`self: true` in a filter takes the addresses of the machine the add-on runs
+on: Home Assistant's, and its add-ons', with no MAC to look up. Its stable
+public IPv6 addresses, and the network's public IPv4 for a router that
+forwards a port to it:
+
+```yaml
+sources:
+  wan:
+    type: dns
+tasks:
+  homeassistant:
+    filter:
+      - self: true
+        ip:
+          type: [global, "!temporary"]
+    sources: [wan]
+    endpoints:
+      cloudflare: [ha]        # ha.example.com
+credentials:
+  cloudflare:
+    provider: cloudflare
+    settings:
+      api_token: ${file:/config/cloudflare_token}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+discovery:
+  exclude_interfaces: [hassio, docker0, "veth*"]
+```
+
+For
+a local DNS, its LAN address: `self: true` with `ip: {family: [4], type:
+[private]}`, and `discovery: {ipv4: true}`. The other filters and options:
+[filtering](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/filtering.md).
+
 ## The add-on's page
 
 It shows the report of ipv6ddns: the names and their records, and the hosts

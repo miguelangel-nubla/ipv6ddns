@@ -3,9 +3,23 @@
 # Until you add tasks, it only discovers: the add-on's page lists the hosts of the network and their
 # MAC addresses, to choose from. Every key: https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md
 #
-# An example, the global IPv6 addresses of one host, at Cloudflare:
+# An example: Home Assistant itself, its stable public IPv6 addresses and the network's public
+# IPv4, as ha.example.com; and one host of the network, by its MAC, as www.example.com. At
+# Cloudflare:
+#
+# sources:
+#   wan:
+#     type: dns
 #
 # tasks:
+#   homeassistant:
+#     filter:
+#       - self: true
+#         ip:
+#           type: [global, "!temporary"]
+#     sources: [wan]
+#     endpoints:
+#       cloudflare: [ha]
 #   webserver:
 #     filter:
 #       - mac:
@@ -13,7 +27,7 @@
 #         ip:
 #           type: [global]
 #     endpoints:
-#       cloudflare: [www]        # www.example.com
+#       cloudflare: [www]
 #
 # credentials:
 #   cloudflare:

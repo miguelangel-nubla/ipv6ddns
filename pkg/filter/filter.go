@@ -68,8 +68,10 @@ func CheckMACType(mac net.HardwareAddr, filters []string) bool {
 	b := mac[0]
 
 	for _, f := range filters {
+		// "!type": the MAC isn't of the type.
+		name, negated := strings.CutPrefix(strings.ToLower(f), "!")
 		match := false
-		switch strings.ToLower(f) {
+		switch name {
 		case "local":
 			if (b & 0x02) != 0 {
 				match = true
@@ -87,7 +89,7 @@ func CheckMACType(mac net.HardwareAddr, filters []string) bool {
 				match = true
 			}
 		}
-		if !match {
+		if match == negated {
 			return false
 		}
 	}
@@ -119,6 +121,10 @@ var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 //   - cgnat: carrier-grade NAT IPv4, 100.64.0.0/10
 //   - link_local: fe80::/10, or 169.254.0.0/16
 //   - eui64, random: an IPv6 interface ID from the MAC, or not
+//   - temporary: an IPv6 privacy address of the machine ipv6ddns runs on, as its kernel says; a
+//     neighbor's is never known so
+//
+// "!type" is the address not being of the type: "!temporary".
 func CheckIPType(addr *ipv6disc.Addr, filters []string) bool {
 	if len(filters) == 0 {
 		return true
@@ -128,8 +134,10 @@ func CheckIPType(addr *ipv6disc.Addr, filters []string) bool {
 	is6 := ip.Is6()
 
 	for _, f := range filters {
+		// "!type": the address isn't of the type.
+		name, negated := strings.CutPrefix(strings.ToLower(f), "!")
 		match := false
-		switch strings.ToLower(f) {
+		switch name {
 		case "global":
 			match = ip.IsGlobalUnicast() && !ip.IsPrivate() && !cgnat.Contains(ip)
 		case "private":
@@ -144,8 +152,10 @@ func CheckIPType(addr *ipv6disc.Addr, filters []string) bool {
 			match = isEUI64(addr)
 		case "random":
 			match = is6 && !isEUI64(addr)
+		case "temporary":
+			match = addr.Temporary()
 		}
-		if !match {
+		if match == negated {
 			return false
 		}
 	}

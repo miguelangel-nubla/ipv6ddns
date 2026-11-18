@@ -37,6 +37,7 @@ Each filter set: an address that every rule of one set matches is the task's. Se
 
 | Key | Takes | |
 |---|---|---|
+| `self` | boolean | The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen. |
 | `mac` | object | Rules on the MAC address of the host. |
 | `ip` | object | Rules on the address. |
 | `source` | list of string | Names of what must all have seen the address: discovery plugins, or local interfaces. |
@@ -51,7 +52,7 @@ Rules on the MAC address of the host.
 |---|---|---|
 | `address` | string | The MAC address, exactly: 00:11:22:33:44:55. |
 | `mask` | list of string | VALUE/MASK pairs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's. |
-| `type` | list of `local`, `global`, `unicast`, `multicast` | MAC types, all of which must apply: global, local, unicast, multicast. |
+| `type` | list of `local`, `global`, `unicast`, `multicast`, `!local`, `!global`, `!unicast`, `!multicast` | MAC types, all of which must apply: global, local, unicast, multicast. "!type": not of the type. |
 
 ## Filter ip
 
@@ -61,7 +62,7 @@ Rules on the address.
 
 | Key | Takes | |
 |---|---|---|
-| `type` | list of `eui64`, `random`, `global`, `private`, `ula`, `cgnat`, `link_local` | Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6 privacy). |
+| `type` | list of `global`, `private`, `ula`, `cgnat`, `link_local`, `eui64`, `random`, `temporary`, `!global`, `!private`, `!ula`, `!cgnat`, `!link_local`, `!eui64`, `!random`, `!temporary` | Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6, not from the MAC), temporary (an IPv6 privacy address of this machine's, which changes every day or so). "!type": not of the type, as "!temporary". |
 | `prefix` | string | A prefix the address must be in: 2001:db8::/32, 192.168.1.0/24. |
 | `suffix` | string | The end of the address, in its canonical lower case form: ::1, dead:beef. |
 | `mask` | list of string | VALUE/MASK pairs, all of which the address must match. |

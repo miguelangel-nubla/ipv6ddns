@@ -16,11 +16,45 @@ var (
 	envRef    = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 )
 
-// The add-on's starting configuration loads, and says nothing deprecated.
+// The add-on's starting configuration loads, and says nothing deprecated; and so does its example,
+// uncommented.
 func TestAddonStarterConfig(t *testing.T) {
-	cfg, err := config.NewConfig(filepath.Join("..", "..", "homeassistant", "starter.config.yaml"))
+	path := filepath.Join("..", "..", "homeassistant", "starter.config.yaml")
+	cfg, err := config.NewConfig(path)
 	if err != nil || len(cfg.Warnings) > 0 {
 		t.Errorf("%v, warnings %v", err, cfg.Warnings)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The example: the commented lines after the one that ends with "At Cloudflare:", up to the
+	// end of the comment.
+	var example []string
+	in := false
+	for _, line := range strings.Split(string(content), "\n") {
+		switch {
+		case strings.HasSuffix(line, "Cloudflare:"):
+			in = true
+		case in && strings.HasPrefix(line, "#"):
+			example = append(example, strings.TrimPrefix(strings.TrimPrefix(line, "#"), " "))
+		case in:
+			in = false
+		}
+	}
+	if len(example) < 10 {
+		t.Fatalf("no example found: %q", example)
+	}
+
+	uncommented := filepath.Join(t.TempDir(), "config.yaml")
+	text := strings.ReplaceAll(strings.Join(example, "\n"), "${file:/config/cloudflare_token}", "example")
+	if err := os.WriteFile(uncommented, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.NewConfig(uncommented)
+	if err != nil || len(cfg.Warnings) > 0 {
+		t.Errorf("the example, uncommented: %v, warnings %v\n%s", err, cfg.Warnings, text)
 	}
 }
 
@@ -30,6 +64,8 @@ func TestDocExamples(t *testing.T) {
 	root := filepath.Join("..", "..")
 	files := []string{"README.md", "CONTRIBUTING.md"}
 	docs, _ := filepath.Glob(filepath.Join(root, "docs", "*.md"))
+	addon, _ := filepath.Glob(filepath.Join(root, "homeassistant", "addon", "*.md"))
+	docs = append(docs, addon...)
 	for _, d := range docs {
 		rel, _ := filepath.Rel(root, d)
 		files = append(files, rel)
