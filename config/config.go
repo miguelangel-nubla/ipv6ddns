@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -23,6 +25,9 @@ type Config struct {
 	Tasks       map[string]Task       `json:"tasks"`
 	Credentials map[string]Credential `json:"credentials"`
 	Discovery   Discovery             `json:"discovery"`
+	Sources     map[string]Source     `json:"sources,omitempty"`
+	// What in the configuration to change, as a deprecated setting: NewConfig sets them, to log.
+	Warnings []string `json:"-"`
 }
 
 type Discovery struct {
@@ -100,8 +105,8 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 		task := c.Tasks[name]
 		result.WriteString(prefix + "        " + name + ":\n")
 
-		if task.IPv4 != nil {
-			result.WriteString(task.IPv4.PrettyPrint(prefix+"            ", hideSensible))
+		if len(task.Sources) > 0 {
+			result.WriteString(prefix + "            Sources: " + strings.Join(task.Sources, ", ") + "\n")
 		}
 
 		for _, filter := range task.Filters {
@@ -165,6 +170,13 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 				}
 				result.WriteString(prefix + "                " + hostname + " (" + endpointKey + ")\n")
 			}
+		}
+	}
+
+	if len(c.Sources) > 0 {
+		result.WriteString(prefix + "    Sources:\n")
+		for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
+			result.WriteString(prefix + "        " + name + ": " + c.Sources[name].describe(hideSensible) + "\n")
 		}
 	}
 
@@ -278,6 +290,11 @@ func NewConfig(filename string) (config Config, err error) {
 		if _, err := plugin.PluginParams(); err != nil {
 			return config, fmt.Errorf("plugin %s: %w", name, err)
 		}
+	}
+
+	config.Warnings, err = config.setUpSources()
+	if err != nil {
+		return config, err
 	}
 
 	for name, task := range config.Tasks {

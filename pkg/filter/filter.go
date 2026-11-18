@@ -94,36 +94,56 @@ func CheckMACType(mac net.HardwareAddr, filters []string) bool {
 	return true
 }
 
+// CheckFamily tells whether the address is of one of the families, 4 and 6. Without families,
+// IPv6 only: the filters were written when discovery found IPv6 addresses only, and one that
+// names a MAC must not take the private IPv4 addresses of the device to a public DNS.
+func CheckFamily(ip netip.Addr, families []int) bool {
+	if len(families) == 0 {
+		families = []int{6}
+	}
+	family := 6
+	if ip.Unmap().Is4() {
+		family = 4
+	}
+	return slices.Contains(families, family)
+}
+
+// The shared address space of carrier-grade NAT, RFC 6598: not reachable from the Internet.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// CheckIPType tells whether the address is of every type the filters name:
+//
+//   - global: routable on the Internet: not private, link-local or carrier-grade NAT
+//   - private: RFC 1918 IPv4, or IPv6 ULA
+//   - ula: IPv6 unique local, fc00::/7
+//   - cgnat: carrier-grade NAT IPv4, 100.64.0.0/10
+//   - link_local: fe80::/10, or 169.254.0.0/16
+//   - eui64, random: an IPv6 interface ID from the MAC, or not
 func CheckIPType(addr *ipv6disc.Addr, filters []string) bool {
 	if len(filters) == 0 {
 		return true
 	}
 
-	ip := addr.Addr
+	ip := addr.Addr.Unmap()
+	is6 := ip.Is6()
 
 	for _, f := range filters {
 		match := false
 		switch strings.ToLower(f) {
 		case "global":
-			if ip.IsGlobalUnicast() && !isULA(ip) {
-				match = true
-			}
+			match = ip.IsGlobalUnicast() && !ip.IsPrivate() && !cgnat.Contains(ip)
+		case "private":
+			match = ip.IsPrivate()
 		case "ula":
-			if isULA(ip) {
-				match = true
-			}
+			match = isULA(ip)
+		case "cgnat":
+			match = cgnat.Contains(ip)
 		case "link_local":
-			if ip.IsLinkLocalUnicast() {
-				match = true
-			}
+			match = ip.IsLinkLocalUnicast()
 		case "eui64":
-			if isEUI64(addr) {
-				match = true
-			}
+			match = isEUI64(addr)
 		case "random":
-			if !isEUI64(addr) {
-				match = true
-			}
+			match = is6 && !isEUI64(addr)
 		}
 		if !match {
 			return false
