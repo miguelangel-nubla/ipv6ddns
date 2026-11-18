@@ -34,6 +34,7 @@ const duckDNSSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
+		"additionalProperties": false,
 		"properties": {
 			"api_token": {
 				"type": "string",

@@ -88,6 +88,7 @@ const route53SettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
+		"additionalProperties": false,
 		"properties": {
 			"access_key_id": {
 				"type": "string",

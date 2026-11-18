@@ -51,6 +51,7 @@ const windowsSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
+		"additionalProperties": false,
 		"properties": {
 			"zone": { "type": "string", "minLength": 1 },
 			"address": { "type": "string" },
