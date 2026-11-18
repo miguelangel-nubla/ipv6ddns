@@ -210,7 +210,7 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.logger.Info("no discovery: no plugins, and no family listens; the names get the addresses of their sources")
 	}
 	if h := w.homeAssistant; h != nil {
-		if err := h.serve(ctx, w.logger.Errorf); err != nil {
+		if err := h.serve(ctx, w.config.Discovery.Interfaces, w.config.Discovery.ExcludeInterfaces, w.logger.Errorf); err != nil {
 			return err
 		}
 		w.running.Add(1)

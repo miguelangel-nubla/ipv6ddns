@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -235,16 +236,58 @@ func (h *homeAssistant) follow(ctx context.Context, status func() Status) {
 	}
 }
 
-// serve listens for Home Assistant on the port, and announces the device by mDNS, until ctx is
-// done.
-func (h *homeAssistant) serve(ctx context.Context, errorf func(string, ...any)) error {
+// announcedIPs are the addresses the device announces by mDNS, for Home Assistant to connect to:
+// those of the interfaces up, but loopback, and those discovery leaves out, as the bridges of
+// containers, whose addresses Home Assistant can't reach the device at.
+func announcedIPs(include, exclude []string) ([]net.IP, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	matches := func(patterns []string, name string) bool {
+		for _, p := range patterns {
+			if ok, _ := path.Match(p, name); ok {
+				return true
+			}
+		}
+		return false
+	}
+	var ips []net.IP
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 ||
+			len(include) > 0 && !matches(include, iface.Name) || matches(exclude, iface.Name) {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			if ipNet, ok := a.(*net.IPNet); ok && !ipNet.IP.IsLinkLocalUnicast() {
+				ips = append(ips, ipNet.IP)
+			}
+		}
+	}
+	if len(ips) == 0 {
+		return nil, errors.New("no address to announce")
+	}
+	return ips, nil
+}
+
+// serve listens for Home Assistant on the port, and announces the device by mDNS at the addresses
+// of the interfaces discovery runs on, until ctx is done.
+func (h *homeAssistant) serve(ctx context.Context, interfaces, exclude []string, errorf func(string, ...any)) error {
 	ln, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(h.config.Port)))
 	if err != nil {
 		return fmt.Errorf("homeassistant: %w", err)
 	}
 	if h.config.Announces() {
 		go func() {
-			if err := h.device.Advertise(ctx, h.config.Port, nil); err != nil {
+			ips, err := announcedIPs(interfaces, exclude)
+			if err == nil {
+				err = h.device.Advertise(ctx, h.config.Port, ips)
+			}
+			if err != nil {
 				errorf("homeassistant: %s: Home Assistant won't discover it, add it by its address", err)
 			}
 		}()
