@@ -12,6 +12,10 @@
                         "items": {
                             "type": "object",
                             "properties": {
+                                "self": {
+                                    "type": "boolean",
+                                    "description": "The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen."
+                                },
                                 "mac": {
                                     "type": "object",
                                     "properties": {
@@ -34,10 +38,14 @@
                                                     "local",
                                                     "global",
                                                     "unicast",
-                                                    "multicast"
+                                                    "multicast",
+                                                    "!local",
+                                                    "!global",
+                                                    "!unicast",
+                                                    "!multicast"
                                                 ]
                                             },
-                                            "description": "MAC types, all of which must apply: global, local, unicast, multicast."
+                                            "description": "MAC types, all of which must apply: global, local, unicast, multicast. \"!type\": not of the type."
                                         }
                                     },
                                     "additionalProperties": false,
@@ -51,16 +59,25 @@
                                             "items": {
                                                 "type": "string",
                                                 "enum": [
-                                                    "eui64",
-                                                    "random",
                                                     "global",
                                                     "private",
                                                     "ula",
                                                     "cgnat",
-                                                    "link_local"
+                                                    "link_local",
+                                                    "eui64",
+                                                    "random",
+                                                    "temporary",
+                                                    "!global",
+                                                    "!private",
+                                                    "!ula",
+                                                    "!cgnat",
+                                                    "!link_local",
+                                                    "!eui64",
+                                                    "!random",
+                                                    "!temporary"
                                                 ]
                                             },
-                                            "description": "Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6 privacy)."
+                                            "description": "Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6, not from the MAC), temporary (an IPv6 privacy address of this machine's, which changes every day or so). \"!type\": not of the type, as \"!temporary\"."
                                         },
                                         "prefix": {
                                             "type": "string",

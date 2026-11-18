@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"net"
 	"net/netip"
 	"testing"
@@ -39,6 +40,56 @@ func TestTaskMatch(t *testing.T) {
 	for _, tt := range tests {
 		if got := (Task{Filters: tt.filters}).Match(addr); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// self takes this machine's own addresses, of whatever MAC; temporary and "!" take or leave its
+// privacy addresses.
+func TestSelfFilters(t *testing.T) {
+	state := ipv6disc.NewState()
+	state.SetFamilies(true, true)
+	own, _ := net.ParseMAC("02:00:00:00:00:01")
+	neighbor, _ := net.ParseMAC("02:00:00:00:00:02")
+	register := func(self, temporary bool, mac net.HardwareAddr, ip string) *ipv6disc.Addr {
+		var a *ipv6disc.Addr
+		if self {
+			a, _ = state.RegisterSelf(mac, netip.MustParseAddr(ip), "eth0", temporary, time.Hour, nil)
+		} else {
+			a, _ = state.Register(mac, netip.MustParseAddr(ip), "eth0", time.Hour, nil)
+		}
+		t.Cleanup(a.Unwatch)
+		return a
+	}
+	stable := register(true, false, own, "2001:db8::1")
+	temporary := register(true, true, own, "2001:db8::a1b2:c3d4:e5f6:708")
+	local4 := register(true, false, own, "192.168.1.10")
+	other := register(false, false, neighbor, "2001:db8::2")
+
+	filter := func(yaml string) Filters {
+		var f Filters
+		if err := json.Unmarshal([]byte(yaml), &f); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	for _, c := range []struct {
+		filter string
+		want   map[*ipv6disc.Addr]bool
+	}{
+		{`{"self": true}`, map[*ipv6disc.Addr]bool{stable: true, temporary: true, local4: false, other: false}},
+		{`{"self": true, "ip": {"type": ["global", "!temporary"]}}`, map[*ipv6disc.Addr]bool{stable: true, temporary: false, other: false}},
+		{`{"self": true, "ip": {"type": ["temporary"]}}`, map[*ipv6disc.Addr]bool{stable: false, temporary: true}},
+		{`{"self": true, "ip": {"family": [4], "type": ["private"]}}`, map[*ipv6disc.Addr]bool{local4: true, stable: false}},
+		{`{"ip": {"type": ["!temporary"]}}`, map[*ipv6disc.Addr]bool{other: true, temporary: false}},
+		{`{"mac": {"type": ["!multicast", "local"]}}`, map[*ipv6disc.Addr]bool{other: true}},
+		{`{"mac": {"type": ["!local"]}}`, map[*ipv6disc.Addr]bool{other: false}},
+	} {
+		f := filter(c.filter)
+		for addr, want := range c.want {
+			if got := f.Match(addr); got != want {
+				t.Errorf("%s, %s: %v, want %v", c.filter, addr.Addr, got, want)
+			}
 		}
 	}
 }

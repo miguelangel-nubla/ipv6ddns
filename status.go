@@ -43,6 +43,10 @@ type DiscoveredAddress struct {
 	Address string    `json:"address"`
 	Expires time.Time `json:"expires"`
 	Sources []string  `json:"sources"`
+	// An address of the machine ipv6ddns runs on, which the self filters take; and, of those, a
+	// temporary IPv6 privacy address.
+	Self      bool `json:"self,omitempty"`
+	Temporary bool `json:"temporary,omitempty"`
 }
 
 // Status returns the state of the host names and of the discovery. hideSensible hides the errors,
@@ -95,6 +99,9 @@ func (w *Worker) Status(hideSensible bool) Status {
 				Address: addr.WithZone("").String(),
 				Expires: addr.GetExpiration(),
 				Sources: addr.Sources(),
+
+				Self:      addr.Self(),
+				Temporary: addr.Temporary(),
 			})
 		}
 		if len(host.Addresses) > 0 {

@@ -19,6 +19,9 @@ type Task struct {
 }
 
 type Filters struct {
+	// The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather
+	// than of a MAC: a Home Assistant host, a server.
+	Self   bool       `json:"self"`
 	MAC    MACFilters `json:"mac"`
 	IP     IPFilters  `json:"ip"`
 	Source []string   `json:"source"`
@@ -52,7 +55,8 @@ func (t Task) Match(addr *ipv6disc.Addr) bool {
 
 // Match tells whether the address passes every check of the filter.
 func (f Filters) Match(addr *ipv6disc.Addr) bool {
-	return filter.CheckFamily(addr.Addr, f.IP.Family) &&
+	return (!f.Self || addr.Self()) &&
+		filter.CheckFamily(addr.Addr, f.IP.Family) &&
 		filter.CheckMAC(addr.Hw, f.MAC.Address) &&
 		filter.CheckMACMask(addr.Hw, f.MAC.Mask) &&
 		filter.CheckMACType(addr.Hw, f.MAC.Type) &&

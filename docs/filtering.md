@@ -48,6 +48,10 @@ filter:
 
 ### Available keys
 
+#### `filter.self`
+
+*   **`self`** (Boolean): The addresses of the machine ipv6ddns runs on, rather than of a MAC: a server, a Home Assistant host. No MAC to look up, and no change when its network card does. They are those of the interfaces discovery runs on, while the family listens: leave out with `discovery.exclude_interfaces` the bridges of containers, whose addresses are this machine's too. See [this machine](#6-this-machine-ipv6ddns-runs-on).
+
 #### `filter.mac`
 
 *   **`address`** (Single String): Exact match of the MAC address.
@@ -56,7 +60,7 @@ filter:
     *   Format: `VALUE/MASK`
     *   Example: `00:11:22:00:00:00/ff:ff:ff:00:00:00` (Matches any device with 00:11:22 OUI)
 *   **`type`** (List of Strings): Match protocol-defined MAC types. All types must match.
-    *   Values: `global`, `local`, `unicast`, `multicast`.
+    *   Values: `global`, `local`, `unicast`, `multicast`; `!type` for not of the type.
 
 #### `filter.ip`
 
@@ -75,7 +79,9 @@ filter:
         *   `cgnat`: Carrier-grade NAT IPv4 (`100.64.0.0/10`).
         *   `link_local`: Link-Local Address (`fe80::/10`, or `169.254.0.0/16`).
         *   `eui64`: IPv6, derived from MAC address (stable).
-        *   `random`: IPv6, privacy extension / randomized address.
+        *   `random`: IPv6, an interface ID not from the MAC: a privacy address, or a stable one of another scheme, as most systems' now.
+        *   `temporary`: an IPv6 privacy address of this machine's, which its kernel says is temporary: it changes every day or so. Known on Linux, and for the [`self`](#filterself) addresses only.
+    *   `!type`: not of the type, as `!temporary`.
     *   **Common Use Case**: `type: ["global"]` (Public IPs only).
 *   **`mask`** (List of Strings): generic bitwise mask match.
     *   Format: `VALUE/MASK`
@@ -149,3 +155,33 @@ filter:
       prefix: "2001:db8::/64"
       suffix: "::5"
 ```
+
+### 6. This machine ipv6ddns runs on
+Its stable public IPv6 addresses, not the temporary ones, which change every day or so; with the network's public IPv4 from a [source](sources.md), for a server behind NAT. Add-ons of a Home Assistant, and containers on the host's network, have this machine's addresses: their names can be endpoints of the same task.
+
+```yaml
+sources:
+  wan:
+    type: dns
+tasks:
+  this-machine:
+    filter:
+      - self: true
+        ip:
+          type: [global, "!temporary"]
+    sources: [wan]
+    endpoints:
+      cloudflare: [server, "*.server"]
+credentials:
+  cloudflare:
+    provider: cloudflare
+    settings:
+      api_token: ${CLOUDFLARE_TOKEN}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+discovery:
+  exclude_interfaces: [docker*, br-*, veth*, hassio]
+```
+
+For a local DNS, its address on the LAN: `self: true` with `ip: {family: [4], type: [private]}`, and `discovery.ipv4: true`.
