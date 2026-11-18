@@ -60,6 +60,8 @@ filter:
 
 #### `filter.ip`
 
+*   **`family`** (List of Integers): The address families, `4` and `6`. **Default: `[6]`**, so a filter that names a device's MAC doesn't also take its private IPv4 addresses to a public DNS once IPv4 discovery finds them. Give `[4]` or `[4, 6]` for IPv4.
+    *   Example: `family: [4]` with `type: [private]` for the `192.168.x.x` address of a device, to a local DNS.
 *   **`prefix`** (Single String): CIDR subnet. The address must be contained within this subnet.
     *   Example: `2001:db8::/32`
 *   **`suffix`** (Single String): The host part (suffix) of the address.
@@ -67,11 +69,13 @@ filter:
     *   Example: `::1` (Matches `2001:db8::1`, `fe80::1`, etc.) or `dead:beef` (Matches `...:DEAD:BEEF`)
 *   **`type`** (List of Strings): Match semantic IP types. All types must match.
     *   Values:
-        *   `global`: Global Unicast Address (Publicly routable).
+        *   `global`: Global Unicast Address (Publicly routable): not private, link-local or carrier-grade NAT.
+        *   `private`: RFC 1918 IPv4 (`10/8`, `172.16/12`, `192.168/16`), or IPv6 unique local.
         *   `ula`: Unique Local Address (`fc00::/7`).
-        *   `link_local`: Link-Local Address (`fe80::/10`).
-        *   `eui64`: derived from MAC address (stable).
-        *   `random`: Privacy extension / randomized address.
+        *   `cgnat`: Carrier-grade NAT IPv4 (`100.64.0.0/10`).
+        *   `link_local`: Link-Local Address (`fe80::/10`, or `169.254.0.0/16`).
+        *   `eui64`: IPv6, derived from MAC address (stable).
+        *   `random`: IPv6, privacy extension / randomized address.
     *   **Common Use Case**: `type: ["global"]` (Public IPs only).
 *   **`mask`** (List of Strings): generic bitwise mask match.
     *   Format: `VALUE/MASK`
@@ -80,6 +84,8 @@ filter:
 
 *   **`source`** (List of Strings): Filter by the discovery plugin that found the address. All sources must have seen the address.
     *   Example: `["mikrotik-lan"]`
+
+Addresses without a MAC, as the network's public IPv4, don't go through filters: a task gets them from the [sources](../README.md#sources-the-public-ipv4-and-addresses-without-a-mac) it names, in its `sources`.
 
 ### Addresses that stay quiet
 

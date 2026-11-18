@@ -197,15 +197,14 @@ tasks:
       example-cloudflare:
         # This will update test-webapp.example.com
         - test-webapp
-    # Optional: Update IPv4 (A) records using an external command
-    ipv4:
-      interval: 3m
-      command: curl
-      args:
-        - -s
-        - --ipv4
-        - ifconfig.me
-      lifetime: 10m
+    # Optional: also the network's public IPv4, for the A record, from the source below
+    sources: [wan]
+
+# Optional: addresses without a MAC, for the tasks that name them
+sources:
+  wan:
+    # The public IPv4, as DNS resolvers see it. Or http, an echo service; command, yours; static
+    type: dns
 
 credentials:
   # Name you will use to refer to this endpoint on the tasks
@@ -309,24 +308,33 @@ You can have as many IPv6 addresses from different ISPs as you like and the AAAA
 
 For example, you can have a FTTH connection, a backup LTE connection, and Starlink on your roof. Your domain will have updated AAAA records for every WAN connection, inbound WAN failover will simply work.
 
-#### Roaming over IPv4
-While IPv4 is not the focus of this project, you can stil leverage it to do the same for regular IPv4 public IPs.
+#### Sources: the public IPv4, and addresses without a MAC
+With IPv4 behind NAT, a server has a private address, and the world reaches it at the router's public one, through a port forward: its A record is the network's public IPv4. A source finds it, and the tasks that name the source add its addresses to their names:
+
 ```yaml
-...
+sources:
+  wan:
+    type: dns          # asks DNS resolvers the address they see
+    family: [4]        # 4, 6 or both; default 4
+    interval: 3m       # default 5m
+    lifetime: 10m      # how long an address stays after the last run; default 3 intervals
 tasks:
   myhome:
-    ipv4:
-      interval: 3m
-      command: curl
-      args:
-        - -s
-        - --ipv4
-        - ifconfig.me
-      lifetime: 10m
-...
+    filter: [...]      # the device's IPv6, by MAC
+    sources: [wan]     # and the public IPv4
+    endpoints: ...
 ```
 
-For more advanced use cases just write a custom script that returns the IPv4s you need.
+| Type | Gives |
+|---|---|
+| `dns` | The public address, from OpenDNS, or Google's resolvers when it fails |
+| `http` | The public address, from echo services over HTTPS, or `urls` of yours |
+| `command` | The addresses a `command` with `args` prints, one per line |
+| `static` | The `addresses` listed |
+
+The `ipv4` block of a task, from before sources, still works: it becomes a command source, and the log says how to move it.
+
+For more advanced use cases just write a custom script that prints the addresses you need, for a command source.
 
 If you want to do the same MAC to address auto discovery in IPv4:
 `ip neigh show | grep -i "00:11:22:33:44:55" | awk '{print $1}'`
