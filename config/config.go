@@ -208,6 +208,11 @@ func NewConfig(filename string) (config Config, err error) {
 		}
 	}
 
+	byteValue, err = expandSecrets(byteValue, filepath.Dir(filename))
+	if err != nil {
+		return config, err
+	}
+
 	if err := validateConfig(byteValue); err != nil {
 		return config, err
 	}
