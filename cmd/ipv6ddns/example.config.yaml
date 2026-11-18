@@ -1,18 +1,33 @@
+# Addresses without a MAC, for the tasks that name them.
+sources:
+  # The network's public IPv4, as DNS resolvers see it: the A record of a server behind NAT.
+  wan:
+    type: dns
+    family: [4]
+    interval: 3m
+  # Or from an echo service over HTTPS, or a command of yours:
+  wan-http:
+    type: http
+    family: [4, 6]
+  wan-command:
+    type: command
+    command: curl
+    args: [-s, --ipv4, ifconfig.me]
+    interval: 3m
+    lifetime: 10m
+  # Addresses that don't change, or that discovery can't reach.
+  fixed:
+    type: static
+    addresses: [192.168.1.123]
 tasks:
   myhome:
-    ipv4:
-      args:
-        - -s
-        - --ipv4
-        - ifconfig.me
-      command: curl
-      interval: 3m
-      lifetime: 10m
     filter:
       - mac:
           address: 00:11:22:33:44:55
         ip:
           prefix: 2000::/3
+    # And the public IPv4, for the A record.
+    sources: [wan]
     endpoints:
       mycloudflaresettings:
         - ""
@@ -21,13 +36,7 @@ tasks:
       mylocaldns:
       - myserver
       - "*.myserver"
-    ipv4:
-      args:
-        - '%s\n'
-        - 192.168.1.123
-      command: printf
-      interval: 60s
-      lifetime: 4h
+    sources: [fixed]
     filter:
       - mac:
           address: 00:11:22:33:44:56
@@ -37,6 +46,18 @@ tasks:
             - eui64
         source:
           - mikrotik-lan
+  # A device's local IPv4 addresses, once IPv4 discovery finds them: a filter takes IPv6 only
+  # unless its family says.
+  mynas:
+    filter:
+      - mac:
+          address: 00:11:22:33:44:57
+        ip:
+          family: [4]
+          type: [private]
+    endpoints:
+      mylocaldns:
+      - nas
 credentials:
   duckdns:
     debounce_time: 10s
