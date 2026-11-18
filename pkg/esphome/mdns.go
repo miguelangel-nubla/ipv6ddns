@@ -7,32 +7,40 @@ import (
 	"net"
 	"strings"
 
-	"github.com/hashicorp/mdns"
+	"github.com/enbility/zeroconf/v3"
 )
 
 // The mDNS service ESPHome devices announce, which Home Assistant's ESPHome integration discovers.
 const mdnsService = "_esphomelib._tcp"
 
-// Advertise announces the device by mDNS on its port, until ctx is done: Home Assistant offers to
-// add it. ips are the addresses to announce; none, every address of the machine. The announcement
-// says whether the device needs its key, and follows when Home Assistant gives one.
-func (d *Device) Advertise(ctx context.Context, port int, ips []net.IP) error {
+// Advertise announces the device by mDNS on its port, at ips on ifaces, until ctx is done: Home
+// Assistant offers to add it. It announces itself when it starts, as RFC 6762 has a new service do,
+// for Home Assistant, which queries ever less often, to see it at once; and again when Home
+// Assistant gives its key, as the announcement says whether it needs one.
+func (d *Device) Advertise(ctx context.Context, port int, ips []net.IP, ifaces []net.Interface) error {
+	addrs := make([]string, len(ips))
+	for i, ip := range ips {
+		addrs[i] = ip.String()
+	}
+	changed := d.keyChange()
+	server, err := zeroconf.RegisterProxy(d.Name, mdnsService, "local.", port, d.Name, addrs, d.txt(), ifaces)
+	if err != nil {
+		return fmt.Errorf("mDNS: %w", err)
+	}
+	defer server.Shutdown()
 	for {
-		changed := d.keyChange()
-		server, err := d.announce(port, ips)
-		if err != nil {
-			return err
-		}
 		select {
 		case <-ctx.Done():
-			return server.Shutdown()
+			return nil
 		case <-changed:
-			server.Shutdown()
+			changed = d.keyChange()
+			server.SetText(d.txt())
 		}
 	}
 }
 
-func (d *Device) announce(port int, ips []net.IP) (*mdns.Server, error) {
+// txt is the announcement's: what Home Assistant reads of a device before connecting to it.
+func (d *Device) txt() []string {
 	txt := []string{
 		"friendly_name=" + d.FriendlyName,
 		"version=" + esphomeVersion,
@@ -46,15 +54,7 @@ func (d *Device) announce(port int, ips []net.IP) (*mdns.Server, error) {
 	if d.HasKey() {
 		txt = append(txt, "api_encryption=Noise_NNpsk0_25519_ChaChaPoly_SHA256")
 	}
-	service, err := mdns.NewMDNSService(d.Name, mdnsService, "local.", d.Name+".local.", port, ips, txt)
-	if err != nil {
-		return nil, fmt.Errorf("mDNS: %w", err)
-	}
-	server, err := mdns.NewServer(&mdns.Config{Zone: service})
-	if err != nil {
-		return nil, fmt.Errorf("mDNS: %w", err)
-	}
-	return server, nil
+	return txt
 }
 
 // MACFrom returns a MAC for the device, the same for the same seed, so that Home Assistant knows
