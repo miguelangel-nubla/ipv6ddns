@@ -62,8 +62,9 @@ type Family struct {
 	// lifetime of the configuration when not given.
 	Lifetime duration.Duration `json:"lifetime"`
 
-	// Whether the configuration has it, rather than the default.
-	set bool
+	// Whether the configuration has it, rather than the default; and as an object of ways, rather
+	// than true or false.
+	set, object bool
 }
 
 // familyOn is a family as true sets it.
@@ -92,7 +93,7 @@ func (f *Family) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*f = Family(family)
-	f.set = true
+	f.set, f.object = true, true
 	return nil
 }
 
@@ -109,24 +110,34 @@ func (d *Discovery) setUpDiscovery() ([]string, error) {
 		if d.IPv6.set {
 			return nil, fmt.Errorf("discovery.%s is the deprecated form of discovery.ipv6: give one of them", key)
 		}
+		// Before the families, listen and active were IPv4's too, which was only true or false.
+		ipv4 := !d.IPv4.object
 		switch key {
 		case "listen":
 			d.IPv6.Listen = *value
+			if ipv4 {
+				d.IPv4.Listen = *value
+			}
 		case "active":
 			d.IPv6.Active = *value
+			if ipv4 {
+				d.IPv4.Active = *value
+			}
 		case "solicit_eui64":
 			d.IPv6.Solicit = *value
+			ipv4 = false
 		}
 		newKey := map[string]string{"listen": "listen", "active": "active", "solicit_eui64": "solicit"}[key]
-		warnings = append(warnings, fmt.Sprintf("discovery.%s is deprecated, and goes in v1.0: it is discovery.ipv6.%s", key, newKey))
+		also := ""
+		if ipv4 && d.IPv4.Enabled {
+			also = " and discovery.ipv4." + newKey
+		}
+		warnings = append(warnings, fmt.Sprintf("discovery.%s is deprecated, and goes in v1.0: it is discovery.ipv6.%s%s", key, newKey, also))
 	}
 	d.Listen, d.Active, d.SolicitEUI64 = nil, nil, nil
 
 	var errs []error
 	for name, f := range map[string]Family{"ipv6": d.IPv6, "ipv4": d.IPv4} {
-		if f.Enabled && f.Active && !f.Listen {
-			errs = append(errs, fmt.Errorf("discovery.%s: active needs listen, which reads its answers", name))
-		}
 		if f.Lifetime.Duration < 0 {
 			errs = append(errs, fmt.Errorf("discovery.%s: a negative lifetime", name))
 		}
@@ -135,6 +146,10 @@ func (d *Discovery) setUpDiscovery() ([]string, error) {
 		if _, err := path.Match(pattern, ""); err != nil {
 			errs = append(errs, fmt.Errorf("discovery: invalid interface pattern %q", pattern))
 		}
+	}
+	// The answers to the IPv6 solicitations are read listening.
+	if d.IPv6.Enabled && d.IPv6.Solicit && !d.IPv6.Listen {
+		warnings = append(warnings, "discovery.ipv6.solicit does nothing without discovery.ipv6.listen, which reads the answers")
 	}
 	return warnings, errors.Join(errs...)
 }

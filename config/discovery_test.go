@@ -20,7 +20,13 @@ func TestDiscoveryFamilies(t *testing.T) {
 		"some ways":     {"discovery:\n  ipv4:\n    active: false\n    solicit: true\n", on, Family{Enabled: true, Listen: true, Solicit: true}, 0},
 		"ipv4 disabled": {"discovery:\n  ipv4:\n    enabled: false\n    solicit: true\n", on, Family{Solicit: true, Listen: true, Active: true}, 0},
 		"ipv6 solicit":  {"discovery:\n  ipv6:\n    solicit: true\n", Family{Enabled: true, Listen: true, Active: true, Solicit: true}, Family{}, 0},
-		"the old keys":  {"discovery:\n  listen: true\n  active: false\n  solicit_eui64: true\n", Family{Enabled: true, Listen: true, Solicit: true}, Family{}, 3},
+		// Before the families, listen and active were IPv4's too.
+		"the old keys":   {"discovery:\n  listen: true\n  active: false\n  solicit_eui64: true\n", Family{Enabled: true, Listen: true, Solicit: true}, Family{Listen: true}, 3},
+		"old, ipv4":      {"discovery:\n  active: false\n  ipv4: true\n", Family{Enabled: true, Listen: true}, Family{Enabled: true, Listen: true}, 1},
+		"old, ipv4 ways": {"discovery:\n  active: false\n  ipv4: {solicit: true}\n", Family{Enabled: true, Listen: true}, Family{Enabled: true, Listen: true, Active: true, Solicit: true}, 1},
+		// Listening off alone, for the plugins only: nothing probes, as before.
+		"old, listen off":    {"discovery:\n  listen: false\n", Family{Enabled: true, Active: true}, Family{}, 1},
+		"solicit, no listen": {"discovery:\n  ipv6: {listen: false, solicit: true}\n", Family{Enabled: true, Active: true, Solicit: true}, Family{}, 1},
 	} {
 		cfg, err := loadConfig(t, tt.discovery+"tasks: {}\n"+duckCredential)
 		if err != nil {
@@ -28,7 +34,7 @@ func TestDiscoveryFamilies(t *testing.T) {
 			continue
 		}
 		got6, got4 := cfg.Discovery.IPv6, cfg.Discovery.IPv4
-		got6.set, got4.set = false, false
+		got6.set, got4.set, got6.object, got4.object = false, false, false, false
 		if got6 != tt.ipv6 || got4 != tt.ipv4 {
 			t.Errorf("%s: got IPv6 %+v, IPv4 %+v, want %+v, %+v", name, got6, got4, tt.ipv6, tt.ipv4)
 		}
@@ -42,7 +48,6 @@ func TestDiscoveryFamilies(t *testing.T) {
 
 	for name, tt := range map[string]struct{ discovery, want string }{
 		"old and new":                {"discovery:\n  active: false\n  ipv6: {listen: true}\n", "deprecated form"},
-		"active without listen":      {"discovery:\n  ipv4: {listen: false}\n", "active needs listen"},
 		"an unknown way":             {"discovery:\n  ipv4: {sweep: false}\n", "sweep"},
 		"neither a boolean nor ways": {"discovery:\n  ipv4: yes please\n", "ipv4"},
 	} {
