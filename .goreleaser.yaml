@@ -40,132 +40,33 @@ builds:
     goarm:
       - 6
       - 7
-dockers:
+# One image for every platform: the build context has the binary of each at <os>/<arch>[/<variant>]/.
+dockers_v2:
   -
-    goos: linux
-    goarch: 386
-    image_templates:
-    - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-i386"
-    dockerfile: 'Dockerfile.goreleaser'
-    use: buildx
-    build_flag_templates:
-    - "--pull"
-    - "--platform=linux/i386"
-    - "--label=org.opencontainers.image.created={{.Date}}"
-    - "--label=org.opencontainers.image.title={{.ProjectName}}"
-    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-    - "--label=org.opencontainers.image.version={{.Version}}"
-    - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    extra_files:
-    - LICENSE.txt
-  -
-    goos: linux
-    goarch: amd64
-    image_templates:
-    - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-amd64"
-    dockerfile: 'Dockerfile.goreleaser'
-    use: buildx
-    build_flag_templates:
-    - "--pull"
-    - "--platform=linux/amd64"
-    - "--label=org.opencontainers.image.created={{.Date}}"
-    - "--label=org.opencontainers.image.title={{.ProjectName}}"
-    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-    - "--label=org.opencontainers.image.version={{.Version}}"
-    - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    extra_files:
-    - LICENSE.txt
-  -
-    goos: linux
-    goarch: arm
-    goarm: 6
-    image_templates:
-    - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-armv6"
-    dockerfile: 'Dockerfile.goreleaser'
-    use: buildx
-    build_flag_templates:
-    - "--pull"
-    - "--platform=linux/arm/v6"
-    - "--label=org.opencontainers.image.created={{.Date}}"
-    - "--label=org.opencontainers.image.title={{.ProjectName}}"
-    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-    - "--label=org.opencontainers.image.version={{.Version}}"
-    - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    extra_files:
-    - LICENSE.txt
-  -
-    goos: linux
-    goarch: arm
-    goarm: 7
-    image_templates:
-    - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-armv7"
-    dockerfile: 'Dockerfile.goreleaser'
-    use: buildx
-    build_flag_templates:
-    - "--pull"
-    - "--platform=linux/arm/v7"
-    - "--label=org.opencontainers.image.created={{.Date}}"
-    - "--label=org.opencontainers.image.title={{.ProjectName}}"
-    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-    - "--label=org.opencontainers.image.version={{.Version}}"
-    - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    extra_files:
-    - LICENSE.txt
-  -
-    goos: linux
-    goarch: arm64
-    image_templates:
-    - "ghcr.io/miguelangel-nubla/{{.ProjectName}}:{{ .Tag }}-arm64v8"
-    dockerfile: 'Dockerfile.goreleaser'
-    use: buildx
-    build_flag_templates:
-    - "--pull"
-    - "--platform=linux/arm64/v8"
-    - "--label=org.opencontainers.image.created={{.Date}}"
-    - "--label=org.opencontainers.image.title={{.ProjectName}}"
-    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-    - "--label=org.opencontainers.image.version={{.Version}}"
-    - "--label=org.opencontainers.image.url=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    - "--label=org.opencontainers.image.source=https://github.com/miguelangel-nubla/{{ .ProjectName }}"
-    extra_files:
-    - LICENSE.txt
-docker_manifests:
-  - 
-    name_template: ghcr.io/miguelangel-nubla/{{ .ProjectName }}:latest
-    image_templates:
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-i386
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-amd64
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv6
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv7
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-arm64v8
-  - 
-    name_template: ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}
-    image_templates:
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-i386
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-amd64
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv6
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv7
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-arm64v8
-  - 
-    name_template: ghcr.io/miguelangel-nubla/{{.ProjectName}}:v{{ .Major }}
-    image_templates:
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-i386
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-amd64
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv6
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv7
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-arm64v8
-  - 
-    name_template: ghcr.io/miguelangel-nubla/{{.ProjectName}}:v{{ .Major }}.{{ .Minor }}
-    image_templates:
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-i386
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-amd64
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv6
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-armv7
-    - ghcr.io/miguelangel-nubla/{{ .ProjectName }}:{{ .Tag }}-arm64v8
+    images:
+      - "ghcr.io/miguelangel-nubla/{{ .ProjectName }}"
+    tags:
+      - "{{ .Tag }}"
+      - "v{{ .Major }}"
+      - "v{{ .Major }}.{{ .Minor }}"
+      - latest
+    platforms:
+      - linux/386
+      - linux/amd64
+      - linux/arm/v6
+      - linux/arm/v7
+      - linux/arm64
+    dockerfile: Dockerfile.goreleaser
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.url: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+      org.opencontainers.image.source: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+      org.opencontainers.image.licenses: Apache-2.0
+    flags:
+      - "--pull"
 
 archives:
   - 
