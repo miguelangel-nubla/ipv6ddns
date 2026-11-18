@@ -18,6 +18,9 @@ type OpenWrt struct {
 	SSHKey   string            `json:"ssh_key"`
 	Zone     string            `json:"zone"`
 	TTL      duration.Duration `json:"ttl"`
+
+	// Connects to run the commands, for tests: nil is over SSH.
+	dial func() (commandRunner, error)
 }
 
 func init() {
@@ -69,15 +72,25 @@ const openwrtSettingsSchema = `
 	`
 
 func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	client, err := dialSSH(o.Address, o.Username, o.Password, o.SSHKey)
+	dial := o.dial
+	if dial == nil {
+		dial = func() (commandRunner, error) {
+			client, err := dialSSH(o.Address, o.Username, o.Password, o.SSHKey)
+			if err != nil {
+				return nil, err
+			}
+			return sshCommandRunner{client}, nil
+		}
+	}
+	runner, err := dial()
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer runner.Close()
 
 	// -X names the anonymous sections cfgXXXXXX rather than @domain[N], whose numbers shift when
 	// one is deleted.
-	output, err := runSSH(client, "uci -X show dhcp")
+	output, err := runner.Run("uci -X show dhcp")
 	if err != nil {
 		return err
 	}
@@ -122,7 +135,7 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	}
 
 	for _, id := range idsToDelete {
-		if _, err := runSSH(client, fmt.Sprintf("uci delete dhcp.%s", id)); err != nil {
+		if _, err := runner.Run(fmt.Sprintf("uci delete dhcp.%s", id)); err != nil {
 			return err
 		}
 	}
@@ -137,16 +150,16 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 			fmt.Sprintf("uci set dhcp.%s.name=%s", id, shellQuote(fqdn)),
 			fmt.Sprintf("uci set dhcp.%s.ip=%s", id, shellQuote(ip)),
 		} {
-			if _, err := runSSH(client, cmd); err != nil {
+			if _, err := runner.Run(cmd); err != nil {
 				return err
 			}
 		}
 	}
 
-	if _, err := runSSH(client, "uci commit dhcp"); err != nil {
+	if _, err := runner.Run("uci commit dhcp"); err != nil {
 		return err
 	}
-	if _, err := runSSH(client, "/etc/init.d/dnsmasq reload"); err != nil {
+	if _, err := runner.Run("/etc/init.d/dnsmasq reload"); err != nil {
 		return err
 	}
 

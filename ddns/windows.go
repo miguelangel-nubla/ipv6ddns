@@ -23,6 +23,9 @@ type WindowsDNS struct {
 	Password string            `json:"password"`
 	SSHKey   string            `json:"ssh_key"`
 	TTL      duration.Duration `json:"ttl"`
+
+	// Runs the PowerShell commands, for tests: nil is over SSH, or locally without an address.
+	newRunner func() (WindowsRunner, error)
 }
 
 func init() {
@@ -60,9 +63,12 @@ func (w *WindowsDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	var runner WindowsRunner
 	var err error
 
-	if w.Address != "" {
+	switch {
+	case w.newRunner != nil:
+		runner, err = w.newRunner()
+	case w.Address != "":
 		runner, err = NewSSHRunner(w.Address, w.Username, w.Password, w.SSHKey)
-	} else {
+	default:
 		runner = &LocalRunner{}
 	}
 	if err != nil {
