@@ -1,8 +1,10 @@
 package config
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDiscoveryFamilies(t *testing.T) {
@@ -46,6 +48,53 @@ func TestDiscoveryFamilies(t *testing.T) {
 	} {
 		if _, err := loadConfig(t, tt.discovery+"tasks: {}\n"+duckCredential); err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: got %v, want an error with %q", name, err, tt.want)
+		}
+	}
+}
+
+func TestSettingsAndInterfaces(t *testing.T) {
+	cfg, err := loadConfig(t, `
+lifetime: 30m
+log_level: debug
+webserver_listen: [8053, "[::1]:8054"]
+discovery:
+  interfaces: [eth0, "br-*"]
+  exclude_interfaces: "docker*,veth*"
+  ipv4:
+    lifetime: 3m
+tasks: {}
+`+duckCredential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Lifetime.Duration != 30*time.Minute || cfg.LogLevel != "debug" || !slices.Equal(cfg.WebserverListen, []string{"8053", "[::1]:8054"}) {
+		t.Errorf("settings: %s, %q, %v", cfg.Lifetime, cfg.LogLevel, cfg.WebserverListen)
+	}
+	d := cfg.Discovery
+	if !slices.Equal(d.Interfaces, []string{"eth0", "br-*"}) || !slices.Equal(d.ExcludeInterfaces, []string{"docker*", "veth*"}) {
+		t.Errorf("interfaces: %v, excluding %v", d.Interfaces, d.ExcludeInterfaces)
+	}
+	if d.IPv4.Lifetime.Duration != 3*time.Minute || !d.IPv4.Enabled || d.IPv6.Lifetime.Duration != 0 {
+		t.Errorf("family lifetimes: IPv4 %+v, IPv6 %+v", d.IPv4, d.IPv6)
+	}
+
+	defaults, err := loadConfig(t, "tasks: {}\n"+duckCredential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.Lifetime.Duration != DefaultLifetime || defaults.LogLevel != "" || defaults.WebserverListen != nil {
+		t.Errorf("defaults: %s, %q, %v", defaults.Lifetime, defaults.LogLevel, defaults.WebserverListen)
+	}
+
+	for name, bad := range map[string]string{
+		"a log level":         "log_level: loud\n",
+		"a lifetime":          "lifetime: soon\n",
+		"an interface":        "discovery:\n  exclude_interfaces: ['docker[']\n",
+		"a family lifetime":   "discovery:\n  ipv4: {lifetime: -3}\n",
+		"a webserver listing": "webserver_listen: {port: 80}\n",
+	} {
+		if _, err := loadConfig(t, bad+"tasks: {}\n"+duckCredential); err == nil {
+			t.Errorf("%s: want an error", name)
 		}
 	}
 }

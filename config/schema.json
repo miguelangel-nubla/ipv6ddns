@@ -201,6 +201,19 @@
                                 "solicit": {
                                     "type": "boolean",
                                     "description": "Asking the hosts the filters want: their EUI-64 address for IPv6, ARP to their MAC alone for IPv4. Default: false."
+                                },
+                                "lifetime": {
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
+                                        },
+                                        {
+                                            "type": "number",
+                                            "minimum": 0
+                                        }
+                                    ],
+                                    "description": "How long the family's addresses stay after they were last seen, the plugins' too. Default: the lifetime of the configuration."
                                 }
                             },
                             "additionalProperties": false
@@ -230,6 +243,19 @@
                                 "solicit": {
                                     "type": "boolean",
                                     "description": "Asking the hosts the filters want: their EUI-64 address for IPv6, ARP to their MAC alone for IPv4. Default: false."
+                                },
+                                "lifetime": {
+                                    "oneOf": [
+                                        {
+                                            "type": "string",
+                                            "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
+                                        },
+                                        {
+                                            "type": "number",
+                                            "minimum": 0
+                                        }
+                                    ],
+                                    "description": "How long the family's addresses stay after they were last seen, the plugins' too. Default: the lifetime of the configuration."
                                 }
                             },
                             "additionalProperties": false
@@ -368,6 +394,36 @@
                 "solicit_eui64": {
                     "type": "boolean",
                     "description": "Deprecated: discovery.ipv6.solicit."
+                },
+                "interfaces": {
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        }
+                    ],
+                    "description": "The interfaces the local discovery, of both families, runs on: names, or patterns as en*. Default: all."
+                },
+                "exclude_interfaces": {
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        }
+                    ],
+                    "description": "The interfaces the local discovery doesn't run on: names, or patterns as docker*, veth*."
                 }
             },
             "additionalProperties": false
@@ -438,6 +494,53 @@
                 ],
                 "additionalProperties": false
             }
+        },
+        "lifetime": {
+            "oneOf": [
+                {
+                    "type": "string",
+                    "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
+                },
+                {
+                    "type": "number",
+                    "minimum": 0
+                }
+            ],
+            "description": "How long a discovered address stays after it was last seen, unless its family says: a duration, or seconds. Default: 1h. The -lifetime flag, given, wins."
+        },
+        "log_level": {
+            "type": "string",
+            "enum": [
+                "debug",
+                "info",
+                "warn",
+                "error",
+                "dpanic",
+                "panic",
+                "fatal"
+            ],
+            "description": "Logging level. Default: info. The -log_level flag, given, wins."
+        },
+        "webserver_listen": {
+            "oneOf": [
+                {
+                    "type": [
+                        "string",
+                        "integer"
+                    ]
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "type": [
+                            "string",
+                            "integer"
+                        ],
+                        "minLength": 1
+                    }
+                }
+            ],
+            "description": "Serve the state to a browser, on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053. A list, or comma separated. The -webserver_listen flag, given, wins."
         }
     },
     "required": [

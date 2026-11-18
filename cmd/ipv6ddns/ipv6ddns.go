@@ -36,10 +36,10 @@ var webserverListen string
 func init() {
 	flag.BoolVar(&showVersion, "version", false, "Show the current version")
 	flag.StringVar(&configFile, "config_file", "config.yaml", "Path to the configuration file, default: config.yaml")
-	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic) default: info")
-	flag.DurationVar(&lifetime, "lifetime", 1*time.Hour, "Time to keep a discovered host entry after it has been last seen, default: 1h")
+	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic), in place of the configuration's log_level. Default: info")
+	flag.DurationVar(&lifetime, "lifetime", config.DefaultLifetime, "Time to keep a discovered host entry after it has been last seen, in place of the configuration's lifetime. Default: 1h")
 	flag.BoolVar(&live, "live", false, "Show the current state live on the terminal, default: false")
-	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 80), default: disabled")
+	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 80), in place of the configuration's webserver_listen. Default: disabled")
 }
 
 func main() {
@@ -50,11 +50,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	sugar := initializeLogger()
+	sugar, level := initializeLogger()
 
 	config, err := config.NewConfig(configFile)
 	if err != nil {
 		sugar.Fatalf("error reading config: %s", err)
+	}
+	if err := applyConfigSettings(config, given(), level); err != nil {
+		sugar.Fatalf("error in config: %s", err)
 	}
 
 	rediscover := lifetime / 3
@@ -176,7 +179,39 @@ func wrapPrettyPrint(worker *ipv6ddns.Worker, prefix string, hideSensible bool) 
 	return result.String()
 }
 
-func initializeLogger() *zap.SugaredLogger {
+// given returns the flags given on the command line, which win over the configuration.
+func given() map[string]bool {
+	flags := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) { flags[f.Name] = true })
+	return flags
+}
+
+// applyConfigSettings takes the settings of the configuration that are flags too, for the flags
+// not given: the lifetime, the logging level and the web server's addresses.
+func applyConfigSettings(cfg config.Config, given map[string]bool, level zap.AtomicLevel) error {
+	if !given["lifetime"] {
+		lifetime = cfg.Lifetime.Duration
+	}
+	if lifetime <= 0 {
+		return fmt.Errorf("invalid lifetime %s: it must be positive", lifetime)
+	}
+	if !given["webserver_listen"] && len(cfg.WebserverListen) > 0 {
+		webserverListen = strings.Join(cfg.WebserverListen, ",")
+	}
+	if !given["log_level"] && cfg.LogLevel != "" {
+		zapLevel, err := getLogLevel(cfg.LogLevel)
+		if err != nil {
+			return fmt.Errorf("invalid log_level %q", cfg.LogLevel)
+		}
+		logLevel = cfg.LogLevel
+		if !live {
+			level.SetLevel(zapLevel)
+		}
+	}
+	return nil
+}
+
+func initializeLogger() (*zap.SugaredLogger, zap.AtomicLevel) {
 	zapLevel, err := getLogLevel(logLevel)
 	if err != nil {
 		log.Fatalf("invalid log level: %s", logLevel)
@@ -186,13 +221,14 @@ func initializeLogger() *zap.SugaredLogger {
 		zapLevel = zapcore.FatalLevel
 	}
 
+	level := zap.NewAtomicLevelAt(zapLevel)
 	cfg := zap.NewProductionConfig()
-	cfg.Level = zap.NewAtomicLevelAt(zapLevel)
+	cfg.Level = level
 	cfg.OutputPaths = []string{"stdout"}
 	cfg.ErrorOutputPaths = []string{"stderr"}
 	cfg.EncoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
 
-	return zap.Must(cfg.Build()).Sugar()
+	return zap.Must(cfg.Build()).Sugar(), level
 }
 
 func getLogLevel(level string) (zapcore.Level, error) {

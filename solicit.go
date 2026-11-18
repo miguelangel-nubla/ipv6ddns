@@ -12,6 +12,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/filter"
+	"github.com/miguelangel-nubla/ipv6disc"
 )
 
 const solicitInterval = time.Minute
@@ -23,7 +24,7 @@ const solicitInterval = time.Minute
 func (w *Worker) solicitLoop(ctx context.Context) {
 	d := w.config.Discovery
 	solicitIPv6, solicitIPv4 := d.IPv6.Enabled && d.IPv6.Solicit, d.IPv4.Enabled && d.IPv4.Solicit
-	macs := ipv4SolicitTargets(w.config.Tasks)
+	ipv4Targets := ipv4SolicitTargets(w.config.Tasks)
 
 	ticker := time.NewTicker(solicitInterval)
 	defer ticker.Stop()
@@ -35,8 +36,8 @@ func (w *Worker) solicitLoop(ctx context.Context) {
 				}
 			}
 		}
-		if solicitIPv4 && len(macs) > 0 {
-			_, err := w.discWorker.SolicitIPv4(ctx, macs)
+		if solicitIPv4 && len(ipv4Targets) > 0 {
+			_, err := w.discWorker.SolicitIPv4(ctx, ipv4Targets)
 			switch {
 			case errors.Is(err, errors.ErrUnsupported):
 				w.logger.Warnf("no IPv4 solicitation: %s", err)
@@ -114,23 +115,43 @@ func eui64Address(prefix netip.Prefix, mac net.HardwareAddr) (netip.Addr, bool) 
 	return netip.AddrFrom16(addr), true
 }
 
-// ipv4SolicitTargets returns the MACs to ask for their IPv4 addresses: those a task's filter names
-// and takes IPv4 addresses of.
-func ipv4SolicitTargets(tasks map[string]config.Task) []net.HardwareAddr {
-	seen := make(map[string]bool)
-	var macs []net.HardwareAddr
+// ipv4SolicitTargets returns the hosts to ask for their IPv4 addresses: the MACs a task's filter
+// names and takes IPv4 addresses of, with the prefixes those filters want them in. A MAC that a
+// filter without an IPv4 prefix names is asked on every local subnet.
+func ipv4SolicitTargets(tasks map[string]config.Task) []ipv6disc.IPv4Target {
+	index := make(map[string]int)
+	anywhere := make(map[string]bool)
+	var targets []ipv6disc.IPv4Target
 	for _, name := range slices.Sorted(maps.Keys(tasks)) {
 		for _, f := range tasks[name].Filters {
 			if f.MAC.Address == "" || !slices.Contains(f.IP.Family, 4) {
 				continue
 			}
 			mac, err := net.ParseMAC(f.MAC.Address)
-			if err != nil || seen[mac.String()] {
+			prefix := f.IP.Prefix
+			// An IPv6 prefix takes no IPv4 address: nothing to ask.
+			if err != nil || prefix.IsValid() && !prefix.Addr().Is4() {
 				continue
 			}
-			seen[mac.String()] = true
-			macs = append(macs, mac)
+			key := mac.String()
+			i, ok := index[key]
+			if !ok {
+				i = len(targets)
+				index[key] = i
+				targets = append(targets, ipv6disc.IPv4Target{MAC: mac})
+			}
+			switch {
+			case !prefix.IsValid():
+				anywhere[key] = true
+			case !slices.Contains(targets[i].Prefixes, prefix.Masked()):
+				targets[i].Prefixes = append(targets[i].Prefixes, prefix.Masked())
+			}
 		}
 	}
-	return macs
+	for i := range targets {
+		if anywhere[targets[i].MAC.String()] {
+			targets[i].Prefixes = nil
+		}
+	}
+	return targets
 }

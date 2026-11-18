@@ -56,8 +56,9 @@ func New(name string, cfg config.Source, baseDir string) (*Source, error) {
 
 func (s *Source) Name() string { return s.name }
 
-// Start runs the source now and at every interval, until ctx is done; Wait waits for it.
-func (s *Source) Start(ctx context.Context, logger *zap.SugaredLogger) {
+// Start runs the source now and at every interval, until ctx is done; Wait waits for it. ran,
+// which can be nil, is called after each run.
+func (s *Source) Start(ctx context.Context, logger *zap.SugaredLogger, ran func()) {
 	s.running.Add(1)
 	go func() {
 		defer s.running.Done()
@@ -65,6 +66,9 @@ func (s *Source) Start(ctx context.Context, logger *zap.SugaredLogger) {
 		defer ticker.Stop()
 		for {
 			s.run(ctx, logger)
+			if ran != nil && ctx.Err() == nil {
+				ran()
+			}
 			select {
 			case <-ctx.Done():
 				return

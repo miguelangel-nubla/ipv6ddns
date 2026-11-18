@@ -1,3 +1,8 @@
+# Settings that are flags too: a flag given on the command line wins.
+lifetime: 1h                  # how long a discovered address stays after it was last seen
+log_level: info
+webserver_listen: [8053]      # the report, /status.json and /metrics; or "8053,[::1]:8054"
+
 # Addresses without a MAC, for the tasks that name them.
 sources:
   # The network's public IPv4, as DNS resolvers see it: the A record of a server behind NAT.
@@ -162,7 +167,10 @@ discovery:
   ipv4:
     listen: true      # the kernel's ARP table
     active: false     # a sweep of the subnets would broadcast an ARP request for each address
-    solicit: true     # ARP to the MACs IPv4 filters name, alone
+    solicit: true     # ARP to the MACs IPv4 filters name, alone, on the subnets of their ip.prefix
+    lifetime: 5m      # an address not seen for 5m goes: the top-level lifetime by default
+  # Not on the bridges of containers: their hosts aren't the network's.
+  exclude_interfaces: [docker*, br-*, veth*]
   plugins:
     mikrotik-lan:
       type: mikrotik

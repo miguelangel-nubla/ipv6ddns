@@ -16,8 +16,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// lookInterval is how often the worker matches the discovered addresses against the tasks.
-const lookInterval = time.Second
+// rematchInterval is how often the worker matches the addresses against the tasks with nothing
+// telling it to: for the addresses of sources that outlive their lifetime, which nothing tells.
+// The discovery's changes, and every run of a source, make it match at once.
+const rematchInterval = 10 * time.Second
 
 type Worker struct {
 	*State
@@ -27,6 +29,8 @@ type Worker struct {
 	targets    []*target
 	// The sources of addresses without a MAC, by name.
 	sources map[string]*source.Source
+	// A value tells the worker to match again; changes coming faster are matched once.
+	rematch chan struct{}
 	// The goroutines Start starts, for Shutdown.
 	running sync.WaitGroup
 }
@@ -44,12 +48,16 @@ func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime tim
 		discWorker: ipv6disc.NewWorker(logger, ipv6disc.Config{
 			Lifetime:   lifetime,
 			Rediscover: rediscover,
-			IPv6:       ipv6disc.Family{Enabled: cfg.Discovery.IPv6.Enabled, Listen: cfg.Discovery.IPv6.Listen, Active: cfg.Discovery.IPv6.Active},
-			IPv4:       ipv6disc.Family{Enabled: cfg.Discovery.IPv4.Enabled, Listen: cfg.Discovery.IPv4.Listen, Active: cfg.Discovery.IPv4.Active},
+			IPv6:       discoveryFamily(cfg.Discovery.IPv6),
+			IPv4:       discoveryFamily(cfg.Discovery.IPv4),
+
+			Interfaces:        cfg.Discovery.Interfaces,
+			ExcludeInterfaces: cfg.Discovery.ExcludeInterfaces,
 		}),
 		logger:  logger,
 		config:  cfg,
 		sources: make(map[string]*source.Source),
+		rematch: make(chan struct{}, 1),
 	}
 
 	for name, sourceConfig := range cfg.Sources {
@@ -144,25 +152,29 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.logger.Warn(warning)
 	}
 
+	changes, unsubscribe := w.discWorker.State.Subscribe()
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
-		w.sources[name].Start(ctx, w.logger)
+		w.sources[name].Start(ctx, w.logger, w.askRematch)
 	}
 
 	if err := w.discWorker.Start(ctx); err != nil {
+		unsubscribe()
 		return err
 	}
 
 	w.running.Add(1)
 	go func() {
 		defer w.running.Done()
-		ticker := time.NewTicker(lookInterval)
+		defer unsubscribe()
+		ticker := time.NewTicker(rematchInterval)
 		defer ticker.Stop()
 		for {
-			// @TODO: instead of proactively searching, be notified from ipv6disc.AddrCollection.Seen
 			w.lookForChanges()
 			select {
 			case <-ctx.Done():
 				return
+			case <-changes:
+			case <-w.rematch:
 			case <-ticker.C:
 			}
 		}
@@ -209,6 +221,19 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 
 func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {
 	w.discWorker.RegisterPlugin(p)
+}
+
+// askRematch tells the worker to match again, at once.
+func (w *Worker) askRematch() {
+	select {
+	case w.rematch <- struct{}{}:
+	default:
+	}
+}
+
+// discoveryFamily is the ipv6disc family of the configuration's.
+func discoveryFamily(f config.Family) ipv6disc.Family {
+	return ipv6disc.Family{Enabled: f.Enabled, Listen: f.Listen, Active: f.Active, Lifetime: f.Lifetime.Duration}
 }
 
 // lookForChanges gives each host name the addresses its tasks match now.

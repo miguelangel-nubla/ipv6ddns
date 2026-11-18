@@ -433,7 +433,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w.sources["wan"].Start(ctx, zap.NewNop().Sugar())
+	w.sources["wan"].Start(ctx, zap.NewNop().Sugar(), nil)
 	deadline := time.Now().Add(3 * time.Second)
 	for len(w.sources["wan"].Addresses().Get()) == 0 {
 		if time.Now().After(deadline) {

@@ -189,3 +189,34 @@ func FuzzParseListenList(f *testing.F) {
 		}
 	})
 }
+
+func TestApplyConfigSettings(t *testing.T) {
+	defer func(l time.Duration, w, lv string) { lifetime, webserverListen, logLevel = l, w, lv }(lifetime, webserverListen, logLevel)
+
+	cfg := config.Config{LogLevel: "debug", WebserverListen: config.StringList{"8053", "[::1]:8054"}}
+	cfg.Lifetime.Duration = 10 * time.Minute
+
+	// The configuration's, for the flags not given.
+	lifetime, webserverListen, logLevel = time.Hour, "", "info"
+	level := zap.NewAtomicLevelAt(zap.InfoLevel)
+	if err := applyConfigSettings(cfg, map[string]bool{}, level); err != nil {
+		t.Fatal(err)
+	}
+	if lifetime != 10*time.Minute || webserverListen != "8053,[::1]:8054" || level.Level() != zap.DebugLevel {
+		t.Errorf("from the configuration: %s, %q, %s", lifetime, webserverListen, level.Level())
+	}
+
+	// The flags given win.
+	lifetime, webserverListen, logLevel = 2*time.Hour, "9000", "warn"
+	level = zap.NewAtomicLevelAt(zap.WarnLevel)
+	if err := applyConfigSettings(cfg, map[string]bool{"lifetime": true, "webserver_listen": true, "log_level": true}, level); err != nil {
+		t.Fatal(err)
+	}
+	if lifetime != 2*time.Hour || webserverListen != "9000" || level.Level() != zap.WarnLevel {
+		t.Errorf("the flags: %s, %q, %s", lifetime, webserverListen, level.Level())
+	}
+
+	if err := applyConfigSettings(config.Config{LogLevel: "loud"}, map[string]bool{"lifetime": true}, level); err == nil {
+		t.Error("a bad log level: want an error")
+	}
+}

@@ -92,7 +92,7 @@ Addresses without a MAC, as the network's public IPv4, don't go through filters:
 Some addresses are never seen without asking: `solicit` under a family asks for those the filters want, once a minute.
 
 - **IPv6**: a host usually sends from its temporary addresses, so its stable one may never be seen, and routers don't list it. Every filter that names a `mac.address` and asks for the `eui64` type makes `ipv6ddns` work out that address on each /64 it is on, and ask for it with a neighbor solicitation.
-- **IPv4**: a quiet host may be in no ARP table. Every filter that names a `mac.address` with `ip.family` 4 makes `ipv6ddns` ask that MAC, by ARP requests sent to it alone, for each address of the local subnets: nothing is broadcast. It needs Linux and `CAP_NET_RAW`, which Docker grants by default.
+- **IPv4**: a quiet host may be in no ARP table. Every filter that names a `mac.address` with `ip.family` 4 makes `ipv6ddns` ask that MAC, by ARP requests sent to it alone, for each address of the local subnets within the filter's `ip.prefix`, or all of them without one: nothing is broadcast, and a subnet out of the prefix isn't asked. It needs Linux and `CAP_NET_RAW`, which Docker grants by default.
 
 An address that answers is discovered as usual; one that doesn't is never published.
 
