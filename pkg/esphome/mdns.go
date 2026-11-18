@@ -16,25 +16,25 @@ const mdnsService = "_esphomelib._tcp"
 // Advertise announces the device by mDNS on its port, at ips on ifaces, until ctx is done: Home
 // Assistant offers to add it. It announces itself when it starts, as RFC 6762 has a new service do,
 // for Home Assistant, which queries ever less often, to see it at once; and again when Home
-// Assistant gives its key, as the announcement says whether it needs one.
+// Assistant gives its key, as the announcement says whether it needs one. It registers the service
+// again for that: the library's SetText changes the records its goroutines read without a lock.
 func (d *Device) Advertise(ctx context.Context, port int, ips []net.IP, ifaces []net.Interface) error {
 	addrs := make([]string, len(ips))
 	for i, ip := range ips {
 		addrs[i] = ip.String()
 	}
-	changed := d.keyChange()
-	server, err := zeroconf.RegisterProxy(d.Name, mdnsService, "local.", port, d.Name, addrs, d.txt(), ifaces)
-	if err != nil {
-		return fmt.Errorf("mDNS: %w", err)
-	}
-	defer server.Shutdown()
 	for {
+		changed := d.keyChange()
+		server, err := zeroconf.RegisterProxy(d.Name, mdnsService, "local.", port, d.Name, addrs, d.txt(), ifaces)
+		if err != nil {
+			return fmt.Errorf("mDNS: %w", err)
+		}
 		select {
 		case <-ctx.Done():
+			server.Shutdown()
 			return nil
 		case <-changed:
-			changed = d.keyChange()
-			server.SetText(d.txt())
+			server.Shutdown()
 		}
 	}
 }
