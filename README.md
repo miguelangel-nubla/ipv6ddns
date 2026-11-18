@@ -167,7 +167,6 @@ tasks:
       example-cloudflare:
         # This will update test-webapp.example.com
         - test-webapp
-    lifetime: 1h
     # Optional: Update IPv4 (A) records using an external command
     ipv4:
       interval: 3m
@@ -180,7 +179,7 @@ tasks:
 
 credentials:
   # Name you will use to refer to this endpoint on the tasks
-  example-project:
+  example-cloudflare:
     # One of the supported providers
     provider: cloudflare
     # Provider specific configuration
@@ -202,7 +201,7 @@ discovery:
   plugins:
     mikrotik-router:
       type: mikrotik
-      params: mikrotik:90s,192.168.88.1:8729,admin,password,true,
+      params: 90s,192.168.88.1:8729,admin,password,true
 
 # For more info on available plugins and their configuration refer to the ipv6disc project
 # https://github.com/miguelangel-nubla/ipv6disc#plugins
