@@ -64,6 +64,12 @@ discovery:
   exclude_interfaces: [hassio, docker0, "veth*"]
 ```
 
+Home Assistant, and the add-ons on the host's network, have the host's
+addresses. The other add-ons have addresses of their own, but on a network
+inside the host, `hassio`, which nothing outside reaches: they are reached at
+the host's addresses, on the ports they publish. So the names of all of them
+are endpoints of this one task: `[ha, mqtt, nodered]`.
+
 For
 a local DNS, its LAN address: `self: true` with `ip: {family: [4], type:
 [private]}`, and `discovery: {ipv4: true}`. The other filters and options:
