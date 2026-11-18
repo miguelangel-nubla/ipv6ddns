@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -26,6 +27,19 @@ type Route53 struct {
 	// The name of the hosted zone, known after the first update.
 	zone      string
 	zoneMutex sync.Mutex
+
+	// The API's address, for tests: empty is AWS's.
+	endpoint string
+}
+
+// route53Name compares as the names Route53 returns: in lower case, with a wildcard escaped as
+// \052, and ending in a dot.
+func route53Name(name string) string {
+	name = strings.ToLower(strings.ReplaceAll(name, `\052`, "*"))
+	if !strings.HasSuffix(name, ".") {
+		name += "."
+	}
+	return name
 }
 
 func init() {
@@ -50,7 +64,11 @@ func (r *Route53) client(ctx context.Context) (*route53.Client, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to load SDK config: %w", err)
 	}
-	client := route53.NewFromConfig(cfg)
+	client := route53.NewFromConfig(cfg, func(o *route53.Options) {
+		if r.endpoint != "" {
+			o.BaseEndpoint = aws.String(r.endpoint)
+		}
+	})
 
 	r.zoneMutex.Lock()
 	defer r.zoneMutex.Unlock()
@@ -116,84 +134,66 @@ func (r *Route53) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		dnsName += "."
 	}
 
-	// Separate desired IPs by type
-	desiredA := []string{}
-	desiredAAAA := []string{}
-	for _, addr := range addrCollection.Get() {
-		ip := addr.WithZone("").String()
-		if addr.Addr.Is4() {
-			desiredA = append(desiredA, ip)
-		} else {
-			desiredAAAA = append(desiredAAAA, ip)
-		}
-	}
+	ttl := int64(r.TTL.Seconds())
 
-	changes := []types.Change{}
-
-	// Helper to create ResourceRecord list
-	toRR := func(ips []string) []types.ResourceRecord {
-		rrs := []types.ResourceRecord{}
-		for _, ip := range ips {
-			rrs = append(rrs, types.ResourceRecord{Value: aws.String(ip)})
-		}
-		return rrs
-	}
-
-	// Process A records
-	if len(desiredA) > 0 {
-		changes = append(changes, types.Change{
-			Action: types.ChangeActionUpsert,
-			ResourceRecordSet: &types.ResourceRecordSet{
-				Name:            aws.String(dnsName),
-				Type:            types.RRTypeA,
-				TTL:             aws.Int64(int64(r.TTL.Seconds())),
-				ResourceRecords: toRR(desiredA),
-			},
-		})
-	}
-
-	// Process AAAA records
-	if len(desiredAAAA) > 0 {
-		changes = append(changes, types.Change{
-			Action: types.ChangeActionUpsert,
-			ResourceRecordSet: &types.ResourceRecordSet{
-				Name:            aws.String(dnsName),
-				Type:            types.RRTypeAaaa,
-				TTL:             aws.Int64(int64(r.TTL.Seconds())),
-				ResourceRecords: toRR(desiredAAAA),
-			},
-		})
-	}
-
-	// To handle deletion of records that are no longer needed, we need to list existing records for this name.
-	listInput := &route53.ListResourceRecordSetsInput{
+	// The record sets of the name, by type.
+	output, err := client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
 		HostedZoneId:    aws.String(r.HostedZoneID),
 		StartRecordName: aws.String(dnsName),
 		MaxItems:        aws.Int32(10),
-	}
-
-	output, err := client.ListResourceRecordSets(ctx, listInput)
+	})
 	if err != nil {
-		return fmt.Errorf("failed to list record sets: %v", err)
+		return fmt.Errorf("failed to list record sets: %w", err)
+	}
+	current := make(map[types.RRType]types.ResourceRecordSet)
+	for _, rs := range output.ResourceRecordSets {
+		if route53Name(aws.ToString(rs.Name)) == route53Name(dnsName) && (rs.Type == types.RRTypeA || rs.Type == types.RRTypeAaaa) {
+			current[rs.Type] = rs
+		}
 	}
 
-	for _, rs := range output.ResourceRecordSets {
-		if aws.ToString(rs.Name) != dnsName {
+	desired := map[types.RRType][]string{}
+	for ip, recordType := range desiredRecords(addrCollection) {
+		desired[types.RRType(recordType)] = append(desired[types.RRType(recordType)], ip)
+	}
+
+	var changes []types.Change
+	for _, rrType := range []types.RRType{types.RRTypeA, types.RRTypeAaaa} {
+		ips := desired[rrType]
+		slices.Sort(ips)
+		existing, exists := current[rrType]
+
+		if len(ips) == 0 {
+			if exists {
+				changes = append(changes, types.Change{Action: types.ChangeActionDelete, ResourceRecordSet: &existing})
+			}
 			continue
 		}
 
-		if rs.Type == types.RRTypeA && len(desiredA) == 0 {
-			changes = append(changes, types.Change{
-				Action:            types.ChangeActionDelete,
-				ResourceRecordSet: &rs,
-			})
+		var existingIPs []string
+		for _, rr := range existing.ResourceRecords {
+			if ip, ok := canonicalIP(aws.ToString(rr.Value)); ok {
+				existingIPs = append(existingIPs, ip)
+			}
 		}
-		if rs.Type == types.RRTypeAaaa && len(desiredAAAA) == 0 {
-			changes = append(changes, types.Change{
-				Action:            types.ChangeActionDelete,
-				ResourceRecordSet: &rs,
-			})
+		slices.Sort(existingIPs)
+		if exists && slices.Equal(ips, existingIPs) && aws.ToInt64(existing.TTL) == ttl {
+			continue
 		}
+
+		var records []types.ResourceRecord
+		for _, ip := range ips {
+			records = append(records, types.ResourceRecord{Value: aws.String(ip)})
+		}
+		changes = append(changes, types.Change{
+			Action: types.ChangeActionUpsert,
+			ResourceRecordSet: &types.ResourceRecordSet{
+				Name:            aws.String(dnsName),
+				Type:            rrType,
+				TTL:             aws.Int64(ttl),
+				ResourceRecords: records,
+			},
+		})
 	}
 
 	if len(changes) == 0 {
@@ -209,7 +209,7 @@ func (r *Route53) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 
 	_, err = client.ChangeResourceRecordSets(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to change record sets: %v", err)
+		return fmt.Errorf("failed to change record sets: %w", err)
 	}
 
 	return nil

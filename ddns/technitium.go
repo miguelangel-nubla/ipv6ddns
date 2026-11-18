@@ -133,7 +133,7 @@ func (t *Technitium) getRecords(client *http.Client, domain string) (map[string]
 
 	resp, err := client.Get(u.String())
 	if err != nil {
-		return nil, err
+		return nil, withoutURL(err)
 	}
 	defer resp.Body.Close()
 
@@ -181,7 +181,7 @@ func (t *Technitium) addRecord(client *http.Client, domain, recordType, ip strin
 
 	resp, err := client.Get(u.String())
 	if err != nil {
-		return err
+		return withoutURL(err)
 	}
 	defer resp.Body.Close()
 
@@ -214,7 +214,7 @@ func (t *Technitium) deleteRecord(client *http.Client, domain, recordType, ip st
 
 	resp, err := client.Get(u.String())
 	if err != nil {
-		return err
+		return withoutURL(err)
 	}
 	defer resp.Body.Close()
 
