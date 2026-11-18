@@ -96,8 +96,8 @@ github.com/mattn/go-runewidth v0.0.19 h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byF
 github.com/mattn/go-runewidth v0.0.19/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
 github.com/mdlayher/ndp v1.1.0 h1:QylGKGVtH60sKZUE88+IW5ila1Z/M9/OXhWdsVKuscs=
 github.com/mdlayher/ndp v1.1.0/go.mod h1:FmgESgemgjl38vuOIyAHWUUL6vQKA/pQNkvXdWsdQFM=
-github.com/miguelangel-nubla/ipv6disc v0.15.0 h1:jO7BFHxJn/6+by/Qm5YEFHTnHScfioEW2YPJtfqDCE0=
-github.com/miguelangel-nubla/ipv6disc v0.15.0/go.mod h1:CnBAox4Ij3lUiYUpy6aWXnRvlhTeU8WluLHuO5/XS9w=
+github.com/miguelangel-nubla/ipv6disc v0.16.0 h1:qJ71EaZySdSH6ZdABoSm3UdbsB7n2mKoNco7Yl3pXmA=
+github.com/miguelangel-nubla/ipv6disc v0.16.0/go.mod h1:CnBAox4Ij3lUiYUpy6aWXnRvlhTeU8WluLHuO5/XS9w=
 github.com/nsf/termbox-go v1.1.2 h1:7BOmx3jpW/N2YWQF6mF26j54eV7eUmNn5wzuddsJzWg=
 github.com/nsf/termbox-go v1.1.2/go.mod h1:QzxBrv7y4i994ggoegReFLc3XFoDMD3uSlJyMqDgz1I=
 github.com/nxadm/tail v1.4.4/go.mod h1:kenIhsEOeOJmVchQTgglprH7qJGnHDVpk1VPCcaMI8A=

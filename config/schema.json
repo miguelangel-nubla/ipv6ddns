@@ -411,32 +411,26 @@
                     "description": "Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead."
                 },
                 "interval": {
-                    "$ref": "#/$defs/durationString",
-                    "description": "How often the plugin reads the table."
+                    "$ref": "#/$defs/durationString"
                 },
                 "address": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "The host, and its port if not the default: 192.168.1.1, [2001:db8::1]:2222."
+                    "minLength": 1
                 },
                 "username": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "The login."
+                    "minLength": 1
                 },
                 "password": {
-                    "type": "string",
-                    "description": "The login's password. Or an identity_file, or both."
+                    "type": "string"
                 },
                 "identity_file": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "The SSH private key file."
+                    "minLength": 1
                 },
                 "host_key": {
                     "type": "string",
-                    "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
-                    "description": "The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Without it, any key is accepted."
+                    "pattern": "^SHA256:[A-Za-z0-9+/]{43}$"
                 }
             },
             "additionalProperties": false,
@@ -466,31 +460,25 @@
                     "description": "Deprecated, and goes in v1.0: the params in one string, as for ipv6disc. Give the fields instead."
                 },
                 "interval": {
-                    "$ref": "#/$defs/durationString",
-                    "description": "How often the plugin reads the table."
+                    "$ref": "#/$defs/durationString"
                 },
                 "address": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "The host, and its port if not the default: 192.168.1.1, [2001:db8::1]:2222."
+                    "minLength": 1
                 },
                 "username": {
                     "type": "string",
-                    "minLength": 1,
-                    "description": "The login."
+                    "minLength": 1
                 },
                 "password": {
-                    "type": "string",
-                    "description": "The login's password."
+                    "type": "string"
                 },
                 "use_tls": {
-                    "type": "boolean",
-                    "description": "The API over TLS, port 8729 by default rather than 8728."
+                    "type": "boolean"
                 },
                 "tls_fingerprint": {
                     "type": "string",
-                    "pattern": "^[0-9A-Fa-f]{2}(:?[0-9A-Fa-f]{2}){31}$",
-                    "description": "The SHA-256 fingerprint of the router's certificate, in hex."
+                    "pattern": "^[0-9A-Fa-f]{2}(:?[0-9A-Fa-f]{2}){31}$"
                 }
             },
             "additionalProperties": false,

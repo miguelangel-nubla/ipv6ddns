@@ -243,7 +243,9 @@ func TestSchemaDescribesEverything(t *testing.T) {
 		if props, ok := o["properties"].(map[string]any); ok {
 			for name, prop := range props {
 				p, _ := prop.(map[string]any)
-				if _, ok := p["description"]; !ok {
+				// A plugin's params are described where they are defined: in ipv6disc.
+				pluginParam := strings.HasSuffix(path, "Plugin") && name != "type" && name != "params"
+				if _, ok := p["description"]; !ok && !pluginParam {
 					t.Errorf("%s.%s: no description", path, name)
 				}
 				walk(prop, path+"."+name)
