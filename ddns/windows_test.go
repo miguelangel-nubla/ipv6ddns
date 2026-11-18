@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf16"
+
+	"github.com/miguelangel-nubla/ipv6ddns/internal/sshtest"
 )
 
 // fakePowerShell runs the DNS server commands the provider sends against fake.
@@ -140,4 +142,20 @@ func TestPreparePowerShellCommand(t *testing.T) {
 
 func secondsDuration(s int64) time.Duration {
 	return time.Duration(s) * time.Second
+}
+
+func TestWindowsOverSSH(t *testing.T) {
+	server := sshtest.Start(t, "admin", "secret", func(command string) ([]byte, error) {
+		if !strings.HasPrefix(command, "powershell -NoProfile -NonInteractive -EncodedCommand ") {
+			return nil, errors.New("not powershell")
+		}
+		return []byte("[]"), nil
+	})
+	service := &WindowsDNS{Zone: "example.com", Address: server.Address, Username: "admin", Password: "secret", HostKey: server.HostKey}
+	if err := service.Update("nas", collectionWith()); err != nil {
+		t.Fatal(err)
+	}
+	if got := server.Commands(); len(got) != 1 {
+		t.Errorf("got %d commands, want the one listing the records", len(got))
+	}
 }

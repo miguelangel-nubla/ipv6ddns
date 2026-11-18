@@ -16,11 +16,18 @@ type OpenWrt struct {
 	Username string            `json:"username"`
 	Password string            `json:"password"`
 	SSHKey   string            `json:"ssh_key"`
+	HostKey  string            `json:"host_key"`
 	Zone     string            `json:"zone"`
 	TTL      duration.Duration `json:"ttl"`
 
 	// Connects to run the commands, for tests: nil is over SSH.
 	dial func() (commandRunner, error)
+
+	unverified unverifiedHostKeys
+}
+
+func (o *OpenWrt) Warnings() []string {
+	return o.unverified.Warnings()
 }
 
 func init() {
@@ -54,6 +61,10 @@ const openwrtSettingsSchema = `
 			"ssh_key": {
 				"type": "string"
 			},
+			"host_key": {
+				"type": "string",
+				"pattern": "` + hostKeyPattern + `"
+			},
 			"zone": {
 				"type": "string"
 			},
@@ -75,9 +86,12 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	dial := o.dial
 	if dial == nil {
 		dial = func() (commandRunner, error) {
-			client, err := dialSSH(o.Address, o.Username, o.Password, o.SSHKey)
+			client, hostKey, err := dialSSH(sshTarget{o.Address, o.Username, o.Password, o.SSHKey, o.HostKey})
 			if err != nil {
 				return nil, err
+			}
+			if o.HostKey == "" {
+				o.unverified.note(o.Address, hostKey)
 			}
 			return sshCommandRunner{client}, nil
 		}

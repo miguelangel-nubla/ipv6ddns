@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -128,18 +129,34 @@ func withDefaultPort(address, port string) string {
 	return net.JoinHostPort(strings.TrimSuffix(strings.TrimPrefix(address, "["), "]"), port)
 }
 
-// dialSSH connects to address, port 22 unless it says, with the private key in keyPath and the
-// password, whichever are given.
-func dialSSH(address, username, password, keyPath string) (*ssh.Client, error) {
+// sshTarget is a host to run commands on over SSH.
+type sshTarget struct {
+	Address  string
+	Username string
+	Password string
+	// The path of the private key to log in with.
+	KeyPath string
+	// The fingerprint of the host's key, SHA256:... as ssh-keygen -l shows it. Empty accepts any.
+	HostKey string
+}
+
+// hostKeyPattern is the JSON schema pattern of a host key fingerprint.
+const hostKeyPattern = `^(SHA256:[A-Za-z0-9+/]{43})?$`
+
+// dialSSH connects to the target, port 22 unless it says, with the private key and the password,
+// whichever are given. It returns the fingerprint of the key the host showed, which must be the
+// target's when it has one.
+func dialSSH(target sshTarget) (*ssh.Client, string, error) {
+	address, username, password, keyPath := target.Address, target.Username, target.Password, target.KeyPath
 	var auth []ssh.AuthMethod
 	if keyPath != "" {
 		key, err := os.ReadFile(keyPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read private key: %w", err)
+			return nil, "", fmt.Errorf("unable to read private key: %w", err)
 		}
 		signer, err := ssh.ParsePrivateKey(key)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse private key: %w", err)
+			return nil, "", fmt.Errorf("unable to parse private key: %w", err)
 		}
 		auth = append(auth, ssh.PublicKeys(signer))
 	}
@@ -147,21 +164,58 @@ func dialSSH(address, username, password, keyPath string) (*ssh.Client, error) {
 		auth = append(auth, ssh.Password(password))
 	}
 	if len(auth) == 0 {
-		return nil, errors.New("no SSH authentication method: set a password or a key")
+		return nil, "", errors.New("no SSH authentication method: set a password or a key")
 	}
 
+	var hostKey string
 	config := &ssh.ClientConfig{
-		User:            username,
-		Auth:            auth,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		User: username,
+		Auth: auth,
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			hostKey = ssh.FingerprintSHA256(key)
+			if target.HostKey != "" && hostKey != target.HostKey {
+				return fmt.Errorf("host key mismatch: the host shows %s, expected %s", hostKey, target.HostKey)
+			}
+			return nil
+		},
+		Timeout: 10 * time.Second,
 	}
 
 	client, err := ssh.Dial("tcp", withDefaultPort(address, "22"), config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial %s: %w", address, err)
+		return nil, hostKey, fmt.Errorf("failed to dial %s: %w", address, err)
 	}
-	return client, nil
+	return client, hostKey, nil
+}
+
+// unverifiedHostKeys keeps the warnings about the hosts a provider connected to without checking
+// their key, for Warnings, once each.
+type unverifiedHostKeys struct {
+	mutex   sync.Mutex
+	warned  map[string]bool
+	pending []string
+}
+
+// note records that the key of address was not checked, unless it was already.
+func (u *unverifiedHostKeys) note(address, hostKey string) {
+	u.mutex.Lock()
+	defer u.mutex.Unlock()
+	if u.warned == nil {
+		u.warned = make(map[string]bool)
+	}
+	if !u.warned[address] {
+		u.warned[address] = true
+		u.pending = append(u.pending, fmt.Sprintf("the SSH host key of %s is not verified, so anyone between can impersonate it: set host_key to its fingerprint, %s", address, hostKey))
+	}
+}
+
+// Warnings returns the warnings not returned yet.
+func (u *unverifiedHostKeys) Warnings() []string {
+	u.mutex.Lock()
+	defer u.mutex.Unlock()
+	pending := u.pending
+	u.pending = nil
+	return pending
 }
 
 // commandRunner runs shell commands on a host.

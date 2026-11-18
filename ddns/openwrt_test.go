@@ -5,7 +5,10 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/miguelangel-nubla/ipv6ddns/internal/sshtest"
 )
 
 type uciSection struct {
@@ -117,5 +120,46 @@ func TestOpenWrtUpdate(t *testing.T) {
 	}
 	if uci.changes != changes || uci.commits != 1 || uci.reloads != 1 {
 		t.Errorf("the second update changed the config")
+	}
+}
+
+// OpenWrt over a real SSH connection: the host key pinned, refused, or reported once.
+func TestOpenWrtOverSSH(t *testing.T) {
+	uci := &fakeUCI{t: t, sections: map[string]*uciSection{}}
+	var mutex sync.Mutex
+	server := sshtest.Start(t, "root", "secret", func(command string) ([]byte, error) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return uci.Run(command)
+	})
+
+	service := &OpenWrt{Address: server.Address, Username: "root", Password: "secret", Zone: "lan"}
+	for range 2 {
+		if err := service.Update("nas", desired()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := uci.domainIPs("nas.lan"); len(got) != 3 {
+		t.Errorf("got %v, want the three addresses", got)
+	}
+	if warnings := service.Warnings(); len(warnings) != 1 || !strings.Contains(warnings[0], server.HostKey) {
+		t.Errorf("unpinned: got warnings %v, want one with %s", warnings, server.HostKey)
+	}
+	if warnings := service.Warnings(); len(warnings) != 0 {
+		t.Errorf("warned again: %v", warnings)
+	}
+
+	pinned := &OpenWrt{Address: server.Address, Username: "root", Password: "secret", Zone: "lan", HostKey: server.HostKey}
+	if err := pinned.Update("nas", desired()); err != nil || len(pinned.Warnings()) != 0 {
+		t.Errorf("pinned: %v, %v", err, pinned.Warnings())
+	}
+
+	commands := len(server.Commands())
+	other := &OpenWrt{Address: server.Address, Username: "root", Password: "secret", Zone: "lan", HostKey: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+	if err := other.Update("nas", desired()); err == nil || !strings.Contains(err.Error(), "host key mismatch") {
+		t.Errorf("pinned to another key: got %v", err)
+	}
+	if len(server.Commands()) != commands {
+		t.Error("a command reached a host with another key")
 	}
 }
