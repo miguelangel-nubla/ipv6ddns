@@ -60,7 +60,7 @@ func TestHomeAssistantIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := w.homeAssistant.serve(ctx, t.Logf); err != nil {
+	if err := w.homeAssistant.serve(ctx, nil, nil, t.Logf); err != nil {
 		t.Fatal(err)
 	}
 	go w.homeAssistant.follow(ctx, func() Status { return w.Status(false) })
@@ -165,5 +165,49 @@ func TestHomeAssistantState(t *testing.T) {
 	defer os.Chmod(dir, 0o700)
 	if _, err := newHomeAssistant(config.HomeAssistant{StateFile: "other.state"}, dir); err == nil && os.Geteuid() != 0 {
 		t.Error("an unwritable state file: no error")
+	}
+}
+
+func TestAnnouncedIPs(t *testing.T) {
+	all, err := announcedIPs(nil, nil)
+	if err != nil || len(all) == 0 {
+		t.Skipf("no interface with an address here: %v", err)
+	}
+	for _, ip := range all {
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			t.Errorf("announced %s", ip)
+		}
+	}
+	if _, err := announcedIPs(nil, []string{"*"}); err == nil {
+		t.Error("every interface left out: want an error")
+	}
+	if _, err := announcedIPs([]string{"no-such-interface"}, nil); err == nil {
+		t.Error("only an interface that isn't: want an error")
+	}
+}
+
+// The device's announcement starts at the machine's addresses: without them, it failed at once,
+// unable to resolve its own name. Short, and without a query: a test needn't announce a device on
+// the network it runs in.
+func TestDeviceAnnounces(t *testing.T) {
+	ips, err := announcedIPs(nil, nil)
+	if err != nil {
+		t.Skip(err)
+	}
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-announce-test", FriendlyName: "test", Port: 16099, StateFile: "s"}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- h.device.Advertise(ctx, 16099, ips) }()
+	select {
+	case err := <-done:
+		t.Fatalf("the announcement ended at once: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Error(err)
 	}
 }
