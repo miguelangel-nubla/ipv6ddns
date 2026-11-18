@@ -233,7 +233,7 @@ func CheckSource(addr *ipv6disc.Addr, filters []string) bool {
 	// For every filter, we must find a matching source.
 	for _, f := range filters {
 		found := false
-		for _, source := range addr.Sources {
+		for _, source := range addr.Sources() {
 			if source == f {
 				found = true
 				break
