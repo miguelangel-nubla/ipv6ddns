@@ -1,0 +1,98 @@
+name: fuzz
+
+# Every fuzz test, for a while each, every night: the pull requests only run their seeds. The
+# corpus each one builds is kept from a night to the next. A failing input is uploaded, to add to
+# the package's testdata as a regression test.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: How long to fuzz each target
+        default: 5m
+
+permissions:
+  contents: read
+
+jobs:
+  targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: Generate
+        run: go generate ./...
+      -
+        name: List the fuzz tests
+        id: list
+        run: |
+          matrix=$(go test -list '^Fuzz' ./... | awk '
+            /^Fuzz/ { names[++n] = $1; next }
+            /^ok/ {
+              for (i = 1; i <= n; i++) {
+                id = $2 "_" names[i]; gsub(/[^A-Za-z0-9_]/, "_", id)
+                printf "{\"package\":\"%s\",\"target\":\"%s\",\"id\":\"%s\"}\n", $2, names[i], id
+              }
+              n = 0
+            }' | jq -sc '{include: .}')
+          echo "$matrix" | jq .
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    needs: targets
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    name: ${{ matrix.target }} (${{ matrix.package }})
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: Generate
+        run: go generate ./...
+      -
+        name: Find the corpus
+        id: corpus
+        run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
+      -
+        name: Restore the corpus
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-${{ matrix.id }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ matrix.id }}-
+      -
+        name: Fuzz
+        run: go test "${{ matrix.package }}" -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime "${{ inputs.fuzztime || '5m' }}"
+      -
+        name: Collect the failing input
+        if: failure()
+        run: |
+          mkdir -p failing
+          git ls-files --others --exclude-standard -- '*testdata/fuzz/*' | xargs -r cp --parents -t failing
+      -
+        name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.id }}
+          path: failing
