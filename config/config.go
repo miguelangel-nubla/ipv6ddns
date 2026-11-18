@@ -347,6 +347,10 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 
+	if config.Lifetime.Duration <= 0 {
+		return config, fmt.Errorf("lifetime: %s, it must be more than zero", config.Lifetime)
+	}
+
 	var pluginWarnings []string
 	for _, name := range slices.Sorted(maps.Keys(config.Discovery.Plugins)) {
 		plugin := config.Discovery.Plugins[name]

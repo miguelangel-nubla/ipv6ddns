@@ -76,7 +76,7 @@ func eui64Targets(tasks map[string]config.Task, prefixes []netip.Prefix) []netip
 			}
 			for _, prefix := range prefixes {
 				target, ok := eui64Address(prefix, mac)
-				if !ok || seen[target] || !wantedScope(target, types) || !filter.CheckPrefix(target, f.IP.Prefix) {
+				if !ok || seen[target] || !wanted(f, mac, target) {
 					continue
 				}
 				seen[target] = true
@@ -87,17 +87,12 @@ func eui64Targets(tasks map[string]config.Task, prefixes []netip.Prefix) []netip
 	return targets
 }
 
-// wantedScope tells whether the types ask for this kind of address; asking for neither global nor
-// ula means both.
-func wantedScope(addr netip.Addr, types []string) bool {
-	global, ula := slices.Contains(types, "global"), slices.Contains(types, "ula")
-	if !global && !ula {
-		return true
-	}
-	if netip.MustParsePrefix("fc00::/7").Contains(addr) {
-		return ula
-	}
-	return global
+// wanted tells whether the filter takes the address, of the MAC: its IP rules, by the filter's own
+// checks.
+func wanted(f config.Filters, mac net.HardwareAddr, target netip.Addr) bool {
+	addr := ipv6disc.NewAddr(mac, target, "", time.Minute, nil)
+	return filter.CheckIPType(addr, f.IP.Type) && filter.CheckPrefix(target, f.IP.Prefix) &&
+		filter.CheckSuffix(target, f.IP.Suffix) && filter.CheckMask(target, f.IP.Mask)
 }
 
 // eui64Address builds the address a MAC gets on a /64 (RFC 4291, appendix A).
