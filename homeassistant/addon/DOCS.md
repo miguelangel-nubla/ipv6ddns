@@ -79,8 +79,9 @@ a local DNS, its LAN address: `self: true` with `ip: {family: [4], type:
 
 The starting configuration makes ipv6ddns a device of Home Assistant's ESPHome
 integration: Home Assistant finds it under *Settings → Devices & services →
-Discovered*. Add it, with the encryption key the add-on logged the first time,
-which `homeassistant.key` in its folder keeps. It shows each name's addresses,
+Discovered*. Add it: Home Assistant makes its encryption key and gives it, as to
+ESPHome's devices, and the add-on keeps it in `homeassistant.state` in its
+folder. It shows each name's addresses,
 last update and update problems, and the hosts discovered, with a button to
 update now; and `homeassistant` sources read your entities, as a router's WAN
 address. See the

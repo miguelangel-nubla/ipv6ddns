@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -108,6 +110,9 @@ func TestHomeAssistantConnects(t *testing.T) {
 			}
 		}
 	}
+	if got := events["refused_new_key"]; len(got) != 1 || got[0]["refused_new_key"] != true {
+		t.Errorf("a key given to a device with a fixed one: %v", got)
+	}
 	if got := events["capabilities"]; len(got) != 1 {
 		t.Errorf("device capabilities: %v", got)
 	}
@@ -129,5 +134,75 @@ func TestHomeAssistantConnects(t *testing.T) {
 	}
 	if initial["addresses"] != "2001:db8::1" || initial["hosts"] != 3.0 {
 		t.Errorf("the first states: %v", initial)
+	}
+}
+
+// Home Assistant gives the key to a device without one, as to ESPHome's: the device keeps it, and
+// takes it at once; then only the key gets in.
+func TestHomeAssistantGivesTheKey(t *testing.T) {
+	py := python(t)
+	mac, _ := net.ParseMAC("02:00:5e:10:00:02")
+	var kept []byte
+	d := &Device{Name: "ipv6ddns-test", FriendlyName: "test", MAC: mac, OnKey: func(key []byte) error {
+		kept = key
+		return nil
+	}}
+	d.AddSensor(Entity{ID: "hosts", Name: "Hosts"})
+	var pressed, stated atomic.Bool
+	d.AddButton(Entity{ID: "update", Name: "Update"}, func() { pressed.Store(true) })
+	d.SubscribeHomeAssistant("sensor.wan_ip", "", func(string) { stated.Store(true) })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan error, 1)
+	go func() { served <- d.Serve(ctx, ln) }()
+	defer func() {
+		cancel()
+		<-served
+	}()
+
+	newKey := GenerateKey()
+	out, err := exec.Command(py, "testdata/provision.py", strconv.Itoa(ln.Addr().(*net.TCPAddr).Port), newKey).Output()
+	if err != nil {
+		t.Fatalf("the client: %v\n%s", err, out)
+	}
+	events := map[string]any{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		var e map[string]any
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatalf("%s: %v", line, err)
+		}
+		for k, v := range e {
+			events[k] = v
+		}
+	}
+	check := func(name string, want map[string]any) {
+		got, _ := events[name].(map[string]any)
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("%s: %s %v, want %v (%v)", name, k, got[k], v, got)
+			}
+		}
+	}
+	check("before", map[string]any{"ok": true, "provisionable": true, "mac": "02:00:5E:10:00:02"})
+	// Before the key, a client is anyone: it gets no subscription, and its states and button
+	// presses are dropped.
+	if untrusted, _ := events["untrusted"].(map[string]any); len(untrusted["asked"].([]any)) != 0 {
+		t.Errorf("a client without the key was asked states: %v", untrusted)
+	}
+	if pressed.Load() || stated.Load() {
+		t.Errorf("a client without the key: button pressed %v, state taken %v", pressed.Load(), stated.Load())
+	}
+	if events["set"] != true {
+		t.Errorf("giving the key: %v", events["set"])
+	}
+	check("with_key", map[string]any{"ok": true, "mac": "02:00:5E:10:00:02"})
+	check("without_key", map[string]any{"ok": false, "error": "RequiresEncryptionAPIError"})
+	check("with_zero", map[string]any{"ok": false, "error": "InvalidEncryptionKeyAPIError"})
+	if want, _ := ParseKey(newKey); string(kept) != string(want) || !d.HasKey() {
+		t.Errorf("the key kept: %x, the device has one: %v", kept, d.HasKey())
 	}
 }

@@ -7,20 +7,22 @@ With a `homeassistant` block, ipv6ddns is a device of Home Assistant's ESPHome i
 
 ## Setting it up
 
-1. Make a key, and give it to the configuration: the add-on makes one the first time, in `homeassistant.key` beside its `config.yaml`, and logs it once.
+```yaml
+homeassistant: {}
+```
 
-   ```
-   openssl rand -base64 32 > homeassistant.key
-   ```
+Home Assistant finds the device by mDNS, `ipv6ddns`, under *Settings → Devices & services → Discovered*. Add it: as to ESPHome's devices, Home Assistant makes an encryption key and gives it to ipv6ddns, which keeps it, and only takes connections with it from then on. Where mDNS doesn't reach, as across VLANs, or with `announce: false`, add the ESPHome integration by hand with ipv6ddns' address and port 6053.
 
-   ```yaml
-   homeassistant:
-     key: ${file:homeassistant.key}
-   ```
+The keys of the block are in the [reference](reference/configuration.md#top-level).
 
-2. Home Assistant finds the device by mDNS, `ipv6ddns`, under *Settings → Devices & services → Discovered*. Add it, and give it the key. Where mDNS doesn't reach, as across VLANs, or with `announce: false`, add the ESPHome integration by hand with ipv6ddns' address and port 6053.
+### The key
 
-The keys of the block, its name and port among them, are in the [reference](reference/configuration.md#top-level).
+| | |
+|---|---|
+| **Given by Home Assistant** (no `key`) | Kept in `state_file`, `homeassistant.state` beside the configuration by default, which ipv6ddns must be able to write. Only a client with the key can change it, as Home Assistant does when the device is deleted. Delete the file, and the device is a new one, without a key |
+| **Your own**, `key: ${file:homeassistant.key}` | Fixed: Home Assistant asks it when adding the device, and can't change it. For a configuration on a read-only file system. Make one with `openssl rand -base64 32` |
+
+Until it has its key, the device takes connections without one, for Home Assistant to give it: those see its entities, but their button presses, and the states they send, are dropped, so nobody can give a `homeassistant` source an address. If someone else gives it a key first, Home Assistant asks for the key when adding it: delete the state file, and add it again.
 
 ## The entities
 
@@ -62,4 +64,4 @@ The state is one address or more, separated by commas or spaces. A change runs t
 
 ## How it works
 
-ipv6ddns speaks the ESPHome native API, as ESPHome 2026.11 does: the connection is encrypted with the key, Noise_NNpsk0_25519_ChaChaPoly_SHA256, and the device announces itself as `_esphomelib._tcp`. Its MAC, by which Home Assistant knows it, comes from the key: keep the key, and Home Assistant keeps the device. CI connects to it with `aioesphomeapi`, the library Home Assistant's integration uses, at the version Home Assistant has.
+ipv6ddns speaks the ESPHome native API, as ESPHome 2026.11 does: the connection is encrypted with the key, Noise_NNpsk0_25519_ChaChaPoly_SHA256, and the device announces itself as `_esphomelib._tcp`. Its MAC, by which Home Assistant knows it, comes from the identity in the state file, or from a fixed key: keep them, and Home Assistant keeps the device. CI connects to it with `aioesphomeapi`, the library Home Assistant's integration uses, at the version Home Assistant has.

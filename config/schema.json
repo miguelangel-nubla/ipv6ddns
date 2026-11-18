@@ -356,15 +356,12 @@
         "homeassistant": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-                "key"
-            ],
             "description": "Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md.",
             "properties": {
                 "key": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9+/]{43}=$",
-                    "description": "The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device. Make one with openssl rand -base64 32."
+                    "description": "The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change. Without it, Home Assistant makes the key and gives it, as to ESPHome's devices: it is kept in state_file."
                 },
                 "name": {
                     "type": "string",
@@ -385,6 +382,11 @@
                 "announce": {
                     "type": "boolean",
                     "description": "Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true."
+                },
+                "state_file": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Without a key: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. Deleting it makes the device a new one, without a key."
                 }
             }
         }

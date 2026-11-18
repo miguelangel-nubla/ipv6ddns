@@ -59,6 +59,9 @@ async def main(port, key):
         )
     )
 
+    # Its key is the configuration's: Home Assistant can't change it.
+    out(refused_new_key=not await client.noise_encryption_set_key(b"q9b/BwP6Z3bLDXmeLY+bPQPDUcKV9FXLRJlTnmoLmLM="))
+
     keys = {}
     for e in entities:
         keys[e.object_id] = e.key

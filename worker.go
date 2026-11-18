@@ -71,7 +71,7 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 	// Home Assistant's states for its sources; nil, not a nil *homeAssistant, without it.
 	var states source.HomeAssistantStates
 	if cfg.HomeAssistant != nil {
-		h, err := newHomeAssistant(*cfg.HomeAssistant)
+		h, err := newHomeAssistant(*cfg.HomeAssistant, cfg.BaseDir)
 		if err != nil {
 			return nil, err
 		}

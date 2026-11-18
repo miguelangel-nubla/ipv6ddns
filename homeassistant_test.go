@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -120,5 +121,49 @@ func TestHomeAssistantIntegration(t *testing.T) {
 	}
 	if !done {
 		t.Error("the addresses entity never showed the state Home Assistant sent")
+	}
+}
+
+// Without a key, the device keeps its identity, and the key Home Assistant gives, in its state file:
+// the same device, with its key, after a restart.
+func TestHomeAssistantState(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "ipv6ddns", Port: 6053, StateFile: "homeassistant.state"}
+	h, err := newHomeAssistant(cfg, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.device.HasKey() || h.device.OnKey == nil {
+		t.Fatal("a new device: no key, and takes one")
+	}
+	info, err := os.Stat(filepath.Join(dir, "homeassistant.state"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("the state file: %v, %v", info, err)
+	}
+	key, _ := esphome.ParseKey(esphome.GenerateKey())
+	if err := h.device.OnKey(key); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := newHomeAssistant(cfg, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.device.MAC.String() != h.device.MAC.String() || string(again.device.Key) != string(key) {
+		t.Errorf("after a restart: MAC %s, was %s; key kept %v", again.device.MAC, h.device.MAC, string(again.device.Key) == string(key))
+	}
+	// Forgotten, as when Home Assistant deletes the device.
+	if err := again.device.OnKey(nil); err != nil {
+		t.Fatal(err)
+	}
+	if third, _ := newHomeAssistant(cfg, dir); third.device.HasKey() || third.device.MAC.String() != h.device.MAC.String() {
+		t.Error("forgotten key: still kept, or another device")
+	}
+
+	// A state file it can't write is an error at the start.
+	os.Chmod(dir, 0o500)
+	defer os.Chmod(dir, 0o700)
+	if _, err := newHomeAssistant(config.HomeAssistant{StateFile: "other.state"}, dir); err == nil && os.Geteuid() != 0 {
+		t.Error("an unwritable state file: no error")
 	}
 }

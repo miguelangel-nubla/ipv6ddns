@@ -13,8 +13,12 @@ import (
 // finds it by mDNS, and shows each name's addresses and update problems, and the hosts discovered,
 // with a button to update now; and it sends ipv6ddns the states that homeassistant sources ask.
 type HomeAssistant struct {
-	// The encryption key, the base64 of 32 bytes, which the user gives Home Assistant.
-	Key string `json:"key"`
+	// The encryption key, the base64 of 32 bytes, which the user gives Home Assistant. Without
+	// it, Home Assistant makes one and gives it, as to ESPHome's devices: it is kept in StateFile.
+	Key string `json:"key,omitempty"`
+	// Without a key, where the device keeps its identity, and the key Home Assistant gave: a file
+	// ipv6ddns can write. Default: homeassistant.state, beside the configuration.
+	StateFile string `json:"state_file,omitempty"`
 	// The device's name in the network, and the one Home Assistant shows. Defaults: ipv6ddns.
 	Name         string `json:"name,omitempty"`
 	FriendlyName string `json:"friendly_name,omitempty"`
@@ -41,8 +45,15 @@ func (c *Config) setUpHomeAssistant() error {
 		return nil
 	}
 	h := c.HomeAssistant
-	if _, err := esphome.ParseKey(h.Key); err != nil {
-		return fmt.Errorf("homeassistant.key: %w", err)
+	if h.Key != "" {
+		if _, err := esphome.ParseKey(h.Key); err != nil {
+			return fmt.Errorf("homeassistant.key: %w", err)
+		}
+		if h.StateFile != "" {
+			return fmt.Errorf("homeassistant: a key, or a state_file for the key Home Assistant gives, not both")
+		}
+	} else if h.StateFile == "" {
+		h.StateFile = "homeassistant.state"
 	}
 	if h.Name == "" {
 		h.Name = "ipv6ddns"
