@@ -12,6 +12,9 @@ import (
 
 type DuckDNS struct {
 	APIToken string `json:"api_token"`
+
+	// The update address, for tests: empty is DuckDNS's.
+	updateURL string
 }
 
 func init() {
@@ -59,6 +62,9 @@ func (d *DuckDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	}
 
 	baseURL := "https://www.duckdns.org/update"
+	if d.updateURL != "" {
+		baseURL = d.updateURL
+	}
 	params := url.Values{}
 	params.Add("token", d.APIToken)
 	params.Add("domains", hostname)
@@ -68,7 +74,7 @@ func (d *DuckDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	updateURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
 	resp, err := newHTTPClient(nil).Get(updateURL)
 	if err != nil {
-		return fmt.Errorf("failed to update record: %v", err)
+		return fmt.Errorf("failed to update record: %w", withoutURL(err))
 	}
 	defer resp.Body.Close()
 

@@ -100,6 +100,16 @@ func urlHost(address string) string {
 	return u.Hostname()
 }
 
+// withoutURL drops the URL from an HTTP client error: the providers that take their token in the
+// query would have it in their errors, and the logs.
+func withoutURL(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("%s request: %w", urlErr.Op, urlErr.Err)
+	}
+	return err
+}
+
 const httpTimeout = 30 * time.Second
 
 func newHTTPClient(tlsConfig *tls.Config) *http.Client {
@@ -152,6 +162,24 @@ func dialSSH(address, username, password, keyPath string) (*ssh.Client, error) {
 		return nil, fmt.Errorf("failed to dial %s: %w", address, err)
 	}
 	return client, nil
+}
+
+// commandRunner runs shell commands on a host.
+type commandRunner interface {
+	Run(command string) ([]byte, error)
+	Close() error
+}
+
+type sshCommandRunner struct {
+	client *ssh.Client
+}
+
+func (r sshCommandRunner) Run(command string) ([]byte, error) {
+	return runSSH(r.client, command)
+}
+
+func (r sshCommandRunner) Close() error {
+	return r.client.Close()
 }
 
 // runSSH runs command in a new session on client, and returns its output.
