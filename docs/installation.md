@@ -3,7 +3,7 @@
 ## Getting it
 
 - **A release**: download the binary for your system from the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest).
-- **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:v0` follows the latest v0 release, `:v0.18` its patches, `:v0.18.0` stays on one.
+- **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:latest` and `:v0` follow the latest release, `:v0.18` its patches, `:v0.18.0` stays on one.
 - **From source**, with [Go](https://go.dev/doc/install): `go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns@latest`.
 - **On a Mikrotik router**, as a container: see [Mikrotik](mikrotik.md#running-as-a-container-on-routeros).
 

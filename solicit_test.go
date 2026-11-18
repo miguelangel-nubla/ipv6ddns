@@ -50,6 +50,11 @@ func TestEUI64Targets(t *testing.T) {
 		{"no MAC", task("", "", "global", "eui64"), nil},
 		{"bad MAC", task("nope", "", "global", "eui64"), nil},
 		{"IPv4 only", ipv4Only(task(mac, "", "eui64")), nil},
+		// The filter's own rules: private is the ULA, link_local none of these, and its suffix.
+		{"private", task(mac, "", "private", "eui64"), []string{ula}},
+		{"link_local", task(mac, "", "link_local", "eui64"), nil},
+		{"a suffix of another host", withSuffix(task(mac, "", "eui64"), "::1"), nil},
+		{"its suffix", withSuffix(task(mac, "", "eui64"), "fe71:4568"), []string{global, ula}},
 	}
 	for _, tt := range tests {
 		var got []string
@@ -107,5 +112,10 @@ func TestIPv4SolicitTargets(t *testing.T) {
 
 func ipv4Only(t config.Task) config.Task {
 	t.Filters[0].IP.Family = []int{4}
+	return t
+}
+
+func withSuffix(t config.Task, suffix string) config.Task {
+	t.Filters[0].IP.Suffix = suffix
 	return t
 }
