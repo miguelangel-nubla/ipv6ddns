@@ -136,12 +136,22 @@ discovery:
   plugins:
     mikrotik-lan:
       type: mikrotik
-      # interval,address,username,password[,use_tls[,tls_fingerprint]]
-      params: 90s,192.168.88.1:8729,admin,password,true
+      interval: 90s
+      address: 192.168.88.1:8729
+      username: admin
+      # From the environment variable: see Secrets in the README.
+      password: ${ROUTER_PASSWORD}
+      use_tls: true
+      # tls_fingerprint: <optional, the SHA-256 of the router's certificate>
     pfsense-box:
       type: freebsd
-      # interval,address,username,password[,identity_file]
-      params: 90s,pfsense.local,admin,,/path/to/id_rsa
+      interval: 90s
+      address: pfsense.local
+      username: admin
+      identity_file: /path/to/id_rsa
+      # Recommended: the fingerprint of the host's SSH key. To get it: ssh-keyscan HOST | ssh-keygen -lf -
+      # host_key: SHA256:...
     linux-server:
       type: linux
+      # Or all in one string: interval,address,username,password[,identity_file[,host_key]]
       params: 90s,[2001:db8::1]:2222,user,,/path/to/id_rsa

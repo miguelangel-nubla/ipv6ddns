@@ -1,5 +1,8 @@
 # Network wide IPv6 DDNS Updater
 
+[![ci](https://github.com/miguelangel-nubla/ipv6ddns/actions/workflows/ci.yaml/badge.svg)](https://github.com/miguelangel-nubla/ipv6ddns/actions/workflows/ci.yaml)
+[![release](https://img.shields.io/github/v/release/miguelangel-nubla/ipv6ddns)](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest)
+
 This utility discovers IPv6 addresses on your local network and updates DNS records dynamically. [Here is a detailed explanation.](#what-does-this-do)
 
 > [!TIP]
@@ -54,15 +57,32 @@ Download and run the [latest release](https://github.com/miguelangel-nubla/ipv6d
 
 ### Or Use the Docker Image
 
-This may or may not work on your system—IPv6 in Docker can be tricky.
-Please do not attempt this unless you're prepared for extensive debugging and possibly making code changes.
-
-I was able to get it working using **host networking** and **without** setting `"ipv6": true` in `/etc/docker/daemon.json`.
-
-If you have experience with Docker and IPv6 and can help improve this, please reach out—it's been a while since I last looked into it.
+The image, `ghcr.io/miguelangel-nubla/ipv6ddns`, is built for linux/386, amd64, arm/v6, arm/v7 and arm64.
 
 ```bash
-docker run -it --rm --network host -v ./config.yaml:/config.yaml gcr.io/miguelangel-nubla/ipv6ddns -live
+docker run -it --rm --network host -v ./config.yaml:/config.yaml ghcr.io/miguelangel-nubla/ipv6ddns -live
+```
+
+Discovering hosts on the local network needs, in the container:
+
+- **The host's network**, `--network host`: in a network of its own the container sees none of the hosts. Leave `"ipv6": true` out of `/etc/docker/daemon.json`, which is about the networks Docker makes, not the host's.
+- **Raw sockets**, the `NET_RAW` capability, which Docker grants by default but other runtimes, or a Kubernetes `securityContext`, can drop. Without it, discovery logs `operation not permitted`, and only the [plugins](#discovery-plugins), which read the neighbor table of a router, find hosts.
+
+With Docker Compose, the secrets out of the config file and a health check:
+
+```yaml
+services:
+  ipv6ddns:
+    image: ghcr.io/miguelangel-nubla/ipv6ddns:v0
+    network_mode: host
+    restart: unless-stopped
+    command: ["-config_file", "/config.yaml", "-webserver_listen", "127.0.0.1:8053"]
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+    environment:
+      CLOUDFLARE_TOKEN: ${CLOUDFLARE_TOKEN}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8053/healthz"]
 ```
 
 ### Or install from source
@@ -211,11 +231,45 @@ discovery:
   plugins:
     mikrotik-router:
       type: mikrotik
-      params: 90s,192.168.88.1:8729,admin,password,true
+      interval: 90s
+      address: 192.168.88.1:8729
+      username: admin
+      password: ${ROUTER_PASSWORD}
+      use_tls: true
 
 # For more info on available plugins and their configuration refer to the ipv6disc project
 # https://github.com/miguelangel-nubla/ipv6disc#plugins
 ```
+
+### Discovery plugins
+
+A plugin reads the neighbor table of a router or a host, as ipv6disc does: `linux` over SSH, `freebsd` (pfSense, OPNsense) over SSH, or `mikrotik` over its API. Its settings are fields:
+
+| Field | Plugins | |
+|---|---|---|
+| `interval` | all | How often to read the table, as `60s` |
+| `address` | all | The host, with a port unless the default |
+| `username`, `password` | all | The login |
+| `identity_file` | linux, freebsd | The SSH private key, instead of the password or besides it |
+| `host_key` | linux, freebsd | The host's SSH key fingerprint, `SHA256:...`, to verify it. Without it, any key is accepted, and the log warns with the fingerprint seen |
+| `use_tls`, `tls_fingerprint` | mikrotik | The API over TLS, and the SHA-256 fingerprint of the router's certificate |
+
+Or `params`, ipv6disc's string of them all, `interval,address,username,password,...`, where a comma in a value is written `\,`.
+
+### Secrets
+
+Any value of the configuration takes `${NAME}`, the environment variable `NAME`, and `${file:PATH}`, the content of a file without its final newline, as Docker and Kubernetes give secrets; a relative path is from the configuration file. `$${` is a literal `${`. A value from `${...}` within `params` isn't escaped: give a password with commas in the `password` field.
+
+```yaml
+credentials:
+  example-cloudflare:
+    provider: cloudflare
+    settings:
+      api_token: ${CLOUDFLARE_TOKEN}
+      # or: api_token: ${file:/run/secrets/cloudflare_token}
+```
+
+An unknown setting, as a typo, is an error at start.
 
 
 ---
