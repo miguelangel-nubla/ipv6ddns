@@ -34,6 +34,8 @@ const (
 	msgHomeAssistantStateResponse          = 40
 	msgListEntitiesButtonResponse          = 61
 	msgButtonCommandRequest                = 62
+	msgDeviceCapabilitiesRequest           = 149
+	msgDeviceCapabilitiesResponse          = 150
 )
 
 // The API version a device of ESPHome 2026.11 says it speaks, and that release.

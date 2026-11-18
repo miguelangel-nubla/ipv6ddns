@@ -108,6 +108,9 @@ func TestHomeAssistantConnects(t *testing.T) {
 			}
 		}
 	}
+	if got := events["capabilities"]; len(got) != 1 {
+		t.Errorf("device capabilities: %v", got)
+	}
 	if got := events["entity"]; len(got) != 5 {
 		t.Errorf("entities: %v", got)
 	}

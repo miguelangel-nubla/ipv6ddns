@@ -19,9 +19,10 @@ def out(**event):
 async def main(port, key):
     client = APIClient("127.0.0.1", port, None, noise_psk=key)
     await client.connect(login=True)
-    info = await client.device_info()
+    # As Home Assistant's ESPHome manager does.
+    info, entities, _ = await client.device_info_and_list_entities()
+    await client.device_capabilities_compat(info)
     out(info=dict(name=info.name, project_name=info.project_name))
-    entities, _ = await client.list_entities_services()
     names = {}
     for e in entities:
         names[e.key] = e.object_id
@@ -34,8 +35,11 @@ async def main(port, key):
         if names.get(state.key) == "dns_web_addresses" and "203.0.113.50" in str(state.state):
             done.set()
 
-    client.subscribe_states(on_state)
-    client.subscribe_home_assistant_states(lambda entity_id, attribute: client.send_home_assistant_state(entity_id, attribute, "203.0.113.50"))
+    client.subscribe_home_assistant_states_and_services(
+        on_state,
+        lambda call: None,
+        lambda entity_id, attribute: client.send_home_assistant_state(entity_id, attribute, "203.0.113.50"),
+    )
     try:
         await asyncio.wait_for(done.wait(), 15)
         out(done=True)
