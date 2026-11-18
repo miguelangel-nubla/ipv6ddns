@@ -4,40 +4,35 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/netip"
-	"os"
 	"strings"
-	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
-	"github.com/xeipuuv/gojsonschema"
-	"golang.org/x/crypto/ssh"
 )
 
 type OpenWrt struct {
-	Address  string        `json:"address"`
-	Username string        `json:"username"`
-	Password string        `json:"password"`
-	SSHKey   string        `json:"ssh_key"`
-	Zone     string        `json:"zone"`
-	TTL      time.Duration `json:"ttl"`
+	Address  string            `json:"address"`
+	Username string            `json:"username"`
+	Password string            `json:"password"`
+	SSHKey   string            `json:"ssh_key"`
+	Zone     string            `json:"zone"`
+	TTL      duration.Duration `json:"ttl"`
 }
 
 func init() {
 	RegisterProvider("openwrt", NewOpenWrt)
 }
 
-func NewOpenWrt(settings ProviderSettings) Service {
+func NewOpenWrt(settings json.RawMessage) (Service, error) {
 	var service OpenWrt
-	openwrtValidateConfig(settings.(json.RawMessage))
-	json.Unmarshal(settings.(json.RawMessage), &service)
-	return &service
+	if err := decodeSettings(settings, openwrtSettingsSchema, &service); err != nil {
+		return nil, err
+	}
+	return &service, nil
 }
 
-func openwrtValidateConfig(config json.RawMessage) {
-	var configSchema = []byte(`
+const openwrtSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -71,164 +66,50 @@ func openwrtValidateConfig(config json.RawMessage) {
 			"ttl"
 		]
 	}
-	`)
-
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader([]byte(config))
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	if !result.Valid() {
-		fmt.Printf("OpenWrt configuration is not valid.\nErrors:\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
-		os.Exit(1)
-	}
-}
+	`
 
 func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	// 1. Establish SSH connection
-	config := &ssh.ClientConfig{
-		User:            o.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Use with caution; maybe add strict checking later if requested
-		Timeout:         10 * time.Second,
-	}
-
-	if o.SSHKey != "" {
-		key, err := os.ReadFile(o.SSHKey)
-		if err != nil {
-			return fmt.Errorf("unable to read private key: %v", err)
-		}
-		signer, err := ssh.ParsePrivateKey(key)
-		if err != nil {
-			return fmt.Errorf("unable to parse private key: %v", err)
-		}
-		config.Auth = []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		}
-	} else if o.Password != "" {
-		config.Auth = []ssh.AuthMethod{
-			ssh.Password(o.Password),
-		}
-	} else {
-		return fmt.Errorf("no authentication method provided for OpenWrt")
-	}
-
-	// Default port 22 if not specified
-	address := o.Address
-	if !strings.Contains(address, ":") {
-		address = address + ":22"
-	}
-
-	client, err := ssh.Dial("tcp", address, config)
+	client, err := dialSSH(o.Address, o.Username, o.Password, o.SSHKey)
 	if err != nil {
-		return fmt.Errorf("failed to dial: %v", err)
+		return err
 	}
 	defer client.Close()
 
-	session, err := client.NewSession()
+	// -X names the anonymous sections cfgXXXXXX rather than @domain[N], whose numbers shift when
+	// one is deleted.
+	output, err := runSSH(client, "uci -X show dhcp")
 	if err != nil {
-		return fmt.Errorf("failed to create session: %v", err)
+		return err
 	}
-	defer session.Close()
-
-	// 2. Fetch current configuration
-	output, err := session.CombinedOutput("uci show dhcp")
-	if err != nil {
-		return fmt.Errorf("failed to run uci show dhcp: %v", err)
-	}
-	uciOutput := string(output)
-
-	// 3. Parse existing records
-	type uciRecord struct {
-		id   string
-		name string
-		ip   string
-	}
-
-	// Map of ID -> Record
-	records := make(map[string]*uciRecord)
 
 	fqdn := FQDN(hostname, o.Zone)
 
-	lines := strings.Split(uciOutput, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// Format: dhcp.@domain[0].option='value'
-		// or dhcp.cfg123456.option='value'
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := parts[0]
-		value := strings.Trim(parts[1], "'")
-
-		// Check if it belongs to a domain section
-		if strings.HasPrefix(key, "dhcp.@domain[") || strings.Contains(key, ".name") || strings.Contains(key, ".ip") {
-			// Extract ID.
-			// dhcp.@domain[0]=domain  (ignore)
-			// dhcp.@domain[0].name
-			// dhcp.cfg123456.name
-
-			pathParts := strings.Split(key, ".")
-			if len(pathParts) < 2 {
-				continue
-			}
-			// pathParts[0] is 'dhcp'
-			// pathParts[1] is ID (e.g. @domain[0] or cfg...)
-			id := pathParts[1]
-
-			if _, ok := records[id]; !ok {
-				records[id] = &uciRecord{id: id}
-			}
-
-			if len(pathParts) == 3 {
-				// dhcp.ID.field
-				field := pathParts[2]
-				switch field {
-				case "name":
-					records[id].name = value
-				case "ip":
-					records[id].ip = value
-				}
-			}
-		}
-	}
-
-	// Filter records that match our hostname
-	existingIPs := make(map[string]string) // IP -> ID
+	// The address of each of the name's domain sections.
+	existingIPs := make(map[string]string) // IP -> section
 	var idsToDelete []string
-
-	for id, rec := range records {
-		if rec.name == fqdn && rec.ip != "" {
-			if _, err := netip.ParseAddr(rec.ip); err == nil {
-				existingIPs[rec.ip] = id
-			}
+	for id, record := range uciDomains(string(output)) {
+		if record.name != fqdn {
+			continue
 		}
+		ip, ok := canonicalIP(record.ip)
+		if !ok {
+			continue
+		}
+		if _, duplicate := existingIPs[ip]; duplicate {
+			idsToDelete = append(idsToDelete, id)
+			continue
+		}
+		existingIPs[ip] = id
 	}
 
-	desiredIPs := make(map[string]bool)
-	for _, addr := range addrCollection.Get() {
-		ip := addr.WithZone("").String()
-		desiredIPs[ip] = true
-	}
+	desiredIPs := desiredRecords(addrCollection)
 
-	// 4. Calculate diff
-	// IPs to delete
 	for ip, id := range existingIPs {
-		if !desiredIPs[ip] {
+		if _, ok := desiredIPs[ip]; !ok {
 			idsToDelete = append(idsToDelete, id)
 		}
 	}
 
-	// IPs to add
 	var ipsToAdd []string
 	for ip := range desiredIPs {
 		if _, exists := existingIPs[ip]; !exists {
@@ -237,100 +118,91 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	}
 
 	if len(idsToDelete) == 0 && len(ipsToAdd) == 0 {
-		return nil // No changes needed
-	}
-
-	// 5. Apply changes
-	// We execute commands sequentially to ensure reliability and capture proper IDs from uci add.
-	// Helper to run a command and return output
-	runCmd := func(cmd string) (string, error) {
-		session, err := client.NewSession()
-		if err != nil {
-			return "", fmt.Errorf("failed to create session: %v", err)
-		}
-		defer session.Close()
-
-		output, err := session.CombinedOutput(cmd)
-		if err != nil {
-			return string(output), fmt.Errorf("command %s failed: %v, output: %s", cmd, err, string(output))
-		}
-		return string(output), nil
+		return nil
 	}
 
 	for _, id := range idsToDelete {
-		if _, err := runCmd(fmt.Sprintf("uci delete dhcp.%s", id)); err != nil {
+		if _, err := runSSH(client, fmt.Sprintf("uci delete dhcp.%s", id)); err != nil {
 			return err
 		}
 	}
 
 	for _, ip := range ipsToAdd {
-		// Create deterministic ID
+		// A named section, the same for the same name and address.
 		hash := sha256.Sum256([]byte(fqdn + ip))
 		id := "ipv6ddns_" + hex.EncodeToString(hash[:])[:8]
 
-		// Add new section (named)
-		if _, err := runCmd(fmt.Sprintf("uci set dhcp.%s=domain", id)); err != nil {
-			return err
-		}
-		if _, err := runCmd(fmt.Sprintf("uci set dhcp.%s.name='%s'", id, fqdn)); err != nil {
-			return err
-		}
-		if _, err := runCmd(fmt.Sprintf("uci set dhcp.%s.ip='%s'", id, ip)); err != nil {
-			return err
+		for _, cmd := range []string{
+			fmt.Sprintf("uci set dhcp.%s=domain", id),
+			fmt.Sprintf("uci set dhcp.%s.name=%s", id, shellQuote(fqdn)),
+			fmt.Sprintf("uci set dhcp.%s.ip=%s", id, shellQuote(ip)),
+		} {
+			if _, err := runSSH(client, cmd); err != nil {
+				return err
+			}
 		}
 	}
 
-	if _, err := runCmd("uci commit dhcp"); err != nil {
+	if _, err := runSSH(client, "uci commit dhcp"); err != nil {
 		return err
 	}
-	if _, err := runCmd("/etc/init.d/dnsmasq reload"); err != nil {
+	if _, err := runSSH(client, "/etc/init.d/dnsmasq reload"); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (o *OpenWrt) PrettyPrint(prefix string) ([]byte, error) {
-	return json.MarshalIndent(o, prefix, "    ")
+type uciDomain struct {
+	name string
+	ip   string
 }
 
-func (o *OpenWrt) UnmarshalJSON(b []byte) error {
-	type Alias OpenWrt
-	aux := &struct {
-		TTL interface{} `json:"ttl"`
-		*Alias
-	}{
-		Alias: (*Alias)(o),
-	}
-	if err := json.Unmarshal(b, &aux); err != nil {
-		return err
-	}
-
-	switch value := aux.TTL.(type) {
-	case float64:
-		o.TTL = time.Duration(value) * time.Second
-		return nil
-	case string:
-		var err error
-		o.TTL, err = time.ParseDuration(value)
-		if err != nil {
-			return err
+// uciDomains reads the domain sections, the DNS records of dnsmasq, out of `uci -X show dhcp`, by
+// section ID. Its lines are:
+//
+//	dhcp.cfg0af37d=domain
+//	dhcp.cfg0af37d.name='host.lan'
+//	dhcp.cfg0af37d.ip='192.168.1.10'
+//
+// The other sections, such as the static leases of hosts, have names and addresses too.
+func uciDomains(output string) map[string]uciDomain {
+	types := make(map[string]string)
+	options := make(map[string]map[string]string)
+	for _, line := range strings.Split(output, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
 		}
-		return nil
-	default:
-		return errors.New("ttl invalid duration")
+		value = strings.Trim(value, "'")
+		path := strings.Split(key, ".")
+		if len(path) < 2 || path[0] != "dhcp" {
+			continue
+		}
+		id := path[1]
+		switch len(path) {
+		case 2:
+			types[id] = value
+		case 3:
+			if options[id] == nil {
+				options[id] = make(map[string]string)
+			}
+			options[id][path[2]] = value
+		}
 	}
+
+	domains := make(map[string]uciDomain)
+	for id, sectionType := range types {
+		if sectionType == "domain" {
+			domains[id] = uciDomain{name: options[id]["name"], ip: options[id]["ip"]}
+		}
+	}
+	return domains
 }
 
-func (o *OpenWrt) MarshalJSON() ([]byte, error) {
-	type Alias OpenWrt
-	return json.Marshal(&struct {
-		TTL int64 `json:"ttl"`
-		*Alias
-	}{
-		TTL:   int64(o.TTL.Seconds()),
-		Alias: (*Alias)(o),
-	})
+// shellQuote makes s a single-quoted shell word.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func (o *OpenWrt) Domain(hostname string) string {

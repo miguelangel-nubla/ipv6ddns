@@ -2,45 +2,39 @@ package ddns
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/netip"
-	"os"
 	"strings"
-	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
-	"github.com/xeipuuv/gojsonschema"
 )
 
 type OpnsenseUnbound struct {
-	Address        string        `json:"address"`
-	TLSFingerprint string        `json:"tls_fingerprint"`
-	Key            string        `json:"key"`
-	Secret         string        `json:"secret"`
-	Zone           string        `json:"zone"`
-	TTL            time.Duration `json:"ttl"`
+	Address        string            `json:"address"`
+	TLSFingerprint string            `json:"tls_fingerprint"`
+	Key            string            `json:"key"`
+	Secret         string            `json:"secret"`
+	Zone           string            `json:"zone"`
+	TTL            duration.Duration `json:"ttl"`
 }
 
 func init() {
 	RegisterProvider("opnsense_unbound", NewOpnsenseUnbound)
 }
 
-func NewOpnsenseUnbound(settings ProviderSettings) Service {
+func NewOpnsenseUnbound(settings json.RawMessage) (Service, error) {
 	var service OpnsenseUnbound
-	opnsenseUnboundValidateConfig(settings.(json.RawMessage))
-	json.Unmarshal(settings.(json.RawMessage), &service)
-	return &service
+	if err := decodeSettings(settings, opnsenseUnboundSettingsSchema, &service); err != nil {
+		return nil, err
+	}
+	return &service, nil
 }
 
-func opnsenseUnboundValidateConfig(config json.RawMessage) {
-	var configSchema = []byte(`
+const opnsenseUnboundSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -51,7 +45,7 @@ func opnsenseUnboundValidateConfig(config json.RawMessage) {
 			},
 			"tls_fingerprint": {
 				"type": "string",
-				"pattern": "^[a-fA-F0-9]{64}$"
+				"pattern": "^([a-fA-F0-9]{64})?$"
 			},
 			"key": {
 				"type": "string",
@@ -77,74 +71,10 @@ func opnsenseUnboundValidateConfig(config json.RawMessage) {
 			"ttl"
 		]
 	}
-	`)
-
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader([]byte(config))
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	if !result.Valid() {
-		fmt.Printf("OpnsenseUnbound configuration is not valid.\nErrors:\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
-		os.Exit(1)
-	}
-}
+	`
 
 func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	tlsConfig := &tls.Config{}
-
-	// Use custom verification to support fallback to fingerprint
-	tlsConfig.InsecureSkipVerify = true
-	tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
-		// 1. Try standard certificate verification first
-		opts := x509.VerifyOptions{
-			DNSName:       cs.ServerName,
-			Intermediates: x509.NewCertPool(),
-		}
-		for _, cert := range cs.PeerCertificates[1:] {
-			opts.Intermediates.AddCert(cert)
-		}
-
-		_, err := cs.PeerCertificates[0].Verify(opts)
-		if err == nil {
-			// Standard validation succeeded
-			return nil
-		}
-
-		// 2. If standard verification failed, calculate fingerprint for the leaf certificate (first in chain)
-		if len(cs.PeerCertificates) == 0 {
-			return fmt.Errorf("certificate verification failed: no certificates presented")
-		}
-
-		leafCert := cs.PeerCertificates[0]
-		hash := sha256.Sum256(leafCert.Raw)
-		fp := hex.EncodeToString(hash[:])
-
-		// 3. If tls_fingerprint is provided, check if it matches
-		if u.TLSFingerprint != "" {
-			if fp == u.TLSFingerprint {
-				// Fingerprint matched
-				return nil
-			}
-			fmt.Printf("Certificate fingerprint mismatch. Expected: %s, Found: %s\n", u.TLSFingerprint, fp)
-		}
-
-		// Both methods failed
-		return fmt.Errorf("certificate verification failed: %w (Fingerprint: %s)", err, fp)
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-		Timeout: 30 * time.Second,
-	}
+	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(u.Address), u.TLSFingerprint))
 
 	// 1. Fetch existing Host Overrides
 	existingOverrides, err := u.getOverrides(client)
@@ -153,11 +83,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	}
 
 	fqdn := FQDN(hostname, u.Zone)
-	desiredIPs := make(map[string]bool)
-	for _, addr := range addrCollection.Get() {
-		ip := addr.WithZone("").String()
-		desiredIPs[ip] = true
-	}
+	desiredIPs := desiredRecords(addrCollection)
 
 	// Filter existing overrides for this FQDN
 	hostPart, domainPart := SplitFQDN(fqdn)
@@ -166,8 +92,8 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	for _, row := range existingOverrides {
 		if row.Hostname == hostPart && row.Domain == domainPart {
 			upperRR := strings.ToUpper(row.RR)
-			if upperRR == "AAAA" || upperRR == "A" {
-				currentIPs[row.Server] = append(currentIPs[row.Server], row.UUID)
+			if ip, ok := canonicalIP(row.Server); ok && (upperRR == "AAAA" || upperRR == "A") {
+				currentIPs[ip] = append(currentIPs[ip], row.UUID)
 			}
 		}
 	}
@@ -189,10 +115,9 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 			for i := 1; i < len(uuids); i++ {
 				err := u.deleteOverride(client, uuids[i])
 				if err != nil {
-					fmt.Printf("Warning: failed to delete duplicate override %s -> %s (UUID: %s): %v\n", fqdn, ip, uuids[i], err)
-				} else {
-					changesMade = true
+					return fmt.Errorf("failed to delete duplicate override %s -> %s (UUID: %s): %w", fqdn, ip, uuids[i], err)
 				}
+				changesMade = true
 			}
 		}
 	}
@@ -264,11 +189,6 @@ func (u *OpnsenseUnbound) getOverrides(client *http.Client) ([]unboundOverrideRo
 		return nil, err
 	}
 
-	fmt.Printf("getOverrides found %d rows\n", len(searchResp.Rows))
-	for _, row := range searchResp.Rows {
-		fmt.Printf("  Row: UUID=%s, Hostname=%s, Domain=%s, RR=%s, Server=%s\n", row.UUID, row.Hostname, row.Domain, row.RR, row.Server)
-	}
-
 	return searchResp.Rows, nil
 }
 
@@ -311,7 +231,6 @@ func (u *OpnsenseUnbound) addOverride(client *http.Client, hostname, domain, ip 
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("addHostOverride response: %s\n", string(body))
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
@@ -345,7 +264,6 @@ func (u *OpnsenseUnbound) deleteOverride(client *http.Client, uuid string) error
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("delHostOverride response: %s\n", string(body))
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
@@ -383,8 +301,6 @@ func (u *OpnsenseUnbound) reconfigure(client *http.Client) error {
 		return fmt.Errorf("reconfigure failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Printf("reconfigure response: %s\n", string(body))
-
 	var apiResp opnsenseResponse
 	if err := json.Unmarshal(body, &apiResp); err == nil {
 		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
@@ -395,49 +311,6 @@ func (u *OpnsenseUnbound) reconfigure(client *http.Client) error {
 	}
 
 	return nil
-}
-
-func (u *OpnsenseUnbound) PrettyPrint(prefix string) ([]byte, error) {
-	return json.MarshalIndent(u, prefix, "    ")
-}
-
-func (u *OpnsenseUnbound) UnmarshalJSON(b []byte) error {
-	type Alias OpnsenseUnbound
-	aux := &struct {
-		TTL interface{} `json:"ttl"`
-		*Alias
-	}{
-		Alias: (*Alias)(u),
-	}
-	if err := json.Unmarshal(b, &aux); err != nil {
-		return err
-	}
-
-	switch value := aux.TTL.(type) {
-	case float64:
-		u.TTL = time.Duration(value) * time.Second
-		return nil
-	case string:
-		var err error
-		u.TTL, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-		return nil
-	default:
-		return fmt.Errorf("ttl invalid duration: %v", aux.TTL)
-	}
-}
-
-func (u *OpnsenseUnbound) MarshalJSON() ([]byte, error) {
-	type Alias OpnsenseUnbound
-	return json.Marshal(&struct {
-		TTL int64 `json:"ttl"`
-		*Alias
-	}{
-		TTL:   int64(u.TTL.Seconds()),
-		Alias: (*Alias)(u),
-	})
 }
 
 func (c *OpnsenseUnbound) Domain(hostname string) string {

@@ -13,7 +13,7 @@ func FQDN(hostname, zone string) string {
 		return zone
 	}
 
-	if zone != "" && strings.HasSuffix(hostname, zone) {
+	if zone != "" && (hostname == zone || strings.HasSuffix(hostname, "."+zone)) {
 		return hostname
 	}
 

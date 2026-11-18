@@ -3,37 +3,36 @@ package ddns
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/netip"
-	"os"
-	"time"
 
 	"github.com/cloudflare/cloudflare-go"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
-	"github.com/xeipuuv/gojsonschema"
 )
 
 type Cloudflare struct {
-	APIToken string        `json:"api_token"`
-	Zone     string        `json:"zone"`
-	TTL      time.Duration `json:"ttl"`
-	Proxied  bool          `json:"proxied"`
+	APIToken string            `json:"api_token"`
+	Zone     string            `json:"zone"`
+	TTL      duration.Duration `json:"ttl"`
+	Proxied  bool              `json:"proxied"`
+
+	// The API's address, for tests: empty is Cloudflare's.
+	apiBaseURL string
 }
 
 func init() {
 	RegisterProvider("cloudflare", NewCloudflare)
 }
 
-func NewCloudflare(settings ProviderSettings) Service {
+func NewCloudflare(settings json.RawMessage) (Service, error) {
 	var service Cloudflare
-	cloudflareValidateConfig(settings.(json.RawMessage))
-	json.Unmarshal(settings.(json.RawMessage), &service)
-	return &service
+	if err := decodeSettings(settings, cloudflareSettingsSchema, &service); err != nil {
+		return nil, err
+	}
+	return &service, nil
 }
 
-func cloudflareValidateConfig(config json.RawMessage) {
-	var configSchema = []byte(`
+const cloudflareSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -61,28 +60,15 @@ func cloudflareValidateConfig(config json.RawMessage) {
 			"proxied"
 		]
 	}
-	`)
-
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader([]byte(config))
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	if !result.Valid() {
-		fmt.Printf("Cloudflare configuration is not valid.\nErrors:\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
-		os.Exit(1)
-	}
-}
+	`
 
 func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	// Initialize the Cloudflare API with the provided API token
-	api, err := cloudflare.NewWithAPIToken(c.APIToken)
+	var options []cloudflare.Option
+	if c.apiBaseURL != "" {
+		options = append(options, cloudflare.BaseURL(c.apiBaseURL))
+	}
+	api, err := cloudflare.NewWithAPIToken(c.APIToken, options...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize: %v", err)
 	}
@@ -105,121 +91,72 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 		return fmt.Errorf("failed to list DNS records for %s: %s", hostname, err)
 	}
 
-	// Build a set of current IP addresses in Cloudflare
-	currentIPs := make(map[string]string)
-	for _, record := range currentRecords {
-		if record.Type == "AAAA" || record.Type == "A" {
-			addr, err := netip.ParseAddr(record.Content)
-			if err != nil {
-				return fmt.Errorf("invalid existing record found: %v", err)
-			}
-			ip := addr.WithZone("").String()
-			currentIPs[ip] = record.Type
-		}
-	}
+	ttl := int(c.TTL.Seconds())
+	desiredIPs := desiredRecords(addrCollection)
 
-	// Build a set of desired IP addresses
-	desiredIPs := make(map[string]string)
-	for _, addr := range addrCollection.Get() {
-		recordType := "AAAA"
-		if addr.Addr.Is4() {
-			recordType = "A"
-		}
-		ip := addr.WithZone("").String()
-		desiredIPs[ip] = recordType
-	}
-
-	// Create records as necessary
-	for ip, recordType := range desiredIPs {
-		_, exists := currentIPs[ip]
-		if !exists {
-			newRecord := cloudflare.CreateDNSRecordParams{
-				Type:    recordType,
-				Name:    fqdn,
-				Content: ip,
-				TTL:     int(c.TTL.Seconds()),
-				Proxied: &c.Proxied,
-			}
-			_, err := api.CreateDNSRecord(context.Background(), rc, newRecord)
-			if err != nil {
-				return fmt.Errorf("failed to create %s DNS record for %s: %v", hostname, ip, err)
-			}
-		}
-	}
-
-	// Update or delete records as necessary
+	// The address of each A and AAAA record.
+	recordIPs := make(map[string]string)
+	currentIPs := make(map[string]bool)
 	for _, record := range currentRecords {
 		if record.Type != "AAAA" && record.Type != "A" {
 			continue
 		}
+		ip, ok := canonicalIP(record.Content)
+		if !ok {
+			return fmt.Errorf("invalid existing record found: %s", record.Content)
+		}
+		recordIPs[record.ID] = ip
+		currentIPs[ip] = true
+	}
 
-		ip := record.Content
-		_, exists := desiredIPs[ip]
-		if !exists {
-			err := api.DeleteDNSRecord(context.Background(), rc, record.ID)
-			if err != nil {
-				return fmt.Errorf("failed to delete %s DNS record for %s: %v", hostname, ip, err)
+	// Create the missing records first, so the name always has some.
+	for ip, recordType := range desiredIPs {
+		if currentIPs[ip] {
+			continue
+		}
+		newRecord := cloudflare.CreateDNSRecordParams{
+			Type:    recordType,
+			Name:    fqdn,
+			Content: ip,
+			TTL:     ttl,
+			Proxied: &c.Proxied,
+		}
+		if _, err := api.CreateDNSRecord(context.Background(), rc, newRecord); err != nil {
+			return fmt.Errorf("failed to create %s DNS record for %s: %w", hostname, ip, err)
+		}
+	}
+
+	// Delete the records of other addresses and duplicates, and fix the TTL and proxying of the
+	// others.
+	kept := make(map[string]bool)
+	for _, record := range currentRecords {
+		ip, ok := recordIPs[record.ID]
+		if !ok {
+			continue
+		}
+		if _, desired := desiredIPs[ip]; !desired || kept[ip] {
+			if err := api.DeleteDNSRecord(context.Background(), rc, record.ID); err != nil {
+				return fmt.Errorf("failed to delete %s DNS record for %s: %w", hostname, ip, err)
 			}
-		} else {
-			// Update the DNS record if TTL or Proxied is different
-			if record.TTL != int(c.TTL.Seconds()) || *record.Proxied != c.Proxied {
-				updateRecord := cloudflare.UpdateDNSRecordParams{
-					ID:      record.ID,
-					TTL:     int(c.TTL.Seconds()),
-					Proxied: &c.Proxied,
-				}
-				_, err := api.UpdateDNSRecord(context.Background(), rc, updateRecord)
-				if err != nil {
-					return fmt.Errorf("failed to update %s DNS record for %s: %v", hostname, ip, err)
-				}
+			continue
+		}
+		kept[ip] = true
+
+		// Cloudflare sets the TTL of a proxied record to auto, 1, itself.
+		ttlDiffers := !c.Proxied && record.TTL != ttl
+		if ttlDiffers || record.Proxied == nil || *record.Proxied != c.Proxied {
+			updateRecord := cloudflare.UpdateDNSRecordParams{
+				ID:      record.ID,
+				TTL:     ttl,
+				Proxied: &c.Proxied,
+			}
+			if _, err := api.UpdateDNSRecord(context.Background(), rc, updateRecord); err != nil {
+				return fmt.Errorf("failed to update %s DNS record for %s: %w", hostname, ip, err)
 			}
 		}
 	}
 
 	return nil
-}
-
-func (c *Cloudflare) PrettyPrint(prefix string) ([]byte, error) {
-	return json.MarshalIndent(c, prefix, "    ")
-}
-
-func (d *Cloudflare) UnmarshalJSON(b []byte) error {
-	type Alias Cloudflare
-	aux := &struct {
-		TTL interface{} `json:"ttl"`
-		*Alias
-	}{
-		Alias: (*Alias)(d),
-	}
-	if err := json.Unmarshal(b, &aux); err != nil {
-		return err
-	}
-
-	switch value := aux.TTL.(type) {
-	case float64:
-		d.TTL = time.Duration(value) * time.Second
-		return nil
-	case string:
-		var err error
-		d.TTL, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-		return nil
-	default:
-		return errors.New("ttl invalid duration")
-	}
-}
-
-func (d *Cloudflare) MarshalJSON() ([]byte, error) {
-	type Alias Cloudflare
-	return json.Marshal(&struct {
-		TTL int64 `json:"ttl"`
-		*Alias
-	}{
-		TTL:   int64(d.TTL.Seconds()),
-		Alias: (*Alias)(d),
-	})
 }
 
 func (c *Cloudflare) Domain(hostname string) string {

@@ -1,46 +1,39 @@
 package ddns
 
 import (
-	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/netip"
 	"net/url"
-	"os"
 	"strconv"
-	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
-	"github.com/xeipuuv/gojsonschema"
 )
 
 type Technitium struct {
-	Address        string        `json:"address"`
-	TLSFingerprint string        `json:"tls_fingerprint"`
-	Token          string        `json:"token"`
-	Zone           string        `json:"zone"`
-	TTL            time.Duration `json:"ttl"`
+	Address        string            `json:"address"`
+	TLSFingerprint string            `json:"tls_fingerprint"`
+	Token          string            `json:"token"`
+	Zone           string            `json:"zone"`
+	TTL            duration.Duration `json:"ttl"`
 }
 
 func init() {
 	RegisterProvider("technitium", NewTechnitium)
 }
 
-func NewTechnitium(settings ProviderSettings) Service {
+func NewTechnitium(settings json.RawMessage) (Service, error) {
 	var service Technitium
-	technitiumValidateConfig(settings.(json.RawMessage))
-	json.Unmarshal(settings.(json.RawMessage), &service)
-	return &service
+	if err := decodeSettings(settings, technitiumSettingsSchema, &service); err != nil {
+		return nil, err
+	}
+	return &service, nil
 }
 
-func technitiumValidateConfig(config json.RawMessage) {
-	var configSchema = []byte(`
+const technitiumSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -51,7 +44,7 @@ func technitiumValidateConfig(config json.RawMessage) {
 			},
 			"tls_fingerprint": {
 				"type": "string",
-				"pattern": "^[a-fA-F0-9]{64}$"
+				"pattern": "^([a-fA-F0-9]{64})?$"
 			},
 			"token": {
 				"type": "string",
@@ -73,24 +66,7 @@ func technitiumValidateConfig(config json.RawMessage) {
 			"ttl"
 		]
 	}
-	`)
-
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader([]byte(config))
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	if !result.Valid() {
-		fmt.Printf("Technitium configuration is not valid.\nErrors:\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
-		os.Exit(1)
-	}
-}
+	`
 
 type technitiumResponse struct {
 	Status       string `json:"status"`
@@ -109,54 +85,7 @@ type technitiumRDataIP struct {
 }
 
 func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	tlsConfig := &tls.Config{}
-
-	// Use custom verification to support fallback to fingerprint
-	tlsConfig.InsecureSkipVerify = true
-	tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
-		// 1. Try standard certificate verification first
-		opts := x509.VerifyOptions{
-			DNSName:       cs.ServerName,
-			Intermediates: x509.NewCertPool(),
-		}
-		for _, cert := range cs.PeerCertificates[1:] {
-			opts.Intermediates.AddCert(cert)
-		}
-
-		_, err := cs.PeerCertificates[0].Verify(opts)
-		if err == nil {
-			// Standard validation succeeded
-			return nil
-		}
-
-		// 2. If standard verification failed, calculate fingerprint for the leaf certificate (first in chain)
-		if len(cs.PeerCertificates) == 0 {
-			return fmt.Errorf("certificate verification failed: no certificates presented")
-		}
-
-		leafCert := cs.PeerCertificates[0]
-		hash := sha256.Sum256(leafCert.Raw)
-		fp := hex.EncodeToString(hash[:])
-
-		// 3. If tls_fingerprint is provided, check if it matches
-		if t.TLSFingerprint != "" {
-			if fp == t.TLSFingerprint {
-				// Fingerprint matched
-				return nil
-			}
-			fmt.Printf("Certificate fingerprint mismatch. Expected: %s, Found: %s\n", t.TLSFingerprint, fp)
-		}
-
-		// Both methods failed
-		return fmt.Errorf("certificate verification failed: %w (Fingerprint: %s)", err, fp)
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-		Timeout: 30 * time.Second,
-	}
+	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(t.Address), t.TLSFingerprint))
 
 	fqdn := FQDN(hostname, t.Zone)
 
@@ -166,16 +95,7 @@ func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 		return fmt.Errorf("failed to get records: %v", err)
 	}
 
-	// 2. Identify desired IPs
-	desiredIPs := make(map[string]string) // IP -> Type("A" or "AAAA")
-	for _, addr := range addrCollection.Get() {
-		recordType := "AAAA"
-		if addr.Addr.Is4() {
-			recordType = "A"
-		}
-		ip := addr.WithZone("").String()
-		desiredIPs[ip] = recordType
-	}
+	desiredIPs := desiredRecords(addrCollection)
 
 	// 3. Calculate Diff
 	// Delete records that are not in desired
@@ -193,11 +113,6 @@ func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 			if err := t.addRecord(client, fqdn, recordType, ip); err != nil {
 				return fmt.Errorf("failed to add record %s (%s): %v", fqdn, ip, err)
 			}
-		} else {
-			// Optional: Update TTL if needed.
-			// Current implementation simplifies by only adding missing ones.
-			// To strictly enforce TTL, we could call updateRecord here.
-			// Let's stick to add/delete for now unless we track TTL in currentIPs.
 		}
 	}
 
@@ -238,8 +153,8 @@ func (t *Technitium) getRecords(client *http.Client, domain string) (map[string]
 		if rec.Type == "A" || rec.Type == "AAAA" {
 			var rData technitiumRDataIP
 			if err := json.Unmarshal(rec.RData, &rData); err == nil {
-				if _, err := netip.ParseAddr(rData.IPAddress); err == nil {
-					currentIPs[rData.IPAddress] = rec.Type
+				if ip, ok := canonicalIP(rData.IPAddress); ok {
+					currentIPs[ip] = rec.Type
 				}
 			}
 		}
@@ -314,49 +229,6 @@ func (t *Technitium) deleteRecord(client *http.Client, domain, recordType, ip st
 	}
 
 	return nil
-}
-
-func (t *Technitium) PrettyPrint(prefix string) ([]byte, error) {
-	return json.MarshalIndent(t, prefix, "    ")
-}
-
-func (t *Technitium) UnmarshalJSON(b []byte) error {
-	type Alias Technitium
-	aux := &struct {
-		TTL interface{} `json:"ttl"`
-		*Alias
-	}{
-		Alias: (*Alias)(t),
-	}
-	if err := json.Unmarshal(b, &aux); err != nil {
-		return err
-	}
-
-	switch value := aux.TTL.(type) {
-	case float64:
-		t.TTL = time.Duration(value) * time.Second
-		return nil
-	case string:
-		var err error
-		t.TTL, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-		return nil
-	default:
-		return errors.New("ttl invalid duration")
-	}
-}
-
-func (t *Technitium) MarshalJSON() ([]byte, error) {
-	type Alias Technitium
-	return json.Marshal(&struct {
-		TTL int64 `json:"ttl"`
-		*Alias
-	}{
-		TTL:   int64(t.TTL.Seconds()),
-		Alias: (*Alias)(t),
-	})
 }
 
 func (t *Technitium) Domain(hostname string) string {

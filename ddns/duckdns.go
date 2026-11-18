@@ -6,10 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 
 	"github.com/miguelangel-nubla/ipv6disc"
-	"github.com/xeipuuv/gojsonschema"
 )
 
 type DuckDNS struct {
@@ -20,15 +18,15 @@ func init() {
 	RegisterProvider("duckdns", NewDuckDNS)
 }
 
-func NewDuckDNS(settings ProviderSettings) Service {
+func NewDuckDNS(settings json.RawMessage) (Service, error) {
 	var service DuckDNS
-	duckDNSValidateConfig(settings.(json.RawMessage))
-	json.Unmarshal(settings.(json.RawMessage), &service)
-	return &service
+	if err := decodeSettings(settings, duckDNSSettingsSchema, &service); err != nil {
+		return nil, err
+	}
+	return &service, nil
 }
 
-func duckDNSValidateConfig(config json.RawMessage) {
-	var configSchema = []byte(`
+const duckDNSSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -42,24 +40,7 @@ func duckDNSValidateConfig(config json.RawMessage) {
 			"api_token"
 		]
 	}
-	`)
-
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader([]byte(config))
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	if !result.Valid() {
-		fmt.Printf("DuckDNS configuration is not valid.\nErrors:\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
-		os.Exit(1)
-	}
-}
+	`
 
 func (d *DuckDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	v4 := addrCollection.Filter4().Get()
@@ -85,7 +66,7 @@ func (d *DuckDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	params.Add("ipv6", ipv6)
 
 	updateURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
-	resp, err := http.Get(updateURL)
+	resp, err := newHTTPClient(nil).Get(updateURL)
 	if err != nil {
 		return fmt.Errorf("failed to update record: %v", err)
 	}
@@ -106,10 +87,6 @@ func (d *DuckDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	}
 
 	return nil
-}
-
-func (d *DuckDNS) PrettyPrint(prefix string) ([]byte, error) {
-	return json.MarshalIndent(d, prefix, "    ")
 }
 
 func (d *DuckDNS) Domain(hostname string) string {

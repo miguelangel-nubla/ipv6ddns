@@ -6,39 +6,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
 	"unicode/utf16"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
-	"github.com/xeipuuv/gojsonschema"
 	"golang.org/x/crypto/ssh"
 )
 
 type WindowsDNS struct {
-	Zone     string        `json:"zone"`
-	Address  string        `json:"address"` // Optional: if set, use SSH
-	Username string        `json:"username"`
-	Password string        `json:"password"`
-	SSHKey   string        `json:"ssh_key"`
-	TTL      time.Duration `json:"ttl"`
+	Zone     string            `json:"zone"`
+	Address  string            `json:"address"` // Optional: if set, use SSH
+	Username string            `json:"username"`
+	Password string            `json:"password"`
+	SSHKey   string            `json:"ssh_key"`
+	TTL      duration.Duration `json:"ttl"`
 }
 
 func init() {
 	RegisterProvider("windows", NewWindowsDNS)
 }
 
-func NewWindowsDNS(settings ProviderSettings) Service {
+func NewWindowsDNS(settings json.RawMessage) (Service, error) {
 	var service WindowsDNS
-	windowsValidateConfig(settings.(json.RawMessage))
-	json.Unmarshal(settings.(json.RawMessage), &service)
-	return &service
+	if err := decodeSettings(settings, windowsSettingsSchema, &service); err != nil {
+		return nil, err
+	}
+	return &service, nil
 }
 
-func windowsValidateConfig(config json.RawMessage) {
-	var configSchema = []byte(`
+const windowsSettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -55,24 +54,7 @@ func windowsValidateConfig(config json.RawMessage) {
 		},
 		"required": [ "zone" ]
 	}
-	`)
-
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader([]byte(config))
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	if !result.Valid() {
-		fmt.Printf("Windows configuration is not valid.\nErrors:\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
-		os.Exit(1)
-	}
-}
+	`
 
 func (w *WindowsDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	var runner WindowsRunner
@@ -88,14 +70,17 @@ func (w *WindowsDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	}
 	defer runner.Close()
 
+	zone := psQuote(w.Zone)
+	name := psQuote(windowsRecordName(hostname))
+
 	// 1. Get current IPs (both A and AAAA)
 	psScript := fmt.Sprintf(`
 try {
     $output = @()
-    $rA = Get-DnsServerResourceRecord -ZoneName '%s' -Name '%s' -RRType A -ErrorAction SilentlyContinue 
+    $rA = Get-DnsServerResourceRecord -ZoneName %s -Name %s -RRType A -ErrorAction SilentlyContinue 
     if ($rA) { $output += $rA | Select-Object -ExpandProperty RecordData | Select-Object -ExpandProperty IPv4Address | ForEach-Object { "$_" } }
     
-    $rAAAA = Get-DnsServerResourceRecord -ZoneName '%s' -Name '%s' -RRType AAAA -ErrorAction SilentlyContinue 
+    $rAAAA = Get-DnsServerResourceRecord -ZoneName %s -Name %s -RRType AAAA -ErrorAction SilentlyContinue 
     if ($rAAAA) { $output += $rAAAA | Select-Object -ExpandProperty RecordData | Select-Object -ExpandProperty IPv6Address | ForEach-Object { "$_" } }
 
     if ($output.Count -gt 0) {
@@ -107,7 +92,7 @@ try {
     Write-Error $_.Exception.Message
     exit 1
 }
-`, w.Zone, hostname, w.Zone, hostname)
+`, zone, name, zone, name)
 
 	output, err := runner.RunPS(psScript)
 	if err != nil {
@@ -132,14 +117,13 @@ try {
 	}
 
 	// 2. Calculate Diff
-	desiredIPs := make(map[string]bool)
-	for _, addr := range addrCollection.Get() {
-		desiredIPs[addr.WithZone("").String()] = true
-	}
+	desiredIPs := desiredRecords(addrCollection)
 
 	existingMap := make(map[string]bool)
 	for _, ip := range currentIPs {
-		existingMap[ip] = true
+		if ip, ok := canonicalIP(ip); ok {
+			existingMap[ip] = true
+		}
 	}
 
 	var toAdd []string
@@ -152,7 +136,7 @@ try {
 	}
 
 	for ip := range existingMap {
-		if !desiredIPs[ip] {
+		if _, ok := desiredIPs[ip]; !ok {
 			toDelete = append(toDelete, ip)
 		}
 	}
@@ -175,7 +159,7 @@ try {
 			rrType = "AAAA"
 		}
 
-		cmd := fmt.Sprintf("Remove-DnsServerResourceRecord -ZoneName '%s' -Name '%s' -RRType %s -RecordData '%s' -Force", w.Zone, hostname, rrType, ip)
+		cmd := fmt.Sprintf("Remove-DnsServerResourceRecord -ZoneName %s -Name %s -RRType %s -RecordData '%s' -Force", zone, name, rrType, ip)
 		if out, err := runner.RunPS(cmd); err != nil {
 			return fmt.Errorf("failed to delete record %s: %v, output: %s", ip, err, string(out))
 		}
@@ -198,11 +182,10 @@ try {
 			ipParam = "-IPv6Address"
 		}
 
-		cmd := fmt.Sprintf("Add-DnsServerResourceRecord -ZoneName '%s' -Name '%s' %s %s '%s'", w.Zone, hostname, typeSwitch, ipParam, ip)
+		cmd := fmt.Sprintf("Add-DnsServerResourceRecord -ZoneName %s -Name %s %s %s '%s'", zone, name, typeSwitch, ipParam, ip)
 
-		if w.TTL > 0 {
-			ttlStr := fmt.Sprintf("%02d:%02d:%02d", int(w.TTL.Hours()), int(w.TTL.Minutes())%60, int(w.TTL.Seconds())%60)
-			cmd += fmt.Sprintf(" -TimeToLive '%s'", ttlStr)
+		if w.TTL.Duration > 0 {
+			cmd += fmt.Sprintf(" -TimeToLive '%s'", timeSpan(w.TTL.Duration))
 		}
 		if out, err := runner.RunPS(cmd); err != nil {
 			return fmt.Errorf("failed to add record %s: %v, output: %s", ip, err, string(out))
@@ -212,55 +195,32 @@ try {
 	return nil
 }
 
-func (w *WindowsDNS) PrettyPrint(prefix string) ([]byte, error) {
-	return json.MarshalIndent(w, prefix, "    ")
-}
-
 func (w *WindowsDNS) Domain(hostname string) string {
 	return FQDN(hostname, w.Zone)
 }
 
-func (w *WindowsDNS) UnmarshalJSON(b []byte) error {
-	type Alias WindowsDNS
-	aux := &struct {
-		TTL interface{} `json:"ttl"`
-		*Alias
-	}{
-		Alias: (*Alias)(w),
+// windowsRecordName is the name of hostname's records in the zone: "@" for the zone itself.
+func windowsRecordName(hostname string) string {
+	if hostname == "" {
+		return "@"
 	}
-	if err := json.Unmarshal(b, &aux); err != nil {
-		return err
-	}
-
-	switch value := aux.TTL.(type) {
-	case float64:
-		w.TTL = time.Duration(value) * time.Second
-		return nil
-	case string:
-		var err error
-		w.TTL, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-		return nil
-	default:
-		// If TTL is missing (nil), it defaults to 0 duration, which is fine
-		if value == nil {
-			return nil
-		}
-		return fmt.Errorf("ttl invalid type")
-	}
+	return hostname
 }
 
-func (w *WindowsDNS) MarshalJSON() ([]byte, error) {
-	type Alias WindowsDNS
-	return json.Marshal(&struct {
-		TTL int64 `json:"ttl"`
-		*Alias
-	}{
-		TTL:   int64(w.TTL.Seconds()),
-		Alias: (*Alias)(w),
-	})
+// psQuote makes s a PowerShell string literal.
+func psQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// timeSpan formats d as a PowerShell TimeSpan, [d.]hh:mm:ss: the hours of one can't reach 24.
+func timeSpan(d time.Duration) string {
+	seconds := int64(d.Seconds())
+	days, seconds := seconds/86400, seconds%86400
+	result := fmt.Sprintf("%02d:%02d:%02d", seconds/3600, seconds/60%60, seconds%60)
+	if days > 0 {
+		result = fmt.Sprintf("%d.%s", days, result)
+	}
+	return result
 }
 
 type WindowsRunner interface {
@@ -322,38 +282,10 @@ type SSHRunner struct {
 }
 
 func NewSSHRunner(address, username, password, keyPath string) (*SSHRunner, error) {
-	config := &ssh.ClientConfig{
-		User:            username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
-	}
-
-	if keyPath != "" {
-		key, err := os.ReadFile(keyPath)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read private key: %v", err)
-		}
-		signer, err := ssh.ParsePrivateKey(key)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse private key: %v", err)
-		}
-		config.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
-	} else if password != "" {
-		config.Auth = []ssh.AuthMethod{ssh.Password(password)}
-	} else {
-		return nil, fmt.Errorf("no authentication method provided for SSH")
-	}
-
-	// Default port 22
-	if !strings.Contains(address, ":") {
-		address = address + ":22"
-	}
-
-	client, err := ssh.Dial("tcp", address, config)
+	client, err := dialSSH(address, username, password, keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial ssh: %v", err)
+		return nil, err
 	}
-
 	return &SSHRunner{client: client}, nil
 }
 

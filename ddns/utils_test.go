@@ -24,6 +24,18 @@ func TestFQDN(t *testing.T) {
 			want:     "host1.example.com",
 		},
 		{
+			name:     "hostname ending like the zone",
+			hostname: "myexample.com",
+			zone:     "example.com",
+			want:     "myexample.com.example.com",
+		},
+		{
+			name:     "hostname that is the zone",
+			hostname: "example.com",
+			zone:     "example.com",
+			want:     "example.com",
+		},
+		{
 			name:     "empty hostname",
 			hostname: "",
 			zone:     "example.com",
