@@ -75,6 +75,17 @@ a local DNS, its LAN address: `self: true` with `ip: {family: [4], type:
 [private]}`, and `discovery: {ipv4: true}`. The other filters and options:
 [filtering](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/filtering.md).
 
+## In Home Assistant
+
+The starting configuration makes ipv6ddns a device of Home Assistant's ESPHome
+integration: Home Assistant finds it under *Settings → Devices & services →
+Discovered*. Add it, with the encryption key the add-on logged the first time,
+which `homeassistant.key` in its folder keeps. It shows each name's addresses,
+last update and update problems, and the hosts discovered, with a button to
+update now; and `homeassistant` sources read your entities, as a router's WAN
+address. See the
+[integration](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/home-assistant-integration.md).
+
 ## The add-on's page
 
 It shows the report of ipv6ddns: the names and their records, and the hosts

@@ -10,6 +10,14 @@ if [ ! -f "$config" ]; then
 	echo "ipv6ddns: no configuration yet: wrote a starting one, config.yaml in the add-on's folder, addon_configs/<id>_ipv6ddns (app_configs in recent versions). Edit it, and restart the add-on." >&2
 fi
 
+# The key of the device Home Assistant's ESPHome integration adds, the first time: the user gives it
+# Home Assistant once, when adding the device.
+key=/config/homeassistant.key
+if [ ! -f "$key" ]; then
+	(umask 077 && head -c 32 /dev/urandom | base64 > "$key")
+	echo "ipv6ddns: Home Assistant will find it as a new ESPHome device; when adding it, give this encryption key, which homeassistant.key in the add-on's folder keeps: $(cat "$key")" >&2
+fi
+
 log_level=$(jq -r '.log_level // "info"' /data/options.json 2>/dev/null || echo info)
 
 # INGRESS_LISTEN, to try it outside Home Assistant. The report through Home Assistant only: the Supervisor reaches an add-on of the host's network at

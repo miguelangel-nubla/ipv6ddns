@@ -38,6 +38,7 @@ credentials:
 | `http` | The same, from echo services over HTTPS: ipify, icanhazip and ident.me in order, or the `urls` you give, which answer the address alone |
 | `command` | The addresses a `command`, with its `args`, prints, one per line. It runs in the configuration's directory |
 | `static` | The `addresses` listed, for an address that doesn't change, or that discovery can't reach |
+| `homeassistant` | The addresses in the state of a Home Assistant `entity`, or of its `attribute`: see the [Home Assistant integration](home-assistant-integration.md#an-entitys-addresses) |
 
 `family`, for `dns` and `http`, is `[4]` by default; `[4, 6]` finds the public IPv6 too, for a network whose hosts all go out through one address.
 

@@ -32,6 +32,8 @@ type Config struct {
 	Credentials map[string]Credential `json:"credentials"`
 	Discovery   Discovery             `json:"discovery"`
 	Sources     map[string]Source     `json:"sources,omitempty"`
+	// A device of Home Assistant's ESPHome integration: off without it.
+	HomeAssistant *HomeAssistant `json:"homeassistant,omitempty"`
 
 	// The settings that are flags too: a flag given wins. Lifetime is how long a discovered
 	// address stays after it was last seen, unless its family says.
@@ -372,6 +374,9 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 	config.Warnings = slices.Concat(discoveryWarnings, pluginWarnings, config.Warnings)
+	if err := config.setUpHomeAssistant(); err != nil {
+		return config, err
+	}
 
 	for name, task := range config.Tasks {
 		task.Name = name

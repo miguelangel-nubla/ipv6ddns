@@ -32,11 +32,24 @@ jobs:
         name: Generate
         run: go generate ./...
       -
+        # Home Assistant's library for ESPHome devices, at the version Home Assistant uses: the
+        # tests of the integration connect with it, and fail rather than skip without it.
+        name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      -
+        name: Install aioesphomeapi
+        run: pip install aioesphomeapi==46.30.1
+      -
         name: Vet
         run: go vet ./...
       -
         name: Test
         run: go test -race ./...
+        env:
+          ESPHOME_PYTHON: python
+          ESPHOME_COMPAT_REQUIRED: "1"
       -
         # The binary as the release builds it, for this platform only.
         name: Build

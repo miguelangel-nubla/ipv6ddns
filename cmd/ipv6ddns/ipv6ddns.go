@@ -51,6 +51,7 @@ func main() {
 	}
 
 	sugar, level := initializeLogger()
+	ipv6ddns.Version = version
 
 	config, err := config.NewConfig(configFile)
 	if err != nil {

@@ -172,7 +172,7 @@ func TestSourceKeepsAddressesForTheirLifetime(t *testing.T) {
 	cfg := config.Source{Type: config.SourceStatic, Addresses: []string{"192.0.2.1"}}
 	cfg.Interval.Duration = time.Hour
 	cfg.Lifetime.Duration = 50 * time.Millisecond
-	s, err := New("fixed", cfg, "")
+	s, err := New("fixed", cfg, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestStatusHidesTheError(t *testing.T) {
 	cfg := config.Source{Type: config.SourceCommand, Command: "sh", Args: []string{"-c", "echo token=SECRET >&2; exit 1"}}
 	cfg.Interval.Duration = time.Hour
 	cfg.Lifetime.Duration = time.Hour
-	s, _ := New("cmd", cfg, t.TempDir())
+	s, _ := New("cmd", cfg, t.TempDir(), nil)
 	s.run(context.Background(), zap.NewNop().Sugar())
 	if got := s.Status(true); got.LastError != "<sensible data hidden>" || got.Failures != 1 {
 		t.Errorf("hidden: %+v", got)

@@ -34,11 +34,21 @@ type Source struct {
 	failures    int
 
 	running sync.WaitGroup
+	// A value runs the source now, rather than at its next interval.
+	trigger chan struct{}
 }
 
-// New makes the source of the configuration. baseDir is where commands run.
-func New(name string, cfg config.Source, baseDir string) (*Source, error) {
-	s := &Source{name: name, config: cfg, addrs: ipv6disc.NewAddrCollection()}
+// HomeAssistantStates are the states of Home Assistant's entities that homeassistant sources read:
+// State returns the latest of an entity, or of its attribute when not empty, and false when Home
+// Assistant hasn't sent it, or isn't connected.
+type HomeAssistantStates interface {
+	State(entity, attribute string) (string, bool)
+}
+
+// New makes the source of the configuration. baseDir is where commands run; states, which can be
+// nil without homeassistant sources, are Home Assistant's.
+func New(name string, cfg config.Source, baseDir string, states HomeAssistantStates) (*Source, error) {
+	s := &Source{name: name, config: cfg, addrs: ipv6disc.NewAddrCollection(), trigger: make(chan struct{}, 1)}
 	switch cfg.Type {
 	case config.SourceHTTP:
 		s.fetch = httpFetcher(cfg.Family, cfg.URLs, defaultEchoURLs)
@@ -48,6 +58,11 @@ func New(name string, cfg config.Source, baseDir string) (*Source, error) {
 		s.fetch = commandFetcher(cfg, baseDir)
 	case config.SourceStatic:
 		s.fetch = staticFetcher(cfg.Addresses)
+	case config.SourceHomeAssistant:
+		if states == nil {
+			return nil, fmt.Errorf("source %s: a homeassistant source needs Home Assistant", name)
+		}
+		s.fetch = homeAssistantFetcher(states, cfg.Entity, cfg.Attribute)
 	default:
 		return nil, fmt.Errorf("source %s: unknown type %q", name, cfg.Type)
 	}
@@ -73,9 +88,18 @@ func (s *Source) Start(ctx context.Context, logger *zap.SugaredLogger, ran func(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+			case <-s.trigger:
 			}
 		}
 	}()
+}
+
+// Trigger runs the source now, as when the value it reads changed.
+func (s *Source) Trigger() {
+	select {
+	case s.trigger <- struct{}{}:
+	default:
+	}
 }
 
 func (s *Source) Wait() {

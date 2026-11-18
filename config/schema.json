@@ -265,9 +265,10 @@
                             "http",
                             "dns",
                             "command",
-                            "static"
+                            "static",
+                            "homeassistant"
                         ],
-                        "description": "dns: the public address, as OpenDNS's or Google's resolvers see it. http: from echo services over HTTPS, or urls. command: the addresses a command prints, one per line. static: the addresses listed."
+                        "description": "dns: the public address, as OpenDNS's or Google's resolvers see it. http: from echo services over HTTPS, or urls. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block."
                     },
                     "family": {
                         "type": "array",
@@ -313,6 +314,16 @@
                             "type": "string"
                         },
                         "description": "static: the addresses."
+                    },
+                    "entity": {
+                        "type": "string",
+                        "pattern": "^[a-z_]+\\.[a-z0-9_]+$",
+                        "description": "homeassistant: the entity, as sensor.wan_ip."
+                    },
+                    "attribute": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "homeassistant: the attribute of the entity to read, rather than its state."
                     }
                 },
                 "required": [
@@ -341,6 +352,37 @@
         "webserver_listen": {
             "$ref": "#/$defs/stringList",
             "description": "Serve the report, /status.json and /metrics on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, myhost. The -webserver_listen flag, given, wins."
+        },
+        "homeassistant": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "key"
+            ],
+            "description": "Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md.",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9+/]{43}=$",
+                    "description": "The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device. Make one with openssl rand -base64 32."
+                },
+                "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([a-z0-9-]{0,29}[a-z0-9])?$",
+                    "description": "The device's name in the network: lower case letters, digits and hyphens. Default: ipv6ddns."
+                },
+                "friendly_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The name Home Assistant shows. Default: the name."
+                },
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "The port Home Assistant connects to. Default: 6053, ESPHome's."
+                }
+            }
         }
     },
     "required": [

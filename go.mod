@@ -35,13 +35,16 @@ require (
 	github.com/aws/smithy-go v1.28.9 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/dprotaso/go-yit v0.0.0-20240618133044-5a0af90af097 // indirect
+	github.com/flynn/noise v1.1.0 // indirect
 	github.com/getkin/kin-openapi v0.142.0 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
+	github.com/hashicorp/mdns v1.0.7 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mdlayher/ndp v1.1.0 // indirect
+	github.com/miekg/dns v1.1.72 // indirect
 	github.com/nsf/termbox-go v1.1.2 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
@@ -61,5 +64,6 @@ require (
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
