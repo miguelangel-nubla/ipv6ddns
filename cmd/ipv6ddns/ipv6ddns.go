@@ -203,7 +203,6 @@ func applyConfigSettings(cfg config.Config, given map[string]bool, level zap.Ato
 		if err != nil {
 			return fmt.Errorf("invalid log_level %q", cfg.LogLevel)
 		}
-		logLevel = cfg.LogLevel
 		if !live {
 			level.SetLevel(zapLevel)
 		}

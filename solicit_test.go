@@ -49,6 +49,7 @@ func TestEUI64Targets(t *testing.T) {
 		{"no eui64", task(mac, "", "global"), nil},
 		{"no MAC", task("", "", "global", "eui64"), nil},
 		{"bad MAC", task("nope", "", "global", "eui64"), nil},
+		{"IPv4 only", ipv4Only(task(mac, "", "eui64")), nil},
 	}
 	for _, tt := range tests {
 		var got []string
@@ -102,4 +103,9 @@ func TestIPv4SolicitTargets(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
+}
+
+func ipv4Only(t config.Task) config.Task {
+	t.Filters[0].IP.Family = []int{4}
+	return t
 }

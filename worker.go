@@ -42,21 +42,18 @@ type target struct {
 	tasks    []config.Task
 }
 
-// NewWorker makes the worker of the configuration; Start runs it. A lifetime or a rediscovery
-// interval left zero is the default: an hour, and a third of the lifetime.
+// NewWorker makes the worker of the configuration; Start runs it. A lifetime left zero is an
+// hour; a rediscovery interval, a third of the shortest lifetime of the families on.
 func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
-	lifetime, rediscover := cfg.Lifetime.Duration, cfg.Discovery.Rediscover.Duration
+	lifetime := cfg.Lifetime.Duration
 	if lifetime == 0 {
 		lifetime = config.DefaultLifetime
-	}
-	if rediscover == 0 {
-		rediscover = lifetime / 3
 	}
 	w := &Worker{
 		State: NewState(),
 		discWorker: ipv6disc.NewWorker(logger, ipv6disc.Config{
 			Lifetime:   lifetime,
-			Rediscover: rediscover,
+			Rediscover: cfg.Discovery.Rediscover.Duration,
 			IPv6:       discoveryFamily(cfg.Discovery.IPv6),
 			IPv4:       discoveryFamily(cfg.Discovery.IPv4),
 
@@ -161,14 +158,12 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.logger.Warn(warning)
 	}
 
+	if err := w.discWorker.Start(ctx); err != nil {
+		return err
+	}
 	changes, unsubscribe := w.discWorker.State.Subscribe()
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
 		w.sources[name].Start(ctx, w.logger, w.askRematch)
-	}
-
-	if err := w.discWorker.Start(ctx); err != nil {
-		unsubscribe()
-		return err
 	}
 
 	w.running.Add(1)

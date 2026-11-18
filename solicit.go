@@ -65,7 +65,9 @@ func eui64Targets(tasks map[string]config.Task, prefixes []netip.Prefix) []netip
 			for i, t := range f.IP.Type {
 				types[i] = strings.ToLower(t)
 			}
-			if f.MAC.Address == "" || !slices.Contains(types, "eui64") {
+			// Family 6 by default; a filter of IPv4 only wants no IPv6 address.
+			ipv6 := len(f.IP.Family) == 0 || slices.Contains(f.IP.Family, 6)
+			if f.MAC.Address == "" || !ipv6 || !slices.Contains(types, "eui64") {
 				continue
 			}
 			mac, err := net.ParseMAC(f.MAC.Address)
