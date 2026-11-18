@@ -3,39 +3,36 @@ package ddns
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"net/netip"
-	"os"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns/gravity"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
-	"github.com/xeipuuv/gojsonschema"
 )
 
 type Gravity struct {
-	Server string        `json:"server"`
-	APIKey string        `json:"api_key"`
-	Zone   string        `json:"zone"`
-	TTL    time.Duration `json:"ttl"`
+	Server string `json:"server"`
+	APIKey string `json:"api_key"`
+	Zone   string `json:"zone"`
+	// Gravity has no TTL per record: it is read for the schema, and unused.
+	TTL duration.Duration `json:"ttl"`
 }
 
 func init() {
 	RegisterProvider("gravity", NewGravity)
 }
 
-func NewGravity(settings ProviderSettings) Service {
+func NewGravity(settings json.RawMessage) (Service, error) {
 	var service Gravity
-	gravityValidateConfig(settings.(json.RawMessage))
-	json.Unmarshal(settings.(json.RawMessage), &service)
-	return &service
+	if err := decodeSettings(settings, gravitySettingsSchema, &service); err != nil {
+		return nil, err
+	}
+	return &service, nil
 }
 
-func gravityValidateConfig(config json.RawMessage) {
-	var configSchema = []byte(`
+const gravitySettingsSchema = `
 	{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type": "object",
@@ -64,24 +61,7 @@ func gravityValidateConfig(config json.RawMessage) {
 			"ttl"
 		]
 	}
-	`)
-
-	schemaLoader := gojsonschema.NewBytesLoader(configSchema)
-	dataLoader := gojsonschema.NewBytesLoader([]byte(config))
-
-	result, err := gojsonschema.Validate(schemaLoader, dataLoader)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	if !result.Valid() {
-		fmt.Printf("Gravity configuration is not valid.\nErrors:\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
-		os.Exit(1)
-	}
-}
+	`
 
 func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	requestEditors := []gravity.RequestEditorFn{
@@ -90,7 +70,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 			return nil
 		},
 	}
-	apiClient, err := gravity.NewClientWithResponses(g.Server)
+	apiClient, err := gravity.NewClientWithResponses(g.Server, gravity.WithHTTPClient(newHTTPClient(nil)))
 	if err != nil {
 		return fmt.Errorf("failed to create gravity client: %v", err)
 	}
@@ -119,23 +99,15 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		if record.Type != "AAAA" && record.Type != "A" {
 			continue
 		}
-		addr, err := netip.ParseAddr(record.Data)
-		if err != nil {
-			return fmt.Errorf("invalid existing record found: %v", err)
+		ip, ok := canonicalIP(record.Data)
+		if !ok {
+			return fmt.Errorf("invalid existing record found: %s", record.Data)
 		}
-		ip := addr.WithZone("").String()
 		currentIPs[ip] = record.Type
 	}
 
 	// Build a set of desired IP addresses
-	desiredIPs := make(map[string]string)
-	for _, addr := range addrCollection.Get() {
-		recordType := "AAAA"
-		if addr.Addr.Is4() {
-			recordType = "A"
-		}
-		desiredIPs[addr.WithZone("").String()] = recordType
-	}
+	desiredIPs := desiredRecords(addrCollection)
 
 	// Create records as necessary
 	for ip, recordType := range desiredIPs {
@@ -171,7 +143,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 			continue
 		}
 
-		ip := record.Data
+		ip, _ := canonicalIP(record.Data)
 		_, exists := desiredIPs[ip]
 		if !exists {
 			// Delete the DNS record
@@ -192,55 +164,10 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 			if response.StatusCode() < 200 || response.StatusCode() >= 300 {
 				return fmt.Errorf("failed to delete DNS record: %v", response.Status())
 			}
-		} else {
-			// Nothing to update for now
 		}
 	}
 
 	return nil
-}
-
-func (g *Gravity) PrettyPrint(prefix string) ([]byte, error) {
-	return json.MarshalIndent(g, prefix, "    ")
-}
-
-func (g *Gravity) UnmarshalJSON(b []byte) error {
-	type Alias Gravity
-	aux := &struct {
-		TTL interface{} `json:"ttl"`
-		*Alias
-	}{
-		Alias: (*Alias)(g),
-	}
-	if err := json.Unmarshal(b, &aux); err != nil {
-		return err
-	}
-
-	switch value := aux.TTL.(type) {
-	case float64:
-		g.TTL = time.Duration(value) * time.Second
-		return nil
-	case string:
-		var err error
-		g.TTL, err = time.ParseDuration(value)
-		if err != nil {
-			return err
-		}
-		return nil
-	default:
-		return errors.New("ttl invalid duration")
-	}
-}
-
-func (g *Gravity) MarshalJSON() ([]byte, error) {
-	type Alias Gravity
-	return json.Marshal(&struct {
-		TTL int64 `json:"ttl"`
-		*Alias
-	}{
-		TTL:   int64(g.TTL.Seconds()),
-		Alias: (*Alias)(g),
-	})
 }
 
 func (g *Gravity) Domain(hostname string) string {

@@ -48,8 +48,8 @@ credentials:
   myrouter:
     provider: mikrotik
     settings:
-      # API port (default 8728 for cleartext, 8729 for TLS)
-      address: 192.168.88.1:8728
+      # Add a port unless it is the default: 8728 for cleartext, 8729 for TLS
+      address: 192.168.88.1
       # Recommended: use TLS (requires API-SSL service on router)
       use_tls: true
       # If certificate cannot be validated you must provide the SHA256 fingerprint of the router's certificate. Run empty to get the fingerprint.
