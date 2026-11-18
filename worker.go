@@ -1,10 +1,12 @@
 package ipv6ddns
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
@@ -22,6 +24,8 @@ type Worker struct {
 	logger     *zap.SugaredLogger
 	config     config.Config
 	targets    []*target
+	// The goroutines Start starts, for Shutdown.
+	running sync.WaitGroup
 }
 
 // target is a host name at an endpoint, with the tasks that give it addresses. A name in more than
@@ -98,6 +102,11 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 		w.logger.Debugf("endpoint %s starting update of: %s", endpointKey, hostnameKey)
 
 		err := endpoint.Update(hostnameKey, addrCollection)
+		if warner, ok := endpoint.Service.(ddns.Warner); ok {
+			for _, warning := range warner.Warnings() {
+				w.logger.Warnf("endpoint %s: %s", endpointKey, warning)
+			}
+		}
 		if err != nil {
 			w.logger.Errorf("endpoint %s error updating %s: %s", endpointKey, hostnameKey, err)
 		} else {
@@ -111,33 +120,73 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 	return hostname
 }
 
-func (w *Worker) Start() error {
+// Start runs the discovery, the IPv4 commands and the updates, until ctx is done. Shutdown waits
+// for them to stop.
+func (w *Worker) Start(ctx context.Context) error {
 	for _, taskName := range slices.Sorted(maps.Keys(w.config.Tasks)) {
 		task := w.config.Tasks[taskName]
 		if task.IPv4 != nil && !task.IPv4.Running() {
 			if err := task.IPv4.Start(w.config.BaseDir, w.logger); err != nil {
 				return fmt.Errorf("error starting IPv4 handler for task %s: %w", taskName, err)
 			}
+			context.AfterFunc(ctx, task.IPv4.Stop)
 		}
 	}
 
-	if err := w.discWorker.Start(); err != nil {
+	if err := w.discWorker.Start(ctx); err != nil {
 		return err
 	}
 
+	w.running.Add(1)
 	go func() {
+		defer w.running.Done()
+		ticker := time.NewTicker(lookInterval)
+		defer ticker.Stop()
 		for {
 			// @TODO: instead of proactively searching, be notified from ipv6disc.AddrCollection.Seen
 			w.lookForChanges()
-			time.Sleep(lookInterval)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
 	}()
 
 	if w.config.Discovery.SolicitEUI64 {
-		go w.solicitEUI64Loop()
+		w.running.Add(1)
+		go func() {
+			defer w.running.Done()
+			w.solicitEUI64Loop(ctx)
+		}()
 	}
 
 	return nil
+}
+
+// Shutdown stops scheduling updates, and waits for the ones running and for the discovery to stop,
+// once the context of Start is done. It gives up when ctx is done.
+func (w *Worker) Shutdown(ctx context.Context) error {
+	for _, t := range w.targets {
+		t.hostname.Stop()
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		w.running.Wait()
+		w.discWorker.Wait()
+		for _, t := range w.targets {
+			t.hostname.Wait()
+		}
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("stopping: %w", ctx.Err())
+	}
 }
 
 func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {

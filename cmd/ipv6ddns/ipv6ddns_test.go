@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -136,16 +137,28 @@ discovery:
 		t.Fatal(err)
 	}
 
-	response := httptest.NewRecorder()
-	statusHandler(worker).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
-	body := response.Body.String()
-	for _, s := range []string{secret, "01234567-89ab-cdef-0123-456789abcdef"} {
-		if strings.Contains(body, s) {
-			t.Errorf("%s is on the page:\n%s", s, body)
+	handler := webHandler(worker)
+	for path, want := range map[string]struct{ contentType, body string }{
+		"/":            {"text/plain; charset=utf-8", "www.duckdns.org"},
+		"/other":       {"text/plain; charset=utf-8", "www.duckdns.org"},
+		"/healthz":     {"text/plain; charset=utf-8", "ok"},
+		"/status.json": {"application/json", `"domain": "www.duckdns.org"`},
+		"/metrics":     {"text/plain; version=0.0.4; charset=utf-8", `ipv6ddns_hostname_addresses{provider="duckdns",endpoint="duck",hostname="www.duckdns.org"} 0`},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		body := response.Body.String()
+		for _, s := range []string{secret, "01234567-89ab-cdef-0123-456789abcdef"} {
+			if strings.Contains(body, s) {
+				t.Errorf("%s: %s is on the page:\n%s", path, s, body)
+			}
 		}
-	}
-	if !strings.Contains(body, "www.duckdns.org") || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
-		t.Errorf("not the status page: %s\n%s", response.Header().Get("Content-Type"), body)
+		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != want.contentType || !strings.Contains(body, want.body) {
+			t.Errorf("%s: %d %s, want %s with %q:\n%s", path, response.Code, response.Header().Get("Content-Type"), want.contentType, want.body, body)
+		}
+		if path == "/status.json" && !json.Valid(response.Body.Bytes()) {
+			t.Errorf("%s: invalid JSON", path)
+		}
 	}
 }
 
