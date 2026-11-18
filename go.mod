@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/miguelangel-nubla/ipv6disc v0.11.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
-	github.com/oapi-codegen/runtime v1.1.2
+	github.com/oapi-codegen/runtime v1.9.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.59.0
