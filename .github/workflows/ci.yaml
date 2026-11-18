@@ -32,7 +32,7 @@ jobs:
         run: go vet ./...
       -
         name: Test
-        run: go test ./...
+        run: go test -race ./...
       -
         # The binary as the release builds it, for this platform only.
         name: Build
@@ -41,3 +41,23 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           args: build --snapshot --clean --single-target
+
+  # 64-bit atomic operations need an alignment 32-bit platforms don't give by themselves.
+  test-32-bit:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: Generate
+        run: go generate ./...
+      -
+        name: Test
+        run: GOARCH=386 go test ./...
