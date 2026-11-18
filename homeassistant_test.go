@@ -168,9 +168,9 @@ func TestHomeAssistantState(t *testing.T) {
 	}
 }
 
-func TestAnnouncedIPs(t *testing.T) {
-	all, err := announcedIPs(nil, nil)
-	if err != nil || len(all) == 0 {
+func TestAnnounced(t *testing.T) {
+	ifaces, all, err := announced(nil, nil)
+	if err != nil || len(all) == 0 || len(ifaces) == 0 {
 		t.Skipf("no interface with an address here: %v", err)
 	}
 	for _, ip := range all {
@@ -178,21 +178,26 @@ func TestAnnouncedIPs(t *testing.T) {
 			t.Errorf("announced %s", ip)
 		}
 	}
-	if _, err := announcedIPs(nil, []string{"*"}); err == nil {
+	if _, _, err := announced(nil, []string{"*"}); err == nil {
 		t.Error("every interface left out: want an error")
 	}
-	if _, err := announcedIPs([]string{"no-such-interface"}, nil); err == nil {
+	if _, _, err := announced([]string{"no-such-interface"}, nil); err == nil {
 		t.Error("only an interface that isn't: want an error")
 	}
 }
 
-// The device's announcement starts at the machine's addresses: without them, it failed at once,
-// unable to resolve its own name. Short, and without a query: a test needn't announce a device on
-// the network it runs in.
+// The device's announcement starts: without addresses, it failed at once, unable to resolve its
+// own name. On loopback only: a test needn't announce a device on the network it runs in.
 func TestDeviceAnnounces(t *testing.T) {
-	ips, err := announcedIPs(nil, nil)
-	if err != nil {
-		t.Skip(err)
+	var lo *net.Interface
+	ifaces, _ := net.Interfaces()
+	for i := range ifaces {
+		if ifaces[i].Flags&net.FlagLoopback != 0 && ifaces[i].Flags&net.FlagMulticast != 0 {
+			lo = &ifaces[i]
+		}
+	}
+	if lo == nil {
+		t.Skip("no loopback interface with multicast")
 	}
 	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-announce-test", FriendlyName: "test", Port: 16099, StateFile: "s"}, t.TempDir())
 	if err != nil {
@@ -200,10 +205,22 @@ func TestDeviceAnnounces(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- h.device.Advertise(ctx, 16099, ips) }()
+	go func() {
+		done <- h.device.Advertise(ctx, 16099, []net.IP{net.IPv4(127, 0, 0, 1)}, []net.Interface{*lo})
+	}()
 	select {
 	case err := <-done:
 		t.Fatalf("the announcement ended at once: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	// The key given: the announcement follows, without ending.
+	key, _ := esphome.ParseKey(esphome.GenerateKey())
+	if err := h.device.OnKey(key); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("the announcement ended: %v", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 	cancel()

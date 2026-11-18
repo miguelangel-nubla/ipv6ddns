@@ -8,6 +8,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.71.0
 	github.com/cloudflare/cloudflare-go v0.119.0
+	github.com/enbility/zeroconf/v3 v3.0.0-20260410070239-bf752832c353
+	github.com/flynn/noise v1.1.0
 	github.com/go-routeros/routeros/v3 v3.0.1
 	github.com/google/uuid v1.6.0
 	github.com/miguelangel-nubla/ipv6disc v0.18.0
@@ -17,6 +19,7 @@ require (
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.63.0
+	google.golang.org/protobuf v1.36.12
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -35,13 +38,11 @@ require (
 	github.com/aws/smithy-go v1.28.9 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/dprotaso/go-yit v0.0.0-20240618133044-5a0af90af097 // indirect
-	github.com/flynn/noise v1.1.0 // indirect
 	github.com/getkin/kin-openapi v0.142.0 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
-	github.com/hashicorp/mdns v1.0.7 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mdlayher/ndp v1.1.0 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
@@ -64,6 +65,5 @@ require (
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

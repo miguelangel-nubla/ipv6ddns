@@ -236,13 +236,14 @@ func (h *homeAssistant) follow(ctx context.Context, status func() Status) {
 	}
 }
 
-// announcedIPs are the addresses the device announces by mDNS, for Home Assistant to connect to:
-// those of the interfaces up, but loopback, and those discovery leaves out, as the bridges of
-// containers, whose addresses Home Assistant can't reach the device at.
-func announcedIPs(include, exclude []string) ([]net.IP, error) {
-	ifaces, err := net.Interfaces()
+// announced are the interfaces the device announces itself on by mDNS, and the addresses it
+// announces, for Home Assistant to connect to: those of the interfaces up, with multicast, but
+// loopback, and those discovery leaves out, as the bridges of containers, which Home Assistant
+// can't reach the device at.
+func announced(include, exclude []string) ([]net.Interface, []net.IP, error) {
+	all, err := net.Interfaces()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	matches := func(patterns []string, name string) bool {
 		for _, p := range patterns {
@@ -252,9 +253,10 @@ func announcedIPs(include, exclude []string) ([]net.IP, error) {
 		}
 		return false
 	}
+	var ifaces []net.Interface
 	var ips []net.IP
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 ||
+	for _, iface := range all {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagMulticast == 0 ||
 			len(include) > 0 && !matches(include, iface.Name) || matches(exclude, iface.Name) {
 			continue
 		}
@@ -262,16 +264,20 @@ func announcedIPs(include, exclude []string) ([]net.IP, error) {
 		if err != nil {
 			continue
 		}
+		before := len(ips)
 		for _, a := range addrs {
 			if ipNet, ok := a.(*net.IPNet); ok && !ipNet.IP.IsLinkLocalUnicast() {
 				ips = append(ips, ipNet.IP)
 			}
 		}
+		if len(ips) > before {
+			ifaces = append(ifaces, iface)
+		}
 	}
 	if len(ips) == 0 {
-		return nil, errors.New("no address to announce")
+		return nil, nil, errors.New("no address to announce")
 	}
-	return ips, nil
+	return ifaces, ips, nil
 }
 
 // serve listens for Home Assistant on the port, and announces the device by mDNS at the addresses
@@ -283,9 +289,9 @@ func (h *homeAssistant) serve(ctx context.Context, interfaces, exclude []string,
 	}
 	if h.config.Announces() {
 		go func() {
-			ips, err := announcedIPs(interfaces, exclude)
+			ifaces, ips, err := announced(interfaces, exclude)
 			if err == nil {
-				err = h.device.Advertise(ctx, h.config.Port, ips)
+				err = h.device.Advertise(ctx, h.config.Port, ips, ifaces)
 			}
 			if err != nil {
 				errorf("homeassistant: %s: Home Assistant won't discover it, add it by its address", err)
