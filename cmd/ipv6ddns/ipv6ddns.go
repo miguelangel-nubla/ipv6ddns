@@ -82,10 +82,7 @@ func main() {
 			sugar.Fatalf("web server failed: %s", err)
 		}
 		mux := http.NewServeMux()
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Write([]byte(wrapPrettyPrint(worker, "", true)))
-		})
+		mux.Handle("/", statusHandler(worker))
 		for _, listener := range listeners {
 			go func() {
 				sugar.Infof("Starting web server on %s", listener.Addr())
@@ -108,6 +105,14 @@ func main() {
 	} else {
 		select {}
 	}
+}
+
+// statusHandler serves the state, with the sensible data hidden: the page has no authentication.
+func statusHandler(worker *ipv6ddns.Worker) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte(wrapPrettyPrint(worker, "", true)))
+	})
 }
 
 func wrapPrettyPrint(worker *ipv6ddns.Worker, prefix string, hideSensible bool) string {
@@ -204,7 +209,12 @@ func checkedListenAddress(host, port, entry string) (string, error) {
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		return "", fmt.Errorf("invalid port in %q", entry)
 	}
-	return net.JoinHostPort(host, port), nil
+	// A zone can hold anything, brackets too: the address must read back.
+	address := net.JoinHostPort(host, port)
+	if h, p, err := net.SplitHostPort(address); err != nil || h != host || p != port {
+		return "", fmt.Errorf("invalid entry %q", entry)
+	}
+	return address, nil
 }
 
 // listenAll opens every address, so a bad one stops the start instead of leaving part of the list
