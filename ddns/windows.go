@@ -22,10 +22,17 @@ type WindowsDNS struct {
 	Username string            `json:"username"`
 	Password string            `json:"password"`
 	SSHKey   string            `json:"ssh_key"`
+	HostKey  string            `json:"host_key"`
 	TTL      duration.Duration `json:"ttl"`
 
 	// Runs the PowerShell commands, for tests: nil is over SSH, or locally without an address.
 	newRunner func() (WindowsRunner, error)
+
+	unverified unverifiedHostKeys
+}
+
+func (w *WindowsDNS) Warnings() []string {
+	return w.unverified.Warnings()
 }
 
 func init() {
@@ -50,6 +57,7 @@ const windowsSettingsSchema = `
 			"username": { "type": "string" },
 			"password": { "type": "string" },
 			"ssh_key": { "type": "string" },
+			"host_key": { "type": "string", "pattern": "` + hostKeyPattern + `" },
 			"ttl": {
 				"type": "string",
 				"pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
@@ -67,7 +75,11 @@ func (w *WindowsDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	case w.newRunner != nil:
 		runner, err = w.newRunner()
 	case w.Address != "":
-		runner, err = NewSSHRunner(w.Address, w.Username, w.Password, w.SSHKey)
+		var hostKey string
+		runner, hostKey, err = newSSHRunner(sshTarget{w.Address, w.Username, w.Password, w.SSHKey, w.HostKey})
+		if err == nil && w.HostKey == "" {
+			w.unverified.note(w.Address, hostKey)
+		}
 	default:
 		runner = &LocalRunner{}
 	}
@@ -287,12 +299,13 @@ type SSHRunner struct {
 	client *ssh.Client
 }
 
-func NewSSHRunner(address, username, password, keyPath string) (*SSHRunner, error) {
-	client, err := dialSSH(address, username, password, keyPath)
+// newSSHRunner connects to the target, and returns the fingerprint of its key.
+func newSSHRunner(target sshTarget) (*SSHRunner, string, error) {
+	client, hostKey, err := dialSSH(target)
 	if err != nil {
-		return nil, err
+		return nil, hostKey, err
 	}
-	return &SSHRunner{client: client}, nil
+	return &SSHRunner{client: client}, hostKey, nil
 }
 
 func (s *SSHRunner) RunPS(psScript string) ([]byte, error) {

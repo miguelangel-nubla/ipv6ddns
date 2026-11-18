@@ -20,6 +20,12 @@ type Service interface {
 	Domain(hostname string) string
 }
 
+// Warner is a Service with warnings to log, about its settings: an SSH host key it didn't
+// verify. Warnings returns each once.
+type Warner interface {
+	Warnings() []string
+}
+
 // ProviderFactory makes a Service from the settings of a credential.
 type ProviderFactory func(settings json.RawMessage) (Service, error)
 
