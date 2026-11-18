@@ -4,7 +4,6 @@ RUN apk add --no-cache \
     bash \
     iputils \
     iproute2 \
-    arp-scan \
     curl \
     ca-certificates \
     bind-tools \
