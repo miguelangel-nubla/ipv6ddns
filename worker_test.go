@@ -1,6 +1,7 @@
 package ipv6ddns
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -138,4 +139,28 @@ func TestUnusedCredentialsAreChecked(t *testing.T) {
 	if _, err := NewWorker(zap.NewNop().Sugar(), cfg); err == nil || !strings.Contains(err.Error(), "unused") {
 		t.Errorf("got %v, want the unused credential's error", err)
 	}
+}
+
+// With nothing to discover, the worker starts all the same: its names get their sources'.
+func TestWorkerWithSourcesOnly(t *testing.T) {
+	wan := config.Source{Type: config.SourceStatic, Addresses: []string{"203.0.113.7"}}
+	wan.Interval.Duration, wan.Lifetime.Duration = time.Hour, 3*time.Hour
+	cfg := config.Config{
+		Tasks:       map[string]config.Task{"web": {Name: "web", Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"www"}}}},
+		Credentials: map[string]config.Credential{"dns": fakeCredential("sources-only", time.Millisecond, time.Hour)},
+		Sources:     map[string]config.Source{"wan": wan},
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("no discovery, but sources: %v", err)
+	}
+	fakeServicesMutex.Lock()
+	service := fakeServices["sources-only"]
+	fakeServicesMutex.Unlock()
+	service.waitFor(t, "www", "203.0.113.7")
 }
