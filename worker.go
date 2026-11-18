@@ -11,6 +11,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
 )
@@ -24,6 +25,8 @@ type Worker struct {
 	logger     *zap.SugaredLogger
 	config     config.Config
 	targets    []*target
+	// The sources of addresses without a MAC, by name.
+	sources map[string]*source.Source
 	// The goroutines Start starts, for Shutdown.
 	running sync.WaitGroup
 }
@@ -41,6 +44,15 @@ func NewWorker(logger *zap.SugaredLogger, rediscover time.Duration, lifetime tim
 		discWorker: ipv6disc.NewWorker(logger, rediscover, lifetime, cfg.Discovery.Listen, cfg.Discovery.Active),
 		logger:     logger,
 		config:     cfg,
+		sources:    make(map[string]*source.Source),
+	}
+
+	for name, sourceConfig := range cfg.Sources {
+		s, err := source.New(name, sourceConfig, cfg.BaseDir)
+		if err != nil {
+			return nil, err
+		}
+		w.sources[name] = s
 	}
 
 	targets := make(map[*Hostname]*target)
@@ -123,14 +135,12 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 // Start runs the discovery, the IPv4 commands and the updates, until ctx is done. Shutdown waits
 // for them to stop.
 func (w *Worker) Start(ctx context.Context) error {
-	for _, taskName := range slices.Sorted(maps.Keys(w.config.Tasks)) {
-		task := w.config.Tasks[taskName]
-		if task.IPv4 != nil && !task.IPv4.Running() {
-			if err := task.IPv4.Start(w.config.BaseDir, w.logger); err != nil {
-				return fmt.Errorf("error starting IPv4 handler for task %s: %w", taskName, err)
-			}
-			context.AfterFunc(ctx, task.IPv4.Stop)
-		}
+	for _, warning := range w.config.Warnings {
+		w.logger.Warn(warning)
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
+		w.sources[name].Start(ctx, w.logger)
 	}
 
 	if err := w.discWorker.Start(ctx); err != nil {
@@ -175,6 +185,9 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 	go func() {
 		w.running.Wait()
 		w.discWorker.Wait()
+		for _, s := range w.sources {
+			s.Wait()
+		}
 		for _, t := range w.targets {
 			t.hostname.Wait()
 		}
@@ -201,13 +214,13 @@ func (w *Worker) lookForChanges() {
 	}
 
 	for _, t := range w.targets {
-		t.hostname.SetAddrCollection(matching(t.tasks, discovered))
+		t.hostname.SetAddrCollection(w.matching(t.tasks, discovered))
 	}
 }
 
-// matching returns the addresses that the filters of any of the tasks match, and the IPv4
-// addresses of the tasks.
-func matching(tasks []config.Task, discovered []*ipv6disc.Addr) *ipv6disc.AddrCollection {
+// matching returns the addresses that the filters of any of the tasks match, and those of the
+// tasks' sources.
+func (w *Worker) matching(tasks []config.Task, discovered []*ipv6disc.Addr) *ipv6disc.AddrCollection {
 	result := ipv6disc.NewAddrCollection()
 	for _, task := range tasks {
 		for _, addr := range discovered {
@@ -215,8 +228,10 @@ func matching(tasks []config.Task, discovered []*ipv6disc.Addr) *ipv6disc.AddrCo
 				result.Add(addr)
 			}
 		}
-		if task.IPv4 != nil {
-			result.Join(task.IPv4.AddrCollection)
+		for _, name := range task.Sources {
+			if s, ok := w.sources[name]; ok {
+				result.Join(s.Addresses())
+			}
 		}
 	}
 	return result

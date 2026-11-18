@@ -7,12 +7,15 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/miguelangel-nubla/ipv6ddns/source"
 )
 
 // Status is the state of the worker, to serve as JSON.
 type Status struct {
 	Hostnames  []HostnameStatus `json:"hostnames"`
 	Discovered []DiscoveredHost `json:"discovered"`
+	Sources    []source.Status  `json:"sources"`
 }
 
 type HostnameStatus struct {
@@ -45,7 +48,11 @@ type DiscoveredAddress struct {
 // Status returns the state of the host names and of the discovery. hideSensible hides the errors,
 // which can tell secrets.
 func (w *Worker) Status(hideSensible bool) Status {
-	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}}
+	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Sources: []source.Status{}}
+
+	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
+		status.Sources = append(status.Sources, w.sources[name].Status(hideSensible))
+	}
 
 	for _, providerKey := range slices.Sorted(maps.Keys(w.State.providers)) {
 		provider := w.State.providers[providerKey]
@@ -134,6 +141,29 @@ func (s Status) WriteMetrics(out io.Writer) error {
 	for _, h := range s.Hostnames {
 		if h.LastUpdate != nil {
 			fmt.Fprintf(&b, "ipv6ddns_hostname_last_success_timestamp_seconds%s %d\n", labels(h), h.LastUpdate.Unix())
+		}
+	}
+
+	sourceLabels := func(name string, extra ...string) string {
+		l := fmt.Sprintf(`source="%s"`, labelValue(name))
+		for i := 0; i < len(extra); i += 2 {
+			l += fmt.Sprintf(`,%s="%s"`, extra[i], labelValue(extra[i+1]))
+		}
+		return "{" + l + "}"
+	}
+	metric("ipv6ddns_source_addresses", "gauge", "The addresses a source gives.")
+	for _, src := range s.Sources {
+		fmt.Fprintf(&b, "ipv6ddns_source_addresses%s %d\n", sourceLabels(src.Name), len(src.Addresses))
+	}
+	metric("ipv6ddns_source_runs_total", "counter", "The runs of a source, by result.")
+	for _, src := range s.Sources {
+		fmt.Fprintf(&b, "ipv6ddns_source_runs_total%s %d\n", sourceLabels(src.Name, "result", "success"), src.Runs-src.Failures)
+		fmt.Fprintf(&b, "ipv6ddns_source_runs_total%s %d\n", sourceLabels(src.Name, "result", "failure"), src.Failures)
+	}
+	metric("ipv6ddns_source_last_success_timestamp_seconds", "gauge", "When a source last ran without an error.")
+	for _, src := range s.Sources {
+		if src.LastSuccess != nil {
+			fmt.Fprintf(&b, "ipv6ddns_source_last_success_timestamp_seconds%s %d\n", sourceLabels(src.Name), src.LastSuccess.Unix())
 		}
 	}
 

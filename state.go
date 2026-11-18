@@ -86,13 +86,18 @@ func writeHostnameStatus(result *strings.Builder, prefix string, status hostname
 		fmt.Fprintf(result, " (last update error: %s)", err)
 	}
 
-	// One line per address, with the MAC and the sources of an IPv6 one.
+	// One line per address: the MAC and what saw it, for a discovered one; the source, for one
+	// without a MAC.
 	for _, addr := range status.addrs.Get() {
 		ip := addr.WithZone("").String()
 		if addr.Is6() {
-			fmt.Fprintf(result, "\n%s[%s] from %s seen over %s", prefix, ip, addr.Hw, strings.Join(addr.Sources(), ","))
+			ip = "[" + ip + "]"
+		}
+		sources := strings.Join(addr.Sources(), ",")
+		if len(addr.Hw) == 0 {
+			fmt.Fprintf(result, "\n%s%s from source %s", prefix, ip, sources)
 		} else {
-			fmt.Fprintf(result, "\n%s%s", prefix, ip)
+			fmt.Fprintf(result, "\n%s%s from %s seen over %s", prefix, ip, addr.Hw, sources)
 		}
 	}
 

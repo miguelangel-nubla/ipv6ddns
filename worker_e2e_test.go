@@ -193,14 +193,13 @@ func TestWorkerRetriesFailedUpdates(t *testing.T) {
 // The status page hides what can be secret, even in the errors of providers.
 func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	const secret = "SECRET-7f3a"
-	ipv4 := new(config.IPv4Handler)
-	if err := ipv4.UnmarshalJSON([]byte(`{"interval": "1h", "lifetime": "1h", "command": "curl", "args": ["https://example.com/ip?token=` + secret + `"]}`)); err != nil {
-		t.Fatal(err)
-	}
+	wan := config.Source{Type: config.SourceCommand, Command: "curl", Args: []string{"https://example.com/ip?token=" + secret}}
+	wan.Interval.Duration, wan.Lifetime.Duration = time.Hour, time.Hour
 	cfg := config.Config{
-		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}, IPv4: ipv4}},
+		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("hidden", time.Millisecond, time.Hour)},
 		Discovery:   config.Discovery{Plugins: map[string]config.PluginConfig{"router": {Type: "mikrotik", Params: "60s,192.0.2.1,admin," + secret}}},
+		Sources:     map[string]config.Source{"wan": wan},
 	}
 	credential := cfg.Credentials["dns"]
 	credential.RawSettings = json.RawMessage(`{"id": "hidden", "token": "` + secret + `"}`)
@@ -399,5 +398,65 @@ func TestProviderWarningsAreLogged(t *testing.T) {
 
 	if got := logs.FilterMessageSnippet("host key is not verified").Len(); got != 1 {
 		t.Errorf("got the warning %d times, want once", got)
+	}
+}
+
+func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
+	wan := config.Source{Type: config.SourceStatic, Addresses: []string{"203.0.113.7"}}
+	wan.Interval.Duration, wan.Lifetime.Duration = time.Hour, 3*time.Hour
+	lan := macFilter(macB)
+	lan.IP.Family = []int{4}
+	cfg := config.Config{
+		Tasks: map[string]config.Task{
+			// A filter from before IPv4 discovery: the device's IPv6 only, plus the public IPv4.
+			"web": {Name: "web", Filters: []config.Filters{macFilter(macA)}, Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"www"}}},
+			"api": {Name: "api", Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"api"}}},
+			"lan": {Name: "lan", Filters: []config.Filters{lan}, Endpoints: map[string][]string{"dns": {"nas"}}},
+		},
+		Credentials: map[string]config.Credential{"dns": fakeCredential("sources", time.Millisecond, time.Hour)},
+		Sources:     map[string]config.Source{"wan": wan},
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The IPv4 neighbors discovered: still, a filter without family leaves them out.
+	w.discWorker.State.EnableIPv4()
+	fakeServicesMutex.Lock()
+	service := fakeServices["sources"]
+	fakeServicesMutex.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w.sources["wan"].Start(ctx, zap.NewNop().Sugar())
+	deadline := time.Now().Add(3 * time.Second)
+	for len(w.sources["wan"].Addresses().Get()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the source gave nothing")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	register(w, macA, "2001:db8::a", time.Hour)
+	register(w, macA, "192.168.1.10", time.Hour) // its private IPv4, discovered
+	register(w, macB, "192.168.1.20", time.Hour)
+	register(w, macB, "2001:db8::b", time.Hour)
+	w.lookForChanges()
+
+	service.waitFor(t, "www", "203.0.113.7", "2001:db8::a")
+	service.waitFor(t, "api", "203.0.113.7")
+	service.waitFor(t, "nas", "192.168.1.20")
+
+	status := w.Status(true)
+	if len(status.Sources) != 1 || status.Sources[0].Name != "wan" || len(status.Sources[0].Addresses) != 1 {
+		t.Errorf("sources status: %+v", status.Sources)
+	}
+	var metrics strings.Builder
+	status.WriteMetrics(&metrics)
+	if !strings.Contains(metrics.String(), `ipv6ddns_source_addresses{source="wan"} 1`) {
+		t.Errorf("no source in the metrics:\n%s", metrics.String())
+	}
+	if page := w.State.PrettyPrint("", true); !strings.Contains(page, "203.0.113.7 from source wan") {
+		t.Errorf("the source isn't on the page:\n%s", page)
 	}
 }

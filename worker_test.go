@@ -77,11 +77,11 @@ func filterTask(mac string) config.Task {
 
 func TestMatchingMergesTasks(t *testing.T) {
 	a, b, c := addr("00:00:00:00:00:01", "2001:db8::1"), addr("00:00:00:00:00:02", "2001:db8::2"), addr("00:00:00:00:00:03", "2001:db8::3")
-	got := matching([]config.Task{filterTask("00:00:00:00:00:01"), filterTask("00:00:00:00:00:02")}, []*ipv6disc.Addr{a, b, c})
+	got := (&Worker{}).matching([]config.Task{filterTask("00:00:00:00:00:01"), filterTask("00:00:00:00:00:02")}, []*ipv6disc.Addr{a, b, c})
 	if want := []string{"2001:db8::1", "2001:db8::2"}; !equal(got.Strings(), want) {
 		t.Errorf("got %v, want %v", got.Strings(), want)
 	}
-	if got := matching([]config.Task{{}}, []*ipv6disc.Addr{a}); len(got.Get()) != 0 {
+	if got := (&Worker{}).matching([]config.Task{{}}, []*ipv6disc.Addr{a}); len(got.Get()) != 0 {
 		t.Errorf("a task without filters: got %v, want nothing", got.Strings())
 	}
 }

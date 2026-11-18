@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6disc"
-	"go.uber.org/zap"
 )
 
 func TestTaskMatch(t *testing.T) {
@@ -41,32 +40,5 @@ func TestTaskMatch(t *testing.T) {
 		if got := (Task{Filters: tt.filters}).Match(addr); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
 		}
-	}
-}
-
-func TestIPv4Handler(t *testing.T) {
-	var h IPv4Handler
-	if err := h.UnmarshalJSON([]byte(`{"interval": "1h", "lifetime": "1h", "command": "printf", "args": ["192.0.2.1\n\nnot an address\n 192.0.2.2 \n"]}`)); err != nil {
-		t.Fatal(err)
-	}
-	h.logger = zap.NewNop().Sugar()
-	h.runCommand()
-	got := h.AddrCollection.Strings()
-	if len(got) != 2 || got[0] != "192.0.2.1" || got[1] != "192.0.2.2" {
-		t.Errorf("got %v, want the two addresses", got)
-	}
-
-	for _, bad := range []string{`{"interval": "0s", "lifetime": "1h", "command": "x"}`, `{"interval": "1m", "lifetime": "-1s", "command": "x"}`} {
-		if err := new(IPv4Handler).UnmarshalJSON([]byte(bad)); err == nil {
-			t.Errorf("%s: want an error", bad)
-		}
-	}
-	if timeout := (&IPv4Handler{Interval: h.Interval}).commandTimeout(); timeout != time.Hour-time.Second {
-		t.Errorf("timeout: %s", timeout)
-	}
-	short := IPv4Handler{}
-	short.Interval.Duration = time.Second
-	if timeout := short.commandTimeout(); timeout != 500*time.Millisecond {
-		t.Errorf("timeout of a 1s interval: %s, want half of it", timeout)
 	}
 }
