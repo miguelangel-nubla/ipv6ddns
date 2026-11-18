@@ -110,7 +110,7 @@ func TestWorkerUpdatesFromDiscovery(t *testing.T) {
 		},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("e2e", 150*time.Millisecond, time.Hour)},
 	}
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestWorkerRetriesFailedUpdates(t *testing.T) {
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("retry", time.Millisecond, 20*time.Millisecond)},
 	}
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	credential := cfg.Credentials["dns"]
 	credential.RawSettings = json.RawMessage(`{"id": "hidden", "token": "` + secret + `"}`)
 	cfg.Credentials["dns"] = credential
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("shutdown", time.Millisecond, time.Millisecond)},
 	}
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestStatusAndMetrics(t *testing.T) {
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas", `we"ird`}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("status", time.Millisecond, time.Hour)},
 	}
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +387,7 @@ func TestProviderWarningsAreLogged(t *testing.T) {
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("warning", time.Millisecond, time.Hour)},
 	}
-	w, err := NewWorker(zap.New(core).Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.New(core).Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +423,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 		// The IPv4 neighbors discovered: still, a filter without family leaves them out.
 		Discovery: config.Discovery{IPv6: config.DefaultDiscovery().IPv6, IPv4: config.Family{Enabled: true}},
 	}
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +469,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 func TestDiscoveryIPv4(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		cfg := config.Config{Discovery: config.Discovery{IPv6: config.DefaultDiscovery().IPv6, IPv4: config.Family{Enabled: enabled}}}
-		w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+		w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -485,7 +485,7 @@ func TestDiscoveryIPv4(t *testing.T) {
 
 func TestWorkerDiscoveryFamilies(t *testing.T) {
 	cfg := config.Config{Discovery: config.Discovery{IPv6: config.Family{}, IPv4: config.Family{Enabled: true}}}
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

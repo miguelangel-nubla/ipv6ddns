@@ -424,6 +424,19 @@
                         }
                     ],
                     "description": "The interfaces the local discovery doesn't run on: names, or patterns as docker*, veth*."
+                },
+                "rediscover": {
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "pattern": "^(\\d+(\\.\\d+)?(ns|us|µs|ms|s|m|h))+$"
+                        },
+                        {
+                            "type": "number",
+                            "minimum": 0
+                        }
+                    ],
+                    "description": "How often the active discovery probes every host: a duration, or seconds. Default: a third of the lifetime."
                 }
             },
             "additionalProperties": false

@@ -60,8 +60,8 @@ func main() {
 		sugar.Fatalf("error in config: %s", err)
 	}
 
-	rediscover := lifetime / 3
-	worker, err := ipv6ddns.NewWorker(sugar, rediscover, lifetime, config)
+	config.Lifetime.Duration = lifetime
+	worker, err := ipv6ddns.NewWorker(sugar, config)
 	if err != nil {
 		sugar.Fatalf("error in config: %s", err)
 	}

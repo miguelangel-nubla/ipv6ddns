@@ -109,7 +109,7 @@ func TestNewWorker(t *testing.T) {
 			"duck": {Provider: "duckdns", RawSettings: json.RawMessage(`{"api_token": "01234567-89ab-cdef-0123-456789abcdef"}`)},
 		},
 	}
-	w, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestNewWorker(t *testing.T) {
 	}
 
 	cfg.Credentials["duck"] = config.Credential{Provider: "duckdns", RawSettings: json.RawMessage(`{}`)}
-	if _, err := NewWorker(zap.NewNop().Sugar(), time.Minute, time.Hour, cfg); err == nil {
+	if _, err := NewWorker(zap.NewNop().Sugar(), cfg); err == nil {
 		t.Error("invalid settings: want an error")
 	}
 }

@@ -14,6 +14,8 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
+	// The plugin types, which say their fields.
+	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"github.com/xeipuuv/gojsonschema"
 	"sigs.k8s.io/yaml"
 )
@@ -48,6 +50,8 @@ type Discovery struct {
 	// "docker*". None means all. The plugins aren't concerned.
 	Interfaces        StringList `json:"interfaces,omitempty"`
 	ExcludeInterfaces StringList `json:"exclude_interfaces,omitempty"`
+	// How often the active discovery probes every host. Default: a third of the lifetime.
+	Rediscover duration.Duration `json:"rediscover"`
 
 	// Deprecated: ipv6.listen, ipv6.active and ipv6.solicit. NewConfig moves them there.
 	Listen       *bool `json:"listen,omitempty"`
@@ -76,32 +80,26 @@ type PluginConfig struct {
 // PluginParams returns the params of the plugin in one string, for plugins.Create: its fields
 // joined, escaped so that any value can hold a comma.
 func (p PluginConfig) PluginParams() (string, error) {
+	values := make(map[string]string)
+	for name, value := range map[string]string{
+		"interval": p.Interval, "address": p.Address, "username": p.Username, "password": p.Password,
+		"identity_file": p.IdentityFile, "host_key": p.HostKey, "tls_fingerprint": p.TLSFingerprint,
+	} {
+		if value != "" {
+			values[name] = value
+		}
+	}
+	if p.UseTLS {
+		values["use_tls"] = "true"
+	}
 	if p.Params != "" {
+		if len(values) > 0 {
+			return "", errors.New("give the params, or their fields, not both")
+		}
 		return p.Params, nil
 	}
-	var values []string
-	switch p.Type {
-	case "linux", "freebsd":
-		if p.UseTLS || p.TLSFingerprint != "" {
-			return "", fmt.Errorf("a %s plugin has no use_tls or tls_fingerprint: they are mikrotik's", p.Type)
-		}
-		values = []string{p.Interval, p.Address, p.Username, p.Password, p.IdentityFile, p.HostKey}
-	case "mikrotik":
-		if p.IdentityFile != "" || p.HostKey != "" {
-			return "", fmt.Errorf("a mikrotik plugin has no identity_file or host_key: they are linux's and freebsd's")
-		}
-		values = []string{p.Interval, p.Address, p.Username, p.Password, "", p.TLSFingerprint}
-		if p.UseTLS {
-			values[4] = "true"
-		}
-	default:
-		return "", fmt.Errorf("unknown plugin type %s", p.Type)
-	}
-	// The optional values last: those left empty are left out.
-	for len(values) > 4 && values[len(values)-1] == "" {
-		values = values[:len(values)-1]
-	}
-	return plugins.JoinParams(values...), nil
+	// The plugin type says what its fields are, and their order.
+	return plugins.FieldParams(p.Type, values)
 }
 
 func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {

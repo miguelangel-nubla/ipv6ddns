@@ -162,7 +162,7 @@ func (c *Config) setUpSources() ([]string, error) {
 		task.Sources = append(task.Sources, sourceName)
 		task.IPv4 = nil
 		c.Tasks[name] = task
-		warnings = append(warnings, fmt.Sprintf("task %s: the ipv4 block is deprecated: move it to sources, as a command source, and name it in the task's sources", name))
+		warnings = append(warnings, fmt.Sprintf("task %s: the ipv4 block is deprecated, and goes in v1.0: move it to sources, as a command source, and name it in the task's sources", name))
 	}
 
 	for name, source := range c.Sources {

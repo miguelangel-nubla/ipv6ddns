@@ -47,6 +47,7 @@ func TestPluginParams(t *testing.T) {
 		{Type: "linux", Interval: "60s", Address: "a", Username: "b", UseTLS: true},
 		{Type: "mikrotik", Interval: "60s", Address: "a", Username: "b", HostKey: hostKey},
 		{Type: "nope", Interval: "60s", Address: "a", Username: "b"},
+		{Type: "linux", Params: "60s,a,b,c", Address: "a"},
 	} {
 		if _, err := wrong.PluginParams(); err == nil {
 			t.Errorf("%+v: want an error", wrong)
