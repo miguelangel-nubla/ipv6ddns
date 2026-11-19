@@ -171,8 +171,9 @@ func (h *homeAssistant) State(entity, attribute string) (string, error) {
 	case time.Since(since) < stateGrace:
 		return "", fmt.Errorf("%w for Home Assistant to send the state", source.ErrWaiting)
 	default:
-		// Home Assistant sends the state of an entity that is at once: none, an entity it hasn't.
-		return "", fmt.Errorf("no state from Home Assistant, connected for %s: is the entity's id right?", time.Since(since).Round(time.Second))
+		// Home Assistant sends the state of an entity that is at once: none, an entity it hasn't,
+		// or an attribute the entity hasn't.
+		return "", fmt.Errorf("no state from Home Assistant, connected for %s: are the entity's id and attribute right?", time.Since(since).Round(time.Second))
 	}
 }
 

@@ -45,7 +45,7 @@ It takes the entries of [`webserver.listen`](installation.md#the-web-report): a 
 | Discovered hosts | How many hosts discovery knows |
 | Update now | Updates every name now, as after a change |
 
-*name* is the name's domain, as `www.example.com`. The entity ids come from the credential and the host name, so they stay when a provider's zone does.
+*name* is the name's domain, as `www.example.com`. Home Assistant knows an entity by its name, and makes its id of the device's and the entity's: `sensor.ipv6ddns_www_example_com_addresses`, `binary_sensor.ipv6ddns_www_example_com_update`. So a name whose domain changes, as when its host name or zone does in the configuration, is new entities to Home Assistant, and the old ones stay unavailable until deleted. Route 53 learns its zone at the first update, after the entities are made: they are named by the host name alone, as `www addresses`.
 
 ## An entity's addresses
 
@@ -73,11 +73,11 @@ credentials:
 
 The state is one address or more, separated by commas or spaces. A change runs the source at once. An empty state is none: the addresses go at once, as a [command](sources.md#runs-and-lifetimes) that prints nothing.
 
-While Home Assistant restarts, the source waits: Home Assistant isn't connected, or the entity is `unknown` or `unavailable`, its states for none, until its integration is up. A wait isn't a failure: the addresses stay for the source's `lifetime`, and the log says when the wait starts and ends, at info, and warns if it outlasts the lifetime, when the addresses go. Give the lifetime longer than Home Assistant's restarts. Connected for 30 seconds without a state of the entity is an error: Home Assistant has no entity of that id.
+While Home Assistant restarts, the source waits: Home Assistant isn't connected, or the entity is `unknown` or `unavailable`, its states for none, until its integration is up. A wait isn't a failure: the addresses stay for the source's `lifetime`, and the log says when the wait starts and ends, at info, and warns if it outlasts the lifetime, when the addresses go. Give the lifetime longer than Home Assistant's restarts. Connected for 30 seconds without a state of the entity is an error: Home Assistant has no entity of that id, or it has no such attribute.
 
 ## Recipes
 
-The blocks headed `# Home Assistant` go in Home Assistant's configuration, as `configuration.yaml` or a package; the helpers can be made in its UI too, under *Settings → Devices & services → Helpers*. The others are ipv6ddns'. Each credential is the one of [An entity's addresses](#an-entitys-addresses), shortened.
+The blocks headed `# Home Assistant` go in Home Assistant's configuration, as `configuration.yaml` or a package; the helpers can be made in its UI too, under *Settings → Devices & services → Helpers*. The others are ipv6ddns'.
 
 ### A record you set by hand
 
@@ -165,7 +165,7 @@ credentials:
 
 ### Devices discovery doesn't reach
 
-A device on a network ipv6ddns can't discover, as a VLAN it isn't on, may be known to Home Assistant: a router's integration gives each device tracker its address in the `ip` attribute.
+A device on a network ipv6ddns can't discover, as a VLAN it isn't on, may be known to Home Assistant: a router's integration gives each device tracker its address in the `ip` attribute. A private address, its record goes in the local network's DNS, as a Technitium server's zone.
 
 ```yaml
 homeassistant:
@@ -179,12 +179,14 @@ tasks:
   printer:
     sources: [printer]
     endpoints:
-      cloudflare: [printer.lan]
+      lan: [printer]
 credentials:
-  cloudflare:
-    provider: cloudflare
-    settings: {api_token: "${CLOUDFLARE_TOKEN}", zone: example.com, ttl: 5m, proxied: false}
+  lan:
+    provider: technitium
+    settings: {address: "http://192.0.2.53:5380", token: "${TECHNITIUM_TOKEN}", zone: lan.example.com, ttl: 5m}
 ```
+
+`printer.lan.example.com` then has the printer's address. An integration that drops the attribute when the device leaves leaves it at the last address: Home Assistant sends nothing for an attribute gone, so ipv6ddns keeps what it last sent. One that sets it to none sends `None`, a wait, and the record stays for the source's `lifetime`.
 
 ### Two WANs in one record
 
@@ -222,7 +224,7 @@ credentials:
 
 ### Alerts, and updating now
 
-The device's entities in automations: a notification when a name's update keeps failing, and an update of every name when the router comes back, rather than at the next change discovery sees. Entity ids are as Home Assistant made them: *Settings → Devices & services → ESPHome → ipv6ddns*.
+The device's entities in automations: a notification when a name's update keeps failing, and an update of every name when the router comes back, rather than at the next change discovery sees. The ids are of the [names' domains](#the-entities): `home.example.com`'s here. Home Assistant lists them under *Settings → Devices & services → ESPHome → ipv6ddns*.
 
 ```yaml
 # Home Assistant: automations
@@ -230,7 +232,7 @@ automation:
   - alias: ipv6ddns update failing
     triggers:
       - trigger: state
-        entity_id: binary_sensor.ipv6ddns_cloudflare_home_update
+        entity_id: binary_sensor.ipv6ddns_home_example_com_update
         to: "on"
         for: "00:10:00"
     actions:

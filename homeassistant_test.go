@@ -290,7 +290,7 @@ func TestHomeAssistantStateWaits(t *testing.T) {
 		t.Errorf("just connected, no state: %v, want a wait", err)
 	}
 	since = time.Now().Add(-time.Minute)
-	if _, err := h.State("sensor.missing", ""); err == nil || errors.Is(err, source.ErrWaiting) || !strings.Contains(err.Error(), "entity's id") {
+	if _, err := h.State("sensor.missing", ""); err == nil || errors.Is(err, source.ErrWaiting) || !strings.Contains(err.Error(), "entity's id and attribute") {
 		t.Errorf("connected a minute, no state: %v, want an error", err)
 	}
 }
