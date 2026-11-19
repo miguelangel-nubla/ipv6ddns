@@ -14,50 +14,32 @@ import (
 // The mDNS service ESPHome devices announce, which Home Assistant's ESPHome integration discovers.
 const mdnsService = "_esphomelib._tcp"
 
-// Link is an interface the device announces itself on, and its addresses there: on each, the
-// device gives only that interface's, which those who hear it there can reach, and not those of
-// its other networks, as the bridges of a container's.
-type Link struct {
-	Interface net.Interface
-	IPs       []net.IP
-}
-
-// Advertise announces the device by mDNS on its port, on each link at its addresses, until ctx is
-// done: Home Assistant offers to add it. It announces itself when it starts, as RFC 6762 has a new
-// service do, for Home Assistant, which queries ever less often, to see it at once; and again when
-// Home Assistant gives its key, as the announcement says whether it needs one. It registers the
-// service again for that: the library's SetText changes the records its goroutines read without
-// a lock.
-func (d *Device) Advertise(ctx context.Context, port int, links []Link) error {
-	if len(links) == 0 {
+// Advertise announces the device by mDNS on its port, on ifaces, until ctx is done: Home Assistant
+// offers to add it. On each interface, it gives that interface's addresses only, which those who
+// hear it there can reach, and not those of its other networks, as the bridges of a container's.
+// It announces itself when it starts, as RFC 6762 has a new service do, for Home Assistant, which
+// queries ever less often, to see it at once; and again when Home Assistant gives its key, as the
+// announcement says whether it needs one. It registers the service again for that: the library's
+// SetText changes the records its goroutines read without a lock.
+func (d *Device) Advertise(ctx context.Context, port int, ifaces []net.Interface) error {
+	if len(ifaces) == 0 {
 		return errors.New("mDNS: no interface to announce on")
 	}
 	for {
 		changed := d.keyChange()
-		var servers []*zeroconf.Server
-		shutdown := func() {
-			for _, s := range servers {
-				s.Shutdown()
-			}
-		}
-		for _, link := range links {
-			addrs := make([]string, len(link.IPs))
-			for i, ip := range link.IPs {
-				addrs[i] = ip.String()
-			}
-			server, err := zeroconf.RegisterProxy(d.Name, mdnsService, "local.", port, d.Name, addrs, d.txt(), []net.Interface{link.Interface})
-			if err != nil {
-				shutdown()
-				return fmt.Errorf("mDNS on %s: %w", link.Interface.Name, err)
-			}
-			servers = append(servers, server)
+		// No addresses given: the library answers, and announces, on each interface with its own.
+		// One server for all: servers sharing the port would each answer every query, on Linux,
+		// which gives a socket the multicast of every interface any socket joined the group on.
+		server, err := zeroconf.RegisterProxy(d.Name, mdnsService, "local.", port, d.Name, nil, d.txt(), ifaces)
+		if err != nil {
+			return fmt.Errorf("mDNS: %w", err)
 		}
 		select {
 		case <-ctx.Done():
-			shutdown()
+			server.Shutdown()
 			return nil
 		case <-changed:
-			shutdown()
+			server.Shutdown()
 		}
 	}
 }

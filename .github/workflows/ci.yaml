@@ -42,15 +42,15 @@ jobs:
         name: Install aioesphomeapi
         run: pip install aioesphomeapi==46.30.1
       -
-        # For the test of discovery to announce on loopback, and not on the runner's network.
-        name: Multicast on loopback
+        # For the test of discovery: Home Assistant's network, and another, which the test
+        # announces on, and not on the runner's.
+        name: Networks for mDNS
         run: |
-          sudo ip link set lo multicast on
-          sudo ip route add 224.0.0.0/4 dev lo
-          # Another network, which the test announces on too, and must not hear on loopback.
-          sudo ip link add mdns0 type dummy
-          sudo ip addr add 192.0.2.1/24 dev mdns0
-          sudo ip link set mdns0 multicast on up
+          for n in 0 1; do
+            sudo ip link add mdns$n type dummy
+            sudo ip addr add 192.0.2.$((n + 1))/32 dev mdns$n
+            sudo ip link set mdns$n multicast on up
+          done
       -
         name: Vet
         run: go vet ./...
@@ -60,7 +60,7 @@ jobs:
         env:
           ESPHOME_PYTHON: python
           ESPHOME_COMPAT_REQUIRED: "1"
-          ESPHOME_MDNS_OTHER_INTERFACE: mdns0
+          ESPHOME_MDNS_INTERFACES: mdns0,mdns1
       -
         # The binary as the release builds it, for this platform only.
         name: Build

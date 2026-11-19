@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -211,18 +212,51 @@ func TestHomeAssistantGivesTheKey(t *testing.T) {
 // Home Assistant discovers the device, with python-zeroconf, as its zeroconf integration does:
 // listening only, without a query, so that the device must announce itself, as RFC 6762 has a
 // new service do, to be found, as by a Home Assistant that queries an hour apart; then its
-// announcement says it needs its key once Home Assistant gave it. On loopback only, so that the
-// test announces nothing on the network it runs in: where loopback carries multicast, as in CI,
-// which turns it on.
+// announcement says it needs its key once Home Assistant gave it; then a query is answered. All
+// of it at the address of Home Assistant's network only, though the device announces on another
+// too: in a container beside Home Assistant's, it can't reach those of the others.
+//
+// On two interfaces of the machine's only, so that the test announces nothing on the network it
+// runs in: $ESPHOME_MDNS_INTERFACES names them, Home Assistant's first, as CI's dummy ones.
 func TestHomeAssistantDiscovers(t *testing.T) {
 	py := python(t)
-	lo := multicastLoopback(t)
+	names := strings.Split(os.Getenv("ESPHOME_MDNS_INTERFACES"), ",")
+	if len(names) != 2 {
+		if os.Getenv("ESPHOME_COMPAT_REQUIRED") != "" {
+			t.Fatal("ESPHOME_MDNS_INTERFACES names no two interfaces, Home Assistant's network and another")
+		}
+		t.Skip("ESPHOME_MDNS_INTERFACES names no two interfaces, Home Assistant's network and another")
+	}
+	var ifaces []net.Interface
+	var ips []string
+	own := []map[string]bool{{}, {}} // the addresses of each interface
+	for n, name := range names {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		addrs, _ := iface.Addrs()
+		var ip string
+		for _, a := range addrs {
+			own[n][a.(*net.IPNet).IP.String()] = true
+			if v4 := a.(*net.IPNet).IP.To4(); v4 != nil {
+				ip = v4.String()
+			}
+		}
+		if ip == "" {
+			t.Fatalf("%s has no IPv4 address", name)
+		}
+		ifaces, ips = append(ifaces, *iface), append(ips, ip)
+	}
+	haIP, otherIP := ips[0], ips[1]
+
 	mac, _ := net.ParseMAC("02:00:5e:10:00:03")
 	d := &Device{Name: "ipv6ddns-discover-test", FriendlyName: "discover test", MAC: mac,
 		Project: "miguelangel-nubla.ipv6ddns", ProjectVersion: "1.2.3", OnKey: func([]byte) error { return nil }}
 
-	cmd := exec.Command(py, "testdata/discover.py", d.Name, "30")
+	cmd := exec.Command(py, "testdata/discover.py", d.Name, haIP, "30")
 	cmd.Stderr = os.Stderr
+	stdin, _ := cmd.StdinPipe()
 	stdout, _ := cmd.StdoutPipe()
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -236,15 +270,16 @@ func TestHomeAssistantDiscovers(t *testing.T) {
 		Port    int               `json:"port"`
 		TXT     map[string]string `json:"txt"`
 		Address string            `json:"address"`
+		Queried *[]string         `json:"queried"`
 	}
-	var addresses sync.Map // every address heard
+	var heard sync.Map // every address announced, at Home Assistant's network
 	records := make(chan record, 16)
 	go func() {
 		for lines.Scan() {
 			var r record
 			if json.Unmarshal(lines.Bytes(), &r) == nil {
 				if r.Address != "" {
-					addresses.Store(r.Address, true)
+					heard.Store(r.Address, true)
 				}
 				records <- r
 			}
@@ -270,26 +305,9 @@ func TestHomeAssistantDiscovers(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	links := []Link{{Interface: *lo, IPs: []net.IP{net.IPv4(127, 0, 0, 1)}}}
-	// Another network of the machine, which Home Assistant isn't on: announced there, with its own
-	// address, never on loopback. CI makes one, a dummy interface.
-	var other net.IP
-	if name := os.Getenv("ESPHOME_MDNS_OTHER_INTERFACE"); name != "" {
-		iface, err := net.InterfaceByName(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		addrs, _ := iface.Addrs()
-		for _, a := range addrs {
-			if ip := a.(*net.IPNet).IP.To4(); ip != nil {
-				other = ip
-			}
-		}
-		links = append(links, Link{Interface: *iface, IPs: []net.IP{other}})
-	}
-	go d.Advertise(ctx, 6053, links)
+	go d.Advertise(ctx, 6053, ifaces)
 
-	next("the address", func(r record) bool { return r.Address == "127.0.0.1" })
+	next("the address", func(r record) bool { return r.Address == haIP })
 	next("the port", func(r record) bool { return r.Port == 6053 })
 	txt := next("the TXT records", func(r record) bool { return r.TXT != nil }).TXT
 	if txt["mac"] != "02005e100003" || txt["friendly_name"] != "discover test" {
@@ -304,40 +322,21 @@ func TestHomeAssistantDiscovers(t *testing.T) {
 		t.Fatal(err)
 	}
 	next("the key", func(r record) bool { return r.TXT["api_encryption"] == "Noise_NNpsk0_25519_ChaChaPoly_SHA256" })
-	if other != nil {
-		if _, heard := addresses.Load(other.String()); heard {
-			t.Errorf("the other network's address, %s, announced on loopback", other)
-		}
-	}
-}
 
-// multicastLoopback is the loopback interface, where it carries IPv4 multicast: on Linux, with
-// "ip link set lo multicast on" and a route of 224.0.0.0/4 to it, as CI does; macOS has no route.
-func multicastLoopback(t *testing.T) *net.Interface {
-	skip := func(why string) {
-		if os.Getenv("ESPHOME_COMPAT_REQUIRED") != "" {
-			t.Fatal(why)
-		}
-		t.Skip(why)
+	stdin.Write([]byte("query\n"))
+	queried := next("the answer to a query", func(r record) bool { return r.Queried != nil }).Queried
+	if !slices.Contains(*queried, haIP) {
+		t.Errorf("a query answered with %v, without %s", *queried, haIP)
 	}
-	ifaces, _ := net.Interfaces()
-	for i := range ifaces {
-		if ifaces[i].Flags&net.FlagLoopback == 0 {
-			continue
-		}
-		if ifaces[i].Flags&net.FlagMulticast == 0 {
-			skip("loopback carries no multicast: ip link set lo multicast on")
-		}
-		conn, err := net.DialUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 9})
-		if err == nil {
-			_, err = conn.Write([]byte{0})
-			conn.Close()
-		}
-		if err != nil {
-			skip("no multicast route to loopback: ip route add 224.0.0.0/4 dev lo: " + err.Error())
-		}
-		return &ifaces[i]
+	for _, ip := range *queried {
+		heard.Store(ip, true)
 	}
-	skip("no loopback interface")
-	return nil
+	// Only those of Home Assistant's network, where the answer goes: as its link-local, which the
+	// library gives where the interface has no other IPv6 address.
+	heard.Range(func(ip, _ any) bool {
+		if !own[0][ip.(string)] {
+			t.Errorf("announced or answered %s, not an address of Home Assistant's network (%s's: %v)", ip, otherIP, own[1][ip.(string)])
+		}
+		return true
+	})
 }
