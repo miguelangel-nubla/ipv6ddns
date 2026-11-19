@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -232,14 +233,19 @@ func TestHomeAssistantDiscovers(t *testing.T) {
 		t.Fatalf("the listener: %q", lines.Text())
 	}
 	type record struct {
-		Port int               `json:"port"`
-		TXT  map[string]string `json:"txt"`
+		Port    int               `json:"port"`
+		TXT     map[string]string `json:"txt"`
+		Address string            `json:"address"`
 	}
+	var addresses sync.Map // every address heard
 	records := make(chan record, 16)
 	go func() {
 		for lines.Scan() {
 			var r record
 			if json.Unmarshal(lines.Bytes(), &r) == nil {
+				if r.Address != "" {
+					addresses.Store(r.Address, true)
+				}
 				records <- r
 			}
 		}
@@ -264,8 +270,26 @@ func TestHomeAssistantDiscovers(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go d.Advertise(ctx, 6053, []net.IP{net.IPv4(127, 0, 0, 1)}, []net.Interface{*lo})
+	links := []Link{{Interface: *lo, IPs: []net.IP{net.IPv4(127, 0, 0, 1)}}}
+	// Another network of the machine, which Home Assistant isn't on: announced there, with its own
+	// address, never on loopback. CI makes one, a dummy interface.
+	var other net.IP
+	if name := os.Getenv("ESPHOME_MDNS_OTHER_INTERFACE"); name != "" {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		addrs, _ := iface.Addrs()
+		for _, a := range addrs {
+			if ip := a.(*net.IPNet).IP.To4(); ip != nil {
+				other = ip
+			}
+		}
+		links = append(links, Link{Interface: *iface, IPs: []net.IP{other}})
+	}
+	go d.Advertise(ctx, 6053, links)
 
+	next("the address", func(r record) bool { return r.Address == "127.0.0.1" })
 	next("the port", func(r record) bool { return r.Port == 6053 })
 	txt := next("the TXT records", func(r record) bool { return r.TXT != nil }).TXT
 	if txt["mac"] != "02005e100003" || txt["friendly_name"] != "discover test" {
@@ -280,6 +304,11 @@ func TestHomeAssistantDiscovers(t *testing.T) {
 		t.Fatal(err)
 	}
 	next("the key", func(r record) bool { return r.TXT["api_encryption"] == "Noise_NNpsk0_25519_ChaChaPoly_SHA256" })
+	if other != nil {
+		if _, heard := addresses.Load(other.String()); heard {
+			t.Errorf("the other network's address, %s, announced on loopback", other)
+		}
+	}
 }
 
 // multicastLoopback is the loopback interface, where it carries IPv4 multicast: on Linux, with

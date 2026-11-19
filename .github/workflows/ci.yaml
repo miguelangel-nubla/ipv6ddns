@@ -47,6 +47,10 @@ jobs:
         run: |
           sudo ip link set lo multicast on
           sudo ip route add 224.0.0.0/4 dev lo
+          # Another network, which the test announces on too, and must not hear on loopback.
+          sudo ip link add mdns0 type dummy
+          sudo ip addr add 192.0.2.1/24 dev mdns0
+          sudo ip link set mdns0 multicast on up
       -
         name: Vet
         run: go vet ./...
@@ -56,6 +60,7 @@ jobs:
         env:
           ESPHOME_PYTHON: python
           ESPHOME_COMPAT_REQUIRED: "1"
+          ESPHOME_MDNS_OTHER_INTERFACE: mdns0
       -
         # The binary as the release builds it, for this platform only.
         name: Build

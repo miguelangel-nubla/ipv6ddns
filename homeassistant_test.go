@@ -168,20 +168,30 @@ func TestHomeAssistantState(t *testing.T) {
 	}
 }
 
+// Each interface is announced with its own addresses only: those who hear it there must reach it
+// at them, and Home Assistant, in a container beside ipv6ddns, can't reach those of the other's
+// networks.
 func TestAnnounced(t *testing.T) {
-	ifaces, all, err := announced(nil, nil)
-	if err != nil || len(all) == 0 || len(ifaces) == 0 {
+	links, err := announced(nil, nil)
+	if err != nil || len(links) == 0 {
 		t.Skipf("no interface with an address here: %v", err)
 	}
-	for _, ip := range all {
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-			t.Errorf("announced %s", ip)
+	for _, link := range links {
+		own := map[string]bool{}
+		addrs, _ := link.Interface.Addrs()
+		for _, a := range addrs {
+			own[a.(*net.IPNet).IP.String()] = true
+		}
+		for _, ip := range link.IPs {
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || !own[ip.String()] {
+				t.Errorf("announced %s on %s, whose addresses are %v", ip, link.Interface.Name, addrs)
+			}
 		}
 	}
-	if _, _, err := announced(nil, []string{"*"}); err == nil {
+	if _, err := announced(nil, []string{"*"}); err == nil {
 		t.Error("every interface left out: want an error")
 	}
-	if _, _, err := announced([]string{"no-such-interface"}, nil); err == nil {
+	if _, err := announced([]string{"no-such-interface"}, nil); err == nil {
 		t.Error("only an interface that isn't: want an error")
 	}
 }
@@ -206,7 +216,7 @@ func TestDeviceAnnounces(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- h.device.Advertise(ctx, 16099, []net.IP{net.IPv4(127, 0, 0, 1)}, []net.Interface{*lo})
+		done <- h.device.Advertise(ctx, 16099, []esphome.Link{{Interface: *lo, IPs: []net.IP{net.IPv4(127, 0, 0, 1)}}})
 	}()
 	select {
 	case err := <-done:
