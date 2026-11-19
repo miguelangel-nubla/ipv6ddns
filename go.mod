@@ -12,7 +12,7 @@ require (
 	github.com/flynn/noise v1.1.0
 	github.com/go-routeros/routeros/v3 v3.0.1
 	github.com/google/uuid v1.6.0
-	github.com/miguelangel-nubla/ipv6disc v0.18.0
+	github.com/miguelangel-nubla/ipv6disc v0.18.1
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.2
 	github.com/oapi-codegen/runtime v1.9.0
 	github.com/xeipuuv/gojsonschema v1.2.0
