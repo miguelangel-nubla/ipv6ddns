@@ -26,12 +26,14 @@ func TestHomeAssistantFetcher(t *testing.T) {
 		"sensor.down/":         "unavailable",
 		"sensor.text/":         "connected",
 		"sensor.mapped/":       "::ffff:192.0.2.1",
+		"input_text.ip/":       " ",
 	}
 	for _, c := range []struct{ entity, attribute, want string }{
 		{"sensor.wan", "", "[203.0.113.7]"},
 		{"sensor.both", "", "[203.0.113.7 2001:db8::1]"},
 		{"sensor.router", "wan_ip", "[198.51.100.2]"},
 		{"sensor.mapped", "", "[192.0.2.1]"},
+		{"input_text.ip", "", "[]"},
 		{"sensor.down", "", "waiting: waiting for sensor.down, \"unavailable\" now"},
 		{"sensor.text", "", "error: is no address"},
 		{"sensor.missing", "", "waiting: sensor.missing: waiting for Home Assistant to send the state"},

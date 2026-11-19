@@ -10,6 +10,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
+	"sigs.k8s.io/yaml"
 )
 
 var (
@@ -89,6 +90,14 @@ func TestDocExamples(t *testing.T) {
 		for i, m := range yamlBlock.FindAllStringSubmatch(string(content), -1) {
 			block := dedent(m[1])
 			if strings.HasPrefix(block, "services:") || strings.HasPrefix(block, "# compose.yaml") {
+				continue
+			}
+			// Home Assistant's: YAML that reads, which Home Assistant checks itself.
+			if strings.HasPrefix(block, "# Home Assistant") {
+				var v any
+				if err := yaml.Unmarshal([]byte(block), &v); err != nil {
+					t.Errorf("%s, example %d, Home Assistant's: %v\n%s", file, i+1, err, block)
+				}
 				continue
 			}
 			if strings.HasPrefix(block, "filter:") {
