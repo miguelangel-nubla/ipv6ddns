@@ -85,8 +85,8 @@ func macFilter(mac string) config.Filters {
 
 func fakeCredential(id string, debounce, retry time.Duration) config.Credential {
 	c := config.Credential{Provider: "fake", RawSettings: json.RawMessage(`{"id": "` + id + `"}`)}
-	c.DebounceTime.Duration = debounce
-	c.RetryTime.Duration = retry
+	c.Debounce.Duration = debounce
+	c.Retry.Duration = retry
 	return c
 }
 

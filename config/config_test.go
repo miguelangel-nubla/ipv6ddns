@@ -214,7 +214,7 @@ func TestNewConfigChecks(t *testing.T) {
 	if cfg.Tasks["web"].Name != "web" {
 		t.Errorf("task name: got %q", cfg.Tasks["web"].Name)
 	}
-	if c := cfg.Credentials["duck"]; c.DebounceTime.Duration != 10*time.Second || c.RetryTime.Duration != time.Minute {
+	if c := cfg.Credentials["duck"]; c.Debounce.Duration != 10*time.Second || c.Retry.Duration != time.Minute {
 		t.Errorf("default times: %+v", c)
 	}
 	if d := cfg.Discovery; !d.IPv6.Enabled || !d.IPv6.Listen || !d.IPv6.Active || d.IPv6.Solicit || d.IPv4.Enabled {
@@ -314,8 +314,8 @@ func TestSchemaSaysTheDefaults(t *testing.T) {
 		want string
 	}{
 		{[]string{"lifetime"}, "Default: " + short(DefaultLifetime) + "."},
-		{[]string{"credentials", "additionalProperties", "properties", "debounce_time"}, "Default: " + short(credential.DebounceTime.Duration) + "."},
-		{[]string{"credentials", "additionalProperties", "properties", "retry_time"}, "Default: " + short(credential.RetryTime.Duration) + "."},
+		{[]string{"credentials", "additionalProperties", "properties", "debounce"}, "Default: " + short(credential.Debounce.Duration) + "."},
+		{[]string{"credentials", "additionalProperties", "properties", "retry"}, "Default: " + short(credential.Retry.Duration) + "."},
 		{[]string{"sources", "additionalProperties", "properties", "interval"}, "Default: " + short(source.Interval.Duration) + "."},
 		{[]string{"sources", "additionalProperties", "properties", "lifetime"}, fmt.Sprintf("Default: %d intervals.", source.Lifetime.Duration/source.Interval.Duration)},
 	} {

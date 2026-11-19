@@ -38,7 +38,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8053/healthz"]
 ```
 
-The health check needs the web server reachable at `127.0.0.1:8053`: `webserver_listen` `8053`, `:8053` or `127.0.0.1:8053`. The image has `bash`, `curl`, `jq`, `dig` and `ip` for the scripts of [command sources](sources.md).
+The health check needs the web server reachable at `127.0.0.1:8053`: `webserver.listen` `8053`, `:8053` or `127.0.0.1:8053`. The image has `bash`, `curl`, `jq`, `dig` and `ip` for the scripts of [command sources](sources.md).
 
 ## Flags
 
@@ -51,18 +51,26 @@ The health check needs the web server reachable at `127.0.0.1:8053`: `webserver_
 | `-live` | Show the report in the terminal, updating, instead of the log |
 | `-version` | Print the version |
 
-`-lifetime`, `-log_level` and `-webserver_listen` are in the [configuration file](reference/configuration.md#top-level) too, as `lifetime`, `log_level` and `webserver_listen`: a flag given on the command line wins over the file.
+`-lifetime`, `-log_level` and `-webserver_listen` are in the [configuration file](reference/configuration.md#top-level) too, as `lifetime`, `log_level` and `webserver.listen`: a flag given on the command line wins over the file.
 
 ## The web report
 
-`webserver_listen` takes a list of what to listen on, in any combination; on the command line, comma separated:
+`webserver.listen` takes a list of what to listen on, in any combination; on the command line, comma separated:
+
+```yaml
+webserver:
+  listen: [127.0.0.1:8053, 10.2.3.0/24]
+```
 
 | Entry | Listens on |
 |---|---|
 | `8053`, `:8053` | that port, on all addresses |
 | `192.0.2.1:8053`, `[2001:db8::1]:8053` | that address and port |
 | `192.0.2.1`, `2001:db8::1`, `[2001:db8::1]` | that address, port 80 |
+| `10.2.3.0/24`, `fd00::/64` | each address of the machine in that network, at start, port 80 |
 | `myhost:8053`, `myhost` | every address the name resolves to, at start |
+
+[`homeassistant.listen`](home-assistant-integration.md#a-machine-on-several-networks) takes the same entries, with its port, 6053, for those without one.
 
 The report has no authentication: behind a reverse proxy, list only an address the proxy reaches. It hides the credentials, the plugins' params, the commands' arguments, and the errors of the updates and of the sources.
 

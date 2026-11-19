@@ -5,8 +5,10 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 )
 
 // HomeAssistant makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant
@@ -26,6 +28,14 @@ type HomeAssistant struct {
 	Port int `json:"port,omitempty"`
 	// Whether the device announces itself by mDNS, for Home Assistant to find it. Default: true.
 	Announce *bool `json:"announce,omitempty"`
+	// Where the device listens, and announces itself, on the interfaces that hold those
+	// addresses: ports, addresses, networks of the machine's addresses and host names, as listen
+	// takes them; without a port, Port. Only where Home Assistant can reach it, when the machine is
+	// on other networks too, as a container on several: 10.2.3.0/24. Default: every address,
+	// announced on the interfaces discovery runs on.
+	Listen StringList `json:"listen,omitempty"`
+	// Listen, parsed.
+	Entries []listen.Entry `json:"-"`
 }
 
 // Announces tells whether the device announces itself by mDNS.
@@ -67,5 +77,14 @@ func (c *Config) setUpHomeAssistant() error {
 	if h.Port == 0 {
 		h.Port = 6053
 	}
+	listenOn := h.Listen
+	if len(listenOn) == 0 {
+		listenOn = StringList{strconv.Itoa(h.Port)}
+	}
+	entries, err := listen.Parse(listenOn, strconv.Itoa(h.Port))
+	if err != nil {
+		return fmt.Errorf("homeassistant.listen: %w", err)
+	}
+	h.Entries = entries
 	return nil
 }

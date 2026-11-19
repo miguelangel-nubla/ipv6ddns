@@ -42,7 +42,8 @@ Discovery:
 A `config.yaml`, for one server's global addresses at Cloudflare:
 
 ```yaml
-webserver_listen: 127.0.0.1:8053
+webserver:
+  listen: 127.0.0.1:8053
 
 tasks:
   webserver:

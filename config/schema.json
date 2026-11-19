@@ -190,13 +190,21 @@
                         "type": "object",
                         "description": "The provider's settings: see the providers reference. An unknown one is an error."
                     },
-                    "debounce_time": {
+                    "debounce": {
                         "$ref": "#/$defs/duration",
                         "description": "How long to wait for more changes before updating. Default: 10s."
                     },
-                    "retry_time": {
+                    "retry": {
                         "$ref": "#/$defs/duration",
                         "description": "How long to wait before retrying a failed update. Default: 1m."
+                    },
+                    "debounce_time": {
+                        "$ref": "#/$defs/duration",
+                        "description": "Deprecated, and goes in v1.0: debounce."
+                    },
+                    "retry_time": {
+                        "$ref": "#/$defs/duration",
+                        "description": "Deprecated, and goes in v1.0: retry."
                     }
                 },
                 "required": [
@@ -349,9 +357,20 @@
             ],
             "description": "The logging level. Default: info. The -log_level flag, given, wins."
         },
+        "webserver": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "The web server: the report, /status.json and /metrics.",
+            "properties": {
+                "listen": {
+                    "$ref": "#/$defs/stringList",
+                    "description": "Where to serve: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, 80. A host name listens on each address it resolves to, at start; a network, on each address of the machine in it. The -webserver_listen flag, given, wins."
+                }
+            }
+        },
         "webserver_listen": {
             "$ref": "#/$defs/stringList",
-            "description": "Serve the report, /status.json and /metrics on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, myhost. The -webserver_listen flag, given, wins."
+            "description": "Deprecated, and goes in v1.0: webserver.listen."
         },
         "homeassistant": {
             "type": "object",
@@ -382,6 +401,10 @@
                 "announce": {
                     "type": "boolean",
                     "description": "Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true."
+                },
+                "listen": {
+                    "$ref": "#/$defs/stringList",
+                    "description": "Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on."
                 },
                 "state_file": {
                     "type": "string",

@@ -222,6 +222,12 @@ func Configuration() (string, error) {
 	discovery := root.Properties["discovery"]
 	section("Discovery", "discovery", discovery.Description+" See [discovery](../discovery.md).", discovery, "properties", "discovery", "properties")
 
+	webserver := root.Properties["webserver"]
+	section("Web server", "webserver", webserver.Description+" See [the web report](../installation.md#the-web-report).", webserver, "properties", "webserver", "properties")
+
+	ha := root.Properties["homeassistant"]
+	section("Home Assistant", "homeassistant", ha.Description+" See [the Home Assistant integration](../home-assistant-integration.md).", ha, "properties", "homeassistant", "properties")
+
 	family := defs["family"].OneOf[1]
 	b.WriteString("## Discovery families\n\n`discovery.ipv6`, `discovery.ipv4`\n\n`true` turns the family on with its default ways, `false` off, and an object gives the ways, each defaulting as `true` sets it.\n\n")
 	table(&b, family, order(raw, "$defs", "family", "oneOf", "1", "properties"), defs)

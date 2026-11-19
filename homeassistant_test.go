@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"go.uber.org/zap"
 )
 
@@ -226,5 +228,44 @@ func TestDeviceAnnounces(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Error(err)
+	}
+}
+
+// With listen, the device takes connections at those addresses only.
+func TestHomeAssistantListens(t *testing.T) {
+	port := freePort(t)
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-listen-test", FriendlyName: "test", Port: port, StateFile: "s",
+		Announce: new(bool), Entries: []listen.Entry{{Network: netip.MustParsePrefix("127.0.0.1/32"), Port: strconv.Itoa(port)}}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := h.serve(ctx, nil, nil, t.Logf); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), time.Second)
+	if err != nil {
+		t.Fatalf("at the address listened on: %v", err)
+	}
+	conn.Close()
+	// Another address of the machine, where it doesn't listen: loopback's 127.0.0.2 on Linux, or
+	// an interface's.
+	others := []string{"127.0.0.2"}
+	if ifaces, err := announced(nil, nil); err == nil {
+		for _, iface := range ifaces {
+			addrs, _ := iface.Addrs()
+			for _, a := range addrs {
+				if ip := a.(*net.IPNet).IP; ip.To4() != nil {
+					others = append(others, ip.String())
+				}
+			}
+		}
+	}
+	for _, other := range others {
+		if conn, err := net.DialTimeout("tcp", net.JoinHostPort(other, strconv.Itoa(port)), time.Second); err == nil {
+			conn.Close()
+			t.Errorf("listened on %s too", other)
+		}
 	}
 }

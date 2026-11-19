@@ -14,7 +14,8 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 | `sources` | object | Sources of addresses without a MAC, as the network's public IPv4, by name, which tasks name in their sources. |
 | `lifetime` | duration | How long a discovered address stays after it was last seen, unless its family says. Default: 1h. The -lifetime flag, given, wins. |
 | `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | The logging level. Default: info. The -log_level flag, given, wins. |
-| `webserver_listen` | list, or comma separated | Serve the report, /status.json and /metrics on these addresses, host names and ports: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, myhost. The -webserver_listen flag, given, wins. |
+| `webserver` | object | The web server: the report, /status.json and /metrics. |
+| `webserver_listen` | list, or comma separated | Deprecated, and goes in v1.0: webserver.listen. |
 | `homeassistant` | object | Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md. |
 
 ## Tasks
@@ -92,8 +93,10 @@ The DNS providers to update, by credential name, which tasks' endpoints name. Th
 |---|---|---|
 | `provider` | string | **Required.** The DNS provider: see the providers reference. |
 | `settings` | object | **Required.** The provider's settings: see the providers reference. An unknown one is an error. |
-| `debounce_time` | duration | How long to wait for more changes before updating. Default: 10s. |
-| `retry_time` | duration | How long to wait before retrying a failed update. Default: 1m. |
+| `debounce` | duration | How long to wait for more changes before updating. Default: 10s. |
+| `retry` | duration | How long to wait before retrying a failed update. Default: 1m. |
+| `debounce_time` | duration | Deprecated, and goes in v1.0: debounce. |
+| `retry_time` | duration | Deprecated, and goes in v1.0: retry. |
 
 ## Sources
 
@@ -131,6 +134,32 @@ How hosts are discovered: on the local links, and by plugins reading routers' ta
 | `interfaces` | list, or comma separated | The interfaces the local discovery of both families runs on: names, or patterns as en*. Default: all. |
 | `exclude_interfaces` | list, or comma separated | The interfaces the local discovery doesn't run on: names, or patterns as docker*, veth*. |
 | `rediscover` | duration | How often the active discovery probes every host. Default: a third of the shortest lifetime of the families that probe. |
+
+## Web server
+
+`webserver`
+
+The web server: the report, /status.json and /metrics. See [the web report](../installation.md#the-web-report).
+
+| Key | Takes | |
+|---|---|---|
+| `listen` | list, or comma separated | Where to serve: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, 80. A host name listens on each address it resolves to, at start; a network, on each address of the machine in it. The -webserver_listen flag, given, wins. |
+
+## Home Assistant
+
+`homeassistant`
+
+Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md. See [the Home Assistant integration](../home-assistant-integration.md).
+
+| Key | Takes | |
+|---|---|---|
+| `key` | string | The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change. Without it, Home Assistant makes the key and gives it, as to ESPHome's devices: it is kept in state_file. |
+| `name` | string | The device's name in the network: lower case letters, digits and hyphens. Default: ipv6ddns. |
+| `friendly_name` | string | The name Home Assistant shows. Default: the name. |
+| `port` | number | The port Home Assistant connects to. Default: 6053, ESPHome's. |
+| `announce` | boolean | Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true. |
+| `listen` | list, or comma separated | Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on. |
+| `state_file` | string | Without a key: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. Deleting it makes the device a new one, without a key. |
 
 ## Discovery families
 

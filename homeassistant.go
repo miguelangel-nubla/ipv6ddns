@@ -18,6 +18,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 )
 
 // Version is the version of ipv6ddns, which Home Assistant shows: the command sets it.
@@ -275,16 +276,24 @@ func announced(include, exclude []string) ([]net.Interface, error) {
 	return ifaces, nil
 }
 
-// serve listens for Home Assistant on the port, and announces the device by mDNS at the addresses
-// of the interfaces discovery runs on, until ctx is done.
+// serve listens for Home Assistant where listen says, and announces the device by mDNS, until ctx
+// is done: on the interfaces that hold the addresses it listens on, or, listening on all, those
+// discovery runs on.
 func (h *homeAssistant) serve(ctx context.Context, interfaces, exclude []string, errorf func(string, ...any)) error {
-	ln, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(h.config.Port)))
+	entries := h.config.Entries
+	if len(entries) == 0 {
+		entries = []listen.Entry{{Port: strconv.Itoa(h.config.Port)}}
+	}
+	lns, err := listen.Listen(entries)
 	if err != nil {
-		return fmt.Errorf("homeassistant: %w", err)
+		return fmt.Errorf("homeassistant.listen: %w", err)
 	}
 	if h.config.Announces() {
 		go func() {
-			ifaces, err := announced(interfaces, exclude)
+			ifaces, all, err := listen.Interfaces(lns)
+			if err == nil && all {
+				ifaces, err = announced(interfaces, exclude)
+			}
 			if err == nil {
 				err = h.device.Advertise(ctx, h.config.Port, ifaces)
 			}
@@ -293,10 +302,12 @@ func (h *homeAssistant) serve(ctx context.Context, interfaces, exclude []string,
 			}
 		}()
 	}
-	go func() {
-		if err := h.device.Serve(ctx, ln); err != nil {
-			errorf("homeassistant: %s", err)
-		}
-	}()
+	for _, ln := range lns {
+		go func() {
+			if err := h.device.Serve(ctx, ln); err != nil {
+				errorf("homeassistant: %s", err)
+			}
+		}()
+	}
 	return nil
 }

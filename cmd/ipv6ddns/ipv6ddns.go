@@ -7,18 +7,16 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
-	"net/netip"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
@@ -91,11 +89,11 @@ func main() {
 
 	var servers []*http.Server
 	if webserverListen != "" {
-		addresses, err := parseListenList(webserverListen)
+		entries, err := listen.Parse(strings.Split(webserverListen, ","), webserverPort)
 		if err != nil {
-			sugar.Fatalf("webserver_listen: %s", err)
+			sugar.Fatalf("webserver.listen: %s", err)
 		}
-		listeners, err := listenAll(addresses)
+		listeners, err := listen.Listen(entries)
 		if err != nil {
 			sugar.Fatalf("web server failed: %s", err)
 		}
@@ -187,6 +185,9 @@ func given() map[string]bool {
 	return flags
 }
 
+// webserverPort is that of the web server's entries that give none.
+const webserverPort = config.DefaultWebserverPort
+
 // applyConfigSettings takes the settings of the configuration that are flags too, for the flags
 // not given: the lifetime, the logging level and the web server's addresses.
 func applyConfigSettings(cfg config.Config, given map[string]bool, level zap.AtomicLevel) error {
@@ -196,8 +197,8 @@ func applyConfigSettings(cfg config.Config, given map[string]bool, level zap.Ato
 	if lifetime <= 0 {
 		return fmt.Errorf("invalid lifetime %s: it must be positive", lifetime)
 	}
-	if !given["webserver_listen"] && len(cfg.WebserverListen) > 0 {
-		webserverListen = strings.Join(cfg.WebserverListen, ",")
+	if !given["webserver_listen"] && len(cfg.Webserver.Listen) > 0 {
+		webserverListen = strings.Join(cfg.Webserver.Listen, ",")
 	}
 	if !given["log_level"] && cfg.LogLevel != "" {
 		zapLevel, err := getLogLevel(cfg.LogLevel)
@@ -248,111 +249,4 @@ var (
 
 func PrintVersion() string {
 	return fmt.Sprintf("ipv6ddns %s, commit %s, built at %s\n", version, commit, date)
-}
-
-const defaultWebserverPort = "80"
-
-// parseListenList turns a comma-separated list of addresses, host names and ports into host:port
-// pairs. An empty host means all addresses; an entry with no port gets the default one.
-func parseListenList(list string) ([]string, error) {
-	var result []string
-	seen := make(map[string]bool)
-	for _, entry := range strings.Split(list, ",") {
-		address, err := parseListenEntry(strings.TrimSpace(entry))
-		if err != nil {
-			return nil, err
-		}
-		if !seen[address] {
-			seen[address] = true
-			result = append(result, address)
-		}
-	}
-	return result, nil
-}
-
-func parseListenEntry(entry string) (string, error) {
-	if entry == "" {
-		return "", fmt.Errorf("empty entry")
-	}
-	// A port alone. Before anything else: a bare number would otherwise be a host name.
-	if _, err := strconv.Atoi(entry); err == nil {
-		return checkedListenAddress("", entry, entry)
-	}
-	// An IP address with no port: an IPv6 one, bracketed or not, would confuse SplitHostPort.
-	unbracketed := entry
-	if strings.HasPrefix(entry, "[") && strings.HasSuffix(entry, "]") {
-		unbracketed = entry[1 : len(entry)-1]
-	}
-	if ip, err := netip.ParseAddr(unbracketed); err == nil {
-		return checkedListenAddress(ip.String(), defaultWebserverPort, entry)
-	}
-	if host, port, err := net.SplitHostPort(entry); err == nil {
-		return checkedListenAddress(host, port, entry)
-	}
-	if strings.ContainsAny(entry, ":[]") {
-		return "", fmt.Errorf("invalid entry %q", entry)
-	}
-	return checkedListenAddress(entry, defaultWebserverPort, entry)
-}
-
-func checkedListenAddress(host, port, entry string) (string, error) {
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		return "", fmt.Errorf("invalid port in %q", entry)
-	}
-	// A zone can hold anything, brackets too: the address must read back.
-	address := net.JoinHostPort(host, port)
-	if h, p, err := net.SplitHostPort(address); err != nil || h != host || p != port {
-		return "", fmt.Errorf("invalid entry %q", entry)
-	}
-	return address, nil
-}
-
-// listenAll opens every address, so a bad one stops the start instead of leaving part of the list
-// up. A host name listens on each address it resolves to.
-func listenAll(addresses []string) ([]net.Listener, error) {
-	var listeners []net.Listener
-	fail := func(err error) ([]net.Listener, error) {
-		for _, listener := range listeners {
-			listener.Close()
-		}
-		return nil, err
-	}
-	seen := make(map[string]bool)
-	for _, address := range addresses {
-		expanded, err := expandHostName(address)
-		if err != nil {
-			return fail(err)
-		}
-		for _, a := range expanded {
-			if seen[a] {
-				continue
-			}
-			seen[a] = true
-			listener, err := net.Listen("tcp", a)
-			if err != nil {
-				return fail(err)
-			}
-			listeners = append(listeners, listener)
-		}
-	}
-	return listeners, nil
-}
-
-func expandHostName(address string) ([]string, error) {
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := netip.ParseAddr(host); host == "" || err == nil {
-		return []string{address}, nil
-	}
-	ips, err := net.LookupHost(host)
-	if err != nil {
-		return nil, err
-	}
-	var result []string
-	for _, ip := range ips {
-		result = append(result, net.JoinHostPort(ip, port))
-	}
-	return result, nil
 }

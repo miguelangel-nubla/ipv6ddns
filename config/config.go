@@ -14,6 +14,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
+
 	// The plugin types, which say their fields.
 	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"github.com/xeipuuv/gojsonschema"
@@ -37,9 +38,11 @@ type Config struct {
 
 	// The settings that are flags too: a flag given wins. Lifetime is how long a discovered
 	// address stays after it was last seen, unless its family says.
-	Lifetime        duration.Duration `json:"lifetime"`
-	LogLevel        string            `json:"log_level,omitempty"`
-	WebserverListen StringList        `json:"webserver_listen,omitempty"`
+	Lifetime  duration.Duration `json:"lifetime"`
+	LogLevel  string            `json:"log_level,omitempty"`
+	Webserver Webserver         `json:"webserver,omitzero"`
+	// Deprecated: webserver.listen. NewConfig moves it there.
+	WebserverListen StringList `json:"webserver_listen,omitempty"`
 
 	// What in the configuration to change, as a deprecated setting: NewConfig sets them, to log.
 	Warnings []string `json:"-"`
@@ -214,7 +217,7 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 		credential := c.Credentials[alias]
 		result.WriteString(prefix + "        Endpoint: " + alias + "\n")
 		result.WriteString(prefix + "            Provider: " + credential.Provider + "\n")
-		result.WriteString(prefix + "            Debounce time: " + credential.DebounceTime.String() + "\n")
+		result.WriteString(prefix + "            Debounce: " + credential.Debounce.String() + "\n")
 
 		result.WriteString(prefix + "            Settings: ")
 		if hideSensible {
@@ -376,6 +379,17 @@ func NewConfig(filename string) (config Config, err error) {
 	config.Warnings = slices.Concat(discoveryWarnings, pluginWarnings, config.Warnings)
 	if err := config.setUpHomeAssistant(); err != nil {
 		return config, err
+	}
+	webserverWarnings, err := config.setUpWebserver()
+	if err != nil {
+		return config, err
+	}
+	config.Warnings = append(config.Warnings, webserverWarnings...)
+	for _, name := range slices.Sorted(maps.Keys(config.Credentials)) {
+		for _, old := range config.Credentials[name].deprecated {
+			newName := map[string]string{"debounce_time": "debounce", "retry_time": "retry"}[old]
+			config.Warnings = append(config.Warnings, fmt.Sprintf("credentials.%s.%s is deprecated, and goes in v1.0: it is %s", name, old, newName))
+		}
 	}
 
 	for name, task := range config.Tasks {

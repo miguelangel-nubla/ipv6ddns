@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -61,7 +62,8 @@ func TestSettingsAndInterfaces(t *testing.T) {
 	cfg, err := loadConfig(t, `
 lifetime: 30m
 log_level: debug
-webserver_listen: [8053, "[::1]:8054"]
+webserver:
+  listen: [8053, "[::1]:8054", 10.2.3.0/24]
 discovery:
   interfaces: [eth0, "br-*"]
   exclude_interfaces: "docker*,veth*"
@@ -73,8 +75,11 @@ tasks: {}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Lifetime.Duration != 30*time.Minute || cfg.LogLevel != "debug" || !slices.Equal(cfg.WebserverListen, []string{"8053", "[::1]:8054"}) {
-		t.Errorf("settings: %s, %q, %v", cfg.Lifetime, cfg.LogLevel, cfg.WebserverListen)
+	if cfg.Lifetime.Duration != 30*time.Minute || cfg.LogLevel != "debug" || !slices.Equal(cfg.Webserver.Listen, []string{"8053", "[::1]:8054", "10.2.3.0/24"}) {
+		t.Errorf("settings: %s, %q, %v", cfg.Lifetime, cfg.LogLevel, cfg.Webserver.Listen)
+	}
+	if len(cfg.Warnings) != 0 {
+		t.Errorf("warnings: %q", cfg.Warnings)
 	}
 	d := cfg.Discovery
 	if !slices.Equal(d.Interfaces, []string{"eth0", "br-*"}) || !slices.Equal(d.ExcludeInterfaces, []string{"docker*", "veth*"}) {
@@ -91,8 +96,8 @@ tasks: {}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.Lifetime.Duration != DefaultLifetime || defaults.LogLevel != "" || defaults.WebserverListen != nil {
-		t.Errorf("defaults: %s, %q, %v", defaults.Lifetime, defaults.LogLevel, defaults.WebserverListen)
+	if defaults.Lifetime.Duration != DefaultLifetime || defaults.LogLevel != "" || defaults.Webserver.Listen != nil {
+		t.Errorf("defaults: %s, %q, %v", defaults.Lifetime, defaults.LogLevel, defaults.Webserver.Listen)
 	}
 
 	for name, bad := range map[string]string{
@@ -101,6 +106,10 @@ tasks: {}
 		"an interface":        "discovery:\n  exclude_interfaces: ['docker[']\n",
 		"a family lifetime":   "discovery:\n  ipv4: {lifetime: -3}\n",
 		"a webserver listing": "webserver_listen: {port: 80}\n",
+		"a webserver entry":   "webserver: {listen: ['a:b:c']}\n",
+		"a webserver network": "webserver: {listen: ['10.2.3.0/24:80']}\n",
+		"a webserver key":     "webserver: {port: 80}\n",
+		"both webserver keys": "webserver: {listen: [8053]}\nwebserver_listen: 8053\n",
 	} {
 		if _, err := loadConfig(t, bad+"tasks: {}\n"+duckCredential); err == nil {
 			t.Errorf("%s: want an error", name)
@@ -126,7 +135,17 @@ func TestHomeAssistantConfig(t *testing.T) {
 		t.Errorf("without a key: %v, %+v", err, given.HomeAssistant)
 	}
 
+	listen, err := loadConfig(t, "homeassistant: {port: 6054, listen: [10.2.3.75, 10.2.3.9/24, '[fd00::1]:7000']}\ntasks: {}\n"+duckCredential)
+	if err != nil || fmt.Sprint(listen.HomeAssistant.Entries) != "[10.2.3.75:6054 10.2.3.0/24 port 6054 [fd00::1]:7000]" {
+		t.Errorf("listen: %v, %v", err, listen.HomeAssistant)
+	}
+	if fmt.Sprint(given.HomeAssistant.Entries) != "[:6053]" {
+		t.Errorf("listen, by default: %v", given.HomeAssistant.Entries)
+	}
+
 	for name, c := range map[string]struct{ config, want string }{
+		"a listen entry":             {"homeassistant: {listen: ['a:b:c']}\n", "homeassistant.listen"},
+		"a listen network with port": {"homeassistant: {listen: ['10.2.3.0/24:6053']}\n", "homeassistant.listen"},
 		"a source without the block": {"sources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\n", "needs the homeassistant block"},
 		"a source without an entity": {"homeassistant: {key: " + key + "}\nsources:\n  wan:\n    type: homeassistant\n", "entity"},
 		"a short key":                {"homeassistant: {key: c2hvcnQ=}\n", "key"},
@@ -136,5 +155,45 @@ func TestHomeAssistantConfig(t *testing.T) {
 		if _, err := loadConfig(t, c.config+"tasks: {}\n"+duckCredential); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want an error with %q", name, err, c.want)
 		}
+	}
+}
+
+// The deprecated names: they work, and warn of their new ones.
+func TestDeprecatedSettings(t *testing.T) {
+	cfg, err := loadConfig(t, `
+webserver_listen: 8053
+tasks: {}
+credentials:
+  duck:
+    provider: duckdns
+    settings: {}
+    debounce_time: 3s
+    retry_time: 4m
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Credentials["duck"]
+	if !slices.Equal(cfg.Webserver.Listen, []string{"8053"}) || cfg.WebserverListen != nil || c.Debounce.Duration != 3*time.Second || c.Retry.Duration != 4*time.Minute {
+		t.Errorf("moved: %v, %v, %s, %s", cfg.Webserver.Listen, cfg.WebserverListen, c.Debounce, c.Retry)
+	}
+	want := []string{
+		"webserver_listen is deprecated, and goes in v1.0: it is webserver.listen",
+		"credentials.duck.debounce_time is deprecated, and goes in v1.0: it is debounce",
+		"credentials.duck.retry_time is deprecated, and goes in v1.0: it is retry",
+	}
+	if !slices.Equal(cfg.Warnings, want) {
+		t.Errorf("warnings: %q, want %q", cfg.Warnings, want)
+	}
+
+	for _, both := range []string{"debounce: 5s\n    debounce_time: 5s", "retry: 5s\n    retry_time: 5s"} {
+		if _, err := loadConfig(t, "tasks: {}\ncredentials:\n  duck:\n    provider: duckdns\n    settings: {}\n    "+both+"\n"); err == nil || !strings.Contains(err.Error(), "give one of them") {
+			t.Errorf("%q: %v, want an error", both, err)
+		}
+	}
+
+	given, err := loadConfig(t, "tasks: {}\ncredentials:\n  duck:\n    provider: duckdns\n    settings: {}\n    debounce: 2s\n    retry: 3m\n")
+	if err != nil || given.Credentials["duck"].Debounce.Duration != 2*time.Second || given.Credentials["duck"].Retry.Duration != 3*time.Minute || len(given.Warnings) != 0 {
+		t.Errorf("the new names: %v, %+v, %q", err, given.Credentials["duck"], given.Warnings)
 	}
 }

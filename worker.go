@@ -187,7 +187,7 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 
 		return err
 	}
-	hostname := NewHostname(updateAction, credential.DebounceTime.Duration, credential.RetryTime.Duration)
+	hostname := NewHostname(updateAction, credential.Debounce.Duration, credential.Retry.Duration)
 	endpoint.hostnames[hostnameKey] = hostname
 	return hostname
 }

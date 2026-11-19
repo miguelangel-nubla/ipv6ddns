@@ -24,6 +24,17 @@ The keys of the block are in the [reference](reference/configuration.md#top-leve
 
 Until it has its key, the device takes connections without one, for Home Assistant to give it: those see its entities, but their button presses, and the states they send, are dropped, so nobody can give a `homeassistant` source an address. If someone else gives it a key first, Home Assistant asks for the key when adding it: delete the state file, and add it again.
 
+### A machine on several networks
+
+The device listens on every address, and announces itself on each interface discovery runs on, with that interface's addresses. Where Home Assistant can't reach some of them, as a container on several networks, beside Home Assistant's, `listen` says where: the device listens there only, and announces itself on the interfaces that hold those addresses, so Home Assistant connects to one it can reach.
+
+```yaml
+homeassistant:
+  listen: 10.2.3.0/24
+```
+
+It takes the entries of [`webserver.listen`](installation.md#the-web-report): a port, an address, a network of the machine's addresses, or a host name, each with `:port` or not; without one, `port`, 6053. Two networks on one wire, as two macvlan networks on one bridge, both reach Home Assistant's mDNS: list the one Home Assistant can connect to.
+
 ## The entities
 
 | Entity | |
