@@ -18,6 +18,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -272,14 +273,24 @@ func (d *Device) closeUntrusted() {
 
 // Connected tells whether Home Assistant is connected, and follows the device's states.
 func (d *Device) Connected() bool {
+	_, ok := d.ConnectedSince()
+	return ok
+}
+
+// ConnectedSince tells since when Home Assistant has been connected, following the device's
+// states, without a break: the earliest of its connections that do.
+func (d *Device) ConnectedSince() (time.Time, bool) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
+	var since time.Time
 	for c := range d.conns {
-		if c.statesSubscribed() {
-			return true
+		c.mutex.Lock()
+		if c.states && (since.IsZero() || c.since.Before(since)) {
+			since = c.since
 		}
+		c.mutex.Unlock()
 	}
-	return false
+	return since, !since.IsZero()
 }
 
 // Serve answers Home Assistant's connections on ln, until ctx is done.
@@ -331,7 +342,8 @@ type connection struct {
 	conn    net.Conn
 	mutex   sync.Mutex
 	states  bool
-	trusted bool // with the device's key: only then are Home Assistant's states and commands taken
+	since   time.Time // when it subscribed to the states
+	trusted bool      // with the device's key: only then are Home Assistant's states and commands taken
 }
 
 func (c *connection) close() { c.conn.Close() }
@@ -435,7 +447,7 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		d.mutex.Unlock()
 		c.mutex.Lock()
-		c.states = true
+		c.states, c.since = true, time.Now()
 		c.mutex.Unlock()
 		for _, m := range states {
 			if err := c.write(m.msgType, m.data); err != nil {

@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,9 +10,12 @@ import (
 
 type fakeStates map[string]string
 
-func (f fakeStates) State(entity, attribute string) (string, bool) {
+func (f fakeStates) State(entity, attribute string) (string, error) {
 	s, ok := f[entity+"/"+attribute]
-	return s, ok
+	if !ok {
+		return "", fmt.Errorf("%w for Home Assistant to send the state", ErrWaiting)
+	}
+	return s, nil
 }
 
 func TestHomeAssistantFetcher(t *testing.T) {
@@ -28,16 +32,21 @@ func TestHomeAssistantFetcher(t *testing.T) {
 		{"sensor.both", "", "[203.0.113.7 2001:db8::1]"},
 		{"sensor.router", "wan_ip", "[198.51.100.2]"},
 		{"sensor.mapped", "", "[192.0.2.1]"},
-		{"sensor.down", "", "error: has no value"},
+		{"sensor.down", "", "waiting: waiting for sensor.down, \"unavailable\" now"},
 		{"sensor.text", "", "error: is no address"},
-		{"sensor.missing", "", "error: no state"},
+		{"sensor.missing", "", "waiting: sensor.missing: waiting for Home Assistant to send the state"},
 	} {
 		addrs, err := homeAssistantFetcher(states, c.entity, c.attribute)(context.Background())
 		got := fmt.Sprint(addrs)
-		if err != nil {
+		switch {
+		case errors.Is(err, ErrWaiting):
+			got = "waiting: " + err.Error()
+		case err != nil:
 			got = "error: " + err.Error()
 		}
-		if !strings.HasPrefix(c.want, "error") && got != c.want || strings.HasPrefix(c.want, "error") && !strings.Contains(got, strings.TrimPrefix(c.want, "error: ")) {
+		if prefix, rest, _ := strings.Cut(c.want, ": "); prefix != "error" && prefix != "waiting" && got != c.want ||
+			(prefix == "error" || prefix == "waiting") && !strings.HasPrefix(got, prefix+": ") ||
+			(prefix == "error" || prefix == "waiting") && !strings.Contains(got, rest) {
 			t.Errorf("%s/%s: %s, want %s", c.entity, c.attribute, got, c.want)
 		}
 	}

@@ -4,18 +4,21 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
+	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"go.uber.org/zap"
 )
 
@@ -267,5 +270,27 @@ func TestHomeAssistantListens(t *testing.T) {
 			conn.Close()
 			t.Errorf("listened on %s too", other)
 		}
+	}
+}
+
+// A state Home Assistant hasn't sent: a wait while it isn't connected, or for a moment after it
+// connects; then an error, the entity being none of Home Assistant's.
+func TestHomeAssistantStateWaits(t *testing.T) {
+	var since time.Time
+	h := &homeAssistant{states: map[string]string{stateKey("sensor.wan", ""): "203.0.113.7"},
+		connectedSince: func() (time.Time, bool) { return since, !since.IsZero() }}
+	if _, err := h.State("sensor.wan", ""); !errors.Is(err, source.ErrWaiting) {
+		t.Errorf("not connected: %v, want a wait", err)
+	}
+	since = time.Now()
+	if state, err := h.State("sensor.wan", ""); err != nil || state != "203.0.113.7" {
+		t.Errorf("connected: %q, %v", state, err)
+	}
+	if _, err := h.State("sensor.missing", ""); !errors.Is(err, source.ErrWaiting) {
+		t.Errorf("just connected, no state: %v, want a wait", err)
+	}
+	since = time.Now().Add(-time.Minute)
+	if _, err := h.State("sensor.missing", ""); err == nil || errors.Is(err, source.ErrWaiting) || !strings.Contains(err.Error(), "entity's id") {
+		t.Errorf("connected a minute, no state: %v, want an error", err)
 	}
 }

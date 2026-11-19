@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -261,5 +263,68 @@ func TestSourceRunReplacesWhatChanged(t *testing.T) {
 	}
 	if got := run(errors.New("IPv6: down"), "198.51.100.10"); !slices.Equal(got, []string{"198.51.100.10", "198.51.100.9"}) {
 		t.Errorf("a run failed for a part: %v, want both kept", got)
+	}
+}
+
+// A wait, as for Home Assistant while it restarts: no failure, the addresses kept for their
+// lifetime; logged when it starts, when it outlasts the lifetime, and when it ends, and not in
+// between.
+func TestSourceWaits(t *testing.T) {
+	cfg := config.Source{Type: config.SourceHomeAssistant}
+	cfg.Interval.Duration, cfg.Lifetime.Duration = time.Hour, 100*time.Millisecond
+	var give []netip.Addr
+	var fail error
+	s := &Source{name: "ha", config: cfg, addrs: ipv6disc.NewAddrCollection(), trigger: make(chan struct{}, 1),
+		fetch: func(context.Context) ([]netip.Addr, error) { return give, fail }}
+	core, logs := observer.New(zap.DebugLevel)
+	logger := zap.New(core).Sugar()
+	run := func(err error, addrs ...string) {
+		give, fail = nil, err
+		for _, a := range addrs {
+			give = append(give, netip.MustParseAddr(a))
+		}
+		s.run(context.Background(), logger)
+	}
+	logged := func() []string {
+		var got []string
+		for _, e := range logs.TakeAll() {
+			if e.Level > zap.DebugLevel {
+				got = append(got, e.Level.String()+": "+e.Message)
+			}
+		}
+		return got
+	}
+	wait := fmt.Errorf("%w for Home Assistant to connect", ErrWaiting)
+
+	run(nil, "203.0.113.7")
+	run(wait)
+	run(wait)
+	if got := s.Addresses().Strings(); !slices.Equal(got, []string{"203.0.113.7"}) {
+		t.Errorf("waiting: %v, want the address kept", got)
+	}
+	if st := s.Status(false); st.Failures != 0 || !strings.Contains(st.LastError, "waiting for Home Assistant") {
+		t.Errorf("waiting: %+v", st)
+	}
+	if got := logged(); len(got) != 1 || !strings.HasPrefix(got[0], "info: source ha: waiting for Home Assistant to connect; its addresses stay") {
+		t.Errorf("two waits logged %q, want the start once", got)
+	}
+
+	time.Sleep(150 * time.Millisecond)
+	run(wait)
+	run(wait)
+	if got := s.Addresses().Strings(); len(got) != 0 {
+		t.Errorf("after its lifetime: %v", got)
+	}
+	if got := logged(); len(got) != 1 || !strings.HasPrefix(got[0], "warn: source ha: still waiting for Home Assistant to connect, longer than its lifetime") {
+		t.Errorf("past its lifetime logged %q, want one warning", got)
+	}
+
+	run(nil, "203.0.113.8")
+	if got := logged(); len(got) != 1 || got[0] != "info: source ha: done waiting: [203.0.113.8]" {
+		t.Errorf("the end logged %q", got)
+	}
+	run(errors.New("broken"))
+	if got := logged(); len(got) != 1 || got[0] != "error: source ha: broken" || s.Status(false).Failures != 1 {
+		t.Errorf("a failure logged %q, %d failures", got, s.Status(false).Failures)
 	}
 }

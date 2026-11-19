@@ -19,6 +19,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
+	"github.com/miguelangel-nubla/ipv6ddns/source"
 )
 
 // Version is the version of ipv6ddns, which Home Assistant shows: the command sets it.
@@ -37,6 +38,8 @@ type homeAssistant struct {
 
 	mutex  sync.Mutex
 	states map[string]string // by entity and attribute
+	// Since when Home Assistant has been connected: the device's, but in tests.
+	connectedSince func() (time.Time, bool)
 
 	names map[haName]nameEntities // by endpoint and hostname
 	hosts *esphome.Sensor
@@ -150,15 +153,32 @@ func (s *deviceState) save(path string) error {
 func stateKey(entity, attribute string) string { return entity + "\x00" + attribute }
 
 // State is a homeassistant source's: the latest state Home Assistant sent, while it is connected.
-func (h *homeAssistant) State(entity, attribute string) (string, bool) {
-	if !h.device.Connected() {
-		return "", false
+func (h *homeAssistant) State(entity, attribute string) (string, error) {
+	connectedSince := h.connectedSince
+	if connectedSince == nil {
+		connectedSince = h.device.ConnectedSince
+	}
+	since, connected := connectedSince()
+	if !connected {
+		return "", fmt.Errorf("%w for Home Assistant to connect", source.ErrWaiting)
 	}
 	h.mutex.Lock()
-	defer h.mutex.Unlock()
 	state, ok := h.states[stateKey(entity, attribute)]
-	return state, ok
+	h.mutex.Unlock()
+	switch {
+	case ok:
+		return state, nil
+	case time.Since(since) < stateGrace:
+		return "", fmt.Errorf("%w for Home Assistant to send the state", source.ErrWaiting)
+	default:
+		// Home Assistant sends the state of an entity that is at once: none, an entity it hasn't.
+		return "", fmt.Errorf("no state from Home Assistant, connected for %s: is the entity's id right?", time.Since(since).Round(time.Second))
+	}
 }
+
+// stateGrace is how long a state may take after Home Assistant connects, before its absence is an
+// error: the entity is none of Home Assistant's.
+var stateGrace = 30 * time.Second
 
 // subscribe asks Home Assistant for an entity's state, for a source: changed runs the source.
 func (h *homeAssistant) subscribe(entity, attribute string, changed func()) {

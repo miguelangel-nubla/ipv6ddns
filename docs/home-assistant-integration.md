@@ -71,7 +71,9 @@ credentials:
       proxied: false
 ```
 
-The state is one address or more, separated by commas or spaces. A change runs the source at once. `unknown` and `unavailable`, Home Assistant's states for none, give no address, nor does Home Assistant not being connected: the addresses then stay for the source's lifetime, and go.
+The state is one address or more, separated by commas or spaces. A change runs the source at once.
+
+While Home Assistant restarts, the source waits: Home Assistant isn't connected, or the entity is `unknown` or `unavailable`, its states for none, until its integration is up. A wait isn't a failure: the addresses stay for the source's `lifetime`, and the log says when the wait starts and ends, at info, and warns if it outlasts the lifetime, when the addresses go. Give the lifetime longer than Home Assistant's restarts. Connected for 30 seconds without a state of the entity is an error: Home Assistant has no entity of that id.
 
 ## How it works
 

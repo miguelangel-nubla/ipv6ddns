@@ -32,6 +32,8 @@ type Source struct {
 	lastError   error
 	runs        int
 	failures    int
+	// Whether the last run waited, and whether the addresses expired since the wait started.
+	waiting, waitExpired bool
 
 	running sync.WaitGroup
 	// A value runs the source now, rather than at its next interval.
@@ -39,11 +41,16 @@ type Source struct {
 }
 
 // HomeAssistantStates are the states of Home Assistant's entities that homeassistant sources read:
-// State returns the latest of an entity, or of its attribute when not empty, and false when Home
-// Assistant hasn't sent it, or isn't connected.
+// State returns the latest of an entity, or of its attribute when not empty; or an error, an
+// ErrWaiting one while Home Assistant isn't connected, or hasn't sent it yet.
 type HomeAssistantStates interface {
-	State(entity, attribute string) (string, bool)
+	State(entity, attribute string) (string, error)
 }
+
+// ErrWaiting is in the error of a run that waits for what it reads, as Home Assistant while it
+// restarts: no failure, logged when the wait starts and ends only; the source's addresses stay
+// for their lifetime, as through a failure.
+var ErrWaiting = errors.New("waiting")
 
 // New makes the source of the configuration. baseDir is where commands run; states, which can be
 // nil without homeassistant sources, are Home Assistant's.
@@ -119,6 +126,8 @@ func (s *Source) run(ctx context.Context, logger *zap.SugaredLogger) {
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return // stopping
 	}
+	waiting := errors.Is(err, ErrWaiting)
+	had := len(s.addrs.Get()) > 0
 	// What a run gives stays, even when it failed for a part, as for one family of two.
 	current := make(map[netip.Addr]bool, len(addrs))
 	for _, ip := range addrs {
@@ -138,16 +147,34 @@ func (s *Source) run(ctx context.Context, logger *zap.SugaredLogger) {
 	s.lastRun = time.Now()
 	s.runs++
 	s.lastError = err
-	if err != nil {
-		s.failures++
-	} else {
+	switch {
+	case err == nil:
 		s.lastSuccess = s.lastRun
+	case !waiting:
+		s.failures++
+	}
+	wasWaiting := s.waiting
+	s.waiting = waiting
+	expired := waiting && had && len(s.addrs.Get()) == 0 && !s.waitExpired
+	if !waiting {
+		s.waitExpired = false
+	} else if expired {
+		s.waitExpired = true
 	}
 	s.mutex.Unlock()
 
-	if err != nil {
+	switch {
+	case expired:
+		logger.Warnf("source %s: still %s, longer than its lifetime, %s: its addresses expired", s.name, err, s.config.Lifetime.Duration)
+	case waiting && !wasWaiting:
+		logger.Infof("source %s: %s; its addresses stay for their lifetime, %s", s.name, err, s.config.Lifetime.Duration)
+	case waiting:
+		logger.Debugf("source %s: %s", s.name, err)
+	case err != nil:
 		logger.Errorf("source %s: %s", s.name, err)
-	} else {
+	case wasWaiting:
+		logger.Infof("source %s: done waiting: %v", s.name, addrs)
+	default:
 		logger.Debugf("source %s: %v", s.name, addrs)
 	}
 }
