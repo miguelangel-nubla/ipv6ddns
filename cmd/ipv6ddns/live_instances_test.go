@@ -45,6 +45,7 @@ homeassistant:
   name: ipv6ddns-one
   friendly_name: The first
   key: %s
+  listen: 6053
 discovery:
   rediscover: 3s
 tasks:
@@ -233,7 +234,7 @@ webserver:
   listen: [%d]
 homeassistant:
   name: ipv6ddns-three
-  port: %d
+  listen: [%d]
   key_provisioning: true
 discovery:
   rediscover: 3s
@@ -356,7 +357,7 @@ func TestLiveInstancesOfOneDevice(t *testing.T) {
 webserver:
   listen: [%d]
 homeassistant:
-  port: %d
+  listen: [%d]
   key_provisioning: true
 %s
 tasks:
@@ -550,6 +551,7 @@ webserver:
 homeassistant:
   name: ipv6ddns-%s
   key: %s
+  listen: 6053
 discovery:
   rediscover: %s
   ipv6:

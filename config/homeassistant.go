@@ -33,12 +33,11 @@ type HomeAssistant struct {
 	Port int `json:"port,omitempty"`
 	// Whether the device announces itself by mDNS, for Home Assistant to find it. Default: true.
 	Announce *bool `json:"announce,omitempty"`
-	// Where the device listens, and announces itself, on the interfaces that hold those
-	// addresses: ports, addresses, networks of the machine's addresses and host names, as listen
-	// takes them; without a port, Port. It announces the port it listens on, one: entries of
-	// several ports need Announce false. Only where Home Assistant can reach it, when the machine is
-	// on other networks too, as a container on several: 10.2.3.0/24. Default: every address,
-	// announced on the interfaces discovery runs on.
+	// Required. Where Home Assistant can connect to the device: networks, addresses, host names
+	// or ports, as listen takes them. A network means this machine's addresses in it; an entry
+	// without a port uses Port. A port alone means every address of this machine, a public one on
+	// a router too. The device announces itself only on the interfaces of these addresses, and one
+	// port, so entries with different ports need Announce false.
 	Listen StringList `json:"listen,omitempty"`
 	// Listen, parsed.
 	Entries []listen.Entry `json:"-"`
@@ -49,11 +48,12 @@ func (h HomeAssistant) Announces() bool { return h.Announce == nil || *h.Announc
 
 var deviceName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,29}[a-z0-9])?$`)
 
-// checkHomeAssistantKey tells, of a configuration not yet checked by the schema, how the block is
-// to have the device's key, when it doesn't say, or says it twice: in words, where the schema,
-// which has the same rules, would only say that it doesn't match. And what state_file, a key from
-// before, is now. A block that is no block is the schema's to refuse.
-func checkHomeAssistantKey(configData []byte) error {
+// checkHomeAssistant tells, of a configuration not yet checked by the schema, how the block is
+// to have the device's key, when it doesn't say, or says it twice, and that it is to say where the
+// device listens: in words, where the schema, which has the same rules, would only say that it
+// doesn't match. And what state_file, a key from before, is now. A block that is no block is the
+// schema's to refuse.
+func checkHomeAssistant(configData []byte) error {
 	var c struct {
 		HomeAssistant map[string]json.RawMessage `json:"homeassistant"`
 	}
@@ -80,6 +80,8 @@ func checkHomeAssistantKey(configData []byte) error {
 		return errors.New("homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept: it needs key_provisioning: true")
 	case !has("key") && !provisioning:
 		return errors.New(`homeassistant: the device needs its encryption key, one way or the other: key, your own, made with "openssl rand -base64 32", written there or read from a file or the environment, as ${file:homeassistant.key}; or key_provisioning: true, for Home Assistant to give it when it adds the device, kept in key_provisioning_state_file`)
+	case !has("listen"):
+		return errors.New(`homeassistant.listen: where the device listens, for Home Assistant to connect, is to be given: the network Home Assistant is on, as 192.168.1.0/24, an address of the machine on it, or a port alone, 6053, for every address of the machine, the internet's too where the machine is a router's`)
 	}
 	return nil
 }
@@ -115,11 +117,10 @@ func (c *Config) setUpHomeAssistant() error {
 	if h.Port == 0 {
 		h.Port = 6053
 	}
-	listenOn := h.Listen
-	if len(listenOn) == 0 {
-		listenOn = StringList{strconv.Itoa(h.Port)}
+	if len(h.Listen) == 0 {
+		return errors.New("homeassistant.listen: where the device listens is to be given")
 	}
-	entries, err := listen.Parse(listenOn, strconv.Itoa(h.Port))
+	entries, err := listen.Parse(h.Listen, strconv.Itoa(h.Port))
 	if err != nil {
 		return fmt.Errorf("homeassistant.listen: %w", err)
 	}

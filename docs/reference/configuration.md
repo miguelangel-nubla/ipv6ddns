@@ -160,7 +160,7 @@ Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant 
 | `friendly_name` | string | The name Home Assistant shows. Default: the name. |
 | `port` | number | The port Home Assistant connects to, which the device announces. Default: 6053, ESPHome's. |
 | `announce` | boolean | Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true. |
-| `listen` | list, or comma separated | Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. It announces the port it listens on, one: entries of several ports need announce: false. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on. |
+| `listen` | list, or comma separated | **Required.** Required. Where Home Assistant can connect to the device: a list of networks, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.10, [fd00::1]:7000, myhost or 6053. A network means this machine's addresses in it; an entry without a port uses port (6053). A port alone means every address of this machine, including a public one on a router: prefer the network Home Assistant is on. The device announces itself by mDNS only on the interfaces of these addresses, and announces one port, so entries with different ports need announce: false. |
 
 ## Discovery families
 

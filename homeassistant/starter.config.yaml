@@ -46,6 +46,10 @@ credentials: {}
 # sources read its entities. With key_provisioning, Home Assistant gives it its encryption key when
 # you add it, kept in homeassistant.state in this folder.
 homeassistant:
+  # Where Home Assistant connects: every address of this machine, at 6053. Home Assistant's own
+  # machine is on your network only; on one that faces the internet too, give the network Home
+  # Assistant is on instead, as 192.168.1.0/24.
+  listen: 6053
   key_provisioning: true
 
 discovery:

@@ -7,17 +7,22 @@ With a `homeassistant` block, ipv6ddns is a device of Home Assistant's ESPHome i
 
 ## Setting it up
 
-The block says how the device has its encryption key: your own, or one Home Assistant gives it. One or the other: with neither, ipv6ddns doesn't start.
+The block says two things, and ipv6ddns doesn't start without either: where the device listens, and how it has its encryption key.
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24            # the network Home Assistant is on
   key: ${file:homeassistant.key}    # your own: openssl rand -base64 32 > homeassistant.key
 ```
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key_provisioning: true            # Home Assistant gives it: kept in homeassistant.state
 ```
+
+- **`listen`**: where Home Assistant connects. The network Home Assistant is on, as above, or an address of the machine on it: the device listens on the machine's addresses there only, at 6053, and announces itself on those interfaces only. A port alone, `listen: 6053`, is every address of the machine: the internet's too, where the machine is a router or has a public address. There is no default, as there is no address that does for everyone: see [where it listens](#where-it-listens).
+- **The key**: your own, or one Home Assistant gives it, one or the other: see [the key](#the-key).
 
 Home Assistant finds the device by mDNS, `ipv6ddns`, under *Settings → Devices & services → Discovered*. Add it: Home Assistant asks for your key, or, with `key_provisioning`, makes one and gives it, as to ESPHome's devices. Where mDNS doesn't reach, as across VLANs, or with `announce: false`, add the ESPHome integration by hand with ipv6ddns' address and its port, 6053 by default. The device announces itself on the interfaces that are up, with an address, when ipv6ddns starts: started before the network, it isn't discovered, and is added by hand, or found after a restart.
 
@@ -29,6 +34,7 @@ The keys of the block are in the [reference](reference/configuration.md#home-ass
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key: ${file:homeassistant.key}
 ```
 
@@ -43,6 +49,7 @@ Make one with `openssl rand -base64 32`, and give it in the configuration: writt
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key_provisioning: true
   # key_provisioning_state_file: homeassistant.state
 ```
@@ -62,15 +69,16 @@ homeassistant: the device needs its encryption key, one way or the other: key, y
 
 Without the block there is no device, and no error.
 
-#### A configuration from before `key_provisioning`
+#### A configuration from before v0.23.0
 
-Up to v0.22.3, a block without a `key`, as `homeassistant: {}`, was a device Home Assistant gave the key, and `state_file` named its file. Now that is said, and such a block doesn't start:
+Up to v0.22.3, the device listened on every address unless `listen` said otherwise, and a block without a `key`, as `homeassistant: {}`, was a device Home Assistant gave the key, with `state_file` naming its file. Now both are said, and a block that doesn't say them doesn't start:
 
 | Before | Now |
 |---|---|
+| Any block without `listen` | Add `listen`: the network Home Assistant is on, or `6053` for every address, as before |
 | `homeassistant: {}`, or a block with no `key` | Add `key_provisioning: true` |
 | `state_file: guests.state` | `key_provisioning: true`, and `key_provisioning_state_file: guests.state` |
-| A block with a `key` | As it is |
+| A block with a `key` | As it is, with `listen` |
 
 With `key_provisioning: true` the state file there is, `homeassistant.state` or the one named, is read as before: the device, its key and its entities stay as they were, with nothing to do in Home Assistant.
 
@@ -80,6 +88,7 @@ Each instance with a `homeassistant` block is a device of its own: two on one ma
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   name: ipv6ddns-guests                        # its own name on the network
   port: 6054                                   # on one machine: its own port
   key_provisioning: true
@@ -94,14 +103,24 @@ Each announces itself on its own, under its own name: one that stops takes back 
 
 The look is at start, on the interfaces the device announces itself on. Two instances started at the same moment don't see each other, nor do two that mDNS doesn't reach between. And a configuration copied whole to a second machine, with its `key` or its state file, is the same name, MAC and port there: nothing tells the two apart, and Home Assistant sees one device, at two addresses. Give the copy its name and its key.
 
-### A machine on several networks
+### Where it listens
 
-The device listens on every address, and announces itself on each interface discovery runs on, with that interface's addresses. Where Home Assistant can't reach some of them, as a container on several networks, beside Home Assistant's, `listen` says where: the device listens there only, and announces itself on the interfaces that hold those addresses, so Home Assistant connects to one it can reach.
+`listen` is required: the device listens where it says only, and announces itself on the interfaces that hold those addresses, so Home Assistant connects to one it can reach.
 
 ```yaml
 homeassistant:
   key: ${file:homeassistant.key}
   listen: 10.2.3.0/24
+```
+
+- **A network**, as above: the machine's addresses in it, as they are when ipv6ddns starts. The one to give on a router, or on any machine with a public address or a network Home Assistant isn't on, as a container on several beside Home Assistant's.
+- **An address**, `10.2.3.4`, or a host name: that one.
+- **A port alone**, `6053`: every address of the machine, announced on each interface discovery runs on. For a machine of one network, as the add-on's, Home Assistant's own. On a router it is the internet's too: with `key_provisioning: true`, until Home Assistant adds the device, anyone who reaches the port could give it a key first.
+
+Without it, ipv6ddns doesn't start:
+
+```
+homeassistant.listen: where the device listens, for Home Assistant to connect, is to be given: the network Home Assistant is on, as 192.168.1.0/24, an address of the machine on it, or a port alone, 6053, for every address of the machine, the internet's too where the machine is a router's
 ```
 
 It takes the entries of [`webserver.listen`](installation.md#the-web-report): a port, an address, a network of the machine's addresses, or a host name, each with `:port` or not; without one, `port`, 6053. The device announces the port it listens on, so `listen: 10.2.3.4:7000` is found at 7000; it announces one, so entries of several ports need `announce: false`. Two networks on one wire, as two macvlan networks on one bridge, both reach Home Assistant's mDNS: list the one Home Assistant can connect to.
@@ -124,6 +143,7 @@ The device's own id of an entity is of the name's endpoint and host name in the 
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key: ${file:homeassistant.key}
 sources:
   router-wan:
@@ -166,6 +186,7 @@ input_text:
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key: ${file:homeassistant.key}
 sources:
   vpn:
@@ -220,6 +241,7 @@ automation:
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key: ${file:homeassistant.key}
 sources:
   web:
@@ -242,6 +264,7 @@ A device on a network ipv6ddns can't discover, as a VLAN it isn't on, may be kno
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key: ${file:homeassistant.key}
 sources:
   printer:
@@ -279,6 +302,7 @@ template:
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24
   key: ${file:homeassistant.key}
 sources:
   wan:

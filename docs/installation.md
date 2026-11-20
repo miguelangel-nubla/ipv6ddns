@@ -44,6 +44,7 @@ As a device of [Home Assistant](home-assistant-integration.md), give it the devi
 
 ```yaml
 homeassistant:
+  listen: 192.168.1.0/24    # the network Home Assistant is on
   key: ${HOMEASSISTANT_KEY}
 ```
 
@@ -82,7 +83,7 @@ webserver:
 
 Networks and host names are read once, at start: an address the machine gets later, as from DHCP or a new prefix, isn't listened on until a restart, and a network with no address of the machine, or a name that doesn't resolve, stops the start. A network doesn't take link-local addresses, which need their interface: list those as `fe80::1%eth0`.
 
-[`homeassistant.listen`](home-assistant-integration.md#a-machine-on-several-networks) takes the same entries, with its port, 6053, for those without one.
+[`homeassistant.listen`](home-assistant-integration.md#where-it-listens) takes the same entries, with its port, 6053, for those without one.
 
 The report has no authentication: behind a reverse proxy, list only an address the proxy reaches. It hides the credentials, the plugins' params, the commands' arguments, the `urls` of http sources but their host, and the errors of the updates and of the sources.
 

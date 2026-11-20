@@ -77,4 +77,4 @@ These still work, each with a warning in the log that says what to write instead
 | A task's `ipv4` block, a command | A [command source](sources.md), named in the task's `sources`: until then, it is a source named `<task>.ipv4` |
 | A plugin's `params`, one string | Its [fields](reference/configuration.md#discovery-plugins) |
 
-One doesn't: a `homeassistant` block without a `key`, as `homeassistant: {}`, or with `state_file`, up to v0.22.3. It is an error at start, which says what to add: [`key_provisioning: true`](home-assistant-integration.md#a-configuration-from-before-key_provisioning), and the device stays as it was.
+One doesn't: a `homeassistant` block from up to v0.22.3, which had no `listen` it needed, and, without a `key`, as `homeassistant: {}`, or with `state_file`, nothing that said Home Assistant gives the key. It is an error at start, which says what to add: [`listen`, and `key_provisioning: true`](home-assistant-integration.md#a-configuration-from-before-v0230), and the device stays as it was.

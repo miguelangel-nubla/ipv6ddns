@@ -123,7 +123,7 @@ tasks: {}
 
 func TestHomeAssistantConfig(t *testing.T) {
 	const key = "q9b/BwP6Z3bLDXmeLY+bPQPDUcKV9FXLRJlTnmoLmLM="
-	cfg, err := loadConfig(t, "homeassistant:\n  key: "+key+"\nsources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\ntasks: {}\n"+duckCredential)
+	cfg, err := loadConfig(t, "homeassistant:\n  listen: 6053\n  key: "+key+"\nsources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\ntasks: {}\n"+duckCredential)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,15 +138,15 @@ func TestHomeAssistantConfig(t *testing.T) {
 	if h := cfg.HomeAssistant; h.KeyProvisioning || h.KeyProvisioningStateFile != "" {
 		t.Errorf("with a key: %+v", h)
 	}
-	if off, err := loadConfig(t, "homeassistant: {key: "+key+", key_provisioning: false}\ntasks: {}\n"+duckCredential); err != nil || off.HomeAssistant.KeyProvisioningStateFile != "" {
+	if off, err := loadConfig(t, "homeassistant: {listen: 6053, key: "+key+", key_provisioning: false}\ntasks: {}\n"+duckCredential); err != nil || off.HomeAssistant.KeyProvisioningStateFile != "" {
 		t.Errorf("with a key, and key provisioning off: %v, %+v", err, off.HomeAssistant)
 	}
 
-	given, err := loadConfig(t, "homeassistant: {key_provisioning: true}\ntasks: {}\n"+duckCredential)
+	given, err := loadConfig(t, "homeassistant: {listen: 6053, key_provisioning: true}\ntasks: {}\n"+duckCredential)
 	if err != nil || given.HomeAssistant.Key != "" || given.HomeAssistant.KeyProvisioningStateFile != "homeassistant.state" {
 		t.Errorf("key provisioning: %v, %+v", err, given.HomeAssistant)
 	}
-	if named, err := loadConfig(t, "homeassistant: {key_provisioning: true, key_provisioning_state_file: guests.state}\ntasks: {}\n"+duckCredential); err != nil || named.HomeAssistant.KeyProvisioningStateFile != "guests.state" {
+	if named, err := loadConfig(t, "homeassistant: {listen: 6053, key_provisioning: true, key_provisioning_state_file: guests.state}\ntasks: {}\n"+duckCredential); err != nil || named.HomeAssistant.KeyProvisioningStateFile != "guests.state" {
 		t.Errorf("key provisioning, its state file named: %v, %+v", err, named.HomeAssistant)
 	}
 
@@ -156,7 +156,7 @@ func TestHomeAssistantConfig(t *testing.T) {
 		t.Errorf("listen: %v, %v", err, listen.HomeAssistant)
 	}
 	if fmt.Sprint(given.HomeAssistant.Entries) != "[:6053]" {
-		t.Errorf("listen, by default: %v", given.HomeAssistant.Entries)
+		t.Errorf("listen, a port alone: %v", given.HomeAssistant.Entries)
 	}
 
 	// One port, another than port: the one announced.
@@ -167,7 +167,7 @@ func TestHomeAssistantConfig(t *testing.T) {
 	// A key in a file ends in a new line, as openssl rand -base64 32 writes it.
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "homeassistant.key"), []byte(key+"\n"), 0o600)
-	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("homeassistant:\n  key: ${file:homeassistant.key}\ntasks: {}\n"+duckCredential), 0o600)
+	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("homeassistant:\n  listen: 6053\n  key: ${file:homeassistant.key}\ntasks: {}\n"+duckCredential), 0o600)
 	if fromFile, err := NewConfig(filepath.Join(dir, "config.yaml")); err != nil {
 		t.Errorf("a key in a file, with its new line: %v", err)
 	} else if parsed, err := esphome.ParseKey(fromFile.HomeAssistant.Key); err != nil || len(parsed) != 32 {
@@ -179,21 +179,24 @@ func TestHomeAssistantConfig(t *testing.T) {
 		"two ports, announced":       {"homeassistant: {key_provisioning: true, listen: [10.2.3.75, '[fd00::1]:7000']}\n", "announces one port"},
 		"a listen network with port": {"homeassistant: {key_provisioning: true, listen: ['10.2.3.0/24:6053']}\n", "homeassistant.listen"},
 		"a source without the block": {"sources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\n", "needs the homeassistant block"},
-		"a source without an entity": {"homeassistant: {key: " + key + "}\nsources:\n  wan:\n    type: homeassistant\n", "entity"},
-		"a short key":                {"homeassistant: {key: c2hvcnQ=}\n", "key"},
+		"a source without an entity": {"homeassistant: {listen: 6053, key: " + key + "}\nsources:\n  wan:\n    type: homeassistant\n", "entity"},
+		"a short key":                {"homeassistant: {listen: 6053, key: c2hvcnQ=}\n", "key"},
 		// How the device has its key: each says what to do.
-		"neither a key nor key provisioning":  {"homeassistant: {}\n", `needs its encryption key, one way or the other: key, your own, made with "openssl rand -base64 32"`},
-		"neither, the choices":                {"homeassistant: {name: guests}\n", "${file:homeassistant.key}; or key_provisioning: true, for Home Assistant to give it when it adds the device, kept in key_provisioning_state_file"},
-		"key provisioning off, and no key":    {"homeassistant: {key_provisioning: false}\n", "needs its encryption key"},
-		"a key and key provisioning":          {"homeassistant: {key: " + key + ", key_provisioning: true}\n", "a key, or key_provisioning: true for Home Assistant to give it: one or the other"},
-		"a state file alone":                  {"homeassistant: {key_provisioning_state_file: x.state}\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept: it needs key_provisioning: true"},
-		"a state file and a key":              {"homeassistant: {key: " + key + ", key_provisioning_state_file: x.state}\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept, with key_provisioning: true: with a key of your own nothing is kept, so leave it out"},
-		"a state file, key provisioning off":  {"homeassistant: {key_provisioning: false, key_provisioning_state_file: x.state}\n", "it needs key_provisioning: true"},
-		"the state file's key from before":    {"homeassistant: {state_file: x.state}\n", "homeassistant.state_file is key_provisioning_state_file now, and needs key_provisioning: true beside it: with both, the device and its key stay as they were"},
-		"it, with a key":                      {"homeassistant: {key: " + key + ", state_file: x.state}\n", "homeassistant.state_file is key_provisioning_state_file now"},
-		"it, with key provisioning":           {"homeassistant: {key_provisioning: true, state_file: x.state}\n", "homeassistant.state_file is key_provisioning_state_file now"},
-		"key provisioning that is no boolean": {"homeassistant: {key_provisioning: 'yes'}\n", "homeassistant.key_provisioning: Invalid type. Expected: boolean"},
-		"a name with capitals":                {"homeassistant: {key: " + key + ", name: IPv6DDNS}\n", "name"},
+		"neither a key nor key provisioning":  {"homeassistant: {listen: 6053}\n", `needs its encryption key, one way or the other: key, your own, made with "openssl rand -base64 32"`},
+		"neither, the choices":                {"homeassistant: {listen: 6053, name: guests}\n", "${file:homeassistant.key}; or key_provisioning: true, for Home Assistant to give it when it adds the device, kept in key_provisioning_state_file"},
+		"key provisioning off, and no key":    {"homeassistant: {listen: 6053, key_provisioning: false}\n", "needs its encryption key"},
+		"a key and key provisioning":          {"homeassistant: {listen: 6053, key: " + key + ", key_provisioning: true}\n", "a key, or key_provisioning: true for Home Assistant to give it: one or the other"},
+		"a state file alone":                  {"homeassistant: {listen: 6053, key_provisioning_state_file: x.state}\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept: it needs key_provisioning: true"},
+		"a state file and a key":              {"homeassistant: {listen: 6053, key: " + key + ", key_provisioning_state_file: x.state}\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept, with key_provisioning: true: with a key of your own nothing is kept, so leave it out"},
+		"a state file, key provisioning off":  {"homeassistant: {listen: 6053, key_provisioning: false, key_provisioning_state_file: x.state}\n", "it needs key_provisioning: true"},
+		"the state file's key from before":    {"homeassistant: {listen: 6053, state_file: x.state}\n", "homeassistant.state_file is key_provisioning_state_file now, and needs key_provisioning: true beside it: with both, the device and its key stay as they were"},
+		"it, with a key":                      {"homeassistant: {listen: 6053, key: " + key + ", state_file: x.state}\n", "homeassistant.state_file is key_provisioning_state_file now"},
+		"it, with key provisioning":           {"homeassistant: {listen: 6053, key_provisioning: true, state_file: x.state}\n", "homeassistant.state_file is key_provisioning_state_file now"},
+		"key provisioning that is no boolean": {"homeassistant: {listen: 6053, key_provisioning: 'yes'}\n", "homeassistant.key_provisioning: Invalid type. Expected: boolean"},
+		// Where it listens: never by default, which would be every address, the internet's too on a router.
+		"no listen":            {"homeassistant: {key: " + key + "}\n", "homeassistant.listen: where the device listens, for Home Assistant to connect, is to be given: the network Home Assistant is on, as 192.168.1.0/24"},
+		"no listen, the port":  {"homeassistant: {key_provisioning: true}\n", "or a port alone, 6053, for every address of the machine"},
+		"a name with capitals": {"homeassistant: {listen: 6053, key: " + key + ", name: IPv6DDNS}\n", "name"},
 	} {
 		if _, err := loadConfig(t, c.config+"tasks: {}\n"+duckCredential); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want an error with %q", name, err, c.want)
@@ -202,28 +205,32 @@ func TestHomeAssistantConfig(t *testing.T) {
 }
 
 // The schema has the rules of the device's key too, for an editor that checks the configuration
-// against it: what checkHomeAssistantKey refuses, it refuses, and it takes what that takes.
-func TestHomeAssistantKeySchema(t *testing.T) {
+// against it: what checkHomeAssistant refuses, it refuses, and it takes what that takes.
+func TestHomeAssistantSchema(t *testing.T) {
 	const key = `"key": "q9b/BwP6Z3bLDXmeLY+bPQPDUcKV9FXLRJlTnmoLmLM="`
+	const listen = `"listen": 6053, `
 	for block, valid := range map[string]bool{
-		`{` + key + `}`: true,
-		`{` + key + `, "key_provisioning": false}`:                             true,
-		`{"key_provisioning": true}`:                                           true,
-		`{"key_provisioning": true, "key_provisioning_state_file": "x.state"}`: true,
-		`{}`:                          false,
-		`{"name": "guests"}`:          false,
-		`{"key_provisioning": false}`: false,
-		`{` + key + `, "key_provisioning": true}`:                               false,
-		`{"key_provisioning_state_file": "x.state"}`:                            false,
-		`{` + key + `, "key_provisioning_state_file": "x.state"}`:               false,
-		`{"key_provisioning": false, "key_provisioning_state_file": "x.state"}`: false,
-		`{"key_provisioning": true, "state_file": "x.state"}`:                   false,
+		`{` + listen + key + `}`:                                                             true,
+		`{` + listen + key + `, "key_provisioning": false}`:                                  true,
+		`{` + listen + `"key_provisioning": true}`:                                           true,
+		`{` + listen + `"key_provisioning": true, "key_provisioning_state_file": "x.state"}`: true,
+		`{"listen": 6053}`:                                                                    false,
+		`{` + listen + `"name": "guests"}`:                                                    false,
+		`{` + listen + `"key_provisioning": false}`:                                           false,
+		`{` + listen + key + `, "key_provisioning": true}`:                                    false,
+		`{` + listen + `"key_provisioning_state_file": "x.state"}`:                            false,
+		`{` + listen + key + `, "key_provisioning_state_file": "x.state"}`:                    false,
+		`{` + listen + `"key_provisioning": false, "key_provisioning_state_file": "x.state"}`: false,
+		`{` + listen + `"key_provisioning": true, "state_file": "x.state"}`:                   false,
+		// Without listen.
+		`{` + key + `}`:              false,
+		`{"key_provisioning": true}`: false,
 	} {
 		configData := []byte(`{"tasks": {}, "credentials": {}, "homeassistant": ` + block + `}`)
 		if err := validateConfig(configData); (err == nil) != valid {
 			t.Errorf("%s: the schema says %v, want valid %v", block, err, valid)
 		}
-		if err := checkHomeAssistantKey(configData); (err == nil) != valid {
+		if err := checkHomeAssistant(configData); (err == nil) != valid {
 			t.Errorf("%s: the check says %v, want valid %v", block, err, valid)
 		}
 	}

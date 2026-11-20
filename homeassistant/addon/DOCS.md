@@ -93,11 +93,12 @@ address. See the
 
 A `config.yaml` from before `key_provisioning`, up to v0.22.3, has
 `homeassistant: {}`, and the add-on doesn't start with it: its log says the
-device needs its key. The add-on leaves your `config.yaml` as it is: change
+device needs its key, and then that it needs `listen`. The add-on leaves your `config.yaml` as it is: change
 those lines yourself, to
 
 ```yaml
 homeassistant:
+  listen: 6053
   key_provisioning: true
 ```
 
