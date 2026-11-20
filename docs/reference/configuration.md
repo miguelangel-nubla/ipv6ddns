@@ -154,12 +154,12 @@ Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant 
 | Key | Takes | |
 |---|---|---|
 | `key` | string | The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change. Without it, Home Assistant makes the key and gives it, as to ESPHome's devices: it is kept in state_file. |
-| `name` | string | The device's name in the network: lower case letters, digits and hyphens. Default: ipv6ddns. |
+| `name` | string | The device's name in the network: lower case letters, digits and hyphens. Default: ipv6ddns. One for each instance on the network: a second with a name that is announced already doesn't announce itself. |
 | `friendly_name` | string | The name Home Assistant shows. Default: the name. |
 | `port` | number | The port Home Assistant connects to, which the device announces. Default: 6053, ESPHome's. |
 | `announce` | boolean | Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true. |
 | `listen` | list, or comma separated | Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. It announces the port it listens on, one: entries of several ports need announce: false. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on. |
-| `state_file` | string | Without a key: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. Deleting it makes the device a new one, without a key. |
+| `state_file` | string | Without a key: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. One for each instance: another with a state file that is in use doesn't start. Deleting it makes the device a new one, without a key. |
 
 ## Discovery families
 

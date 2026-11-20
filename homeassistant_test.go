@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -472,5 +473,93 @@ func TestHomeAssistantStateWaits(t *testing.T) {
 	since = time.Now().Add(-time.Minute)
 	if _, err := h.State("sensor.missing", ""); err == nil || errors.Is(err, source.ErrWaiting) || !strings.Contains(err.Error(), "entity's id and attribute") {
 		t.Errorf("connected a minute, no state: %v, want an error", err)
+	}
+}
+
+// A device serves with its state file for itself alone: a second with the same one, as another
+// instance configured beside the first with no state file named, doesn't start, and says which
+// file. Once the first stopped, it does, and is that device. Those with a key of their own have
+// no state file to share.
+func TestHomeAssistantStateFileOfOne(t *testing.T) {
+	lock := filepath.Join(t.TempDir(), "lock")
+	release, err := lockFile(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := lockFile(lock); err == nil {
+		again()
+		t.Skip("no lock that ends with its process, on this system")
+	}
+	release()
+	dir := t.TempDir()
+	device := func(port int) *homeAssistant {
+		announce := false
+		h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: port, StateFile: "homeassistant.state", Announce: &announce,
+			Entries: []listen.Entry{{Host: "127.0.0.1", Port: strconv.Itoa(port)}}}, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	first, second := device(freePort(t)), device(freePort(t))
+	if first.device.MAC.String() != second.device.MAC.String() {
+		t.Fatal("two devices of one state file have two MACs")
+	}
+	var running sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := first.serve(ctx, &running, nil, nil, t.Errorf); err != nil {
+		t.Fatal(err)
+	}
+	err = second.serve(context.Background(), &running, nil, nil, t.Errorf)
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(dir, "homeassistant.state")) || !strings.Contains(err.Error(), "another ipv6ddns") {
+		t.Fatalf("a second device of the state file served: %v", err)
+	}
+	// It left nothing listening.
+	if conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", second.config.Entries[0].Port)); err == nil {
+		conn.Close()
+		t.Error("the second device, which didn't serve, listens")
+	}
+	cancel()
+	running.Wait()
+	ctx, cancel = context.WithCancel(context.Background())
+	if err := second.serve(ctx, &running, nil, nil, t.Errorf); err != nil {
+		t.Errorf("the first stopped, and the second doesn't serve: %v", err)
+	}
+	cancel()
+	running.Wait()
+}
+
+// A state file that is there, in a folder nothing can be written in, as a file system mounted
+// read-only: no lock file to make, and the device serves all the same.
+func TestHomeAssistantStateFileReadOnlyFolder(t *testing.T) {
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("a folder that can't be written needs a user that isn't root, and a system with such folders")
+	}
+	dir := t.TempDir()
+	announce := false
+	port := strconv.Itoa(freePort(t))
+	cfg := config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", StateFile: "homeassistant.state", Announce: &announce,
+		Entries: []listen.Entry{{Host: "127.0.0.1", Port: port}}}
+	if _, err := newHomeAssistant(cfg, dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+	h, err := newHomeAssistant(cfg, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var running sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := h.serve(ctx, &running, nil, nil, t.Errorf); err != nil {
+		t.Errorf("with its state file in a folder that can't be written, the device doesn't serve: %v", err)
+	}
+	cancel()
+	running.Wait()
+	if _, err := os.Stat(filepath.Join(dir, "homeassistant.state.lock")); err == nil {
+		t.Error("a lock file was made in a folder that can't be written")
 	}
 }

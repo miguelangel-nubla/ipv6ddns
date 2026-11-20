@@ -19,10 +19,29 @@ The keys of the block are in the [reference](reference/configuration.md#home-ass
 
 | | |
 |---|---|
-| **Given by Home Assistant** (no `key`) | Kept in `state_file`, `homeassistant.state` beside the configuration by default, which ipv6ddns must be able to write. Only a client with the key can change it, as Home Assistant does when the device is deleted. Delete the file, and the device is a new one, without a key |
+| **Given by Home Assistant** (no `key`) | Kept in `state_file`, `homeassistant.state` beside the configuration by default, which ipv6ddns must be able to write, with a lock file beside it while it runs: [one for each instance](#several-devices). Only a client with the key can change it, as Home Assistant does when the device is deleted. Delete the file, and the device is a new one, without a key |
 | **Your own**, `key: ${file:homeassistant.key}` | Fixed: Home Assistant asks it when adding the device, and can't change it. For a configuration on a read-only file system. Make one with `openssl rand -base64 32` |
 
 Until it has its key, the device takes connections without one, for Home Assistant to give it: those see its entities, but their button presses, and the states they send, are dropped, so nobody can give a `homeassistant` source an address, and they aren't Home Assistant connected, which the sources wait for. If someone else gives it a key first, Home Assistant asks for the key when adding it: delete the state file, and add it again.
+
+### Several devices
+
+Each instance with a `homeassistant` block is a device of its own: two on one machine, or on several machines of one network, are two devices to Home Assistant, each with its entities and its key. They need each:
+
+```yaml
+homeassistant:
+  name: ipv6ddns-guests       # its own name on the network
+  port: 6054                  # on one machine: its own port
+  state_file: guests.state    # in one folder: its own state file, or its own key
+```
+
+- **A name**, as every instance is `ipv6ddns` by default. Home Assistant knows a device on the network by its name: two that announced one would be one device to it, at the port of whichever answered last, and gone when either stops. So before it announces itself, ipv6ddns looks for a second and a half for a device already announced with its name, or with its MAC under another name: finding one, it logs the error and doesn't announce itself, and the first stays as it was. It still runs, updates, and takes Home Assistant's connections, added by its address.
+- **A port**, on one machine: the one started second with a port that is taken doesn't start.
+- **An identity**: a state file of its own, or a `key` of its own, as the device's MAC, by which Home Assistant knows it for good, comes from them. The state file is beside the configuration by default, so two configurations in one folder name theirs. While it runs, an instance holds its state file, with a lock file beside it, `<state file>.lock`: another with the same one doesn't start, and says which file. Not on Windows or Solaris, which have no such lock.
+
+Each announces itself on its own, under its own name: one that stops takes back its own announcement only.
+
+The look is at start, on the interfaces the device announces itself on. Two instances started at the same moment don't see each other, nor do two that mDNS doesn't reach between. And a configuration copied whole to a second machine, with its `key` or its state file, is the same name, MAC and port there: nothing tells the two apart, and Home Assistant sees one device, at two addresses. Give the copy its name and its key.
 
 ### A machine on several networks
 

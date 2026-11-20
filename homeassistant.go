@@ -37,6 +37,8 @@ const homeAssistantSync = 5 * time.Second
 type homeAssistant struct {
 	config config.HomeAssistant
 	device *esphome.Device
+	// The state file, of a device whose key Home Assistant gives: empty with a key of its own.
+	stateFile string
 
 	mutex  sync.Mutex
 	states map[string]string // by entity and attribute
@@ -70,6 +72,7 @@ func newHomeAssistant(cfg config.HomeAssistant, baseDir string) (*homeAssistant,
 		Manufacturer: "ipv6ddns", Model: "Network wide DDNS updater",
 		Project: "miguelangel-nubla.ipv6ddns", ProjectVersion: Version,
 	}
+	stateFile := ""
 	if cfg.Key != "" {
 		key, err := esphome.ParseKey(cfg.Key)
 		if err != nil {
@@ -90,10 +93,12 @@ func newHomeAssistant(cfg config.HomeAssistant, baseDir string) (*homeAssistant,
 			state.Key = key
 			return state.save(path)
 		}
+		stateFile = path
 	}
 	h := &homeAssistant{
 		config:    cfg,
 		device:    device,
+		stateFile: stateFile,
 		advertise: device.Advertise,
 		states:    make(map[string]string),
 		names:     make(map[haName]nameEntities),
@@ -137,6 +142,29 @@ func loadDeviceState(path string) (*deviceState, error) {
 	default:
 		return nil, err
 	}
+}
+
+// errLocked is lockFile's, of a lock another holds.
+var errLocked = errors.New("locked")
+
+// lockState takes the state file for this device alone, while it serves: a second instance with
+// the same one, as two configurations in one folder that name none, would be the same device to
+// Home Assistant, with the same MAC, and each would lose the key the other was given. The lock is
+// a file beside it, <state file>.lock, as the state file itself is replaced when written.
+func (h *homeAssistant) lockState() (release func(), err error) {
+	if h.stateFile == "" {
+		return func() {}, nil
+	}
+	release, err = lockFile(h.stateFile + ".lock")
+	if errors.Is(err, errLocked) {
+		return nil, fmt.Errorf("homeassistant: the state file %s is that of another ipv6ddns running: each instance is a device of its own, with its own state_file, and its own name", h.stateFile)
+	}
+	if err != nil {
+		// No lock to take, as beside a state file that is there in a folder that can't be
+		// written: it serves as before there was one.
+		return func() {}, nil
+	}
+	return release, nil
 }
 
 // save writes the state, readable by its owner only, whole or not at all.
@@ -366,20 +394,31 @@ func announced(include, exclude []string) ([]net.Interface, error) {
 	return ifaces, nil
 }
 
-// serve listens for Home Assistant where listen says, and announces the device by mDNS, with the
-// port it listens on, until ctx is done: on the interfaces that hold the addresses it listens on,
-// or, listening on all, those discovery runs on, as they are now. running then waits for the
-// connections to end, and for the announcement to be taken back, which tells Home Assistant the
-// device is gone.
+// serve listens for Home Assistant where listen says, with the state file for itself alone, and
+// announces the device by mDNS, with the port it listens on, until ctx is done: on the interfaces
+// that hold the addresses it listens on, or, listening on all, those discovery runs on, as they
+// are now. running then waits for the connections to end, and for the announcement to be taken
+// back, which tells Home Assistant the device is gone.
 func (h *homeAssistant) serve(ctx context.Context, running *sync.WaitGroup, interfaces, exclude []string, errorf func(string, ...any)) error {
 	entries := h.config.Entries
 	if len(entries) == 0 {
 		entries = []listen.Entry{{Port: strconv.Itoa(h.config.Port)}}
 	}
+	release, err := h.lockState()
+	if err != nil {
+		return err
+	}
 	lns, err := listen.Listen(entries)
 	if err != nil {
+		release()
 		return fmt.Errorf("homeassistant.listen: %w", err)
 	}
+	running.Add(1)
+	go func() {
+		defer running.Done()
+		<-ctx.Done()
+		release()
+	}()
 	if h.config.Announces() {
 		// The configuration takes one port to announce.
 		port := h.config.Port
