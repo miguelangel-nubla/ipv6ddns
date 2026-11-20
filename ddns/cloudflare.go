@@ -8,6 +8,7 @@ import (
 	"github.com/cloudflare/cloudflare-go"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
+	"golang.org/x/net/idna"
 )
 
 type Cloudflare struct {
@@ -34,7 +35,9 @@ func NewCloudflare(settings json.RawMessage) (Service, error) {
 
 func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	// Initialize the Cloudflare API with the provided API token
-	var options []cloudflare.Option
+	// Its own client has no timeout: with this one, a request without an answer fails the update
+	// at httpTimeout, as the client doesn't try one that timed out again.
+	options := []cloudflare.Option{cloudflare.HTTPClient(newHTTPClient(nil))}
 	if c.apiBaseURL != "" {
 		options = append(options, cloudflare.BaseURL(c.apiBaseURL))
 	}
@@ -43,11 +46,24 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 		return fmt.Errorf("failed to initialize: %v", err)
 	}
 
-	// Get Zone ID
-	zoneID, err := api.ZoneIDByName(c.Zone)
+	// And the update has this one, for all its requests: the client tries one answered with an
+	// error of the server again, three times, waiting longer before each.
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+
+	// Get Zone ID: as the client's ZoneIDByName, which has no context.
+	zoneName := c.Zone
+	if unicode, err := idna.ToUnicode(zoneName); err == nil {
+		zoneName = unicode
+	}
+	zones, err := api.ListZonesContext(ctx, cloudflare.WithZoneFilters(zoneName, "", ""))
 	if err != nil {
 		return fmt.Errorf("failed to read zone ID: %v", err)
 	}
+	if len(zones.Result) != 1 {
+		return fmt.Errorf("failed to read zone ID: %d zones of the name %s", len(zones.Result), c.Zone)
+	}
+	zoneID := zones.Result[0].ID
 
 	fqdn := FQDN(hostname, c.Zone)
 
@@ -56,7 +72,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	params := cloudflare.ListDNSRecordsParams{
 		Name: fqdn,
 	}
-	currentRecords, _, err := api.ListDNSRecords(context.Background(), rc, params)
+	currentRecords, _, err := api.ListDNSRecords(ctx, rc, params)
 	if err != nil {
 		return fmt.Errorf("failed to list DNS records for %s: %s", hostname, err)
 	}
@@ -91,7 +107,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 			TTL:     ttl,
 			Proxied: &c.Proxied,
 		}
-		if _, err := api.CreateDNSRecord(context.Background(), rc, newRecord); err != nil {
+		if _, err := api.CreateDNSRecord(ctx, rc, newRecord); err != nil {
 			return fmt.Errorf("failed to create %s DNS record for %s: %w", hostname, ip, err)
 		}
 	}
@@ -105,7 +121,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 			continue
 		}
 		if _, desired := desiredIPs[ip]; !desired || kept[ip] {
-			if err := api.DeleteDNSRecord(context.Background(), rc, record.ID); err != nil {
+			if err := api.DeleteDNSRecord(ctx, rc, record.ID); err != nil {
 				return fmt.Errorf("failed to delete %s DNS record for %s: %w", hostname, ip, err)
 			}
 			continue
@@ -120,7 +136,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 				TTL:     ttl,
 				Proxied: &c.Proxied,
 			}
-			if _, err := api.UpdateDNSRecord(context.Background(), rc, updateRecord); err != nil {
+			if _, err := api.UpdateDNSRecord(ctx, rc, updateRecord); err != nil {
 				return fmt.Errorf("failed to update %s DNS record for %s: %w", hostname, ip, err)
 			}
 		}

@@ -3,4 +3,3 @@
 /cmd/ipv6ddns/version.go
 /dist/
 /config.yaml
-*.gen.go

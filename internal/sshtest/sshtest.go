@@ -17,11 +17,29 @@ import (
 type Server struct {
 	// The address it listens on.
 	Address string
-	// The fingerprint of its host key, as ssh-keygen -l shows it.
+	// The fingerprint of its host key, as ssh-keygen -l shows it: of the first, with several.
 	HostKey string
+	// The fingerprints of all its host keys.
+	HostKeys []string
 
 	mutex    sync.Mutex
 	commands []string
+	logins   int
+	conns    int
+}
+
+// Connections returns how many connections it accepted, whether their handshake ended or not.
+func (s *Server) Connections() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.conns
+}
+
+// Logins returns how many times a password was given to it, right or wrong.
+func (s *Server) Logins() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.logins
 }
 
 // Commands returns the commands it was asked to run.
@@ -43,15 +61,30 @@ func Start(t testing.TB, user, password string, handle func(command string) ([]b
 	if err != nil {
 		t.Fatal(err)
 	}
+	return StartWithHostKeys(t, user, password, handle, signer)
+}
+
+// StartWithHostKeys is Start for a server with the host keys given, one of each kind: as a real
+// one, it shows a client the one of the kind the client prefers.
+func StartWithHostKeys(t testing.TB, user, password string, handle func(command string) ([]byte, error), hostKeys ...ssh.Signer) *Server {
+	t.Helper()
+	s := &Server{}
 	config := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			s.mutex.Lock()
+			s.logins++
+			s.mutex.Unlock()
 			if c.User() == user && string(pass) == password {
 				return nil, nil
 			}
 			return nil, errors.New("wrong password")
 		},
 	}
-	config.AddHostKey(signer)
+	for _, signer := range hostKeys {
+		config.AddHostKey(signer)
+		s.HostKeys = append(s.HostKeys, ssh.FingerprintSHA256(signer.PublicKey()))
+	}
+	s.HostKey = s.HostKeys[0]
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -59,13 +92,16 @@ func Start(t testing.TB, user, password string, handle func(command string) ([]b
 	}
 	t.Cleanup(func() { listener.Close() })
 
-	s := &Server{Address: listener.Addr().String(), HostKey: ssh.FingerprintSHA256(signer.PublicKey())}
+	s.Address = listener.Addr().String()
 	go func() {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
+			s.mutex.Lock()
+			s.conns++
+			s.mutex.Unlock()
 			go s.serve(conn, config, handle)
 		}
 	}()

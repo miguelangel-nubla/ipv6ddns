@@ -2,11 +2,13 @@ package ddns
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/netip"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -69,17 +71,19 @@ func (w *WindowsDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	defer runner.Close()
 
 	zone := psQuote(w.Zone)
-	name := psQuote(windowsRecordName(hostname))
+	name := psQuote(windowsRecordName(hostname, w.Zone))
 
-	// 1. Get current IPs (both A and AAAA)
+	// 1. Get the current records (both A and AAAA), each as its address and its TTL in seconds.
+	// -Node is for the records of the name alone: without it, those of the names under it come
+	// too, as *.nas with nas, and the whole zone with @.
 	psScript := fmt.Sprintf(`
 try {
     $output = @()
-    $rA = Get-DnsServerResourceRecord -ZoneName %s -Name %s -RRType A -ErrorAction SilentlyContinue 
-    if ($rA) { $output += $rA | Select-Object -ExpandProperty RecordData | Select-Object -ExpandProperty IPv4Address | ForEach-Object { "$_" } }
-    
-    $rAAAA = Get-DnsServerResourceRecord -ZoneName %s -Name %s -RRType AAAA -ErrorAction SilentlyContinue 
-    if ($rAAAA) { $output += $rAAAA | Select-Object -ExpandProperty RecordData | Select-Object -ExpandProperty IPv6Address | ForEach-Object { "$_" } }
+    $rA = Get-DnsServerResourceRecord -ZoneName %s -Name %s -RRType A -Node -ErrorAction SilentlyContinue
+    if ($rA) { $output += $rA | ForEach-Object { "$($_.RecordData.IPv4Address) $([int]$_.TimeToLive.TotalSeconds)" } }
+
+    $rAAAA = Get-DnsServerResourceRecord -ZoneName %s -Name %s -RRType AAAA -Node -ErrorAction SilentlyContinue
+    if ($rAAAA) { $output += $rAAAA | ForEach-Object { "$($_.RecordData.IPv6Address) $([int]$_.TimeToLive.TotalSeconds)" } }
 
     if ($output.Count -gt 0) {
         $output | ConvertTo-Json -Compress
@@ -97,45 +101,54 @@ try {
 		return fmt.Errorf("failed to get records: %v, output: %s", err, string(output))
 	}
 
-	var currentIPs []string
+	var currentRecords []string
 	trimmedOutput := strings.TrimSpace(string(output))
 	if trimmedOutput != "" && trimmedOutput != "null" {
 		// Can be string or array of strings
 		if strings.HasPrefix(trimmedOutput, "[") {
-			if err := json.Unmarshal([]byte(trimmedOutput), &currentIPs); err != nil {
+			if err := json.Unmarshal([]byte(trimmedOutput), &currentRecords); err != nil {
 				return fmt.Errorf("failed to parse array json: %v, output: %s", err, trimmedOutput)
 			}
 		} else {
-			var ip string
-			if err := json.Unmarshal([]byte(trimmedOutput), &ip); err != nil {
+			var record string
+			if err := json.Unmarshal([]byte(trimmedOutput), &record); err != nil {
 				return fmt.Errorf("failed to parse string json: %v, output: %s", err, trimmedOutput)
 			}
-			currentIPs = append(currentIPs, ip)
+			currentRecords = append(currentRecords, record)
 		}
 	}
 
 	// 2. Calculate Diff
 	desiredIPs := desiredRecords(addrCollection)
+	// Without a TTL the records have the zone's, whatever it is.
+	ttl := int(w.TTL.Seconds())
 
 	existingMap := make(map[string]bool)
-	for _, ip := range currentIPs {
-		if ip, ok := canonicalIP(ip); ok {
-			existingMap[ip] = true
-		}
-	}
-
 	var toAdd []string
 	var toDelete []string
 
-	for ip := range desiredIPs {
-		if !existingMap[ip] {
+	for _, record := range currentRecords {
+		fields := strings.Fields(record)
+		if len(fields) == 0 {
+			continue
+		}
+		ip, ok := canonicalIP(fields[0])
+		if !ok || existingMap[ip] {
+			continue
+		}
+		existingMap[ip] = true
+		if _, desired := desiredIPs[ip]; !desired {
+			toDelete = append(toDelete, ip)
+		} else if ttl > 0 && len(fields) > 1 && fields[1] != strconv.Itoa(ttl) {
+			// Another TTL than the one set: the record is made again with it.
+			toDelete = append(toDelete, ip)
 			toAdd = append(toAdd, ip)
 		}
 	}
 
-	for ip := range existingMap {
-		if _, ok := desiredIPs[ip]; !ok {
-			toDelete = append(toDelete, ip)
+	for ip := range desiredIPs {
+		if !existingMap[ip] {
+			toAdd = append(toAdd, ip)
 		}
 	}
 
@@ -182,7 +195,7 @@ try {
 
 		cmd := fmt.Sprintf("Add-DnsServerResourceRecord -ZoneName %s -Name %s %s %s '%s'", zone, name, typeSwitch, ipParam, ip)
 
-		if w.TTL.Duration > 0 {
+		if ttl > 0 {
 			cmd += fmt.Sprintf(" -TimeToLive '%s'", timeSpan(w.TTL.Duration))
 		}
 		if out, err := runner.RunPS(cmd); err != nil {
@@ -197,12 +210,14 @@ func (w *WindowsDNS) Domain(hostname string) string {
 	return FQDN(hostname, w.Zone)
 }
 
-// windowsRecordName is the name of hostname's records in the zone: "@" for the zone itself.
-func windowsRecordName(hostname string) string {
-	if hostname == "" {
-		return "@"
+// windowsRecordName is the name of hostname's records within the zone, as the DNS server commands
+// take it: "@" for the zone itself. A hostname given with its zone is the same name: taken as it
+// is, nas.example.com would be nas.example.com.example.com.
+func windowsRecordName(hostname, zone string) string {
+	if name := RelativeName(hostname, zone); name != "" {
+		return name
 	}
-	return hostname
+	return "@"
 }
 
 // psQuote makes s a PowerShell string literal.
@@ -258,13 +273,21 @@ func (l *LocalRunner) RunPS(psScript string) ([]byte, error) {
 		bin = "pwsh"
 	}
 
-	command := exec.Command(bin, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded)
+	// A PowerShell that hangs is killed, and what it started doesn't keep this waiting for its
+	// output.
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, bin, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded)
+	command.WaitDelay = 5 * time.Second
 	// Capture stderr independently
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 
 	stdout, err := command.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			err = fmt.Errorf("timed out after %s: %w", updateTimeout, err)
+		}
 		// ExitError often contains no message, so we add stderr
 		return stdout, fmt.Errorf("command failed: %v, stderr: %s", err, stderr.String())
 	}
@@ -275,8 +298,10 @@ func (l *LocalRunner) Close() error {
 	return nil
 }
 
+// SSHRunner runs the commands of one update over an SSH connection, within updateTimeout.
 type SSHRunner struct {
-	client *ssh.Client
+	client   *ssh.Client
+	deadline *sshDeadline
 }
 
 // newSSHRunner connects to the target, and returns the fingerprint of its key.
@@ -285,13 +310,13 @@ func newSSHRunner(target sshTarget) (*SSHRunner, string, error) {
 	if err != nil {
 		return nil, hostKey, err
 	}
-	return &SSHRunner{client: client}, hostKey, nil
+	return &SSHRunner{client: client, deadline: closeAfterTimeout(client)}, hostKey, nil
 }
 
 func (s *SSHRunner) RunPS(psScript string) ([]byte, error) {
 	session, err := s.client.NewSession()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %v", err)
+		return nil, s.deadline.wrap(fmt.Errorf("failed to create session: %w", err))
 	}
 	defer session.Close()
 
@@ -308,11 +333,12 @@ func (s *SSHRunner) RunPS(psScript string) ([]byte, error) {
 
 	stdout, err := session.Output(cmd)
 	if err != nil {
-		return stdout, fmt.Errorf("ssh command failed: %v, stderr: %s", err, stderr.String())
+		return stdout, s.deadline.wrap(fmt.Errorf("ssh command failed: %w, stderr: %s", err, stderr.String()))
 	}
 	return stdout, nil
 }
 
 func (s *SSHRunner) Close() error {
+	s.deadline.stop()
 	return s.client.Close()
 }

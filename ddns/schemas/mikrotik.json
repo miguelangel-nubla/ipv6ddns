@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "description": "Mikrotik RouterOS static DNS, /ip/dns/static, over its API. See docs/mikrotik.md.",
+    "description": "Mikrotik RouterOS static DNS, /ip/dns/static, over its API. RouterOS finds a name's records by its exact letters, capitals too: those of a hostname whose capitals change in the configuration stay, to be removed by hand. See docs/mikrotik.md.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
@@ -11,12 +11,12 @@
         },
         "use_tls": {
             "type": "boolean",
-            "description": "The API over TLS, the api-ssl service."
+            "description": "The API over TLS, the api-ssl service. Without it, the password crosses the network in the clear."
         },
         "tls_fingerprint": {
             "type": "string",
             "pattern": "^([a-fA-F0-9]{64})?$",
-            "description": "The SHA-256 fingerprint of the server's certificate, in hex, when it can't be verified otherwise. Without it, the certificate must be valid."
+            "description": "The SHA-256 fingerprint of the router's certificate, in hex: with it, that certificate and no other is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true."
         },
         "username": {
             "type": "string",

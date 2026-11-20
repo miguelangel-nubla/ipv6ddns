@@ -1,7 +1,7 @@
 //go:build tools
 
-// Package main keeps in go.mod the modules that generated code uses: the generated files are not
-// committed, so go mod tidy, which Dependabot runs, would drop them otherwise.
+// Package main keeps in go.mod the generator of the generated code, which nothing else imports:
+// go mod tidy, which Dependabot runs, would drop it otherwise.
 package main
 
 import (

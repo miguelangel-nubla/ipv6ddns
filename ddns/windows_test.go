@@ -12,6 +12,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/miguelangel-nubla/ipv6ddns/internal/sshtest"
+	"github.com/miguelangel-nubla/ipv6disc"
 )
 
 // fakePowerShell runs the DNS server commands the provider sends against fake.
@@ -22,7 +23,7 @@ type fakePowerShell struct {
 
 var (
 	psString      = `'((?:[^']|'')*)'`
-	getCommand    = regexp.MustCompile(`Get-DnsServerResourceRecord -ZoneName ` + psString + ` -Name ` + psString + ` -RRType (A|AAAA) `)
+	getCommand    = regexp.MustCompile(`Get-DnsServerResourceRecord -ZoneName ` + psString + ` -Name ` + psString + ` -RRType (A|AAAA) (-Node )?`)
 	addCommand    = regexp.MustCompile(`^Add-DnsServerResourceRecord -ZoneName ` + psString + ` -Name ` + psString + ` -(A|Aaaa) -IPv(?:4|6)Address '([^']+)'(?: -TimeToLive '([^']+)')?$`)
 	removeCommand = regexp.MustCompile(`^Remove-DnsServerResourceRecord -ZoneName ` + psString + ` -Name ` + psString + ` -RRType (A|AAAA) -RecordData '([^']+)' -Force$`)
 )
@@ -42,9 +43,13 @@ func (p *fakePowerShell) RunPS(script string) ([]byte, error) {
 			if psUnquote(m[1]) != "example.com" {
 				return nil, errors.New("no such zone")
 			}
-			for _, rec := range p.fake.of(psUnquote(m[2])) {
-				if rec.rrType == m[3] {
-					ips = append(ips, rec.ip)
+			// As the DNS server: without -Node, the records of the names under the name too,
+			// which for @ is the whole zone.
+			name := psUnquote(m[2])
+			for _, rec := range p.fake.records {
+				under := m[4] == "" && (name == "@" || strings.HasSuffix(rec.name, "."+name))
+				if (rec.name == name || under) && rec.rrType == m[3] {
+					ips = append(ips, fmt.Sprintf("%s %d", rec.ip, rec.ttl))
 				}
 			}
 		}
@@ -91,18 +96,45 @@ func parseTimeSpan(s string) int {
 }
 
 func TestWindowsUpdate(t *testing.T) {
-	for _, hostname := range []string{"nas", "", "o'brien"} {
-		name := windowsRecordName(hostname)
+	for hostname, name := range map[string]string{
+		"nas": "nas", "": "@", "o'brien": "o'brien",
+		// With its zone, the same names.
+		"nas.example.com": "nas", "NAS.Example.COM.": "NAS", "example.com": "@",
+	} {
+		if got := windowsRecordName(hostname, "example.com"); got != name {
+			t.Errorf("windowsRecordName(%q) = %q, want %q", hostname, got, name)
+		}
 		fake := newFakeDNS(t, name, "other")
+		// The records of the names under it are not its own: one with an address it has no more,
+		// and one with an address it is to have.
+		fake.add("a."+name, "AAAA", obsoleteIP, 300)
+		fake.add("*."+name, "AAAA", newIP, 300)
+		fake.writes = 0
 		ps := &fakePowerShell{fake: fake}
 		service := &WindowsDNS{Zone: "example.com", newRunner: func() (WindowsRunner, error) { return ps, nil }}
 		service.TTL.Duration = 26 * time.Hour
 
-		fake.check(func() error { return service.Update(hostname, desired()) }, name, "other")
+		fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update(hostname, addrs) }, name, "other")
 		for _, rec := range fake.of(name) {
-			if ip, _ := canonicalIP(rec.ip); ip != wantedIP && rec.ttl != 26*3600 {
-				t.Errorf("%q: record %s: ttl %d, want 26h", hostname, rec.ip, rec.ttl)
+			if rec.ttl != 26*3600 {
+				t.Errorf("%q: record %s: ttl %d, want 26h: of the one it had too", hostname, rec.ip, rec.ttl)
 			}
+		}
+		if len(fake.of("a."+name)) != 1 || len(fake.of("*."+name)) != 1 {
+			t.Errorf("%q: the records of the names under it changed: %v", hostname, fake.records)
+		}
+	}
+}
+
+// Without a TTL, the records keep the one they have: the zone's.
+func TestWindowsNoTTL(t *testing.T) {
+	fake := newFakeDNS(t, "nas", "other")
+	ps := &fakePowerShell{fake: fake}
+	service := &WindowsDNS{Zone: "example.com", newRunner: func() (WindowsRunner, error) { return ps, nil }}
+	fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas", "other")
+	for _, rec := range fake.of("nas") {
+		if ip, _ := canonicalIP(rec.ip); ip == wantedIP && rec.ttl != 300 {
+			t.Errorf("the record kept was made again: ttl %d", rec.ttl)
 		}
 	}
 }

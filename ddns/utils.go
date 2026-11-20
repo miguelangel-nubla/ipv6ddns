@@ -13,7 +13,7 @@ func FQDN(hostname, zone string) string {
 		return zone
 	}
 
-	if zone != "" && (hostname == zone || strings.HasSuffix(hostname, "."+zone)) {
+	if zone != "" && inZone(hostname, zone) {
 		return hostname
 	}
 
@@ -22,6 +22,26 @@ func FQDN(hostname, zone string) string {
 	}
 
 	return strings.Join([]string{hostname, zone}, ".")
+}
+
+// inZone tells whether name is zone or a name of it, whatever their case: DNS tells none apart.
+func inZone(name, zone string) bool {
+	name, zone = strings.ToLower(name), strings.ToLower(zone)
+	return name == zone || strings.HasSuffix(name, "."+zone)
+}
+
+// RelativeName returns the name of hostname within zone, for the providers that take it so: "" for
+// the zone itself. As FQDN, it takes a hostname given with its zone.
+func RelativeName(hostname, zone string) string {
+	fqdn := FQDN(hostname, zone)
+	zone = strings.Trim(zone, ".")
+	if zone == "" {
+		return fqdn
+	}
+	if len(fqdn) == len(zone) {
+		return ""
+	}
+	return fqdn[:len(fqdn)-len(zone)-1]
 }
 
 // SplitFQDN splits a fully qualified domain name into hostname and domain parts.

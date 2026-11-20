@@ -13,11 +13,12 @@ import (
 )
 
 type PfsenseRestapiUnbound struct {
-	Address        string            `json:"address"`
-	TLSFingerprint string            `json:"tls_fingerprint"`
-	Key            string            `json:"key"`
-	Zone           string            `json:"zone"`
-	TTL            duration.Duration `json:"ttl"`
+	Address        string `json:"address"`
+	TLSFingerprint string `json:"tls_fingerprint"`
+	Key            string `json:"key"`
+	Zone           string `json:"zone"`
+	// pfSense's host overrides have no TTL of their own: it is read for the schema, and unused.
+	TTL duration.Duration `json:"ttl"`
 }
 
 func init() {
@@ -33,6 +34,11 @@ func NewPfsenseRestapiUnbound(settings json.RawMessage) (Service, error) {
 }
 
 func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
+	// One update of a pfSense at a time, from reading the overrides to changing one. The ID of
+	// an override is its position in the list, which moves when one before it is deleted: with
+	// two updates at once, the second would change or delete the override of another name.
+	defer lockDevice("pfsense", u.Address)()
+
 	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(u.Address), u.TLSFingerprint))
 
 	// Note: pfSense does not support wildcard DNS entries (e.g., *.example.com)
@@ -193,7 +199,6 @@ func (u *PfsenseRestapiUnbound) addOverride(client *http.Client, host, domain st
 		"host":   host,
 		"domain": domain,
 		"ip":     ips,
-		"ttl":    fmt.Sprintf("%d", int(u.TTL.Seconds())),
 		"descr":  "Managed by ipv6ddns",
 	}
 
@@ -243,7 +248,6 @@ func (u *PfsenseRestapiUnbound) updateOverride(client *http.Client, id, host, do
 		"host":   host,
 		"domain": domain,
 		"ip":     ips,
-		"ttl":    fmt.Sprintf("%d", int(u.TTL.Seconds())),
 		"descr":  "Managed by ipv6ddns",
 	}
 

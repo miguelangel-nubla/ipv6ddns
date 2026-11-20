@@ -48,6 +48,12 @@ func TestFQDN(t *testing.T) {
 			want:     "host1.com",
 		},
 		{
+			name:     "hostname with zone suffix in another case",
+			hostname: "host1.Example.COM",
+			zone:     "example.com",
+			want:     "host1.Example.COM",
+		},
+		{
 			name:     "trailing dots",
 			hostname: "host1.",
 			zone:     "example.com.",
@@ -104,5 +110,25 @@ func TestSplitFQDN(t *testing.T) {
 				t.Errorf("SplitFQDN(%q) = (%q, %q), want (%q, %q)", tt.fqdn, gotHost, gotDom, tt.wantHost, tt.wantDom)
 			}
 		})
+	}
+}
+
+func TestRelativeName(t *testing.T) {
+	for _, tt := range []struct{ hostname, zone, want string }{
+		{"host1", "example.com", "host1"},
+		{"host1.example.com", "example.com", "host1"},
+		{"host1.example.com.", "example.com.", "host1"},
+		{"Host1.Example.COM", "example.com", "Host1"},
+		{"a.host1", "example.com", "a.host1"},
+		{"*.host1.example.com", "example.com", "*.host1"},
+		{"myexample.com", "example.com", "myexample.com"},
+		{"", "example.com", ""},
+		{"example.com", "example.com", ""},
+		{"example.com.", "Example.com", ""},
+		{"host1.com", "", "host1.com"},
+	} {
+		if got := RelativeName(tt.hostname, tt.zone); got != tt.want {
+			t.Errorf("RelativeName(%q, %q) = %q, want %q", tt.hostname, tt.zone, got, tt.want)
+		}
 	}
 }

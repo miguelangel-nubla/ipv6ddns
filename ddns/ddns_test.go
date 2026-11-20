@@ -193,7 +193,7 @@ func TestWindowsHelpers(t *testing.T) {
 	if got := psQuote("o'brien"); got != "'o''brien'" {
 		t.Errorf("psQuote: got %s", got)
 	}
-	if windowsRecordName("") != "@" || windowsRecordName("host") != "host" {
+	if windowsRecordName("", "example.com") != "@" || windowsRecordName("host", "example.com") != "host" {
 		t.Error("windowsRecordName")
 	}
 }

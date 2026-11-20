@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -111,13 +113,41 @@ func withoutURL(err error) error {
 	return err
 }
 
-const httpTimeout = 30 * time.Second
+// No update goes on for ever: one that didn't return would keep its name, and the others of its
+// endpoint, from being updated or tried again. Variables, for the tests to shorten.
+var (
+	// httpTimeout is the time a request of an update has, and a RouterOS session.
+	httpTimeout = 30 * time.Second
+	// updateTimeout is the time the requests of an update have together, where the provider's
+	// client makes several of its own or tries again, and the commands of one, over SSH or in a
+	// local PowerShell.
+	updateTimeout = 2 * time.Minute
+	// sshDialTimeout is the time to connect and for the SSH handshake.
+	sshDialTimeout = 10 * time.Second
+)
 
+// newHTTPClient makes the client of one update. It doesn't keep connections open: nothing would
+// use them again or close them, and each would stay, with its goroutines, until the server closed
+// it, which the web interface of a router with few connections to give may not do soon.
 func newHTTPClient(tlsConfig *tls.Config) *http.Client {
 	return &http.Client{
-		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Transport: &http.Transport{TLSClientConfig: tlsConfig, DisableKeepAlives: true},
 		Timeout:   httpTimeout,
 	}
+}
+
+// deviceLocks has a lock for each device whose provider reads its records and then changes them
+// by what it read, as a position in a list: two updates at once would change each other's.
+var deviceLocks sync.Map
+
+// lockDevice waits for the other updates of the device at address, of any credential, and returns
+// what ends this one.
+func lockDevice(provider, address string) (unlock func()) {
+	key := provider + " " + strings.ToLower(strings.TrimRight(strings.TrimSpace(address), "/"))
+	lock, _ := deviceLocks.LoadOrStore(key, &sync.Mutex{})
+	mutex := lock.(*sync.Mutex)
+	mutex.Lock()
+	return mutex.Unlock
 }
 
 // withDefaultPort adds port to an address that has none. The address can be an IPv6 one, bracketed
@@ -136,18 +166,44 @@ type sshTarget struct {
 	Password string
 	// The path of the private key to log in with.
 	KeyPath string
-	// The fingerprint of the host's key, SHA256:... as ssh-keygen -l shows it. Empty accepts any.
+	// The fingerprint of a key of the host, any of them, SHA256:... as ssh-keygen -l shows it.
+	// Empty accepts any.
 	HostKey string
 }
+
+// errHostKeyMismatch is the error of a host that shows another key than the one expected.
+var errHostKeyMismatch = errors.New("host key mismatch")
+
+type hostKeyFamily struct {
+	keyTypes   []string
+	algorithms []string
+}
+
+// hostKeyFamilies are the kinds of host key, with the algorithms that make a host show its key of
+// that kind.
+var hostKeyFamilies = []hostKeyFamily{
+	{[]string{ssh.KeyAlgoED25519}, []string{ssh.KeyAlgoED25519}},
+	{[]string{ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521}, []string{ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521}},
+	{[]string{ssh.KeyAlgoRSA}, []string{ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512}},
+}
+
+// pinnedAlgorithms remembers, by address and host key, the algorithms that made the host show the
+// key pinned, so that the next updates connect once.
+var pinnedAlgorithms sync.Map
 
 // dialSSH connects to the target, port 22 unless it says, with the private key and the password,
 // whichever are given. It returns the fingerprint of the key the host showed, which must be the
 // target's when it has one.
+//
+// A host with several keys shows one only, the one of the algorithm the client prefers, and a
+// fingerprint doesn't tell of which kind its key is. So, as OpenSSH with its known_hosts and as
+// the discovery plugins, the target's host key can be any of the host's: when the host shows
+// another key, it is asked for its key of each other kind. Nothing but the handshake reaches a
+// host that showed another key: neither the password nor a command.
 func dialSSH(target sshTarget) (*ssh.Client, string, error) {
-	address, username, password, keyPath := target.Address, target.Username, target.Password, target.KeyPath
 	var auth []ssh.AuthMethod
-	if keyPath != "" {
-		key, err := os.ReadFile(keyPath)
+	if target.KeyPath != "" {
+		key, err := os.ReadFile(target.KeyPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("unable to read private key: %w", err)
 		}
@@ -157,32 +213,148 @@ func dialSSH(target sshTarget) (*ssh.Client, string, error) {
 		}
 		auth = append(auth, ssh.PublicKeys(signer))
 	}
-	if password != "" {
-		auth = append(auth, ssh.Password(password))
+	if target.Password != "" {
+		auth = append(auth, ssh.Password(target.Password))
 	}
 	if len(auth) == 0 {
 		return nil, "", errors.New("no SSH authentication method: set a password or a key")
 	}
 
-	var hostKey string
-	config := &ssh.ClientConfig{
-		User: username,
-		Auth: auth,
-		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
-			hostKey = ssh.FingerprintSHA256(key)
-			if target.HostKey != "" && hostKey != target.HostKey {
-				return fmt.Errorf("host key mismatch: the host shows %s, expected %s", hostKey, target.HostKey)
-			}
-			return nil
-		},
-		Timeout: 10 * time.Second,
+	address := withDefaultPort(target.Address, "22")
+	// The fingerprints of the keys shown, the one the host shows by default first, and their kinds.
+	var seen, keyTypes []string
+	dial := func(algorithms []string) (*ssh.Client, error) {
+		return dialSSHConn(address, &ssh.ClientConfig{
+			User: target.Username,
+			Auth: auth,
+			HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+				fingerprint := ssh.FingerprintSHA256(key)
+				keyTypes = append(keyTypes, key.Type())
+				if !slices.Contains(seen, fingerprint) {
+					seen = append(seen, fingerprint)
+				}
+				if target.HostKey != "" && fingerprint != target.HostKey {
+					return fmt.Errorf("%w: the host shows %s, expected %s", errHostKeyMismatch, fingerprint, target.HostKey)
+				}
+				return nil
+			},
+			HostKeyAlgorithms: algorithms,
+			Timeout:           sshDialTimeout,
+		})
+	}
+	shown := func() string {
+		if len(seen) == 0 {
+			return ""
+		}
+		return seen[0]
+	}
+	failed := func(err error) error {
+		return fmt.Errorf("failed to dial %s: %w", target.Address, err)
 	}
 
-	client, err := ssh.Dial("tcp", withDefaultPort(address, "22"), config)
-	if err != nil {
-		return nil, hostKey, fmt.Errorf("failed to dial %s: %w", address, err)
+	if target.HostKey == "" {
+		// Any key: the one the host shows by default, always the same.
+		client, err := dial(nil)
+		if err != nil {
+			return nil, shown(), failed(err)
+		}
+		return client, shown(), nil
 	}
-	return client, hostKey, nil
+
+	cacheKey := address + " " + target.HostKey
+	// The default first: a key pinned from the warning, the one shown by default, takes one
+	// connection.
+	attempts := []hostKeyFamily{{}}
+	if remembered, ok := pinnedAlgorithms.Load(cacheKey); ok {
+		attempts = []hostKeyFamily{{algorithms: remembered.([]string)}, {}}
+	}
+	attempts = append(attempts, hostKeyFamilies...)
+
+	var lastErr error
+	for _, attempt := range attempts {
+		if slices.ContainsFunc(attempt.keyTypes, func(keyType string) bool { return slices.Contains(keyTypes, keyType) }) {
+			continue // its key of this kind was already shown
+		}
+		client, err := dial(attempt.algorithms)
+		if err == nil {
+			if attempt.algorithms != nil {
+				pinnedAlgorithms.Store(cacheKey, attempt.algorithms)
+			} else {
+				pinnedAlgorithms.Delete(cacheKey)
+			}
+			return client, target.HostKey, nil
+		}
+		var noAlgorithm *ssh.AlgorithmNegotiationError
+		switch {
+		case errors.Is(err, errHostKeyMismatch):
+			lastErr = err
+		case attempt.algorithms != nil && errors.As(err, &noAlgorithm):
+			// It has no key of this kind.
+			if lastErr == nil {
+				lastErr = err
+			}
+		default:
+			// Unreachable, or past the host key, as a password refused: not to be tried again
+			// with another key.
+			if slices.Contains(seen, target.HostKey) {
+				return nil, target.HostKey, failed(err)
+			}
+			return nil, shown(), failed(err)
+		}
+	}
+	if len(seen) > 1 {
+		lastErr = fmt.Errorf("%w: the host shows %s, expected %s", errHostKeyMismatch, strings.Join(seen, ", "), target.HostKey)
+	}
+	return nil, shown(), failed(lastErr)
+}
+
+// dialSSHConn connects as ssh.Dial does, with the timeout of the configuration for the handshake
+// too: ssh.Dial has it for the connection only, and waits for ever for a host that accepts it and
+// says nothing.
+func dialSSHConn(address string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	conn, err := net.DialTimeout("tcp", address, config.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetDeadline(time.Now().Add(config.Timeout))
+	c, chans, reqs, err := ssh.NewClientConn(conn, address, config)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	conn.SetDeadline(time.Time{})
+	return ssh.NewClient(c, chans, reqs), nil
+}
+
+// sshDeadline closes an SSH connection once the commands of an update had their time, which ends
+// the one that hangs with an error: a session has no deadline of its own.
+type sshDeadline struct {
+	timer   *time.Timer
+	expired atomic.Bool
+}
+
+// closeAfterTimeout gives the commands on client updateTimeout, from now.
+func closeAfterTimeout(client *ssh.Client) *sshDeadline {
+	d := &sshDeadline{}
+	timeout := updateTimeout
+	d.timer = time.AfterFunc(timeout, func() {
+		d.expired.Store(true)
+		client.Close()
+	})
+	return d
+}
+
+// stop is for when the connection closes.
+func (d *sshDeadline) stop() {
+	d.timer.Stop()
+}
+
+// wrap tells of the timeout in the error of a command it ended.
+func (d *sshDeadline) wrap(err error) error {
+	if err != nil && d.expired.Load() {
+		return fmt.Errorf("timed out after %s: %w", updateTimeout, err)
+	}
+	return err
 }
 
 // unverifiedHostKeys keeps the warnings about the hosts a provider connected to without checking
@@ -221,15 +393,23 @@ type commandRunner interface {
 	Close() error
 }
 
+// sshCommandRunner runs the commands of one update over an SSH connection, within updateTimeout.
 type sshCommandRunner struct {
-	client *ssh.Client
+	client   *ssh.Client
+	deadline *sshDeadline
+}
+
+func newSSHCommandRunner(client *ssh.Client) sshCommandRunner {
+	return sshCommandRunner{client: client, deadline: closeAfterTimeout(client)}
 }
 
 func (r sshCommandRunner) Run(command string) ([]byte, error) {
-	return runSSH(r.client, command)
+	output, err := runSSH(r.client, command)
+	return output, r.deadline.wrap(err)
 }
 
 func (r sshCommandRunner) Close() error {
+	r.deadline.stop()
 	return r.client.Close()
 }
 

@@ -25,9 +25,19 @@ discovery:
       username: admin
       password: ${ROUTER_PASSWORD}
       use_tls: true
+      # The SHA-256 of the router's certificate: needed for the self-signed one RouterOS makes
+      tls_fingerprint: "0B:30:55:7A:9F:C4:E9:0E:33:58:7D:A2:C7:EC:11:36:5B:80:A5:CA:EF:14:39:5E:83:A8:CD:F2:17:3C:61:86"
 ```
 
 Its keys are in the [reference](reference/configuration.md#mikrotik).
+
+With `use_tls: true` alone, the router's certificate is verified with the system's CAs, for the name or address in `address`. That fails for the certificate RouterOS makes itself, which is self-signed: give its `tls_fingerprint`, 64 hex digits, colons allowed, which is then all that is checked. Unlike the DNS provider below, the plugin's error doesn't show the fingerprint. Get it with:
+
+```bash
+openssl s_client -connect 192.168.88.1:8729 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
+```
+
+`tls_fingerprint` without `use_tls: true` is an error. Without `use_tls`, on the `api` service, port 8728, the password crosses the network in the clear.
 
 ### Requirements
 - **API User**: The plugin only reads the neighbor tables (`/ipv6/neighbor/print`, and `/ip/arp/print` for IPv4), so give it a dedicated read-only user, and optionally limit it to the address `ipv6ddns` connects from:
@@ -56,6 +66,7 @@ credentials:
       # Recommended: use TLS (requires API-SSL service on router)
       use_tls: true
       # If certificate cannot be validated you must provide the SHA256 fingerprint of the router's certificate. Run empty to get the fingerprint.
+      # With a fingerprint, only that certificate is accepted, and use_tls must be true.
       tls_fingerprint: ""
       # Credentials
       username: admin
@@ -71,6 +82,10 @@ credentials:
 - **API Service**: as for the [discovery plugin](#requirements).
 
 ---
+
+### Limitations
+
+- **A hostname's capitals are part of it.** RouterOS answers a query whatever its capitals, but finds the records to change by the exact letters of the name. A hostname whose capitals change in the configuration, `NAS` to `nas`, is another name to it: the records written before stay, and are still answered. Remove them by hand: `/ip dns static remove [find name="NAS.lan"]`.
 
 ## Running as a Container on RouterOS
 
@@ -99,4 +114,4 @@ The container image is available at:
 You just need to create a container with this image and mount the config file at `/config.yaml`.
 
 ### Notes
-- **Storage**: `ipv6ddns` runs entirely in memory and does not write to disk, so it is safe to run on internal flash without wear concerns. However, external storage (USB/SD) is widely recommended because the container image size may exceed the available internal flash space on many devices.
+- **Storage**: `ipv6ddns` runs in memory and does not write to disk, so it is safe to run on internal flash without wear concerns. The one exception is a `homeassistant` block without a `key`: the device's identity and the key Home Assistant gives are kept in `state_file`, `homeassistant.state` beside the configuration, written only when they change. In a container with just `/config.yaml` mounted, give a `key` instead, or point `state_file` at a mounted, writable path: see [the Home Assistant integration](home-assistant-integration.md#the-key). However, external storage (USB/SD) is widely recommended because the container image size may exceed the available internal flash space on many devices.

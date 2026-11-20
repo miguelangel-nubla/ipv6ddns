@@ -87,7 +87,8 @@ func (d *DuckDNS) request(hostname string, params url.Values) (duckDNSRecords, e
 		baseURL = d.updateURL
 	}
 	params.Set("token", d.APIToken)
-	params.Set("domains", hostname)
+	// The name within duckdns.org, which is what DuckDNS takes: nas for nas.duckdns.org too.
+	params.Set("domains", RelativeName(hostname, "duckdns.org"))
 	params.Set("verbose", "true")
 
 	resp, err := newHTTPClient(nil).Get(baseURL + "?" + params.Encode())

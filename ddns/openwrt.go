@@ -23,6 +23,10 @@ type OpenWrt struct {
 	// Connects to run the commands, for tests: nil is over SSH.
 	dial func() (commandRunner, error)
 
+	// A change was sent and is not known to be committed and loaded by dnsmasq: the next update
+	// commits and reloads, whatever it finds. Read and set during an update, one at a time.
+	pending bool
+
 	unverified unverifiedHostKeys
 }
 
@@ -42,19 +46,19 @@ func NewOpenWrt(settings json.RawMessage) (Service, error) {
 	return &service, nil
 }
 
+// Update changes the domain sections of the name, commits and reloads dnsmasq, in one command: a
+// connection lost halfway doesn't leave half of it.
+//
+// uci shows the changes not committed yet as made. So after an update that failed, the next can
+// find nothing to change with the changes still to commit, or committed and dnsmasq not reloaded:
+// it commits and reloads then, rather than report as updated what dnsmasq doesn't serve.
 func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
+	// One update of a router at a time: another's would commit the half of this one.
+	defer lockDevice("openwrt", o.Address)()
+
 	dial := o.dial
 	if dial == nil {
-		dial = func() (commandRunner, error) {
-			client, hostKey, err := dialSSH(sshTarget{o.Address, o.Username, o.Password, o.SSHKey, o.HostKey})
-			if err != nil {
-				return nil, err
-			}
-			if o.HostKey == "" {
-				o.unverified.note(o.Address, hostKey)
-			}
-			return sshCommandRunner{client}, nil
-		}
+		dial = o.connect
 	}
 	runner, err := dial()
 	if err != nil {
@@ -75,7 +79,8 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	existingIPs := make(map[string]string) // IP -> section
 	var idsToDelete []string
 	for id, record := range uciDomains(string(output)) {
-		if record.name != fqdn {
+		// Whatever its case: dnsmasq answers with the sections of the name written in another.
+		if !strings.EqualFold(record.name, fqdn) {
 			continue
 		}
 		ip, ok := canonicalIP(record.ip)
@@ -104,40 +109,52 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		}
 	}
 
-	if len(idsToDelete) == 0 && len(ipsToAdd) == 0 {
-		return nil
-	}
-
+	var commands []string
 	for _, id := range idsToDelete {
-		if _, err := runner.Run(fmt.Sprintf("uci delete dhcp.%s", id)); err != nil {
-			return err
-		}
+		commands = append(commands, fmt.Sprintf("uci delete dhcp.%s", id))
 	}
-
 	for _, ip := range ipsToAdd {
 		// A named section, the same for the same name and address.
 		hash := sha256.Sum256([]byte(fqdn + ip))
 		id := "ipv6ddns_" + hex.EncodeToString(hash[:])[:8]
-
-		for _, cmd := range []string{
+		commands = append(commands,
 			fmt.Sprintf("uci set dhcp.%s=domain", id),
 			fmt.Sprintf("uci set dhcp.%s.name=%s", id, shellQuote(fqdn)),
 			fmt.Sprintf("uci set dhcp.%s.ip=%s", id, shellQuote(ip)),
-		} {
-			if _, err := runner.Run(cmd); err != nil {
-				return err
-			}
+		)
+	}
+
+	if len(commands) == 0 && !o.pending {
+		// Nothing to change, unless an update before this process started left its changes to
+		// commit.
+		staged, err := runner.Run("uci changes dhcp")
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(staged)) == "" {
+			return nil
 		}
 	}
 
-	if _, err := runner.Run("uci commit dhcp"); err != nil {
+	commands = append(commands, "uci commit dhcp", "/etc/init.d/dnsmasq reload")
+	o.pending = true
+	if _, err := runner.Run(strings.Join(commands, " && ")); err != nil {
 		return err
 	}
-	if _, err := runner.Run("/etc/init.d/dnsmasq reload"); err != nil {
-		return err
-	}
-
+	o.pending = false
 	return nil
+}
+
+// connect logs in over SSH, to run the commands of an update.
+func (o *OpenWrt) connect() (commandRunner, error) {
+	client, hostKey, err := dialSSH(sshTarget{o.Address, o.Username, o.Password, o.SSHKey, o.HostKey})
+	if err != nil {
+		return nil, err
+	}
+	if o.HostKey == "" {
+		o.unverified.note(o.Address, hostKey)
+	}
+	return newSSHCommandRunner(client), nil
 }
 
 type uciDomain struct {

@@ -1,0 +1,224 @@
+#!/bin/sh
+# The live tests of the DNS providers, ddns/live_test.go, against the real servers that run in a
+# container: Technitium DNS Server, Gravity, OpenWrt, and Mikrotik RouterOS, a CHR under QEMU. It
+# starts them, provisions each with a zone, a credential and the records the tests must leave
+# alone, runs the tests and removes them. It needs Docker, Go, curl and OpenSSH's ssh-keygen and
+# ssh-keyscan. The RouterOS image stays, in the Docker volume ipv6ddns-live-routeros: it is
+# downloaded once.
+#
+# Arguments go to go test: tools/live-providers.sh -run '^TestLiveGravity$'
+#
+# The tests of the providers that are a service, Cloudflare, DuckDNS and Route 53, run too when
+# their variables are set: see ddns/live_cloud_test.go.
+#
+# The servers are of the versions written here, so that a run tells of the code and not of what
+# was released that day: a newer one is a change of this file, which CI then runs.
+set -eu
+cd "$(dirname "$0")/.."
+
+TECHNITIUM_IMAGE=${TECHNITIUM_IMAGE:-technitium/dns-server:15.6.2}
+GRAVITY_IMAGE=${GRAVITY_IMAGE:-ghcr.io/beryju/gravity:v0.34.0}
+OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
+case $(docker version --format '{{.Server.Arch}}') in
+arm64 | aarch64) openwrt_target=armsr-armv8 openwrt_platform=linux/aarch64_generic ;;
+*) openwrt_target=x86-64 openwrt_platform=linux/amd64 ;;
+esac
+OPENWRT_IMAGE=${OPENWRT_IMAGE:-openwrt/rootfs:$openwrt_target-$OPENWRT_VERSION}
+ROUTEROS_VERSION=${ROUTEROS_VERSION:-7.20.4}
+
+zone=example.test
+password=live-$$
+prefix=ipv6ddns-live-$$
+work=$(mktemp -d)
+cleanup() {
+	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
+	rm -rf "$work"
+}
+trap cleanup EXIT
+trap 'exit 1' INT TERM
+
+# port <container> <port/protocol>: where the host has it.
+port() {
+	docker port "$prefix-$1" "$2" | sed -n '1s/.*://p'
+}
+
+# wait_for <what> <command...>: until the command succeeds, a minute at most, or the $wait_seconds
+# given. What became of the containers tells why it didn't.
+wait_for() {
+	what=$1
+	shift
+	deadline=$(($(date +%s) + ${wait_seconds:-60}))
+	until "$@" >/dev/null 2>&1; do
+		if [ "$(date +%s)" -ge "$deadline" ]; then
+			echo "live-providers: $what did not come up" >&2
+			docker ps -a --filter "name=$prefix-" --format '{{.Names}}: {{.Status}}' >&2
+			exit 1
+		fi
+		sleep 0.5
+	done
+}
+
+# json_field <name>: the value of a string field of the JSON object on the input.
+json_field() {
+	sed -n 's/.*"'"$1"'":"\([^"]*\)".*/\1/p'
+}
+
+publish='-p 127.0.0.1::53/udp -p 127.0.0.1::53/tcp'
+
+# They all start at once, and are provisioned as each comes up. RouterOS first, the one that takes
+# longest: it is an x86 machine, emulated unless the container has KVM, which boots in half a
+# minute even so.
+kvm=
+if [ -w /dev/kvm ]; then
+	kvm='--device /dev/kvm'
+fi
+docker run -d --name "$prefix-routeros" $kvm $publish -p 127.0.0.1::80/tcp -p 127.0.0.1::8728/tcp -p 127.0.0.1::8729/tcp \
+	-v ipv6ddns-live-routeros:/cache -e VERSION="$ROUTEROS_VERSION" alpine:3 sh -euc '
+		apk add -q qemu-system-x86_64
+		if [ ! -f "/cache/chr-$VERSION.img" ]; then
+			wget -q -O /tmp/chr.zip "https://download.mikrotik.com/routeros/$VERSION/chr-$VERSION.img.zip"
+			unzip -q -o /tmp/chr.zip -d /tmp
+			mv "/tmp/chr-$VERSION.img" /cache/
+		fi
+		cp "/cache/chr-$VERSION.img" /tmp/chr.img
+		accel=tcg
+		if [ -w /dev/kvm ]; then
+			accel=kvm
+		fi
+		forward=hostfwd=tcp::80-:80,hostfwd=tcp::8728-:8728,hostfwd=tcp::8729-:8729,hostfwd=tcp::53-:53,hostfwd=udp::53-:53
+		exec qemu-system-x86_64 -accel "$accel" -m 256 -nographic -drive file=/tmp/chr.img,format=raw,if=virtio \
+			-device virtio-net-pci,netdev=net -netdev "user,id=net,$forward"' >/dev/null
+docker run -d --name "$prefix-technitium" $publish -p 127.0.0.1::5380/tcp \
+	-e DNS_SERVER_ADMIN_PASSWORD="$password" "$TECHNITIUM_IMAGE" >/dev/null
+docker run -d --name "$prefix-gravity" $publish -p 127.0.0.1::8008/tcp \
+	-e ADMIN_PASSWORD="$password" -e ADMIN_TOKEN="$password" "$GRAVITY_IMAGE" >/dev/null
+
+# OpenWrt boots as on a router, with procd, which a reload of dnsmasq goes through: its lan is the
+# container's interface, with the address Docker gave it, and the firewall, which has no zone for
+# the host, stays off. The TXT record is dnsmasq's own, and the host section a static lease of the
+# name: neither is a domain section.
+ssh-keygen -q -t ed25519 -N '' -f "$work/key"
+docker run -d --name "$prefix-openwrt" --platform "$openwrt_platform" --privileged $publish -p 127.0.0.1::22/tcp \
+	-e PUBKEY="$(cat "$work/key.pub")" "$OPENWRT_IMAGE" sh -c '
+		rm -f /etc/rc.d/S*firewall /etc/rc.d/S*odhcpd /etc/rc.d/S*sysntpd /etc/rc.d/S*uhttpd
+		address=$(ip -4 -o addr show eth0 | awk "{print \$4}")
+		gateway=$(ip -4 route show default | awk "{print \$3}")
+		cat >/etc/config/network <<EOF
+config interface loopback
+	option device lo
+	option proto static
+	list ipaddr 127.0.0.1/8
+
+config interface lan
+	option device eth0
+	option proto static
+	list ipaddr $address
+	option gateway $gateway
+EOF
+		cat >>/etc/config/dhcp <<EOF
+
+config domain fixture_other
+	option name other.lan
+	option ip 2001:db8::f
+
+config host fixture_host
+	option name live.lan
+	option ip 192.0.2.99
+	option mac 02:00:00:00:00:99
+EOF
+		echo "txt-record=live.lan,keep" >>/etc/dnsmasq.conf
+		mkdir -p /etc/dropbear
+		echo "$PUBKEY" >/etc/dropbear/authorized_keys
+		chmod 600 /etc/dropbear/authorized_keys
+		exec /sbin/init' >/dev/null
+
+# Technitium: an API token, a primary zone and the records.
+technitium=http://127.0.0.1:$(port technitium 5380/tcp)
+wait_for Technitium curl -fs "$technitium/api/user/login?user=admin&pass=$password"
+technitium_token=$(curl -fs "$technitium/api/user/createToken?user=admin&pass=$password&tokenName=live" | json_field token)
+technitium_api() {
+	path=$1
+	shift
+	curl -fs "$technitium/api/zones/$path?token=$technitium_token&zone=$zone" "$@" | grep -q '"status":"ok"' || {
+		echo "live-providers: Technitium refused $path $*" >&2
+		exit 1
+	}
+}
+technitium_api create --data-urlencode type=Primary -G
+technitium_api records/add -G -d "domain=other.$zone" -d type=AAAA -d ipAddress=2001:db8::f -d ttl=300
+technitium_api records/add -G -d "domain=live.$zone" -d type=TXT -d text=keep -d ttl=300
+technitium_api records/add -G -d "domain=$zone" -d type=TXT -d text=keep -d ttl=300
+
+# Gravity: the token is the one it starts with. An authoritative zone, and the records. The zone
+# answers from etcd, without the memory handler in front of it that the zones made in the web
+# interface have: Gravity 0.34.0 answers through that one with a single record of each type,
+# whatever the number the name has.
+gravity=http://127.0.0.1:$(port gravity 8008/tcp)
+gravity_api() {
+	path=$1
+	shift
+	curl -fs -o /dev/null -H "Authorization: Bearer $password" -H 'Content-Type: application/json' "$gravity/api/v1/dns/$path" "$@"
+}
+wait_for Gravity gravity_api zones
+gravity_api "zones?zone=$zone." -d '{"authoritative":true,"handlerConfigs":[{"type":"etcd"}],"defaultTTL":86400,"hook":""}'
+gravity_api "zones/records?zone=$zone.&hostname=other&uid=fixture" -d '{"type":"AAAA","data":"2001:db8::f","ttl":300}'
+gravity_api "zones/records?zone=$zone.&hostname=live&uid=fixture" -d '{"type":"TXT","data":"keep","ttl":300}'
+gravity_api "zones/records?zone=$zone.&hostname=@&uid=fixture" -d '{"type":"TXT","data":"keep","ttl":300}'
+
+# OpenWrt: up once dnsmasq serves, and dropbear has made its host keys, an Ed25519 one and an RSA
+# one, whose fingerprints these are. They are of the one scan that showed both, asked for those two
+# kinds alone: ssh-keyscan writes its comments where it writes the keys, and a scan for every kind
+# there is comes back from dropbear without one of the two, one time in four.
+openwrt_ssh=$(port openwrt 22/tcp)
+openwrt_scan() {
+	ssh-keyscan -t rsa,ed25519 -p "$openwrt_ssh" 127.0.0.1 2>/dev/null | grep -v '^#' >"$work/host_keys"
+	[ "$(grep -c . "$work/host_keys")" -eq 2 ]
+}
+wait_for OpenWrt docker exec "$prefix-openwrt" nslookup other.lan 127.0.0.1
+wait_for "OpenWrt's SSH" openwrt_scan
+openwrt_host_keys=$(ssh-keygen -lf "$work/host_keys" | awk '{print $2}' | tr '\n' ' ')
+
+# RouterOS: as it boots the first time, with the user admin and no password. Over its REST API,
+# the DNS server answers the host, the records, and a certificate of its own for the API over TLS.
+routeros=http://127.0.0.1:$(port routeros 80/tcp)
+routeros_api() {
+	path=$1
+	shift
+	curl -fs -m 60 -u admin: -H 'Content-Type: application/json' "$routeros/rest/$path" "$@"
+}
+# Five minutes: the first time it is downloaded, and without KVM it is emulated.
+routeros_up() {
+	curl -fs -m 5 -u admin: "$routeros/rest/system/resource"
+}
+wait_seconds=300 wait_for RouterOS routeros_up
+routeros_api ip/dns/set -d '{"allow-remote-requests":"yes"}' >/dev/null
+routeros_api ip/dns/static/add -d '{"name":"other.lan","type":"AAAA","address":"2001:db8::f"}' >/dev/null
+routeros_api ip/dns/static/add -d '{"name":"live.lan","type":"TXT","text":"keep"}' >/dev/null
+routeros_api ip/dns/static/add -d '{"name":"lan","type":"TXT","text":"keep"}' >/dev/null
+routeros_api certificate/add -d '{"name":"live","common-name":"router.lan","key-size":"prime256v1"}' >/dev/null
+routeros_api certificate/sign -d '{".id":"live"}' >/dev/null
+routeros_api ip/service/set -d '{".id":"api-ssl","certificate":"live"}' >/dev/null
+routeros_fingerprint=$(routeros_api 'certificate?name=live' | json_field fingerprint)
+routeros_version=$(routeros_api system/resource | json_field version)
+
+echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
+
+export IPV6DDNS_LIVE_TECHNITIUM="{\"address\":\"$technitium\",\"token\":\"$technitium_token\",\"zone\":\"$zone\",\"ttl\":\"5m\"}"
+export IPV6DDNS_LIVE_TECHNITIUM_DNS="127.0.0.1:$(port technitium 53/udp)"
+export IPV6DDNS_LIVE_GRAVITY="{\"server\":\"$gravity\",\"api_key\":\"$password\",\"zone\":\"$zone.\",\"ttl\":\"5m\"}"
+export IPV6DDNS_LIVE_GRAVITY_DNS="127.0.0.1:$(port gravity 53/udp)"
+export IPV6DDNS_LIVE_OPENWRT="{\"address\":\"127.0.0.1:$openwrt_ssh\",\"username\":\"root\",\"ssh_key\":\"$work/key\",\"host_key\":\"${openwrt_host_keys%% *}\",\"zone\":\"lan\"}"
+export IPV6DDNS_LIVE_OPENWRT_DNS="127.0.0.1:$(port openwrt 53/udp)"
+export IPV6DDNS_LIVE_OPENWRT_HOST_KEYS="$openwrt_host_keys"
+routeros_settings="\"username\":\"admin\",\"password\":\"\",\"zone\":\"lan\",\"ttl\":\"5m\""
+export IPV6DDNS_LIVE_MIKROTIK="{\"address\":\"127.0.0.1:$(port routeros 8728/tcp)\",$routeros_settings}"
+export IPV6DDNS_LIVE_MIKROTIK_TLS="{\"address\":\"127.0.0.1:$(port routeros 8729/tcp)\",\"use_tls\":true,\"tls_fingerprint\":\"$routeros_fingerprint\",$routeros_settings}"
+export IPV6DDNS_LIVE_MIKROTIK_DNS="127.0.0.1:$(port routeros 53/udp)"
+
+go test -tags live -count=1 -v -run '^TestLive' "$@" ./ddns
+
+# What no DNS query shows: the static lease of the name the updates were of is still OpenWrt's.
+if [ "$(docker exec "$prefix-openwrt" uci get dhcp.fixture_host.ip)" != 192.0.2.99 ]; then
+	echo "live-providers: the host section of live.lan, not a domain section, is gone" >&2
+	exit 1
+fi

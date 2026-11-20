@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -85,17 +86,23 @@ func (f *fakeDNS) of(name string) []record {
 	return result
 }
 
+// addresses are the A and AAAA records of name: the ones of a provider.
+func (f *fakeDNS) addresses(name string) []record {
+	return slices.DeleteFunc(f.of(name), func(r record) bool { return r.rrType != "A" && r.rrType != "AAAA" })
+}
+
 // check runs the update twice: the records must be the desired ones after the first, and the
-// second must change nothing.
-func (f *fakeDNS) check(update func() error, name, otherName string) {
+// second must change nothing. Then it runs one without addresses, which leaves the name without
+// A and AAAA records, and the other name with its own.
+func (f *fakeDNS) check(update func(*ipv6disc.AddrCollection) error, name, otherName string) {
 	f.t.Helper()
-	if err := update(); err != nil {
+	if err := update(desired()); err != nil {
 		f.t.Fatalf("update: %v", err)
 	}
 
 	f.mutex.Lock()
 	var got []string
-	for _, r := range f.of(name) {
+	for _, r := range f.addresses(name) {
 		ip, _ := canonicalIP(r.ip)
 		got = append(got, r.rrType+" "+ip)
 	}
@@ -108,16 +115,31 @@ func (f *fakeDNS) check(update func() error, name, otherName string) {
 		f.t.Errorf("records of %s: got %v, want its one record untouched", otherName, other)
 	}
 	writes := f.writes
+	// The records as the provider left them, for the caller to look at after.
+	records := slices.Clone(f.records)
 	f.mutex.Unlock()
 
-	if err := update(); err != nil {
+	if err := update(desired()); err != nil {
 		f.t.Fatalf("second update: %v", err)
 	}
 	f.mutex.Lock()
-	defer f.mutex.Unlock()
 	if f.writes != writes {
 		f.t.Errorf("the second update made %d changes, want none", f.writes-writes)
 	}
+	f.mutex.Unlock()
+
+	if err := update(ipv6disc.NewAddrCollection()); err != nil {
+		f.t.Fatalf("update without addresses: %v", err)
+	}
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	if left := f.addresses(name); len(left) != 0 {
+		f.t.Errorf("without addresses, %s keeps %v", name, left)
+	}
+	if other := f.of(otherName); len(other) != 1 {
+		f.t.Errorf("without addresses for %s, the records of %s: got %v, want its one record", name, otherName, other)
+	}
+	f.records = records
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -150,7 +172,16 @@ func TestTechnitiumUpdate(t *testing.T) {
 			writeJSON(w, map[string]any{"status": "ok", "response": map[string]any{"records": records}})
 			return
 		case "/api/zones/records/add":
-			fake.add(domain, q.Get("type"), q.Get("ipAddress"), 0)
+			ttl, _ := strconv.Atoi(q.Get("ttl"))
+			fake.add(domain, q.Get("type"), q.Get("ipAddress"), ttl)
+		case "/api/zones/records/update":
+			ttl, _ := strconv.Atoi(q.Get("ttl"))
+			for i, rec := range fake.records {
+				if rec.name == domain && rec.rrType == q.Get("type") && sameIP(rec.ip, q.Get("ipAddress")) {
+					fake.records[i].ttl = ttl
+				}
+			}
+			fake.writes++
 		case "/api/zones/records/delete":
 			fake.deleteWhere(func(rec record) bool {
 				return rec.name == domain && rec.rrType == q.Get("type") && sameIP(rec.ip, q.Get("ipAddress"))
@@ -163,12 +194,19 @@ func TestTechnitiumUpdate(t *testing.T) {
 	defer server.Close()
 
 	service := &Technitium{Address: server.URL, Token: "secret", Zone: "example.com"}
-	fake.check(func() error { return service.Update("nas", desired()) }, "nas.example.com", "other.example.com")
+	service.TTL.Duration = 10 * time.Minute
+	fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas.example.com", "other.example.com")
+	for _, rec := range fake.of("nas.example.com") {
+		if rec.ttl != 600 {
+			t.Errorf("record %s: ttl %d, want 600: of the one it had too", rec.ip, rec.ttl)
+		}
+	}
 }
 
 func TestOpnsenseUnboundUpdate(t *testing.T) {
 	fake := newFakeDNS(t, "nas.lan", "other.lan")
-	fake.add("nas.lan", "AAAA", wantedIP, 0) // a duplicate
+	fake.add("nas.lan", "AAAA", wantedIP, 300) // a duplicate
+	fake.add("nas.lan", "MX", "mail.lan", 300) // not a record of the provider's
 	fake.writes = 0
 	reconfigures := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -182,13 +220,37 @@ func TestOpnsenseUnboundUpdate(t *testing.T) {
 			var rows []map[string]string
 			for _, rec := range fake.records {
 				host, domain := SplitFQDN(rec.name)
-				rows = append(rows, map[string]string{"uuid": rec.id, "hostname": host, "domain": domain, "rr": strings.ToLower(rec.rrType), "server": rec.ip})
+				row := map[string]string{"uuid": rec.id, "hostname": host, "domain": domain, "server": rec.ip, "ttl": strconv.Itoa(rec.ttl)}
+				// The type as OPNsense tells it: its description up to 25.1, and since the
+				// type, with the description apart. Some rows of each.
+				description := map[string]string{"A": "A (IPv4 address)", "AAAA": "AAAA (IPv6 address)", "MX": "MX (Mail server)"}[rec.rrType]
+				if id, _ := strconv.Atoi(rec.id); id%2 == 0 {
+					row["rr"] = description
+				} else {
+					row["rr"], row["%rr"] = rec.rrType, description
+				}
+				rows = append(rows, row)
 			}
 			writeJSON(w, map[string]any{"rows": rows})
 		case r.URL.Path == "/api/unbound/settings/addHostOverride":
 			var body struct{ Host map[string]string }
 			json.NewDecoder(r.Body).Decode(&body)
-			fake.add(body.Host["hostname"]+"."+body.Host["domain"], body.Host["rr"], body.Host["server"], 0)
+			ttl, _ := strconv.Atoi(body.Host["ttl"])
+			fake.add(body.Host["hostname"]+"."+body.Host["domain"], body.Host["rr"], body.Host["server"], ttl)
+			writeJSON(w, map[string]string{"result": "saved"})
+		case strings.HasPrefix(r.URL.Path, "/api/unbound/settings/setHostOverride/"):
+			id := strings.TrimPrefix(r.URL.Path, "/api/unbound/settings/setHostOverride/")
+			var body struct{ Host map[string]string }
+			json.NewDecoder(r.Body).Decode(&body)
+			for i, rec := range fake.records {
+				if rec.id == id {
+					if rec.name != body.Host["hostname"]+"."+body.Host["domain"] || !sameIP(rec.ip, body.Host["server"]) {
+						t.Errorf("override %s set to another name or address: %v", id, body.Host)
+					}
+					fake.records[i].ttl, _ = strconv.Atoi(body.Host["ttl"])
+				}
+			}
+			fake.writes++
 			writeJSON(w, map[string]string{"result": "saved"})
 		case strings.HasPrefix(r.URL.Path, "/api/unbound/settings/delHostOverride/"):
 			id := strings.TrimPrefix(r.URL.Path, "/api/unbound/settings/delHostOverride/")
@@ -204,9 +266,18 @@ func TestOpnsenseUnboundUpdate(t *testing.T) {
 	defer server.Close()
 
 	service := &OpnsenseUnbound{Address: server.URL + "/", Key: "key", Secret: "secret", Zone: "lan"}
-	fake.check(func() error { return service.Update("nas", desired()) }, "nas.lan", "other.lan")
-	if reconfigures != 1 {
-		t.Errorf("got %d reconfigures, want 1: none when nothing changes", reconfigures)
+	service.TTL.Duration = 10 * time.Minute
+	fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas.lan", "other.lan")
+	for _, rec := range fake.addresses("nas.lan") {
+		if rec.ttl != 600 {
+			t.Errorf("record %s: ttl %d, want 600: of the one it had too", rec.ip, rec.ttl)
+		}
+	}
+	if len(fake.of("nas.lan")) != 4 {
+		t.Errorf("the MX override of the name is gone: %v", fake.records)
+	}
+	if reconfigures != 2 {
+		t.Errorf("got %d reconfigures, want 2, one for each update that changes something: none when nothing changes", reconfigures)
 	}
 }
 
@@ -274,9 +345,94 @@ func TestPfsenseRestapiUnboundUpdate(t *testing.T) {
 	}
 }
 
-func TestGravityUpdate(t *testing.T) {
-	fake := newFakeDNS(t, "nas", "other")
+// The ID of a pfSense override is its position in the list. Two names of a pfSense that lose their
+// addresses at once, each read before the other deletes: the second would delete what moved to
+// its position, the override of another name.
+func TestPfsenseRestapiUnboundConcurrentDeletes(t *testing.T) {
+	type override struct {
+		ID     int      `json:"id"`
+		Host   string   `json:"host"`
+		Domain string   `json:"domain"`
+		IP     []string `json:"ip"`
+	}
+	var mutex sync.Mutex
+	hosts := []string{"first", "a", "b", "last"}
+	reads := 0
+	// A read waits for the other update's, for a while: both are made before either deletes,
+	// unless one waits for the other to end.
+	secondRead := make(chan struct{})
+	deletes := 0
+	firstDelete := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v2/services/dns_resolver/host_overrides":
+			mutex.Lock()
+			var overrides []override
+			for i, host := range hosts {
+				overrides = append(overrides, override{i, host, "lan", []string{obsoleteIP}})
+			}
+			reads++
+			if reads == 2 {
+				close(secondRead)
+			}
+			mutex.Unlock()
+			select {
+			case <-secondRead:
+			case <-time.After(200 * time.Millisecond):
+			}
+			writeJSON(w, map[string]any{"status": "ok", "code": 200, "data": overrides})
+			return
+		case "DELETE /api/v2/services/dns_resolver/host_override":
+			id, _ := strconv.Atoi(r.URL.Query().Get("id"))
+			// The delete of the one further in the list waits for the other, for a while: its
+			// position is the one read before then.
+			if id == 2 {
+				select {
+				case <-firstDelete:
+				case <-time.After(200 * time.Millisecond):
+				}
+			}
+			mutex.Lock()
+			hosts = slices.Delete(hosts, id, id+1)
+			deletes++
+			if deletes == 1 {
+				close(firstDelete)
+			}
+			mutex.Unlock()
+		}
+		writeJSON(w, map[string]any{"status": "ok", "code": 200})
+	}))
+	defer server.Close()
+
+	// Two credentials of the same pfSense wait for each other too.
+	var updates sync.WaitGroup
+	for _, name := range []string{"a", "b"} {
+		service := &PfsenseRestapiUnbound{Address: server.URL, Key: "key", Zone: "lan"}
+		updates.Go(func() {
+			if err := service.Update(name, collectionWith()); err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+		})
+	}
+	updates.Wait()
+	if want := []string{"first", "last"}; !slices.Equal(hosts, want) {
+		t.Errorf("got the overrides of %v, want those of %v", hosts, want)
+	}
+}
+
+// gravityFake serves the records API of Gravity from fake, whose record names are those within
+// the zone. As Gravity, it lists the records of the whole zone without a hostname, and needs one,
+// and since v0.32 a TTL, to put a record: one with the uid of another replaces it. And as Gravity
+// 0.34, which tools/live-providers.sh runs, it puts a record under its name in lower case, and
+// lists those of the name in the case asked.
+func gravityFake(t *testing.T, fake *fakeDNS, tellsTTL bool) *httptest.Server {
+	server := httptest.NewServer(gravityHandler(t, fake, tellsTTL))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func gravityHandler(t *testing.T, fake *fakeDNS, tellsTTL bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fake.mutex.Lock()
 		defer fake.mutex.Unlock()
 		q := r.URL.Query()
@@ -284,27 +440,127 @@ func TestGravityUpdate(t *testing.T) {
 			t.Errorf("request %s %s", r.Method, r.URL)
 		}
 		hostname := q.Get("hostname")
+		if r.Method != http.MethodGet && hostname == "" {
+			t.Errorf("%s without a hostname", r.Method)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		switch r.Method {
 		case http.MethodGet:
-			records := []map[string]string{}
-			for _, rec := range fake.of(hostname) {
-				records = append(records, map[string]string{"uid": rec.id, "hostname": rec.name, "type": rec.rrType, "data": rec.ip})
+			records := []map[string]any{}
+			for _, rec := range fake.records {
+				if hostname != "" && rec.name != hostname {
+					continue
+				}
+				row := map[string]any{"uid": rec.id, "hostname": rec.name, "type": rec.rrType, "data": rec.ip}
+				if tellsTTL {
+					row["ttl"] = rec.ttl
+				}
+				records = append(records, row)
 			}
 			writeJSON(w, map[string]any{"records": records})
 			return
 		case http.MethodPost: // the client's "put"
-			var body struct{ Type, Data string }
+			var body struct {
+				Type, Data string
+				TTL        *int
+			}
 			json.NewDecoder(r.Body).Decode(&body)
-			fake.add(hostname, body.Type, body.Data, 0)
+			if body.TTL == nil || *body.TTL <= 0 {
+				t.Errorf("put of %s without a TTL", body.Data)
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				return
+			}
+			replaced := false
+			hostname = strings.ToLower(hostname)
+			for i := range fake.records {
+				if fake.records[i].id == q.Get("uid") && fake.records[i].name == hostname {
+					fake.records[i].ttl = *body.TTL
+					fake.writes++
+					replaced = true
+				}
+			}
+			if !replaced {
+				fake.add(hostname, body.Type, body.Data, *body.TTL)
+			}
 		case http.MethodDelete:
-			fake.deleteWhere(func(rec record) bool { return rec.id == q.Get("uid") && rec.name == hostname })
+			fake.deleteWhere(func(rec record) bool {
+				return rec.id == q.Get("uid") && rec.name == hostname && rec.rrType == q.Get("type")
+			})
 		}
 		writeJSON(w, map[string]any{})
+	})
+}
+
+func TestGravityUpdate(t *testing.T) {
+	for hostname, name := range map[string]string{
+		"nas": "nas",
+		// The zone itself is @, and a name given with its zone is the same name.
+		"": "@", "example.com": "@", "nas.example.com.": "nas",
+		// And in another case too: Gravity has it in lower case.
+		"NAS": "nas", "Nas.Example.COM": "nas",
+	} {
+		fake := newFakeDNS(t, name, "other")
+		fake.add(name, "MX", "mail.example.com.", 300)
+		fake.writes = 0
+		server := gravityFake(t, fake, true)
+
+		service := &Gravity{Server: server.URL, APIKey: "key", Zone: "example.com."}
+		service.TTL.Duration = 10 * time.Minute
+		fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update(hostname, addrs) }, name, "other")
+		for _, rec := range fake.addresses(name) {
+			if rec.ttl != 600 {
+				t.Errorf("%q: record %s: ttl %d, want 600: of the one it had too", hostname, rec.ip, rec.ttl)
+			}
+		}
+		if len(fake.of(name)) != 4 {
+			t.Errorf("%q: the MX record of the name is gone: %v", hostname, fake.records)
+		}
+	}
+}
+
+// A listing with the records of other names, which a Gravity gives for the whole zone, is not the
+// name's: they are neither counted as its own nor deleted.
+func TestGravityRecordsOfOtherNames(t *testing.T) {
+	fake := newFakeDNS(t, "nas", "other")
+	fake.add("other", "AAAA", newIP, 300)
+	fake.writes = 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The whole zone, whatever the name asked.
+		q := r.URL.Query()
+		q.Del("hostname")
+		if r.Method != http.MethodGet {
+			q.Set("hostname", r.URL.Query().Get("hostname"))
+		}
+		r.URL.RawQuery = q.Encode()
+		gravityHandler(t, fake, true).ServeHTTP(w, r)
 	}))
 	defer server.Close()
 
 	service := &Gravity{Server: server.URL, APIKey: "key", Zone: "example.com."}
-	fake.check(func() error { return service.Update("nas", desired()) }, "nas", "other")
+	service.TTL.Duration = 5 * time.Minute
+	if err := service.Update("nas", desired()); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(fake.of("nas")); got != 3 {
+		t.Errorf("nas: got %d records, want 3: %v", got, fake.records)
+	}
+	if got := len(fake.of("other")); got != 2 {
+		t.Errorf("other: got %d records, want its 2: %v", got, fake.records)
+	}
+}
+
+// A Gravity before v0.32 tells no TTL: there is none to fix, update after update.
+func TestGravityWithoutTTL(t *testing.T) {
+	fake := newFakeDNS(t, "nas", "other")
+	server := gravityFake(t, fake, false)
+	service := &Gravity{Server: server.URL, APIKey: "key", Zone: "example.com."}
+	fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas", "other")
+	for _, rec := range fake.of("nas") {
+		if ip, _ := canonicalIP(rec.ip); ip != wantedIP && rec.ttl != 300 {
+			t.Errorf("record %s: ttl %d, want the default, 300", rec.ip, rec.ttl)
+		}
+	}
 }
 
 func TestCloudflareUpdate(t *testing.T) {
@@ -364,7 +620,7 @@ func TestCloudflareUpdate(t *testing.T) {
 
 	service := &Cloudflare{APIToken: "token", Zone: "example.com", apiBaseURL: server.URL}
 	service.TTL.Duration = 5 * time.Minute
-	fake.check(func() error { return service.Update("nas", desired()) }, "nas.example.com", "other.example.com")
+	fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas.example.com", "other.example.com")
 	for _, rec := range fake.of("nas.example.com") {
 		if rec.ttl != 300 {
 			t.Errorf("record %s: ttl %d, want 300", rec.ip, rec.ttl)

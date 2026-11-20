@@ -2,9 +2,13 @@ package ddns
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-routeros/routeros/v3"
@@ -31,14 +35,17 @@ func NewMikrotik(settings json.RawMessage) (Service, error) {
 	if err := decodeSettings(settings, "mikrotik", &service); err != nil {
 		return nil, err
 	}
+	// It would connect without TLS, and send the password in the clear with nothing checked.
+	if service.TLSFingerprint != "" && !service.UseTLS {
+		return nil, errors.New("invalid settings: tls_fingerprint needs use_tls: true: without TLS there is no certificate to check")
+	}
 	return &service, nil
 }
 
-func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
-	defer cancel()
-
-	var client *routeros.Client
+// connect logs in to the router. The connection has the deadline of ctx: the RouterOS client
+// reads the replies, that of the login too, with none.
+func (m *Mikrotik) connect(ctx context.Context) (*routeros.Client, error) {
+	var conn net.Conn
 	var err error
 	if m.UseTLS {
 		address := withDefaultPort(m.Address, "8729")
@@ -49,10 +56,79 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 			host, _, _ := net.SplitHostPort(address)
 			tlsConfig = verifiedOrPinnedTLSConfig(host, "")
 		}
-		client, err = routeros.DialTLSContext(ctx, address, m.Username, m.Password, tlsConfig)
+		conn, err = (&tls.Dialer{Config: tlsConfig}).DialContext(ctx, "tcp", address)
 	} else {
-		client, err = routeros.DialContext(ctx, withDefaultPort(m.Address, "8728"), m.Username, m.Password)
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", withDefaultPort(m.Address, "8728"))
 	}
+	if err != nil {
+		return nil, err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
+	client, err := routeros.NewClient(conn)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err := client.LoginContext(ctx, m.Username, m.Password); err != nil {
+		client.Close()
+		return nil, err
+	}
+	return client, nil
+}
+
+// routerOSDuration reads a time as RouterOS prints it: 5m, 1d, 1w2d3h4m5s, and 00:05:00 or
+// 1d00:05:00 on some versions.
+func routerOSDuration(s string) (time.Duration, bool) {
+	var total time.Duration
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		// The hh:mm:ss ends it, after the weeks and days.
+		start := strings.LastIndexAny(s[:i], "wd") + 1
+		var h, m, sec int
+		if n, err := fmt.Sscanf(s[start:], "%d:%d:%d", &h, &m, &sec); n != 3 || err != nil {
+			return 0, false
+		}
+		total = time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(sec)*time.Second
+		s = s[:start]
+	}
+	for s != "" {
+		digits := 0
+		for digits < len(s) && s[digits] >= '0' && s[digits] <= '9' {
+			digits++
+		}
+		n, err := strconv.Atoi(s[:digits])
+		if err != nil {
+			return 0, false
+		}
+		s = s[digits:]
+		unit := time.Duration(0)
+		switch {
+		case strings.HasPrefix(s, "ms"):
+			unit, s = time.Millisecond, s[2:]
+		case strings.HasPrefix(s, "w"):
+			unit, s = 7*24*time.Hour, s[1:]
+		case strings.HasPrefix(s, "d"):
+			unit, s = 24*time.Hour, s[1:]
+		case strings.HasPrefix(s, "h"):
+			unit, s = time.Hour, s[1:]
+		case strings.HasPrefix(s, "m"):
+			unit, s = time.Minute, s[1:]
+		case strings.HasPrefix(s, "s"):
+			unit, s = time.Second, s[1:]
+		default:
+			return 0, false
+		}
+		total += time.Duration(n) * unit
+	}
+	return total, true
+}
+
+func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
+	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
+	defer cancel()
+
+	client, err := m.connect(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Mikrotik: %w", err)
 	}
@@ -108,9 +184,9 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 			}
 		} else {
 			// Update TTL if needed
-			currentTTL, err := time.ParseDuration(record.ttl)
+			currentTTL, ok := routerOSDuration(record.ttl)
 			// If parsing fails we force update to be safe.
-			if err != nil || currentTTL != m.TTL.Duration {
+			if !ok || currentTTL != m.TTL.Duration {
 				_, err := client.RunContext(ctx, "/ip/dns/static/set", "=.id="+record.id, "=ttl="+m.TTL.String())
 				if err != nil {
 					return fmt.Errorf("failed to update DNS record TTL %s -> %s: %v", fqdn, ip, err)

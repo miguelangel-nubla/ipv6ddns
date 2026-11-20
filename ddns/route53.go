@@ -60,6 +60,9 @@ func (r *Route53) client(ctx context.Context) (*route53.Client, string, error) {
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(r.Region),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(r.AccessKeyID, r.SecretAccessKey, "")),
+		// The SDK's own client waits for an answer without a limit. With this one, a request
+		// without an answer ends at httpTimeout, and the SDK tries it again.
+		config.WithHTTPClient(newHTTPClient(nil)),
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to load SDK config: %w", err)
@@ -70,22 +73,31 @@ func (r *Route53) client(ctx context.Context) (*route53.Client, string, error) {
 		}
 	})
 
+	// The lock is not held while asking: Domain, which the status page calls, would wait for
+	// the answer.
 	r.zoneMutex.Lock()
-	defer r.zoneMutex.Unlock()
-	if r.zone == "" {
+	zone := r.zone
+	r.zoneMutex.Unlock()
+	if zone == "" {
 		out, err := client.GetHostedZone(ctx, &route53.GetHostedZoneInput{
 			Id: aws.String(r.HostedZoneID),
 		})
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to fetch hosted zone %s: %w", r.HostedZoneID, err)
 		}
-		r.zone = aws.ToString(out.HostedZone.Name)
+		zone = aws.ToString(out.HostedZone.Name)
+		r.zoneMutex.Lock()
+		r.zone = zone
+		r.zoneMutex.Unlock()
 	}
-	return client, r.zone, nil
+	return client, zone, nil
 }
 
 func (r *Route53) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	ctx := context.Background()
+	// The requests have their timeout each, and the update this one: the SDK tries a request that
+	// fails or times out again.
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
 
 	client, zone, err := r.client(ctx)
 	if err != nil {
@@ -100,7 +112,9 @@ func (r *Route53) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 
 	ttl := int64(r.TTL.Seconds())
 
-	// The record sets of the name, by type.
+	// The record sets of the name, by type. The listing starts at the name, and ten sets are
+	// enough for one with a set per type, of the few types a name has. A name with weighted or
+	// latency sets, several per type, is not one to update here.
 	output, err := client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
 		HostedZoneId:    aws.String(r.HostedZoneID),
 		StartRecordName: aws.String(dnsName),

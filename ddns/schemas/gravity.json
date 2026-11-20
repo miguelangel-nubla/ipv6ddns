@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "description": "Gravity, a DNS server for the home network, over its API.",
+    "description": "Gravity, a DNS server for the home network, over its API. The zone itself is the record @. A zone made with the web interface's Gravity-hosted preset answers from memory first, and Gravity, v0.34.0 at least, then answers with one record of each type: a host with several IPv6 addresses resolves to one of them. Leave the zone its etcd handler alone for all of them to be answered.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
@@ -22,7 +22,7 @@
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "Unused: Gravity has no TTL per record. Kept so that the configurations giving it load."
+            "description": "The records' TTL: 5m, 1h. Default: 5m. Gravity has it per record since v0.32, and needs it there."
         }
     },
     "required": [

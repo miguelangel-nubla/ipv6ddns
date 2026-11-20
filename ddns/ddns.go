@@ -17,7 +17,13 @@ import (
 // Service keeps the A and AAAA records of a host name at a DNS provider.
 type Service interface {
 	// Update makes the records of hostname the addresses: it adds the missing ones and removes
-	// the others.
+	// the others. The worker runs one Update of a Service at a time, whatever the host name: it
+	// can read the records and then change them.
+	//
+	// It runs when the addresses of the name change, and again after an error: never to check.
+	// So it returns nil only once the records are the addresses and the server answers with
+	// them: what an Update that failed left half done, the next must finish, even if it finds
+	// nothing to change. And it returns: every wait for the provider has a timeout.
 	Update(hostname string, addresses *ipv6disc.AddrCollection) error
 	// Domain is the fully qualified name of hostname.
 	Domain(hostname string) string

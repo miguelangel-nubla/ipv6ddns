@@ -36,24 +36,24 @@ DuckDNS: one A and one AAAA record per name, under duckdns.org.
 
 ## gravity
 
-Gravity, a DNS server for the home network, over its API.
+Gravity, a DNS server for the home network, over its API. The zone itself is the record @. A zone made with the web interface's Gravity-hosted preset answers from memory first, and Gravity, v0.34.0 at least, then answers with one record of each type: a host with several IPv6 addresses resolves to one of them. Leave the zone its etcd handler alone for all of them to be answered.
 
 | Key | Takes | |
 |---|---|---|
 | `server` | string | **Required.** Its address: http://gravity.lan. |
 | `api_key` | string | **Required.** An API key. |
 | `zone` | string | **Required.** The zone, with its final dot: home.lan. |
-| `ttl` | string | Unused: Gravity has no TTL per record. Kept so that the configurations giving it load. |
+| `ttl` | string | The records' TTL: 5m, 1h. Default: 5m. Gravity has it per record since v0.32, and needs it there. |
 
 ## mikrotik
 
-Mikrotik RouterOS static DNS, /ip/dns/static, over its API. See docs/mikrotik.md.
+Mikrotik RouterOS static DNS, /ip/dns/static, over its API. RouterOS finds a name's records by its exact letters, capitals too: those of a hostname whose capitals change in the configuration stay, to be removed by hand. See docs/mikrotik.md.
 
 | Key | Takes | |
 |---|---|---|
 | `address` | string | **Required.** The router, with a port unless the default: 8728, or 8729 with TLS. |
-| `use_tls` | boolean | The API over TLS, the api-ssl service. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `use_tls` | boolean | The API over TLS, the api-ssl service. Without it, the password crosses the network in the clear. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, in hex: with it, that certificate and no other is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true. |
 | `username` | string | **Required.** A user with the read, write and api policies. |
 | `password` | string | **Required.** Its password. |
 | `zone` | string | **Required.** The zone of the names: lan. |
@@ -69,7 +69,7 @@ OpenWrt's dnsmasq, over SSH and UCI.
 | `username` | string | **Required.** The SSH user. |
 | `password` | string | Its password, or an ssh_key. |
 | `ssh_key` | string | The SSH private key file. |
-| `host_key` | string | The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen. |
+| `host_key` | string | The fingerprint of the host's SSH key, any of them when it has several, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen. |
 | `zone` | string | **Required.** The zone of the names: lan. |
 | `ttl` | string | Unused: dnsmasq's records have no TTL of their own. Kept so that the configurations giving it load. |
 
@@ -96,7 +96,7 @@ pfSense's Unbound host overrides, over the REST API package.
 | `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, when it can't be verified otherwise. Without it, the certificate must be valid. |
 | `key` | string | **Required.** An API key. |
 | `zone` | string | **Required.** The zone of the names. |
-| `ttl` | string | **Required.** The records' TTL: 5m, 1h. |
+| `ttl` | string | Unused: pfSense's host overrides have no TTL of their own. Kept so that the configurations giving it load. |
 
 ## route53
 
@@ -133,5 +133,5 @@ Windows DNS Server, with PowerShell: on the server itself, or over SSH.
 | `username` | string | The SSH user. |
 | `password` | string | Its password, or an ssh_key. |
 | `ssh_key` | string | The SSH private key file. |
-| `host_key` | string | The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen. |
+| `host_key` | string | The fingerprint of the host's SSH key, any of them when it has several, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen. |
 | `ttl` | string | The records' TTL: 5m, 1h. Default: the zone's. |

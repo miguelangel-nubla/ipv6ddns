@@ -29,7 +29,7 @@ func (f *fakeDuckDNS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mutex.Unlock()
 	q := r.URL.Query()
 	f.requests = append(f.requests, q)
-	if f.refuse || q.Get("token") != duckToken || q.Get("domains") != "nas" {
+	if f.refuse || q.Get("token") != duckToken || !strings.EqualFold(q.Get("domains"), "nas") {
 		w.Write([]byte("KO"))
 		return
 	}
@@ -106,6 +106,19 @@ func TestDuckDNSRefused(t *testing.T) {
 	service := &DuckDNS{APIToken: duckToken, updateURL: server.URL}
 	if err := service.Update("nas", collectionWith("2001:db8::9")); err == nil {
 		t.Error("a KO answer: want an error")
+	}
+	// A name given with duckdns.org is the name DuckDNS knows, without it.
+	accepting := &fakeDuckDNS{}
+	server = httptest.NewServer(accepting)
+	defer server.Close()
+	service = &DuckDNS{APIToken: duckToken, updateURL: server.URL}
+	for _, hostname := range []string{"nas.duckdns.org", "NAS.DuckDNS.org."} {
+		if err := service.Update(hostname, collectionWith("2001:db8::9")); err != nil {
+			t.Errorf("%s: %v", hostname, err)
+		}
+		if got := accepting.requests[len(accepting.requests)-1].Get("domains"); !strings.EqualFold(got, "nas") {
+			t.Errorf("%s: asked for the domain %q, want nas", hostname, got)
+		}
 	}
 	if service.Domain("nas") != "nas.duckdns.org" {
 		t.Errorf("domain: %s", service.Domain("nas"))

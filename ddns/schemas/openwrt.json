@@ -25,7 +25,7 @@
         "host_key": {
             "type": "string",
             "pattern": "^(SHA256:[A-Za-z0-9+/]{43})?$",
-            "description": "The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen."
+            "description": "The fingerprint of the host's SSH key, any of them when it has several, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen."
         },
         "zone": {
             "type": "string",

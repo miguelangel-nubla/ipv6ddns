@@ -27,13 +27,12 @@
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "The records' TTL: 5m, 1h."
+            "description": "Unused: pfSense's host overrides have no TTL of their own. Kept so that the configurations giving it load."
         }
     },
     "required": [
         "address",
         "key",
-        "zone",
-        "ttl"
+        "zone"
     ]
 }

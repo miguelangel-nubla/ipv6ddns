@@ -49,12 +49,28 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	// Filter existing overrides for this FQDN
 	hostPart, domainPart := SplitFQDN(fqdn)
 
+	ttl := fmt.Sprintf("%d", int(u.TTL.Seconds()))
+
 	currentIPs := make(map[string][]string) // IP -> list of UUIDs
+	staleTTL := make(map[string]bool)       // by UUID
 	for _, row := range existingOverrides {
-		if row.Hostname == hostPart && row.Domain == domainPart {
-			upperRR := strings.ToUpper(row.RR)
-			if ip, ok := canonicalIP(row.Server); ok && (upperRR == "AAAA" || upperRR == "A") {
-				currentIPs[ip] = append(currentIPs[ip], row.UUID)
+		if row.Hostname != hostPart || row.Domain != domainPart {
+			continue
+		}
+		// The type is the first word: AAAA, or up to OPNsense 25.1 its description,
+		// "AAAA (IPv6 address)". An MX of the name is not one of these records.
+		rrType := ""
+		if fields := strings.Fields(row.RR); len(fields) > 0 {
+			rrType = strings.ToUpper(fields[0])
+		}
+		if rrType != "A" && rrType != "AAAA" {
+			continue
+		}
+		if ip, ok := canonicalIP(row.Server); ok {
+			currentIPs[ip] = append(currentIPs[ip], row.UUID)
+			// A version that doesn't tell the TTL has none to compare.
+			if rowTTL := strings.TrimSpace(row.TTL); rowTTL != "" && rowTTL != ttl {
+				staleTTL[row.UUID] = true
 			}
 		}
 	}
@@ -71,12 +87,19 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 				return fmt.Errorf("failed to add override %s -> %s: %v", fqdn, ip, err)
 			}
 			changesMade = true
-		} else if len(uuids) > 1 {
+		} else {
 			// Duplicate records exist for this IP, remove extra ones
 			for i := 1; i < len(uuids); i++ {
 				err := u.deleteOverride(client, uuids[i])
 				if err != nil {
 					return fmt.Errorf("failed to delete duplicate override %s -> %s (UUID: %s): %w", fqdn, ip, uuids[i], err)
+				}
+				changesMade = true
+			}
+			// And the one kept has the TTL set.
+			if staleTTL[uuids[0]] {
+				if err := u.saveOverride(client, "setHostOverride/"+uuids[0], hostPart, domainPart, ip); err != nil {
+					return fmt.Errorf("failed to set the TTL of override %s -> %s: %v", fqdn, ip, err)
 				}
 				changesMade = true
 			}
@@ -108,12 +131,15 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 
 // Helper types for OPNsense API
 type unboundOverrideRow struct {
-	UUID        string `json:"uuid"`
-	Enabled     string `json:"enabled"`
-	Hostname    string `json:"hostname"`
-	Domain      string `json:"domain"`
-	RR          string `json:"rr"`     // a, aaaa, mx
-	Server      string `json:"server"` // This is the IP address
+	UUID     string `json:"uuid"`
+	Enabled  string `json:"enabled"`
+	Hostname string `json:"hostname"`
+	Domain   string `json:"domain"`
+	// The type, A, AAAA or MX: up to OPNsense 25.1, with its description, "AAAA (IPv6 address)".
+	RR     string `json:"rr"`
+	Server string `json:"server"` // This is the IP address
+	// In seconds: empty when the version doesn't tell it.
+	TTL         string `json:"ttl"`
 	Description string `json:"description"`
 }
 
@@ -154,7 +180,13 @@ func (u *OpnsenseUnbound) getOverrides(client *http.Client) ([]unboundOverrideRo
 }
 
 func (u *OpnsenseUnbound) addOverride(client *http.Client, hostname, domain, ip string) error {
-	url := fmt.Sprintf("%s/api/unbound/settings/addHostOverride", strings.TrimRight(u.Address, "/"))
+	return u.saveOverride(client, "addHostOverride", hostname, domain, ip)
+}
+
+// saveOverride posts an override to action: addHostOverride for a new one, setHostOverride/<uuid>
+// to replace that one.
+func (u *OpnsenseUnbound) saveOverride(client *http.Client, action, hostname, domain, ip string) error {
+	url := fmt.Sprintf("%s/api/unbound/settings/%s", strings.TrimRight(u.Address, "/"), action)
 
 	recordType := "A"
 	if addr, err := netip.ParseAddr(ip); err == nil && addr.Is6() {
@@ -199,10 +231,10 @@ func (u *OpnsenseUnbound) addOverride(client *http.Client, hostname, domain, ip 
 	var apiResp opnsenseResponse
 	if err := json.Unmarshal(body, &apiResp); err == nil {
 		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
-			return fmt.Errorf("addHostOverride failed: %s", string(body))
+			return fmt.Errorf("%s failed: %s", action, string(body))
 		}
 	} else {
-		return fmt.Errorf("addHostOverride failed to parse response: %s", string(body))
+		return fmt.Errorf("%s failed to parse response: %s", action, string(body))
 	}
 
 	return nil
