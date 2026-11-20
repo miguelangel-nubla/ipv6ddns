@@ -70,10 +70,13 @@ jobs:
         # families an entry listens on, on Linux; the port the device announces by mDNS, found
         # and connected to by Home Assistant's libraries across a link; and the device dropping
         # a Home Assistant that vanishes, one that stops reading, and clients that say nothing.
+        # And several instances at once, of the command as it is built: two on one machine, each
+        # with its ports, its DNS server and its device, and two on two machines of one link.
         name: Live tests
         run: |
           go vet -tags integration ./...
-          go test -race -tags integration -exec "sudo env ESPHOME_PYTHON=$(which python)" -v -run '^TestLive' . ./pkg/listen ./pkg/esphome
+          go build -race -o "$RUNNER_TEMP/ipv6ddns" ./cmd/ipv6ddns
+          go test -race -tags integration -exec "sudo env ESPHOME_PYTHON=$(which python) IPV6DDNS_COMMAND=$RUNNER_TEMP/ipv6ddns" -v -run '^TestLive' . ./cmd/ipv6ddns ./pkg/listen ./pkg/esphome
       -
         # The binaries as the release builds them, for every platform: one that no longer
         # compiles shows here, not at the tag.

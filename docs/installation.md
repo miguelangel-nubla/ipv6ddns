@@ -84,6 +84,42 @@ The report has no authentication: behind a reverse proxy, list only an address t
 | `/status.json` | The state, as JSON: the names and their records, the discovered hosts, and the sources' runs |
 | `/metrics` | Prometheus metrics: the addresses of each name, the updates by result, the last success |
 
+## Several instances
+
+Any number of instances run at once, each with its own configuration file: on one machine, or on several machines of one network. Its tasks, filters, credentials, sources, lifetimes and discovery are each instance's own, and each discovers, updates and serves what it would alone.
+
+### On one machine
+
+What two configurations would both take has to differ:
+
+| | Each instance needs | Otherwise |
+|---|---|---|
+| [`webserver.listen`](#the-web-report) | Its own port, or address | The one started second doesn't start: `address already in use`, with the address |
+| [`homeassistant`](home-assistant-integration.md#several-devices) `port`, or `listen` | Its own port, when both have the block: 6053 by default | The same |
+| `homeassistant.state_file`, without a `key` | Its own file: by default `homeassistant.state` beside the configuration, so two configurations in one folder name theirs | The one started second doesn't start, and says which file |
+| `homeassistant.name` | Its own name: `ipv6ddns` by default | The one started second runs, but isn't announced to Home Assistant, and logs why |
+| `-live` | Its own terminal | |
+
+Nothing else is theirs in common: no lock, no file, no port of the discovery. An instance that doesn't start for one of these has updated nothing, and announced nothing. Stopping one leaves the others as they were: its ports are free at once, and only its own device is taken back from Home Assistant.
+
+They share what is the system's. The IPv4 neighbor table: what the sweep of one resolved, another that listens for IPv4 reads too, and one that doesn't take IPv4 has none of it. And the answers to the multicast pings, which come to the machine: each instance asks the MAC of a host that answered any of them, so the hosts are solicited once more for each instance, and no more.
+
+### On several machines of one network
+
+Each hears the probes of the others. To each, another's machine is a host as any, with its real addresses at its MAC: a [`self`](filtering.md#filterself) filter takes the instance's own machine only. What one asks for, the EUI-64 and IPv4 addresses its own filters want, tells the others nothing they then publish. Nothing heard from another makes an instance probe, so each sends on the network what it sends alone. And a host that leaves goes from each after that instance's own lifetime.
+
+With a `homeassistant` block, each needs its own [name](home-assistant-integration.md#several-devices).
+
+### One name kept by two instances
+
+Two instances can keep the same name at the same provider, as a second machine standing in for the first when it is down, when both give it the same addresses: the same filters, of the same hosts, on a network both discover. An update makes a name's records exactly what its instance has, and runs only when that changes, never to check: so two that find the same end with the same records, each writing only what is missing, and then leave them alone.
+
+- An instance that starts writes what it has found so far, and takes off what it hasn't yet, for the seconds it needs to find it: as one alone does when it restarts.
+- A host that leaves goes from the name when the first of them lets it go: after the shorter lifetime.
+- Two updates at once can collide at the provider. The one refused logs it, tries again after its `retry`, and finds the records there.
+
+It isn't for instances that would give the name different addresses: a `self` filter, which is each machine's own; filters or [sources](sources.md) that differ; hosts that only one of them reaches. Nothing merges them: the records are those of whichever wrote last, and change hands whenever what either has changes. For one name with the addresses of two machines, one instance takes both, each with its `mac` filter.
+
 ## Stopping
 
 On SIGINT or SIGTERM, it stops discovering and scheduling updates, and gives the updates running up to 30 seconds to end. With `-live`, a key that quits the view does the same. A second signal while it waits ends it at once.

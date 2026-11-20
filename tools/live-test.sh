@@ -30,8 +30,11 @@ inside='
 	done
 	go vet -tags integration ./...
 	go test -race -count=1 ./...
+	# The command, as the tests of several instances run it.
+	go build -race -o /tmp/ipv6ddns ./cmd/ipv6ddns
+	export IPV6DDNS_COMMAND=/tmp/ipv6ddns
 	if [ $# -eq 0 ]; then
-		set -- -run "^TestLive" . ./pkg/listen ./pkg/esphome
+		set -- -run "^TestLive" . ./cmd/ipv6ddns ./pkg/listen ./pkg/esphome
 	fi
 	go test -race -count=1 -tags integration -v "$@"
 '
