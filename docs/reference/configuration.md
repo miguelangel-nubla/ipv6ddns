@@ -143,7 +143,7 @@ The web server: the report, /status.json and /metrics. See [the web report](../i
 
 | Key | Takes | |
 |---|---|---|
-| `listen` | list, or comma separated | Where to serve: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, 80. A host name listens on each address it resolves to, at start; a network, on each address of the machine in it. The -webserver_listen flag, given, wins. |
+| `listen` | list, or comma separated | Where to serve: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, 8053. A host name listens on each address it resolves to, at start; a network, on each address of the machine in it. The -webserver_listen flag, given, wins. |
 
 ## Home Assistant
 

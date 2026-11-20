@@ -77,8 +77,8 @@ webserver:
 | `8053`, `:8053` | that port, on all addresses, IPv4 and IPv6 |
 | `0.0.0.0:8053`, `[::]:8053` | that port, on all IPv4 addresses, or on all IPv6 ones |
 | `192.0.2.1:8053`, `[2001:db8::1]:8053` | that address and port |
-| `192.0.2.1`, `2001:db8::1`, `[2001:db8::1]` | that address, port 80 |
-| `10.2.3.0/24`, `fd00::/64` | each address of the machine in that network, at start, port 80 |
+| `192.0.2.1`, `2001:db8::1`, `[2001:db8::1]` | that address, port 8053 |
+| `10.2.3.0/24`, `fd00::/64` | each address of the machine in that network, at start, port 8053 |
 | `myhost:8053`, `myhost` | every address the name resolves to, at start |
 
 Networks and host names are read once, at start: an address the machine gets later, as from DHCP or a new prefix, isn't listened on until a restart, and a network with no address of the machine, or a name that doesn't resolve, stops the start. A network doesn't take link-local addresses, which need their interface: list those as `fe80::1%eth0`.

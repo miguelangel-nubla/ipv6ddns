@@ -78,3 +78,5 @@ These still work, each with a warning in the log that says what to write instead
 | A plugin's `params`, one string | Its [fields](reference/configuration.md#discovery-plugins) |
 
 One doesn't: a `homeassistant` block from up to v0.22.3, which had no `listen` it needed, and, without a `key`, as `homeassistant: {}`, or with `state_file`, nothing that said Home Assistant gives the key. It is an error at start, which says what to add: [`listen`, and `key_provisioning: true`](home-assistant-integration.md#a-configuration-from-before-v0230), and the device stays as it was.
+
+And one changes where it listens: an entry of `webserver.listen`, or of `-webserver_listen`, without a port, as `192.0.2.1` or `10.2.3.0/24`, was at port 80 up to v0.22.3, and is at 8053 now, as every example and the health check have it. Give `:80` to keep it.

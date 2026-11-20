@@ -38,7 +38,7 @@ func init() {
 	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic), in place of the configuration's log_level. Default: info")
 	flag.DurationVar(&lifetime, "lifetime", config.DefaultLifetime, "Time to keep a discovered host entry after it has been last seen, in place of the configuration's lifetime. Default: 1h")
 	flag.BoolVar(&live, "live", false, "Show the current state live on the terminal, default: false")
-	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 80), in place of the configuration's webserver_listen. Default: disabled")
+	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 8053), in place of the configuration's webserver_listen. Default: disabled")
 }
 
 // unexpectedArgs is the error of the words left after the flags. There are none to give: flag

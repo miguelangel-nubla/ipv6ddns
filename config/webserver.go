@@ -9,13 +9,13 @@ import (
 // Webserver serves the report, /status.json and /metrics.
 type Webserver struct {
 	// Where: ports, addresses, networks of the machine's addresses and host names, as listen
-	// takes them; without a port, 80. None: no web server. The -webserver_listen flag, given,
+	// takes them; without a port, 8053. None: no web server. The -webserver_listen flag, given,
 	// wins.
 	Listen StringList `json:"listen,omitempty"`
 }
 
 // DefaultWebserverPort is the port of the web server's entries that give none.
-const DefaultWebserverPort = "80"
+const DefaultWebserverPort = "8053"
 
 // setUpWebserver takes the deprecated webserver_listen, and checks the entries.
 func (c *Config) setUpWebserver() ([]string, error) {

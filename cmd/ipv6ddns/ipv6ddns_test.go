@@ -13,6 +13,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"go.uber.org/zap"
@@ -202,5 +203,19 @@ func TestApplyConfigSettings(t *testing.T) {
 	lifetime = 30 * time.Minute
 	if err := applyConfigSettings(zero, map[string]bool{"lifetime": true}, level); err != nil || lifetime != 30*time.Minute {
 		t.Errorf("lifetime 0 and -lifetime 30m: %v, %s", err, lifetime)
+	}
+}
+
+// The web server's entries without a port are at 8053, as every example and the health check have
+// it: not at 80.
+func TestWebserverDefaultPort(t *testing.T) {
+	entries, err := listen.Parse([]string{"192.0.2.1", "10.2.3.0/24", "myhost", "9000"}, webserverPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{"8053", "8053", "8053", "9000"} {
+		if entries[i].Port != want {
+			t.Errorf("%v: port %s, want %s", entries[i], entries[i].Port, want)
+		}
 	}
 }
