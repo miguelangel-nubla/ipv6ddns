@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -40,8 +41,24 @@ func init() {
 	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 80), in place of the configuration's webserver_listen. Default: disabled")
 }
 
+// unexpectedArgs is the error of the words left after the flags. There are none to give: flag
+// stops at the first, so the flags after it would be left out without a word, as -config_file
+// after "-live false".
+func unexpectedArgs(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return fmt.Errorf("unexpected argument %q: the flags take no separate words, and a boolean one is turned off as -name=false", args[0])
+}
+
 func main() {
 	flag.Parse()
+
+	if err := unexpectedArgs(flag.Args()); err != nil {
+		fmt.Fprintln(flag.CommandLine.Output(), err)
+		flag.Usage()
+		os.Exit(2)
+	}
 
 	if showVersion {
 		fmt.Print(PrintVersion())
@@ -82,8 +99,20 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// The terminal is taken before anything starts, so that without one nothing does, and given
+	// back before every exit: Fatalf runs no defers, and would leave it raw.
+	closeTerminal := func() {}
+	if live {
+		if err := terminal.Init(); err != nil {
+			sugar.Fatalf("-live needs a terminal: %s", err)
+		}
+		closeTerminal = sync.OnceFunc(terminal.Close)
+	}
+	defer closeTerminal()
+
 	err = worker.Start(ctx)
 	if err != nil {
+		closeTerminal()
 		sugar.Fatalf("can't start worker: %s", err)
 	}
 
@@ -91,10 +120,12 @@ func main() {
 	if webserverListen != "" {
 		entries, err := listen.Parse(strings.Split(webserverListen, ","), webserverPort)
 		if err != nil {
+			closeTerminal()
 			sugar.Fatalf("webserver.listen: %s", err)
 		}
 		listeners, err := listen.Listen(entries)
 		if err != nil {
+			closeTerminal()
 			sugar.Fatalf("web server failed: %s", err)
 		}
 		for _, listener := range listeners {
@@ -103,6 +134,7 @@ func main() {
 			go func() {
 				sugar.Infof("Starting web server on %s", listener.Addr())
 				if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					closeTerminal()
 					sugar.Fatalf("web server failed: %s", err)
 				}
 			}()
@@ -121,11 +153,15 @@ func main() {
 				time.Sleep(1 * time.Second)
 			}
 		}()
-		// The terminal takes the keys, Ctrl-C too: it returns on them.
-		terminal.LiveOutput(liveOutput)
+		// The terminal takes the keys, Ctrl-C too: Run returns on them, and when ctx ends, as on
+		// a SIGTERM, which is no key. The terminal is given back before the wait for the updates.
+		terminal.Run(ctx, liveOutput)
+		closeTerminal()
 		stop()
 	}
 	<-ctx.Done()
+	// The signals are the system's again: a second one ends the process without the wait.
+	stop()
 
 	sugar.Info("stopping")
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownTimeout)

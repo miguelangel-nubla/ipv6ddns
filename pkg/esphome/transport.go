@@ -73,7 +73,13 @@ func readFrame(r *bufio.Reader, limit int) ([]byte, error) {
 	return payload, nil
 }
 
+// maxFrame is the longest payload a frame's two bytes of length tell.
+const maxFrame = 0xffff
+
 func writeFrame(w io.Writer, payload []byte) error {
+	if len(payload) > maxFrame {
+		return fmt.Errorf("a frame of %d bytes, more than %d", len(payload), maxFrame)
+	}
 	frame := make([]byte, 3+len(payload))
 	frame[0] = frameIndicator
 	binary.BigEndian.PutUint16(frame[1:], uint16(len(payload)))
@@ -101,12 +107,16 @@ var zeroKey = make([]byte, 32)
 // prove it, by the Noise handshake. Without one, as ESPHome's devices whose key Home Assistant
 // gives, the first byte says: 0x00 the plaintext protocol, 0x01 Noise with the zero key, for Home
 // Assistant to give the key. trusted is a connection with the key.
-func accept(conn net.Conn, name string, mac net.HardwareAddr, key []byte) (c msgConn, trusted bool, err error) {
+//
+// The key is read once the client speaks, not when it connects: a client that connected before
+// the device had its key, and waited, needs it as any other.
+func accept(conn net.Conn, name string, mac net.HardwareAddr, deviceKey func() []byte) (c msgConn, trusted bool, err error) {
 	r := bufio.NewReader(conn)
 	first, err := r.Peek(1)
 	if err != nil {
 		return nil, false, err
 	}
+	key := deviceKey()
 	if key == nil {
 		if first[0] == plaintextIndicator {
 			return &plainConn{conn: conn, r: r}, false, nil
@@ -201,8 +211,13 @@ func (c *secureConn) ReadMessage() (uint16, []byte, error) {
 	return msgType, plain[4 : 4+size], nil
 }
 
-// WriteMessage sends a message of the type. It isn't safe for concurrent use.
+// WriteMessage sends a message of the type. It isn't safe for concurrent use: the connection's
+// writer alone calls it.
 func (c *secureConn) WriteMessage(msgType uint16, data []byte) error {
+	// Its length is on two bytes, as the frame's, which holds the header and the cipher's tag too.
+	if len(data) > maxFrame-4-16 {
+		return fmt.Errorf("a message of %d bytes, more than a frame holds", len(data))
+	}
 	plain := make([]byte, 4, 4+len(data))
 	binary.BigEndian.PutUint16(plain[0:], msgType)
 	binary.BigEndian.PutUint16(plain[2:], uint16(len(data)))

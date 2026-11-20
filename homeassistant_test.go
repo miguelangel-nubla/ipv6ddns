@@ -5,13 +5,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -65,7 +71,7 @@ func TestHomeAssistantIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := w.homeAssistant.serve(ctx, nil, nil, t.Logf); err != nil {
+	if err := w.homeAssistant.serve(ctx, new(sync.WaitGroup), nil, nil, t.Logf); err != nil {
 		t.Fatal(err)
 	}
 	go w.homeAssistant.follow(ctx, func() Status { return w.Status(false) })
@@ -244,7 +250,7 @@ func TestHomeAssistantListens(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := h.serve(ctx, nil, nil, t.Logf); err != nil {
+	if err := h.serve(ctx, new(sync.WaitGroup), nil, nil, t.Logf); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), time.Second)
@@ -269,6 +275,180 @@ func TestHomeAssistantListens(t *testing.T) {
 		if conn, err := net.DialTimeout("tcp", net.JoinHostPort(other, strconv.Itoa(port)), time.Second); err == nil {
 			conn.Close()
 			t.Errorf("listened on %s too", other)
+		}
+	}
+}
+
+// The states are those of Home Assistant's connection of now: one of an earlier connection, which
+// Home Assistant doesn't send again, its entity gone meanwhile, is none, and an error in time.
+func TestHomeAssistantStatesOfAConnection(t *testing.T) {
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: 6053, StateFile: "s"}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	since := time.Now()
+	h.connectedSince = func() (time.Time, bool) { return since, true }
+	changes := 0
+	h.subscribe("sensor.wan", "", func() { changes++ })
+	if h.device.OnStatesReset == nil {
+		t.Fatal("the device doesn't tell when Home Assistant's states are none")
+	}
+	h.mutex.Lock()
+	h.states[stateKey("sensor.wan", "")] = "203.0.113.7"
+	h.mutex.Unlock()
+	if state, err := h.State("sensor.wan", ""); err != nil || state != "203.0.113.7" {
+		t.Fatalf("connected: %q, %v", state, err)
+	}
+	// Home Assistant reconnects, as the device tells, and sends nothing for the entity.
+	h.device.OnStatesReset()
+	since = time.Now()
+	if state, err := h.State("sensor.wan", ""); !errors.Is(err, source.ErrWaiting) {
+		t.Errorf("just reconnected, no state: %q, %v, want a wait", state, err)
+	}
+	since = time.Now().Add(-time.Minute)
+	if state, err := h.State("sensor.wan", ""); err == nil || errors.Is(err, source.ErrWaiting) {
+		t.Errorf("reconnected a minute, no state: %q, %v, want an error", state, err)
+	}
+}
+
+// Names whose entities would have one id have each its own, with a hash; the others' ids are of
+// the endpoint and the host name alone, as ever.
+func TestEntityIDs(t *testing.T) {
+	names := []haName{
+		{"cf", "a-b", "a-b.example.com"}, {"cf", "a.b", "a.b.example.com"}, {"cf", "A_B", "a_b.example.com"},
+		{"cf_x", "y", "y.example.com"}, {"cf", "x_y", "x_y.example.org"},
+		{"dns", "web", "web.fake"},
+	}
+	bases := entityBases(names)
+	seen := map[string]haName{}
+	for _, n := range names {
+		base := bases[n.key()]
+		if other, ok := seen[base]; ok {
+			t.Errorf("%v and %v: one id, %s", other, n, base)
+		}
+		seen[base] = n
+	}
+	if bases[haName{"dns", "web", ""}] != "dns_web" {
+		t.Errorf("a name alone with its id: %s, want dns_web", bases[haName{"dns", "web", ""}])
+	}
+	if base := bases[haName{"cf", "a-b", ""}]; !strings.HasPrefix(base, "cf_a_b_") || len(base) != len("cf_a_b_")+8 {
+		t.Errorf("a name sharing its id: %s, want cf_a_b_ and a hash", base)
+	}
+	// Whatever the order, and the other names.
+	slices.Reverse(names)
+	if again := entityBases(names[1:]); again[haName{"cf", "a-b", ""}] != bases[haName{"cf", "a-b", ""}] {
+		t.Errorf("another order: %s, was %s", again[haName{"cf", "a-b", ""}], bases[haName{"cf", "a-b", ""}])
+	}
+
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: 6053, StateFile: "s"}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.addEntities(names, func() {})
+	if len(h.names) != len(names) {
+		t.Errorf("%d names with entities, of %d", len(h.names), len(names))
+	}
+}
+
+// The addresses entity's state fits Home Assistant's 255 characters, which a longer one is unknown
+// to: the first addresses whole, and how many more.
+func TestAddressesState(t *testing.T) {
+	addresses := func(n int) []string {
+		var list []string
+		for i := range n {
+			list = append(list, fmt.Sprintf("2001:0db8:1234:5678:9abc:def0:1234:%04x", i))
+		}
+		return list
+	}
+	if got := addressesState(addresses(6)); got != strings.Join(addresses(6), ", ") {
+		t.Errorf("6 addresses: %s", got)
+	}
+	if got := addressesState(nil); got != "" {
+		t.Errorf("no address: %q", got)
+	}
+	for n, more := range map[int]string{7: "+1 more", 20: "+14 more"} {
+		got := addressesState(addresses(n))
+		parts := strings.Split(got, ", ")
+		if len(got) > stateMax || len(parts) != 7 || parts[6] != more || !slices.Equal(parts[:6], addresses(6)) {
+			t.Errorf("%d addresses: %d characters, %s", n, len(got), got)
+		}
+	}
+	// The count longer, an address fewer.
+	if got := addressesState(addresses(2000)); len(got) > stateMax || !strings.HasSuffix(got, ":0004, +1995 more") {
+		t.Errorf("2000 addresses: %d characters, %s", len(got), got)
+	}
+	if got := addressesState([]string{strings.Repeat("x", 300)}); got != "+1 more" {
+		t.Errorf("one address too long: %s", got)
+	}
+}
+
+// The device announces the port it listens on, which listen may give; and the worker's shutdown
+// waits for the announcement to be taken back, and for the connections.
+func TestHomeAssistantAnnouncesItsPort(t *testing.T) {
+	port := freePort(t)
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-port-test", FriendlyName: "test", Port: 6053, StateFile: "s",
+		Entries: []listen.Entry{{Host: "127.0.0.1", Port: strconv.Itoa(port)}}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	announced := make(chan int, 1)
+	var goodbye atomic.Bool
+	h.advertise = func(ctx context.Context, port int, _ []net.Interface) error {
+		announced <- port
+		<-ctx.Done()
+		time.Sleep(100 * time.Millisecond)
+		goodbye.Store(true)
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var running sync.WaitGroup
+	if err := h.serve(ctx, &running, nil, nil, t.Errorf); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-announced:
+		if got != port {
+			t.Errorf("announced the port %d, listening on %d", got, port)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("not announced")
+	}
+	// A connection, which the device serves until the end.
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	cancel()
+	running.Wait()
+	if !goodbye.Load() {
+		t.Error("the shutdown didn't wait for the announcement to be taken back")
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) && !errors.Is(err, syscall.ECONNRESET) {
+		t.Errorf("the connection after the shutdown: %v, want it closed", err)
+	}
+}
+
+// A state file that isn't one, as cut short, is an error, and stays as it is: a new identity
+// would be a new device to Home Assistant.
+func TestHomeAssistantStateFileCorrupt(t *testing.T) {
+	for name, content := range map[string]string{
+		"cut":              `{"identity":"q9b/BwP6Z3bLDXmeLY+bPQPDUcKV9FXLRJlTnm`,
+		"empty":            "",
+		"a short identity": `{"identity":"c2hvcnQ="}`,
+		"a short key":      `{"identity":"q9b/BwP6Z3bLDXmeLY+bPQPDUcKV9FXLRJlTnmoLmLM=","key":"c2hvcnQ="}`,
+		"no identity":      `{"key":"q9b/BwP6Z3bLDXmeLY+bPQPDUcKV9FXLRJlTnmoLmLM="}`,
+	} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "homeassistant.state")
+		os.WriteFile(path, []byte(content), 0o600)
+		if _, err := newHomeAssistant(config.HomeAssistant{StateFile: "homeassistant.state"}, dir); err == nil || !strings.Contains(err.Error(), "isn't one") {
+			t.Errorf("%s: %v, want an error", name, err)
+		}
+		if after, _ := os.ReadFile(path); string(after) != content {
+			t.Errorf("%s: the file was written: %s", name, after)
 		}
 	}
 }

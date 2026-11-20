@@ -57,21 +57,25 @@ The network's public IPv4, which has no MAC, comes from a [source](sources.md).
 
 ## Solicitation
 
-Some addresses are never seen without asking. With `solicit`, the hosts the filters want are asked once a minute:
+Some addresses are never seen without asking. With `solicit`, the hosts the filters want are asked once a minute, and on a network's /64 as soon as it is listened on, as at the start:
 
 - **IPv6**: a host sends from its temporary addresses, so its stable one may never be seen, and routers don't list it. For each filter that names a `mac.address` and the `eui64` type, `ipv6ddns` works out that address on each /64 of the network and asks for it with a neighbor solicitation.
 - **IPv4**: a quiet host may be in no ARP table. For each filter that names a `mac.address` with `ip.family` 4, `ipv6ddns` asks that MAC, with ARP requests sent to it alone, for each address of the local subnets within the filter's `ip.prefix`, up to 4096, or without one those the sweep would ask. Nothing is broadcast, though a switch that no longer knows where the MAC is floods the requests, as any frame to it. It needs Linux and `CAP_NET_RAW`.
 
 An address that answers is discovered as any other; one that doesn't is never published.
 
+IPv4 solicitation reads its own answers, so it works with `listen` off too, and with nothing else to discover: the log then says there is no discovery, and the hosts asked are found all the same.
+
 ## Interfaces
 
-The local discovery runs on every interface, unless `interfaces` names those it runs on, and `exclude_interfaces` those it doesn't: names, or patterns as `docker*`. On a host running containers, leave their bridges out, so that the containers don't count as hosts, and the probes stay off their networks:
+The local discovery runs on every interface that is up, not a loopback and has a MAC, unless `interfaces` names those it runs on, and `exclude_interfaces` those it doesn't: names, or patterns as `docker*`. On a host running containers, leave their bridges out, so that the containers don't count as hosts, and the probes stay off their networks:
 
 ```yaml
 discovery:
   exclude_interfaces: [docker*, br-*, veth*]
 ```
+
+The interfaces without a MAC, as PPP links, WireGuard and other tunnels, are left out, and their own addresses with them: a host is its MAC, and there is none there. An address of this machine on such an interface comes from a [source](sources.md). For IPv6, an interface with only a link-local address is not listened on either.
 
 The plugins aren't concerned: they read other hosts' tables.
 
@@ -85,6 +89,10 @@ discovery:
   ipv4:
     lifetime: 3m        # a device that leaves loses its A record within minutes
 ```
+
+This machine's own addresses, those of [`self`](filtering.md), are the exception: one its interface loses, as a prefix that went or a temporary address replaced, goes when the interfaces are next looked at, every minute.
+
+Nothing is updated before a name's first address is found: after a start, its records stay as they are until then. Once it had addresses and the last one goes, its records are removed.
 
 Before an IPv6 address the local discovery found expires, it is pinged, so a host still there keeps it. The active discovery probes every host again every `rediscover`, by default a third of the shortest lifetime of the families that probe.
 

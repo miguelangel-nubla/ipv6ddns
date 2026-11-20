@@ -13,30 +13,40 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/filter"
 	"github.com/miguelangel-nubla/ipv6disc"
+	"go.uber.org/zap"
 )
 
 const solicitInterval = time.Minute
 
+// solicitPrefixInterval is how often the worker looks for a /64 that the discovery came to listen
+// on, to ask on it without waiting for the next round: at the start none is listened on yet.
+const solicitPrefixInterval = 2 * time.Second
+
 // solicitLoop asks, every solicitInterval, for the addresses the tasks want which aren't otherwise
 // found. IPv6: the EUI-64 addresses, as a stable address that sends no traffic is never seen, hosts
-// sending from their temporary ones. IPv4: the addresses of the MACs IPv4 filters name, by ARP to
-// each alone, so a quiet host is found with nothing broadcast.
+// sending from their temporary ones; on a /64 that comes between two rounds, as all do at the
+// start, as soon as it is listened on. IPv4: the addresses of the MACs IPv4 filters name, by ARP
+// to each alone, so a quiet host is found with nothing broadcast.
 func (w *Worker) solicitLoop(ctx context.Context) {
 	d := w.config.Discovery
 	solicitIPv6, solicitIPv4 := d.IPv6.Enabled && d.IPv6.Solicit, d.IPv4.Enabled && d.IPv4.Solicit
 	ipv4Targets := ipv4SolicitTargets(w.config.Tasks)
+	ipv6 := eui64Solicitor{tasks: w.config.Tasks, solicit: w.discWorker.Solicit, logger: w.logger}
 
 	ticker := time.NewTicker(solicitInterval)
 	defer ticker.Stop()
-	for {
+	// Without IPv6 solicitation, no prefixes to look for: a nil channel never fires.
+	var newPrefixes <-chan time.Time
+	if solicitIPv6 {
+		prefixTicker := time.NewTicker(solicitPrefixInterval)
+		defer prefixTicker.Stop()
+		newPrefixes = prefixTicker.C
+	}
+	for round := true; ; {
 		if solicitIPv6 {
-			for _, target := range eui64Targets(w.config.Tasks, w.discWorker.Prefixes()) {
-				if _, err := w.discWorker.Solicit(target); err != nil {
-					w.logger.Errorf("error soliciting %s: %s", target, err)
-				}
-			}
+			ipv6.ask(w.discWorker.Prefixes(), round)
 		}
-		if solicitIPv4 && len(ipv4Targets) > 0 {
+		if round && solicitIPv4 && len(ipv4Targets) > 0 {
 			_, err := w.discWorker.SolicitIPv4(ctx, ipv4Targets)
 			switch {
 			case errors.Is(err, errors.ErrUnsupported):
@@ -50,12 +60,49 @@ func (w *Worker) solicitLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			round = true
+		case <-newPrefixes:
+			round = false
 		}
 	}
 }
 
+// eui64Solicitor asks for the EUI-64 addresses the tasks want, on the /64s it is told of.
+type eui64Solicitor struct {
+	tasks map[string]config.Task
+	// Worker.Solicit of the discovery: how many links the solicitation went out on.
+	solicit func(netip.Addr) (int, error)
+	logger  *zap.SugaredLogger
+	// The /64s asked on in the last round or since, of those still there.
+	asked map[netip.Prefix]bool
+}
+
+// ask solicits the addresses on the prefixes: on all of them in a round, on the ones not yet asked
+// on otherwise. One that went and came back is asked on again.
+func (s *eui64Solicitor) ask(prefixes []netip.Prefix, round bool) {
+	asked := make(map[netip.Prefix]bool, len(prefixes))
+	var pending []netip.Prefix
+	for _, prefix := range prefixes {
+		if round || !s.asked[prefix] {
+			pending = append(pending, prefix)
+		}
+		asked[prefix] = true
+	}
+	s.asked = asked
+
+	for _, target := range eui64Targets(s.tasks, pending) {
+		sent, err := s.solicit(target)
+		if err != nil {
+			s.logger.Errorf("error soliciting %s: %s", target, err)
+			continue
+		}
+		s.logger.Debugf("solicited %s on %d links", target, sent)
+	}
+}
+
 // eui64Targets returns the addresses to solicit: on each prefix, the EUI-64 address of every MAC
-// that a task's filter names and asks an eui64 address of.
+// that a task's filter names and asks an eui64 address of. The prefixes are those the discovery
+// listens on, which are never link-local: no fe80:: address is asked for.
 func eui64Targets(tasks map[string]config.Task, prefixes []netip.Prefix) []netip.Addr {
 	seen := make(map[netip.Addr]bool)
 	var targets []netip.Addr
@@ -88,7 +135,8 @@ func eui64Targets(tasks map[string]config.Task, prefixes []netip.Prefix) []netip
 }
 
 // wanted tells whether the filter takes the address, of the MAC: its IP rules, by the filter's own
-// checks.
+// checks. The other rules, as mac.mask and self, aren't looked at: an address that answers is
+// matched by the whole filter, as any other, so at worst one is asked for nothing.
 func wanted(f config.Filters, mac net.HardwareAddr, target netip.Addr) bool {
 	// The checks read the address and its MAC only: no timers.
 	addr := &ipv6disc.Addr{Addr: target, Hw: mac}

@@ -16,6 +16,7 @@ import (
 	"hash/fnv"
 	"io"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -41,17 +42,40 @@ type Device struct {
 	// OnKey keeps a key Home Assistant gives, or forgets it when nil: the device's next start must
 	// have it. Without OnKey, the device's key is fixed, and one Home Assistant gives is refused.
 	OnKey func(key []byte) error
+	// OnStatesReset, when set, is called when the states Home Assistant sent are none any more:
+	// when a connection asks which to follow, as Home Assistant sends them all anew then, and when
+	// the last such connection ends. So a state of an earlier connection, of an entity Home
+	// Assistant has no more, isn't taken for the present one. It runs with the device locked,
+	// before any state of the new connection: it must not call the device.
+	OnStatesReset func()
 	// Who made it, and what: project is "author.name", as ESPHome's project_name.
 	Manufacturer, Model, Project, ProjectVersion string
 
 	Logger *zap.SugaredLogger
 
+	keying        sync.Mutex // one key given at a time: held while it is checked, kept and taken
 	mutex         sync.Mutex
 	keyChanged    chan struct{} // closed and replaced when the key changes
 	entities      []*entity
 	subscriptions []subscription
 	conns         map[*connection]struct{}
 }
+
+// What a connection may take: a variable each, for the tests.
+var (
+	// handshakeTimeout is how long a client has to say which protocol it speaks, and to prove the
+	// key: one that connects and says nothing holds no descriptor longer.
+	handshakeTimeout = 30 * time.Second
+	// idleTimeout is how long a connection may send nothing: Home Assistant pings every 20
+	// seconds, and ESPHome's devices drop a client silent for 150.
+	idleTimeout = 150 * time.Second
+	// writeTimeout is how long a message may take to be written: a client that reads nothing for
+	// that long is dropped.
+	writeTimeout = 10 * time.Second
+	// maxConnections is how many connections a listener serves at once, the ones over it closed
+	// at once: Home Assistant makes one, or two while it adds the device.
+	maxConnections = 32
+)
 
 // EntityCategory groups an entity in Home Assistant's device page.
 type EntityCategory int
@@ -134,11 +158,17 @@ func ParseKey(s string) ([]byte, error) {
 	return key, nil
 }
 
+// add adds an entity, with its key, by which Home Assistant tells the entities of a connection
+// apart: the hash of its id, as ESPHome's, or the next free one when another entity has it, as two
+// ids of the same hash would, since two entities with one key are one to Home Assistant.
 func (d *Device) add(e Entity, k kind) *entity {
 	h := fnv.New32a()
 	h.Write([]byte(e.ID))
 	en := &entity{Entity: e, kind: k, key: h.Sum32()}
 	d.mutex.Lock()
+	for slices.ContainsFunc(d.entities, func(other *entity) bool { return other.key == en.key }) {
+		en.key++
+	}
 	d.entities = append(d.entities, en)
 	d.mutex.Unlock()
 	return en
@@ -200,23 +230,20 @@ func (s *BinarySensor) Set(on bool) {
 	})
 }
 
+// update sets an entity's state, and has each connection that follows the states send it: it
+// waits for none of them.
 func (d *Device) update(e *entity, set func(*entity) bool) {
 	d.mutex.Lock()
+	defer d.mutex.Unlock()
 	changed := set(e)
 	e.hasData = true
-	state := stateMessage(e)
-	conns := make([]*connection, 0, len(d.conns))
-	for c := range d.conns {
-		if c.statesSubscribed() {
-			conns = append(conns, c)
-		}
-	}
-	d.mutex.Unlock()
 	if !changed {
 		return
 	}
-	for _, c := range conns {
-		c.write(state.msgType, state.data)
+	for c := range d.conns {
+		if c.states {
+			c.queue(e)
+		}
 	}
 }
 
@@ -240,7 +267,7 @@ func (d *Device) keyChange() <-chan struct{} {
 	return d.keyChanged
 }
 
-// setKey takes a key Home Assistant gave, or forgets it: OnKey keeps it first.
+// setKey takes a key Home Assistant gave, or forgets it: OnKey keeps it first. With keying held.
 func (d *Device) setKey(key []byte) error {
 	if err := d.OnKey(key); err != nil {
 		return err
@@ -256,12 +283,12 @@ func (d *Device) setKey(key []byte) error {
 }
 
 // closeUntrusted ends the connections without the key, after it changed: Home Assistant's own
-// reconnects with it.
-func (d *Device) closeUntrusted() {
+// reconnects with it. But the one that gave it, which ends itself once it is answered.
+func (d *Device) closeUntrusted(but *connection) {
 	d.mutex.Lock()
 	var untrusted []*connection
 	for c := range d.conns {
-		if !c.trusted {
+		if !c.trusted && c != but {
 			untrusted = append(untrusted, c)
 		}
 	}
@@ -271,29 +298,31 @@ func (d *Device) closeUntrusted() {
 	}
 }
 
-// Connected tells whether Home Assistant is connected, and follows the device's states.
+// Connected tells whether Home Assistant is connected: with the device's key, and asked for the
+// states the device follows. A connection without the key is anyone's, and sends none.
 func (d *Device) Connected() bool {
 	_, ok := d.ConnectedSince()
 	return ok
 }
 
-// ConnectedSince tells since when Home Assistant has been connected, following the device's
-// states, without a break: the earliest of its connections that do.
+// ConnectedSince tells since when Home Assistant has been connected, with the device's key, and
+// sending the states the device asked for: since the latest of its connections asked which, as
+// the states are those sent from then on.
 func (d *Device) ConnectedSince() (time.Time, bool) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 	var since time.Time
 	for c := range d.conns {
-		c.mutex.Lock()
-		if c.states && (since.IsZero() || c.since.Before(since)) {
-			since = c.since
+		if c.asked.After(since) {
+			since = c.asked
 		}
-		c.mutex.Unlock()
 	}
 	return since, !since.IsZero()
 }
 
-// Serve answers Home Assistant's connections on ln, until ctx is done.
+// Serve answers Home Assistant's connections on ln, until ctx is done: maxConnections at once. A
+// failure to accept one, as with no file descriptor left, is tried again, ever later up to a
+// second: only the listener closed ends it.
 func (d *Device) Serve(ctx context.Context, ln net.Listener) error {
 	if d.Key != nil && len(d.Key) != 32 {
 		return errors.New("the device's key must be of 32 bytes")
@@ -316,17 +345,40 @@ func (d *Device) Serve(ctx context.Context, ln net.Listener) error {
 	}()
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	slots := make(chan struct{}, maxConnections)
+	var delay time.Duration
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			return err
+			if errors.Is(err, net.ErrClosed) {
+				return err
+			}
+			if delay == 0 && d.Logger != nil {
+				d.Logger.Warnf("esphome: accepting a connection: %s: trying again", err)
+			}
+			delay = min(max(2*delay, 5*time.Millisecond), time.Second)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(delay):
+			}
+			continue
+		}
+		delay = 0
+		select {
+		case slots <- struct{}{}:
+		default:
+			d.logf("%s: %d connections already: closed", conn.RemoteAddr(), maxConnections)
+			conn.Close()
+			continue
 		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { <-slots }()
 			d.serveConn(ctx, conn)
 		}()
 	}
@@ -337,27 +389,86 @@ type outgoing struct {
 	data    []byte
 }
 
+// connection is a client past its handshake. Its handler reads, and only its writer writes, each
+// message within writeTimeout: nothing that holds a lock waits for a client to read.
 type connection struct {
 	sc      msgConn
 	conn    net.Conn
-	mutex   sync.Mutex
-	states  bool
-	since   time.Time // when it subscribed to the states
-	trusted bool      // with the device's key: only then are Home Assistant's states and commands taken
+	trusted bool // with the device's key: only then are Home Assistant's states and commands taken
+
+	out  chan outgoing // the answers, for the writer: closed when the handler ends
+	wake chan struct{} // there are states to send
+	done chan struct{} // closed when the writer ends
+
+	// With the device's mutex.
+	states  bool                 // it follows the device's states
+	asked   time.Time            // when it asked which of Home Assistant's states to send: trusted only
+	pending []*entity            // those whose state it has yet to send, in order
+	queued  map[*entity]struct{} // the same
 }
 
 func (c *connection) close() { c.conn.Close() }
 
-func (c *connection) statesSubscribed() bool {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	return c.states
+// queue has the writer send the entity's state, as it is when it does: once, however many changes
+// before that. With the device's mutex.
+func (c *connection) queue(e *entity) {
+	if _, ok := c.queued[e]; ok {
+		return
+	}
+	c.queued[e] = struct{}{}
+	c.pending = append(c.pending, e)
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
 }
 
+// write gives the writer a message, waiting while it has many to send: an error when it ended.
 func (c *connection) write(msgType uint16, data []byte) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	return c.sc.WriteMessage(msgType, data)
+	select {
+	case c.out <- outgoing{msgType, data}:
+		return nil
+	case <-c.done:
+		return errors.New("the connection is closed")
+	}
+}
+
+// writer sends the connection's messages, until its handler ends or a write fails, as when the
+// client reads nothing for writeTimeout: it closes the connection then, since part of a frame may
+// have gone, which ends the handler.
+func (d *Device) writer(c *connection) {
+	defer close(c.done)
+	send := func(m outgoing) bool {
+		c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		if err := c.sc.WriteMessage(m.msgType, m.data); err != nil {
+			d.logf("%s: writing: %s", c.conn.RemoteAddr(), err)
+			c.conn.Close()
+			return false
+		}
+		return true
+	}
+	for {
+		select {
+		case m, ok := <-c.out:
+			if !ok || !send(m) {
+				return
+			}
+		case <-c.wake:
+			d.mutex.Lock()
+			states := make([]outgoing, 0, len(c.pending))
+			for _, e := range c.pending {
+				states = append(states, stateMessage(e))
+			}
+			c.pending = c.pending[:0]
+			clear(c.queued)
+			d.mutex.Unlock()
+			for _, m := range states {
+				if !send(m) {
+					return
+				}
+			}
+		}
+	}
 }
 
 func (d *Device) logf(format string, args ...any) {
@@ -366,27 +477,56 @@ func (d *Device) logf(format string, args ...any) {
 	}
 }
 
+// connected tells whether a connection has been asked for Home Assistant's states. With the mutex.
+func (d *Device) connected() bool {
+	for c := range d.conns {
+		if !c.asked.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *Device) serveConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
 
-	sc, trusted, err := accept(conn, d.Name, d.MAC, d.key())
+	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	sc, trusted, err := accept(conn, d.Name, d.MAC, d.key)
 	if err != nil {
 		d.logf("%s: %s", conn.RemoteAddr(), err)
 		return
 	}
-	c := &connection{sc: sc, conn: conn, trusted: trusted}
+	conn.SetDeadline(time.Time{})
+	c := &connection{sc: sc, conn: conn, trusted: trusted,
+		out: make(chan outgoing, 16), wake: make(chan struct{}, 1), done: make(chan struct{}),
+		queued: make(map[*entity]struct{})}
+	// The key may have been given since the handshake began: setKey sets it with the mutex, before
+	// closeUntrusted, so a connection without it is either among conns for that, or sees it here.
 	d.mutex.Lock()
+	if !trusted && d.Key != nil {
+		d.mutex.Unlock()
+		d.logf("%s: connected without the key, which the device has now: closed", conn.RemoteAddr())
+		return
+	}
 	d.conns[c] = struct{}{}
 	d.mutex.Unlock()
+	go d.writer(c)
 	defer func() {
 		d.mutex.Lock()
 		delete(d.conns, c)
+		if !c.asked.IsZero() && !d.connected() && d.OnStatesReset != nil {
+			d.OnStatesReset()
+		}
 		d.mutex.Unlock()
+		// The writer sends what the handler left it, as the answer to a disconnection, and ends.
+		close(c.out)
+		<-c.done
 	}()
 
 	for {
+		conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		msgType, data, err := sc.ReadMessage()
 		if err != nil {
 			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
@@ -438,30 +578,29 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		return false, c.write(msgListEntitiesDoneResponse, nil)
 	case msgSubscribeStatesRequest:
+		// Every state now, and each change from now on.
 		d.mutex.Lock()
-		var states []outgoing
+		c.states = true
 		for _, e := range d.entities {
 			if e.kind != kindButton {
-				states = append(states, stateMessage(e))
+				c.queue(e)
 			}
 		}
 		d.mutex.Unlock()
-		c.mutex.Lock()
-		c.states, c.since = true, time.Now()
-		c.mutex.Unlock()
-		for _, m := range states {
-			if err := c.write(m.msgType, m.data); err != nil {
-				return false, err
-			}
-		}
 		return false, nil
 	case msgSubscribeHomeAssistantStatesRequest:
 		if !c.trusted {
 			// States from a client without the key would be anyone's: not asked.
 			return false, nil
 		}
+		// Home Assistant sends each state asked here, now and at its changes: those of before, of
+		// another connection or this one, are none.
 		d.mutex.Lock()
 		subs := append([]subscription(nil), d.subscriptions...)
+		c.asked = time.Now()
+		if d.OnStatesReset != nil {
+			d.OnStatesReset()
+		}
 		d.mutex.Unlock()
 		for _, s := range subs {
 			if err := c.write(msgSubscribeHomeAssistantStateResponse, message{}.string(1, s.entityID).string(2, s.attribute)); err != nil {
@@ -519,9 +658,10 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 			return false, err
 		}
 		if ok {
-			d.closeUntrusted()
+			d.closeUntrusted(c)
 		}
-		return false, nil
+		// Without the key the device has now, this one ends too, its answer written first.
+		return ok && !c.trusted, nil
 	}
 	// The rest, as the logs and services subscriptions: nothing to do.
 	return false, nil
@@ -529,12 +669,15 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 
 // takeKey takes the key Home Assistant gives: over Noise, with the zero key while the device has
 // none, or with the key, to change it; never in plaintext. An empty one forgets it, with the key
-// only. It tells whether the key was taken.
+// only. It tells whether the key was taken. One at a time: of two clients that give a device
+// without a key one each, the second finds it has one, and is refused.
 func (d *Device) takeKey(c *connection, encoded string) bool {
 	if d.OnKey == nil {
 		d.logf("a key given, but the device's is fixed: refused")
 		return false
 	}
+	d.keying.Lock()
+	defer d.keying.Unlock()
 	_, plain := c.sc.(*plainConn)
 	if plain || !c.trusted && d.HasKey() {
 		d.logf("a key given without encryption, or without the key: refused")

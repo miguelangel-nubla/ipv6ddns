@@ -32,10 +32,10 @@ discovery:      # how hosts are found: IPv6 by default
 ```
 
 - A **task** gives names their addresses. Its [filters](filtering.md) choose, among the addresses [discovery](discovery.md) finds, those of the task; its `sources` add the addresses of [sources](sources.md). Its `endpoints` say which names, at which credentials, get them. A name in several tasks gets the addresses of all.
-- A **credential** is a DNS provider with its settings: those of each provider are in the [providers reference](reference/providers.md). Its `debounce_time` gathers the changes of a moment into one update, and a failed update is retried after `retry_time`.
+- A **credential** is a DNS provider with its settings: those of each provider are in the [providers reference](reference/providers.md). Its `debounce` gathers the changes of a moment into one update, and a failed update is retried after `retry`: until then the provider is left alone, and addresses that change meanwhile go with the retry, not before it.
 - **Sources** and **discovery** find the addresses.
 
-An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`, `""` is the zone itself, `"*.nas"` a wildcard.
+An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`, `""` is the zone itself, `"*.nas"` a wildcard. Written whole, as `nas.home.example.com`, or in another case, it is the same name: the tasks that name it either way give it their addresses together.
 
 ## Secrets
 
@@ -62,7 +62,9 @@ A variable or a file that isn't there is an error, which names the key, not the 
 
 ## Validation
 
-The configuration is checked as it loads, against its [schema](../config/schema.json): an unknown key, as a typo, a wrong type, a missing required key, or a plugin with the keys of another type, stops the start with what is wrong and where. The providers' settings and the plugins are checked by their own code too, so a mistake shows at the start, rather than at the first update.
+The configuration is checked as it loads, against its [schema](../config/schema.json): an unknown key, as a typo, a wrong type, a missing required key, or a plugin with the keys of another type, stops the start with what is wrong and where. The providers' settings and the plugins are checked by their own code too, so a mistake shows at the start, rather than at the first update. So are the filters: a `mac.address` that is no MAC, or a `mask` entry that is not `VALUE/MASK`, is an error that names the task.
+
+In YAML, a key given twice in one block, as two tasks of one name after a copy, or two `credentials:` blocks, is an error too, and not the last one winning. That includes a key that follows a merge key (`<<:`) which already brought it.
 
 ## The forms from before
 

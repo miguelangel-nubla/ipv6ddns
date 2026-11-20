@@ -2,11 +2,13 @@ package ipv6ddns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
@@ -27,7 +29,9 @@ type Worker struct {
 	logger     *zap.SugaredLogger
 	config     config.Config
 	targets    []*target
-	// The sources of addresses without a MAC, by name.
+	// The sources of addresses without a MAC, by name. Their addresses are theirs, not the
+	// discovery state's: that one takes none without a MAC, and they need no watching, since the
+	// matching leaves out the ones past their lifetime.
 	sources map[string]*source.Source
 	// A value tells the worker to match again; changes coming faster are matched once.
 	rematch chan struct{}
@@ -35,10 +39,13 @@ type Worker struct {
 	homeAssistant *homeAssistant
 	// The goroutines Start starts, for Shutdown.
 	running sync.WaitGroup
+	// Start was called: a second one would run every source and the matching twice.
+	started atomic.Bool
 }
 
 // target is a host name at an endpoint, with the tasks that give it addresses. A name in more than
-// one task gets the addresses of all of them.
+// one task gets the addresses of all of them, however each spells it: "nas", "nas." and
+// "nas.example.com" are one name of the zone example.com.
 type target struct {
 	hostname *Hostname
 	tasks    []config.Task
@@ -98,8 +105,14 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 			if err != nil {
 				return nil, err
 			}
+			// A task that spells a name twice gives it its addresses once.
+			named := make(map[*Hostname]bool)
 			for _, hostnameKey := range task.Endpoints[endpointKey] {
 				hostname := w.hostname(endpointKey, endpoint, hostnameKey)
+				if named[hostname] {
+					continue
+				}
+				named[hostname] = true
 				t, ok := targets[hostname]
 				if !ok {
 					t = &target{hostname: hostname}
@@ -164,8 +177,12 @@ func (w *Worker) endpoint(endpointKey string) (*Endpoint, error) {
 	return endpoint, nil
 }
 
+// hostname returns the host name of an endpoint, making it the first time. Another spelling of a
+// name the endpoint has is that name, under its first spelling: two would each update the same
+// records with its own addresses, and remove the other's.
 func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey string) *Hostname {
-	if hostname, ok := endpoint.hostnames[hostnameKey]; ok {
+	name := recordName(endpoint, hostnameKey)
+	if hostname, ok := endpoint.names[name]; ok {
 		return hostname
 	}
 
@@ -188,13 +205,30 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 		return err
 	}
 	hostname := NewHostname(updateAction, credential.Debounce.Duration, credential.Retry.Duration)
+	hostname.endpointMutex = &endpoint.updateMutex
 	endpoint.hostnames[hostnameKey] = hostname
+	endpoint.names[name] = hostname
 	return hostname
 }
 
+// recordName is the name of the records that a host name of the endpoint is: its domain, in lower
+// case, as DNS tells no case apart. A provider that learns its zone later, as Route 53, has the
+// name as written until then: there "nas" and "nas.example.com" stay two.
+func recordName(endpoint *Endpoint, hostnameKey string) string {
+	return strings.ToLower(strings.Trim(endpoint.Domain(hostnameKey), "."))
+}
+
 // Start runs the discovery, the IPv4 commands and the updates, until ctx is done. Shutdown waits
-// for them to stop.
+// for them to stop. A worker starts once.
+//
+// The discovery runs when the configuration has plugins or a family that listens. Its plugins are
+// those registered with RegisterPlugin, one for each of the configuration's, as cmd does: with
+// none in the configuration and no family listening, the registered ones don't run; with some in
+// the configuration, none registered and no family listening, it is an error.
 func (w *Worker) Start(ctx context.Context) error {
+	if w.started.Swap(true) {
+		return errors.New("worker already started")
+	}
 	for _, warning := range w.config.Warnings {
 		w.logger.Warn(warning)
 	}
@@ -210,7 +244,7 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.logger.Info("no discovery: no plugins, and no family listens; the names get the addresses of their sources")
 	}
 	if h := w.homeAssistant; h != nil {
-		if err := h.serve(ctx, w.config.Discovery.Interfaces, w.config.Discovery.ExcludeInterfaces, w.logger.Errorf); err != nil {
+		if err := h.serve(ctx, &w.running, w.config.Discovery.Interfaces, w.config.Discovery.ExcludeInterfaces, w.logger.Errorf); err != nil {
 			return err
 		}
 		w.running.Add(1)
@@ -254,7 +288,9 @@ func (w *Worker) Start(ctx context.Context) error {
 }
 
 // Shutdown stops scheduling updates, and waits for the ones running and for the discovery to stop,
-// once the context of Start is done. It gives up when ctx is done.
+// and for Home Assistant's connections to end and the device's announcement to be taken back,
+// once the context of Start is done: before that, it waits. The addresses discovered stop expiring
+// then, and stay for the status. It gives up when ctx is done, and what it waited for goes on.
 func (w *Worker) Shutdown(ctx context.Context) error {
 	for _, t := range w.targets {
 		t.hostname.Stop()
@@ -264,6 +300,8 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 	go func() {
 		w.running.Wait()
 		w.discWorker.Wait()
+		// The addresses stay watched, each with its goroutine and timers, until this.
+		w.discWorker.State.Close()
 		for _, s := range w.sources {
 			s.Wait()
 		}
@@ -281,6 +319,8 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 	}
 }
 
+// RegisterPlugin adds a discovery plugin, before Start: one for each of the configuration's
+// discovery.plugins, which is what makes Start run them.
 func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {
 	w.discWorker.RegisterPlugin(p)
 }

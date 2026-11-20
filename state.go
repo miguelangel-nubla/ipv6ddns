@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
@@ -23,7 +24,13 @@ type Provider struct {
 // Endpoint is a credential: a DNS service, with the host names it updates.
 type Endpoint struct {
 	ddns.Service
+	// The host names, by their first spelling in the configuration.
 	hostnames map[string]*Hostname
+	// The same, by the name of their records: see recordName.
+	names map[string]*Hostname
+	// One update of the service at a time, whatever the name: the providers read the records and
+	// then change them, some over a session each, and all the names of a task change at once.
+	updateMutex sync.Mutex
 }
 
 func NewState() *State {
@@ -42,6 +49,7 @@ func NewEndpoint(service ddns.Service) *Endpoint {
 	return &Endpoint{
 		Service:   service,
 		hostnames: make(map[string]*Hostname),
+		names:     make(map[string]*Hostname),
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"go.uber.org/zap"
 )
 
 func TestEUI64Address(t *testing.T) {
@@ -118,4 +119,42 @@ func ipv4Only(t config.Task) config.Task {
 func withSuffix(t config.Task, suffix string) config.Task {
 	t.Filters[0].IP.Suffix = suffix
 	return t
+}
+
+// At the start no /64 is listened on yet: the first that comes is asked on then, not a round
+// later, and once until the next round.
+func TestEUI64SolicitorAsksOnNewPrefixes(t *testing.T) {
+	const mac = "00:0c:e3:71:45:68"
+	const global = "2001:db8:1:2:20c:e3ff:fe71:4568"
+	const ula = "fd51:1:2:3:20c:e3ff:fe71:4568"
+	globalPrefix, ulaPrefix := netip.MustParsePrefix("2001:db8:1:2::/64"), netip.MustParsePrefix("fd51:1:2:3::/64")
+
+	var got []string
+	s := eui64Solicitor{
+		tasks:   map[string]config.Task{"t": task(mac, "", "eui64")},
+		solicit: func(target netip.Addr) (int, error) { got = append(got, target.String()); return 1, nil },
+		logger:  zap.NewNop().Sugar(),
+	}
+	steps := []struct {
+		name     string
+		prefixes []netip.Prefix
+		round    bool
+		want     []string
+	}{
+		{"the first round, nothing listened on", nil, true, nil},
+		{"a prefix comes", []netip.Prefix{globalPrefix}, false, []string{global}},
+		{"nothing new", []netip.Prefix{globalPrefix}, false, nil},
+		{"another comes", []netip.Prefix{globalPrefix, ulaPrefix}, false, []string{ula}},
+		{"a round", []netip.Prefix{globalPrefix, ulaPrefix}, true, []string{global, ula}},
+		{"one goes", []netip.Prefix{globalPrefix}, false, nil},
+		{"and comes back", []netip.Prefix{globalPrefix, ulaPrefix}, false, []string{ula}},
+	}
+	for _, step := range steps {
+		got = nil
+		s.ask(step.prefixes, step.round)
+		slices.Sort(got)
+		if !slices.Equal(got, step.want) {
+			t.Errorf("%s: solicited %v, want %v", step.name, got, step.want)
+		}
+	}
 }

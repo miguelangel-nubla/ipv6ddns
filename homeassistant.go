@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"net"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +45,9 @@ type homeAssistant struct {
 
 	names map[haName]nameEntities // by endpoint and hostname
 	hosts *esphome.Sensor
+
+	// The announcement: the device's, but in tests.
+	advertise func(ctx context.Context, port int, ifaces []net.Interface) error
 }
 
 // haName is a name the entities are of: its endpoint and hostname, which stay, and its domain
@@ -86,12 +91,21 @@ func newHomeAssistant(cfg config.HomeAssistant, baseDir string) (*homeAssistant,
 			return state.save(path)
 		}
 	}
-	return &homeAssistant{
-		config: cfg,
-		device: device,
-		states: make(map[string]string),
-		names:  make(map[haName]nameEntities),
-	}, nil
+	h := &homeAssistant{
+		config:    cfg,
+		device:    device,
+		advertise: device.Advertise,
+		states:    make(map[string]string),
+		names:     make(map[haName]nameEntities),
+	}
+	// The states are a connection's: Home Assistant sends them all when it connects, so one it
+	// doesn't send again, its entity gone or renamed meanwhile, is none, and not the last it sent.
+	device.OnStatesReset = func() {
+		h.mutex.Lock()
+		clear(h.states)
+		h.mutex.Unlock()
+	}
+	return h, nil
 }
 
 // deviceState is what a device whose key Home Assistant gives keeps: its identity, which its MAC
@@ -152,7 +166,8 @@ func (s *deviceState) save(path string) error {
 
 func stateKey(entity, attribute string) string { return entity + "\x00" + attribute }
 
-// State is a homeassistant source's: the latest state Home Assistant sent, while it is connected.
+// State is a homeassistant source's: the latest state Home Assistant sent, in its connection of
+// now.
 func (h *homeAssistant) State(entity, attribute string) (string, error) {
 	connectedSince := h.connectedSince
 	if connectedSince == nil {
@@ -191,8 +206,10 @@ func (h *homeAssistant) subscribe(entity, attribute string, changed func()) {
 	})
 }
 
-// entityID makes an entity's id of a name and what it is: "cloudflare_ha_addresses".
-func entityID(n haName, what string) string {
+// entityBase makes the id of a name's entities, but what each is: "cloudflare_ha", of the endpoint
+// cloudflare and the host name ha. Names that differ only in case, or in what isn't a letter or a
+// digit, have the same.
+func entityBase(n haName) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(n.endpoint + "_" + n.hostname) {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
@@ -201,25 +218,56 @@ func entityID(n haName, what string) string {
 			b.WriteByte('_')
 		}
 	}
-	return b.String() + "_" + what
+	return b.String()
 }
 
-// addEntities adds the entities of the worker's names, and the others. updateNow is the button's.
+// entityBases gives each name the id of its entities: entityBase's, or, for those of names that
+// share it, as the host names a-b and a.b of an endpoint, each with the hash of its own endpoint
+// and host name besides, so that no two names are one entity to Home Assistant, whatever their
+// order. The others keep theirs, whatever names come or go.
+func entityBases(names []haName) map[haName]string {
+	shared := map[string][]haName{}
+	for _, n := range names {
+		if base := entityBase(n); !slices.Contains(shared[base], n.key()) {
+			shared[base] = append(shared[base], n.key())
+		}
+	}
+	bases := map[haName]string{}
+	for base, of := range shared {
+		for _, n := range of {
+			bases[n] = base
+			if len(of) > 1 {
+				hash := fnv.New32a()
+				hash.Write([]byte(n.endpoint + "\x00" + n.hostname))
+				bases[n] = fmt.Sprintf("%s_%08x", base, hash.Sum32())
+			}
+		}
+	}
+	return bases
+}
+
+// addEntities adds the entities of the worker's names, and the others, once. updateNow is the
+// button's.
 func (h *homeAssistant) addEntities(names []haName, updateNow func()) {
+	bases := entityBases(names)
 	for _, n := range names {
 		if _, ok := h.names[n.key()]; ok {
 			continue
 		}
+		base := bases[n.key()]
+		if base != entityBase(n) && h.device.Logger != nil {
+			h.device.Logger.Warnf("homeassistant: %s of %s: its entities' id, %s, is another name's too: they are %s", n.hostname, n.endpoint, entityBase(n), base)
+		}
 		h.names[n.key()] = nameEntities{
 			addresses: h.device.AddTextSensor(esphome.Entity{
-				ID: entityID(n, "addresses"), Name: n.domain + " addresses", Icon: "mdi:ip-network",
+				ID: base + "_addresses", Name: n.domain + " addresses", Icon: "mdi:ip-network",
 			}),
 			lastUpdate: h.device.AddTextSensor(esphome.Entity{
-				ID: entityID(n, "last_update"), Name: n.domain + " last update", DeviceClass: "timestamp",
+				ID: base + "_last_update", Name: n.domain + " last update", DeviceClass: "timestamp",
 				Category: esphome.CategoryDiagnostic,
 			}),
 			problem: h.device.AddBinarySensor(esphome.Entity{
-				ID: entityID(n, "problem"), Name: n.domain + " update", DeviceClass: "problem",
+				ID: base + "_problem", Name: n.domain + " update", DeviceClass: "problem",
 				Category: esphome.CategoryDiagnostic,
 			}),
 		}
@@ -229,6 +277,27 @@ func (h *homeAssistant) addEntities(names []haName, updateNow func()) {
 		Category: esphome.CategoryDiagnostic,
 	})
 	h.device.AddButton(esphome.Entity{ID: "update_now", Name: "Update now", Icon: "mdi:refresh"}, updateNow)
+}
+
+// stateMax is the longest state Home Assistant takes: a longer one is unknown to it.
+const stateMax = 255
+
+// addressesState is the state of a name's addresses entity: the addresses, comma separated, and,
+// when they are more than Home Assistant's state holds, the first ones whole and how many more.
+func addressesState(addresses []string) string {
+	state := strings.Join(addresses, ", ")
+	if len(state) <= stateMax {
+		return state
+	}
+	state = fmt.Sprintf("+%d more", len(addresses))
+	for n := 1; n < len(addresses); n++ {
+		longer := fmt.Sprintf("%s, +%d more", strings.Join(addresses[:n], ", "), len(addresses)-n)
+		if len(longer) > stateMax {
+			break
+		}
+		state = longer
+	}
+	return state
 }
 
 // follow sets the entities to the worker's state, now and every homeAssistantSync, until ctx is
@@ -243,7 +312,7 @@ func (h *homeAssistant) follow(ctx context.Context, status func() Status) {
 			if !ok {
 				continue
 			}
-			e.addresses.Set(strings.Join(name.Addresses, ", "))
+			e.addresses.Set(addressesState(name.Addresses))
 			if name.LastUpdate != nil {
 				e.lastUpdate.Set(name.LastUpdate.UTC().Format(time.RFC3339))
 			}
@@ -297,10 +366,12 @@ func announced(include, exclude []string) ([]net.Interface, error) {
 	return ifaces, nil
 }
 
-// serve listens for Home Assistant where listen says, and announces the device by mDNS, until ctx
-// is done: on the interfaces that hold the addresses it listens on, or, listening on all, those
-// discovery runs on.
-func (h *homeAssistant) serve(ctx context.Context, interfaces, exclude []string, errorf func(string, ...any)) error {
+// serve listens for Home Assistant where listen says, and announces the device by mDNS, with the
+// port it listens on, until ctx is done: on the interfaces that hold the addresses it listens on,
+// or, listening on all, those discovery runs on, as they are now. running then waits for the
+// connections to end, and for the announcement to be taken back, which tells Home Assistant the
+// device is gone.
+func (h *homeAssistant) serve(ctx context.Context, running *sync.WaitGroup, interfaces, exclude []string, errorf func(string, ...any)) error {
 	entries := h.config.Entries
 	if len(entries) == 0 {
 		entries = []listen.Entry{{Port: strconv.Itoa(h.config.Port)}}
@@ -310,13 +381,20 @@ func (h *homeAssistant) serve(ctx context.Context, interfaces, exclude []string,
 		return fmt.Errorf("homeassistant.listen: %w", err)
 	}
 	if h.config.Announces() {
+		// The configuration takes one port to announce.
+		port := h.config.Port
+		if tcp, ok := lns[0].Addr().(*net.TCPAddr); ok {
+			port = tcp.Port
+		}
+		running.Add(1)
 		go func() {
+			defer running.Done()
 			ifaces, all, err := listen.Interfaces(lns)
 			if err == nil && all {
 				ifaces, err = announced(interfaces, exclude)
 			}
 			if err == nil {
-				err = h.device.Advertise(ctx, h.config.Port, ifaces)
+				err = h.advertise(ctx, port, ifaces)
 			}
 			if err != nil {
 				errorf("homeassistant: %s: Home Assistant won't discover it, add it by its address", err)
@@ -324,7 +402,9 @@ func (h *homeAssistant) serve(ctx context.Context, interfaces, exclude []string,
 		}()
 	}
 	for _, ln := range lns {
+		running.Add(1)
 		go func() {
+			defer running.Done()
 			if err := h.device.Serve(ctx, ln); err != nil {
 				errorf("homeassistant: %s", err)
 			}

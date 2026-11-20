@@ -30,7 +30,10 @@ The add-on's own option:
 |---|---|
 | `log_level` | `debug`, `info`, `warn` or `error`. Default: `info` |
 
-The lifetime, and everything else, are in `config.yaml`.
+The lifetime, and everything else, are in `config.yaml`, but for two keys the
+add-on sets itself, which do nothing there: `log_level`, which is the option
+above, and `webserver.listen`, since the report is served to Home Assistant
+only, for the add-on's page.
 
 ## Publishing Home Assistant itself
 

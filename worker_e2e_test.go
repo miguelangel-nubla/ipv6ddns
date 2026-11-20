@@ -90,9 +90,22 @@ func fakeCredential(id string, debounce, retry time.Duration) config.Credential 
 	return c
 }
 
-func register(w *Worker, mac, ip string, lifetime time.Duration) {
+// register puts a discovered address in the state. The state leaves out, with no error and no
+// address returned, one of a family that config.Discovery has off, as both are in a zero one: the
+// test would then wait for nothing.
+func register(t *testing.T, w *Worker, mac, ip string, lifetime time.Duration) {
+	t.Helper()
 	hw, _ := net.ParseMAC(mac)
 	w.discWorker.State.Register(hw, netip.MustParseAddr(ip), "eth0", lifetime, nil)
+	if !discovered(w, mac, ip) {
+		t.Fatalf("%s of %s isn't in the state: is its family on in the test's config.Discovery?", ip, mac)
+	}
+}
+
+// discovered tells whether the state has the address.
+func discovered(w *Worker, mac, ip string) bool {
+	collection, ok := w.discWorker.GetAll()[mac]
+	return ok && slices.Contains(collection.Strings(), ip)
 }
 
 const (
@@ -118,13 +131,13 @@ func TestWorkerUpdatesFromDiscovery(t *testing.T) {
 	service := fakeServices["e2e"]
 	fakeServicesMutex.Unlock()
 
-	register(w, macA, "2001:db8::a", time.Hour)
-	register(w, macB, "2001:db8::b", time.Hour)
-	register(w, macC, "2001:db8::c", time.Hour) // no task's
+	register(t, w, macA, "2001:db8::a", time.Hour)
+	register(t, w, macB, "2001:db8::b", time.Hour)
+	register(t, w, macC, "2001:db8::c", time.Hour) // no task's
 
 	// Within the debounce time, the addresses keep coming: one update with all of them.
 	w.lookForChanges()
-	register(w, macB, "2001:db8::b2", time.Second)
+	register(t, w, macB, "2001:db8::b2", time.Second)
 	w.lookForChanges()
 	service.waitFor(t, "nas", "2001:db8::a", "2001:db8::b", "2001:db8::b2")
 	service.waitFor(t, "web", "2001:db8::a")
@@ -167,7 +180,7 @@ func TestWorkerRetriesFailedUpdates(t *testing.T) {
 	fakeServicesMutex.Unlock()
 	service.fail = errors.New("down")
 
-	register(w, macA, "2001:db8::a", time.Hour)
+	register(t, w, macA, "2001:db8::a", time.Hour)
 	w.lookForChanges()
 	service.waitFor(t, "nas", "2001:db8::a")
 	service.mutex.Lock()
@@ -197,11 +210,14 @@ func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	const secret = "SECRET-7f3a"
 	wan := config.Source{Type: config.SourceCommand, Command: "curl", Args: []string{"https://example.com/ip?token=" + secret}}
 	wan.Interval.Duration, wan.Lifetime.Duration = time.Hour, time.Hour
+	// An echo service of one's own, with its token: no task names it, so it is never asked.
+	echo := config.Source{Type: config.SourceHTTP, Family: []int{4}, URLs: []string{"https://user:" + secret + "@echo.example/ip/" + secret + "?token=" + secret}}
+	echo.Interval.Duration, echo.Lifetime.Duration = time.Hour, time.Hour
 	cfg := config.Config{
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("hidden", time.Millisecond, time.Hour)},
 		Discovery:   config.Discovery{IPv6: config.DefaultDiscovery().IPv6, Plugins: map[string]config.PluginConfig{"router": {Type: "mikrotik", Params: "60s,192.0.2.1,admin," + secret}}},
-		Sources:     map[string]config.Source{"wan": wan},
+		Sources:     map[string]config.Source{"wan": wan, "echo": echo},
 	}
 	credential := cfg.Credentials["dns"]
 	credential.RawSettings = json.RawMessage(`{"id": "hidden", "token": "` + secret + `"}`)
@@ -215,7 +231,7 @@ func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	fakeServicesMutex.Unlock()
 	service.fail = errors.New("denied for token " + secret)
 
-	register(w, macA, "2001:db8::a", time.Hour)
+	register(t, w, macA, "2001:db8::a", time.Hour)
 	w.lookForChanges()
 	service.waitFor(t, "nas", "2001:db8::a")
 	deadline := time.Now().Add(3 * time.Second)
@@ -229,8 +245,13 @@ func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	if shown := w.PrettyPrint("", false); strings.Count(shown, secret) < 4 {
 		t.Errorf("the test expects the secret in the settings, the plugin, the IPv4 command and the error, shown:\n%s", shown)
 	}
-	if hidden := w.PrettyPrint("", true); strings.Contains(hidden, secret) {
+	hidden := w.PrettyPrint("", true)
+	if strings.Contains(hidden, secret) {
 		t.Errorf("the secret is on the page:\n%s", hidden)
+	}
+	// Which service an http source asks stays: its host.
+	if !strings.Contains(hidden, "from https://echo.example,") {
+		t.Errorf("the host of the http source's url isn't on the page:\n%s", hidden)
 	}
 }
 
@@ -260,7 +281,7 @@ func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
 	blocking := &blockingService{fakeService: fakeService{updates: map[string][][]string{}}, started: make(chan struct{}, 1), release: make(chan struct{})}
 	w.providers["fake"].endpoints["dns"].Service = blocking
 
-	register(w, macA, "2001:db8::a", time.Hour)
+	register(t, w, macA, "2001:db8::a", time.Hour)
 	w.lookForChanges()
 	select {
 	case <-blocking.started:
@@ -276,7 +297,7 @@ func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
 	}
 
 	// No update starts once stopping, though the addresses change.
-	register(w, macA, "2001:db8::a2", time.Hour)
+	register(t, w, macA, "2001:db8::a2", time.Hour)
 	w.lookForChanges()
 
 	close(blocking.release)
@@ -299,7 +320,7 @@ func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
 func TestStatusAndMetrics(t *testing.T) {
 	cfg := config.Config{
 		Discovery:   config.DefaultDiscovery(),
-		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas", `we"ird`}}}},
+		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas", `we"ird`, "x\\y\nz"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("status", time.Millisecond, time.Hour)},
 	}
 	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
@@ -311,7 +332,7 @@ func TestStatusAndMetrics(t *testing.T) {
 	fakeServicesMutex.Unlock()
 	service.fail = errors.New("denied for token SECRET")
 
-	register(w, macA, "2001:db8::a", time.Hour)
+	register(t, w, macA, "2001:db8::a", time.Hour)
 	w.lookForChanges()
 	service.waitFor(t, "nas", "2001:db8::a")
 	deadline := time.Now().Add(3 * time.Second)
@@ -323,7 +344,7 @@ func TestStatusAndMetrics(t *testing.T) {
 	}
 
 	status := w.Status(true)
-	if len(status.Hostnames) != 2 || len(status.Discovered) != 1 {
+	if len(status.Hostnames) != 3 || len(status.Discovered) != 1 {
 		t.Fatalf("status: %+v", status)
 	}
 	nas := status.Hostnames[0]
@@ -347,6 +368,7 @@ func TestStatusAndMetrics(t *testing.T) {
 		`ipv6ddns_hostname_updates_total{provider="fake",endpoint="dns",hostname="nas.fake",result="failure"} 1`,
 		`ipv6ddns_hostname_last_update_failed{provider="fake",endpoint="dns",hostname="nas.fake"} 1`,
 		`hostname="we\"ird.fake"`,
+		`hostname="x\\y\nz.fake"`,
 		"ipv6ddns_discovered_hosts 1\n",
 		"ipv6ddns_discovered_addresses 1\n",
 		"# TYPE ipv6ddns_hostname_updates_total counter\n",
@@ -394,10 +416,10 @@ func TestProviderWarningsAreLogged(t *testing.T) {
 	service := &warningService{fakeService: fakeService{updates: map[string][][]string{}}}
 	w.providers["fake"].endpoints["dns"].Service = service
 
-	register(w, macA, "2001:db8::a", time.Hour)
+	register(t, w, macA, "2001:db8::a", time.Hour)
 	w.lookForChanges()
 	service.waitFor(t, "nas", "2001:db8::a")
-	register(w, macA, "2001:db8::a2", time.Hour)
+	register(t, w, macA, "2001:db8::a2", time.Hour)
 	w.lookForChanges()
 	service.waitFor(t, "nas", "2001:db8::a", "2001:db8::a2")
 
@@ -442,10 +464,10 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 
-	register(w, macA, "2001:db8::a", time.Hour)
-	register(w, macA, "192.168.1.10", time.Hour) // its private IPv4, discovered
-	register(w, macB, "192.168.1.20", time.Hour)
-	register(w, macB, "2001:db8::b", time.Hour)
+	register(t, w, macA, "2001:db8::a", time.Hour)
+	register(t, w, macA, "192.168.1.10", time.Hour) // its private IPv4, discovered
+	register(t, w, macB, "192.168.1.20", time.Hour)
+	register(t, w, macB, "2001:db8::b", time.Hour)
 	w.lookForChanges()
 
 	service.waitFor(t, "www", "203.0.113.7", "2001:db8::a")
@@ -476,7 +498,9 @@ func TestDiscoveryIPv4(t *testing.T) {
 		if got := w.discWorker.State.IPv4(); got != enabled {
 			t.Errorf("discovery.ipv4 %v: the state takes IPv4: %v", enabled, got)
 		}
-		register(w, macA, "192.168.1.10", time.Hour)
+		hw, _ := net.ParseMAC(macA)
+		// Left out with the family off: nothing is returned then, and nothing here reads it.
+		w.discWorker.State.Register(hw, netip.MustParseAddr("192.168.1.10"), "eth0", time.Hour, nil)
 		if _, registered := w.discWorker.GetAll()[macA]; registered != enabled {
 			t.Errorf("discovery.ipv4 %v: an IPv4 neighbor registered: %v", enabled, registered)
 		}
@@ -491,5 +515,95 @@ func TestWorkerDiscoveryFamilies(t *testing.T) {
 	}
 	if w.discWorker.State.IPv6() || !w.discWorker.State.IPv4() {
 		t.Errorf("IPv6 off, IPv4 on: the state takes IPv6 %v, IPv4 %v", w.discWorker.State.IPv6(), w.discWorker.State.IPv4())
+	}
+}
+
+// countingService tells how many of its updates ran at once.
+type countingService struct {
+	fakeService
+	running, most int
+}
+
+func (c *countingService) Update(hostname string, addresses *ipv6disc.AddrCollection) error {
+	c.mutex.Lock()
+	c.running++
+	c.most = max(c.most, c.running)
+	c.mutex.Unlock()
+	time.Sleep(30 * time.Millisecond)
+	c.mutex.Lock()
+	c.running--
+	c.mutex.Unlock()
+	return c.fakeService.Update(hostname, addresses)
+}
+
+// The names of a task change together: their updates of the one service run one after another.
+func TestEndpointUpdatesOneAtATime(t *testing.T) {
+	cfg := config.Config{
+		Discovery:   config.DefaultDiscovery(),
+		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas", "web", "www"}}}},
+		Credentials: map[string]config.Credential{"dns": fakeCredential("one-at-a-time", time.Millisecond, time.Hour)},
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &countingService{fakeService: fakeService{updates: map[string][][]string{}}}
+	w.providers["fake"].endpoints["dns"].Service = service
+
+	register(t, w, macA, "2001:db8::a", time.Hour)
+	w.lookForChanges()
+	for _, name := range []string{"nas", "web", "www"} {
+		service.waitFor(t, name, "2001:db8::a")
+	}
+	service.mutex.Lock()
+	defer service.mutex.Unlock()
+	if service.most != 1 {
+		t.Errorf("got %d updates of the endpoint at once, want one at a time", service.most)
+	}
+}
+
+// A worker started matches when the discovery's state changes, not at its next interval: so do the
+// addresses of this machine that an interface lost leave the records. And Shutdown waits for the
+// context of Start, then leaves the state with nothing running.
+func TestWorkerFollowsTheStateAndShutdownClosesIt(t *testing.T) {
+	cfg := config.Config{
+		// IPv6 taken, but nothing listening: Start opens no socket.
+		Discovery:   config.Discovery{IPv6: config.Family{Enabled: true}},
+		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
+		Credentials: map[string]config.Credential{"dns": fakeCredential("follows", time.Millisecond, time.Hour)},
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeServicesMutex.Lock()
+	service := fakeServices["follows"]
+	fakeServicesMutex.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Well within rematchInterval.
+	register(t, w, macA, "2001:db8::a", time.Hour)
+	service.waitFor(t, "nas", "2001:db8::a")
+
+	short, cancelShort := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancelShort()
+	if err := w.Shutdown(short); err == nil {
+		t.Error("shutdown returned while the context of Start goes on")
+	}
+
+	const lifetime = 300 * time.Millisecond
+	register(t, w, macB, "2001:db8::b", lifetime)
+	cancel()
+	if err := w.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Its expiration would take it out of the state.
+	time.Sleep(2 * lifetime)
+	if !discovered(w, macB, "2001:db8::b") {
+		t.Error("an address expired after the shutdown: the state still watches them")
 	}
 }
