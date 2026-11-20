@@ -48,6 +48,8 @@ type Server struct {
 
 	queries  map[string]*atomic.Uint64
 	failures map[string]*atomic.Uint64
+	// The upstream servers given by host name, by host:port as configured.
+	named map[string]*namedUpstream
 
 	mutex     sync.Mutex
 	servers   []*dns.Server
@@ -73,10 +75,105 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 	for _, k := range Kinds {
 		s.queries[k] = new(atomic.Uint64)
 	}
+	s.named = make(map[string]*namedUpstream)
 	for _, u := range cfg.Upstreams {
 		s.failures[u] = new(atomic.Uint64)
+		host, port, err := net.SplitHostPort(u)
+		if err != nil {
+			return nil, fmt.Errorf("%s.upstream: %q: %w", cfg.Path, u, err)
+		}
+		if _, err := netip.ParseAddr(host); err != nil {
+			if len(cfg.Bootstrap) == 0 {
+				return nil, fmt.Errorf("%s.upstream: %q is a host name, and there is no bootstrap to find it", cfg.Path, u)
+			}
+			s.named[u] = &namedUpstream{host: dns.Fqdn(host), port: port}
+		}
 	}
 	return s, nil
+}
+
+// The bounds of how long the addresses of an upstream server given by host name are kept: what
+// the bootstrap servers' answer says, but a minute at least, an hour at most. And when they don't
+// answer, how long until they are asked again, the addresses there were kept meanwhile.
+const (
+	minUpstreamTTL     = time.Minute
+	maxUpstreamTTL     = time.Hour
+	bootstrapRetryWait = 10 * time.Second
+)
+
+// namedUpstream is an upstream server given by host name, and the addresses the bootstrap servers
+// found for it.
+type namedUpstream struct {
+	host, port string
+
+	mutex sync.Mutex
+	// host:port of each address, as last found.
+	addresses []string
+	// When they are asked of the bootstrap servers again.
+	refresh time.Time
+}
+
+// targets are the addresses to send a query for upstream to: itself, of one that is an address;
+// those the bootstrap servers found, of one given by host name, asked again when their time is
+// over. None, when they never answered.
+func (s *Server) targets(upstream string) []string {
+	n, ok := s.named[upstream]
+	if !ok {
+		return []string{upstream}
+	}
+	n.mutex.Lock()
+	defer n.mutex.Unlock()
+	if time.Now().Before(n.refresh) {
+		return n.addresses
+	}
+	addresses, ttl := s.lookUp(n.host)
+	if len(addresses) == 0 {
+		// The addresses there were stay, until the bootstrap servers answer again.
+		n.refresh = time.Now().Add(bootstrapRetryWait)
+		return n.addresses
+	}
+	n.addresses = nil
+	for _, a := range addresses {
+		n.addresses = append(n.addresses, net.JoinHostPort(a, n.port))
+	}
+	n.refresh = time.Now().Add(min(max(ttl, minUpstreamTTL), maxUpstreamTTL))
+	return n.addresses
+}
+
+// lookUp asks the bootstrap servers, in order, the IPv4 and IPv6 addresses of host, and returns
+// those of the first that answers each, and the shortest of their TTLs.
+func (s *Server) lookUp(host string) ([]string, time.Duration) {
+	var addresses []string
+	ttl := maxUpstreamTTL
+	for _, qtype := range []uint16{dns.TypeA, dns.TypeAAAA} {
+		for _, bootstrap := range s.config.Bootstrap {
+			m := new(dns.Msg)
+			m.SetQuestion(host, qtype)
+			m.SetEdns0(ednsSize, false)
+			resp, err := s.ask(m, "udp", bootstrap)
+			if err == nil && resp.Truncated {
+				resp, err = s.ask(m, "tcp", bootstrap)
+			}
+			if err != nil || resp.Rcode != dns.RcodeSuccess && resp.Rcode != dns.RcodeNameError {
+				continue
+			}
+			for _, rr := range resp.Answer {
+				var ip net.IP
+				switch rr := rr.(type) {
+				case *dns.A:
+					ip = rr.A
+				case *dns.AAAA:
+					ip = rr.AAAA
+				default:
+					continue
+				}
+				addresses = append(addresses, ip.String())
+				ttl = min(ttl, time.Duration(rr.Header().Ttl)*time.Second)
+			}
+			break
+		}
+	}
+	return addresses, ttl
 }
 
 // Start listens on every address of the configuration, over UDP and TCP, and answers there until
@@ -377,18 +474,27 @@ func reply(req *dns.Msg, rcode int) *dns.Msg {
 func (s *Server) exchange(q *dns.Msg) (*dns.Msg, error) {
 	errs := make([]error, 0, len(s.config.Upstreams))
 	for _, upstream := range s.config.Upstreams {
-		m := q.Copy()
-		m.Id = dns.Id()
-		resp, err := s.ask(m, "udp", upstream)
-		if err == nil && resp.Truncated {
-			resp, err = s.ask(m, "tcp", upstream)
-		}
-		if err != nil {
+		targets := s.targets(upstream)
+		if len(targets) == 0 {
 			s.failures[upstream].Add(1)
-			errs = append(errs, fmt.Errorf("%s: %w", upstream, err))
+			errs = append(errs, fmt.Errorf("%s: no address found by the bootstrap servers", upstream))
 			continue
 		}
-		return resp, nil
+		var failed []error
+		for _, target := range targets {
+			m := q.Copy()
+			m.Id = dns.Id()
+			resp, err := s.ask(m, "udp", target)
+			if err == nil && resp.Truncated {
+				resp, err = s.ask(m, "tcp", target)
+			}
+			if err == nil {
+				return resp, nil
+			}
+			failed = append(failed, fmt.Errorf("%s: %w", target, err))
+		}
+		s.failures[upstream].Add(1)
+		errs = append(errs, fmt.Errorf("%s: %w", upstream, errors.Join(failed...)))
 	}
 	return nil, errors.Join(errs...)
 }
@@ -433,7 +539,9 @@ type Status struct {
 	// The queries answered, by kind.
 	Queries map[string]uint64 `json:"queries"`
 	// The queries an upstream server didn't answer, by server.
-	UpstreamFailures map[string]uint64 `json:"upstream_failures"`
+	// The addresses the bootstrap servers found for the upstream servers given by host name.
+	UpstreamAddresses map[string][]string `json:"upstream_addresses,omitempty"`
+	UpstreamFailures  map[string]uint64   `json:"upstream_failures"`
 }
 
 func (s *Server) Status() Status {
@@ -468,6 +576,16 @@ func (s *Server) Status() Status {
 	}
 	for k, v := range s.failures {
 		status.UpstreamFailures[k] = v.Load()
+	}
+	for upstream, n := range s.named {
+		n.mutex.Lock()
+		if len(n.addresses) > 0 {
+			if status.UpstreamAddresses == nil {
+				status.UpstreamAddresses = make(map[string][]string)
+			}
+			status.UpstreamAddresses[upstream] = append([]string{}, n.addresses...)
+		}
+		n.mutex.Unlock()
 	}
 	return status
 }

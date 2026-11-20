@@ -35,8 +35,10 @@ type Config struct {
 	// The networks of the clients it answers. None: the networks of the machine's addresses it
 	// listens on, read when it starts.
 	Allow []netip.Prefix
-	// host:port, in order.
+	// host:port, in order: the host an address, or a host name, which Bootstrap finds.
 	Upstreams []string
+	// host:port, addresses: the servers asked the addresses of the upstreams given by host name.
+	Bootstrap []string
 	// Absolute, of no zone.
 	Records []dns.RR
 	// The text of each record, as written, for errors: or none.

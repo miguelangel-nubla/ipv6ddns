@@ -132,11 +132,35 @@ func TestResolverConfigErrors(t *testing.T) {
     listen: "192.168.1.0/33"
     upstream: 192.168.1.1`, homeCredential, nasTask,
 			`resolvers.lan.listen: "192.168.1.0/33": a network is as 10.2.3.0/24 or fd00::/64, and takes the default port`},
-		{"a host name upstream", `
+		{"a host name upstream without bootstrap", `
   lan:
     listen: 192.168.1.0/24
-    upstream: dns.google`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "dns.google": an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53: a host name would need a resolver to be found`},
+    upstream: [1.1.1.1, dns.google]`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one`},
+		{"a bootstrap with no host name to find", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: 1.1.1.1
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			"resolvers.lan.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out"},
+		{"a host name bootstrap", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: dns.google
+    bootstrap: dns.quad9.net`, homeCredential, nasTask,
+			`resolvers.lan.bootstrap: "dns.quad9.net": an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53`},
+		{"an upstream that is neither", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "dns google"
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "dns google": an address or a host name, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net`},
+		{"a host name upstream of port 0", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: dns.google:0
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "dns.google:0": an address or a host name, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net`},
 		{"a bad allow", lanResolver + `
     allow: [lan]`, homeCredential, nasTask,
 			`resolvers.lan.allow: "lan": a network, as 192.168.1.0/24 or fd00::/64, or an address`},
@@ -235,5 +259,24 @@ func TestResolverConfigErrors(t *testing.T) {
 				t.Errorf("got %v\nwant %s", err, c.want)
 			}
 		})
+	}
+}
+
+// Upstream servers by host name, with the bootstrap servers that find them.
+func TestResolverConfigHostNames(t *testing.T) {
+	cfg, err := resolverConfig(t, `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: [DNS.Example.NET., "dns.example.org:5353", 1.1.1.1]
+    bootstrap: [9.9.9.9, "[2620:fe::fe]:53"]`, homeCredential, nasTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := cfg.Resolvers["lan"].Spec
+	if want := "dns.example.net:53 dns.example.org:5353 1.1.1.1:53"; strings.Join(spec.Upstreams, " ") != want {
+		t.Errorf("upstreams: %v, want %s", spec.Upstreams, want)
+	}
+	if want := "9.9.9.9:53 [2620:fe::fe]:53"; strings.Join(spec.Bootstrap, " ") != want {
+		t.Errorf("bootstrap: %v, want %s", spec.Bootstrap, want)
 	}
 }

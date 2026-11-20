@@ -7,9 +7,11 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/miekg/dns"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
@@ -23,8 +25,12 @@ type Resolver struct {
 	// The networks, or addresses, of the clients it answers; any other is refused. Default: the
 	// networks of the machine's addresses it listens on.
 	Allow StringList `json:"allow,omitempty"`
-	// Required. The servers it asks what isn't its own, in order: addresses, with a port or not.
+	// Required. The servers it asks what isn't its own, in order: addresses or host names, with a
+	// port or not.
 	Upstream StringList `json:"upstream,omitempty"`
+	// The servers that find the addresses of the upstream servers given by host name, and nothing
+	// else: addresses, with a port or not. Required with a host name in Upstream, and only then.
+	Bootstrap StringList `json:"bootstrap,omitempty"`
 	// Records of names of no zone of its credentials, absolute, in the syntax of a zone file.
 	Records []string `json:"records,omitempty"`
 
@@ -99,12 +105,29 @@ func (c *Config) setUpResolvers() error {
 		if len(r.Upstream) == 0 {
 			return fmt.Errorf("%s.upstream: the servers the resolver asks what isn't its own are to be given, one or more", path)
 		}
+		named := ""
 		for _, u := range r.Upstream {
-			address, err := parseUpstream(u)
+			address, name, err := parseUpstream(u)
 			if err != nil {
 				return fmt.Errorf("%s.upstream: %w", path, err)
 			}
+			if name && named == "" {
+				named = u
+			}
 			spec.Upstreams = append(spec.Upstreams, address)
+		}
+		for _, b := range r.Bootstrap {
+			address, err := parseServerAddress(b)
+			if err != nil {
+				return fmt.Errorf("%s.bootstrap: %w", path, err)
+			}
+			spec.Bootstrap = append(spec.Bootstrap, address)
+		}
+		switch {
+		case named != "" && len(spec.Bootstrap) == 0:
+			return fmt.Errorf("%s.upstream: %q is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one", path, named)
+		case named == "" && len(spec.Bootstrap) > 0:
+			return fmt.Errorf("%s.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out", path)
 		}
 		for _, line := range r.Records {
 			rr, err := resolver.ParseRecord(line, "", resolver.DefaultTTL)
@@ -192,11 +215,35 @@ func parseNetwork(s string) (netip.Prefix, error) {
 	return netip.Prefix{}, fmt.Errorf("%q: a network, as 192.168.1.0/24 or fd00::/64, or an address", s)
 }
 
-// parseUpstream reads an upstream server: an address, with a port or not, as host:port.
-func parseUpstream(s string) (string, error) {
-	invalid := fmt.Errorf("%q: an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53: a host name would need a resolver to be found", s)
-	if a, err := netip.ParseAddr(strings.Trim(s, "[]")); err == nil {
-		return net.JoinHostPort(a.String(), resolver.DefaultPort), nil
+// parseUpstream reads an upstream server, as host:port: an address, or a host name, with a port
+// or not. It tells whether it is a host name.
+func parseUpstream(s string) (string, bool, error) {
+	if address, err := parseServerAddress(s); err == nil {
+		return address, false, nil
+	}
+	invalid := fmt.Errorf("%q: an address or a host name, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net", s)
+	host, port := s, resolver.DefaultPort
+	if h, p, err := net.SplitHostPort(s); err == nil {
+		host, port = h, p
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return "", false, invalid
+		}
+	}
+	host = strings.TrimSuffix(host, ".")
+	if _, ok := dns.IsDomainName(host); !ok || !strings.Contains(host, ".") || strings.ContainsAny(host, "[]:/ ") {
+		return "", false, invalid
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return "", false, invalid
+	}
+	return net.JoinHostPort(strings.ToLower(host), port), true, nil
+}
+
+// parseServerAddress reads a server's address, with a port or not, as host:port.
+func parseServerAddress(s string) (string, error) {
+	invalid := fmt.Errorf("%q: an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53", s)
+	if a, err := netip.ParseAddr(strings.Trim(s, "[]")); err == nil && a.Zone() == "" {
+		return net.JoinHostPort(a.Unmap().String(), resolver.DefaultPort), nil
 	}
 	ap, err := netip.ParseAddrPort(s)
 	if err != nil || ap.Port() == 0 {

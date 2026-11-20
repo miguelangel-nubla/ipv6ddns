@@ -235,7 +235,11 @@
                     },
                     "upstream": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The servers it asks what isn't its own, in order, each for 2s over UDP, and over TCP when the answer doesn't fit: addresses, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111]; without a port, 53. None answering is SERVFAIL."
+                        "description": "The servers it asks what isn't its own, in order, each for 2s over UDP, and over TCP when the answer doesn't fit: addresses or host names, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net; without a port, 53. A host name needs bootstrap. None answering is SERVFAIL."
+                    },
+                    "bootstrap": {
+                        "$ref": "#/$defs/stringList",
+                        "description": "With an upstream given by host name, and only then: the servers asked its addresses, and nothing else, in order: addresses, with a port or not. Not the system's resolver, which can be this one. The addresses found are kept for their TTL, a minute at least, an hour at most, and while these servers don't answer."
                     },
                     "records": {
                         "type": "array",

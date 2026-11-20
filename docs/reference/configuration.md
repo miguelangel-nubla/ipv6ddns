@@ -109,7 +109,8 @@ DNS servers for the clients of a network, by name: each answers the zones of its
 |---|---|---|
 | `listen` | list, or comma separated | **Required.** Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports: 192.168.1.0/24, 192.168.1.2, [fd00::2]:5353; without a port, 53. A port alone is every address of the machine, a public one on a router too: give the network of the clients. |
 | `allow` | list, or comma separated | The networks of the clients it answers, or their addresses: 192.168.1.0/24, fd00::/64. A query from any other is REFUSED. Default: the networks of the machine's addresses it listens on. |
-| `upstream` | list, or comma separated | **Required.** The servers it asks what isn't its own, in order, each for 2s over UDP, and over TCP when the answer doesn't fit: addresses, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111]; without a port, 53. None answering is SERVFAIL. |
+| `upstream` | list, or comma separated | **Required.** The servers it asks what isn't its own, in order, each for 2s over UDP, and over TCP when the answer doesn't fit: addresses or host names, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net; without a port, 53. A host name needs bootstrap. None answering is SERVFAIL. |
+| `bootstrap` | list, or comma separated | With an upstream given by host name, and only then: the servers asked its addresses, and nothing else, in order: addresses, with a port or not. Not the system's resolver, which can be this one. The addresses found are kept for their TTL, a minute at least, an hour at most, and while these servers don't answer. |
 | `records` | list of string | Records of names of none of its zones, one per entry, in the syntax of a zone file, every name absolute, with its trailing dot: www.example.com. CNAME nas.home.arpa. A record without a TTL has 1m. |
 
 ## Sources

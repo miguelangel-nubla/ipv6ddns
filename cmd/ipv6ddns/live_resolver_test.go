@@ -375,3 +375,57 @@ tasks:
 		t.Errorf("the first, after: %s", d)
 	}
 }
+
+// An upstream server given by host name: the bootstrap server, on a machine of its own, tells its
+// address, and the queries forwarded go there. Once found, it is still asked while the bootstrap
+// server is down.
+func TestLiveResolverUpstreamByName(t *testing.T) {
+	if _, err := exec.LookPath("dig"); err != nil {
+		t.Fatal("the live tests of the resolver ask it with dig, of bind9-dnsutils: not found")
+	}
+	lan := livetest.NewLAN(t, 16)
+	srv := lan.Machine(t, "srv", 10)
+	client := lan.Machine(t, "client", 30)
+	up := lan.Machine(t, "up", 40)
+	boot := lan.Machine(t, "boot", 41)
+	upstream := startUpstream(t, up, "192.0.2.53")
+	// It answers every A query with the upstream's address: dns.upstream.test's too.
+	bootstrap := startUpstream(t, boot, up.IPv4.String())
+
+	config := fmt.Sprintf(`
+webserver:
+  listen: [8053]
+resolvers:
+  lan:
+    listen: 198.18.16.0/24
+    upstream: dns.upstream.test
+    bootstrap: %s
+credentials: {}
+tasks: {}
+`, boot.IPv4)
+	configure(t, srv, lan.Router, "srv", 8053, config).start().serving()
+	server := srv.IPv4.String()
+
+	for i := range 3 {
+		d := dig(t, client, server, "example.org", "A")
+		if d.status != "NOERROR" || !slices.Equal(d.data("A"), []string{"192.0.2.53"}) {
+			t.Fatalf("query %d, forwarded to the upstream by name: %s", i, d)
+		}
+	}
+	if got := upstream.udp.Load(); got != 3 {
+		t.Errorf("the upstream was asked %d times, want 3", got)
+	}
+	// Its A and AAAA, once: the answer's TTL, 30s, is kept a minute.
+	if got := bootstrap.udp.Load(); got != 2 {
+		t.Errorf("the bootstrap server was asked %d times, want 2", got)
+	}
+
+	bootstrap.mode.Store("down")
+	if d := dig(t, client, server, "example.net", "A"); d.status != "NOERROR" || !slices.Equal(d.data("A"), []string{"192.0.2.53"}) {
+		t.Errorf("the bootstrap server down, the upstream found before: %s", d)
+	}
+	// What the bootstrap server is for alone: a name asked of the resolver isn't sent there.
+	if got := bootstrap.udp.Load(); got != 2 {
+		t.Errorf("the bootstrap server was asked %d times, want still 2", got)
+	}
+}

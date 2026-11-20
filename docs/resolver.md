@@ -39,7 +39,16 @@ The keys are in the reference: [`resolvers`](reference/configuration.md#resolver
 
 - **`listen`**, required, is where it answers, over UDP and TCP, as [`webserver.listen`](installation.md#the-web-report) takes it: a network, as `192.168.1.0/24`, for each address of the machine in it; an address, as `192.168.1.2` or `[fd00::2]:5353`; a host name; or a port alone, for every address of the machine. Without a port, 53. A port alone, on a router, is its public address too: give the network of the clients instead.
 - **`allow`** is the networks, or addresses, of the clients it answers. A query from any other is `REFUSED`. By default, the networks of the machine's addresses it listens on: `192.168.1.0/24` above, as the machine's interface has it; with a port alone, every network of the machine.
-- **`upstream`**, required, one or more, is the servers it asks what isn't its own: addresses, with a port or not, as `192.168.1.1`, `1.1.1.1:53` or `[2606:4700:4700::1111]`, over plain DNS. A host name isn't taken: it would need a resolver to be found.
+- **`upstream`**, required, one or more, is the servers it asks what isn't its own: addresses or host names, with a port or not, as `192.168.1.1`, `1.1.1.1:53`, `[2606:4700:4700::1111]` or `dns.example.net`, over plain DNS.
+- **`bootstrap`**, with an upstream given by host name and only then, is the servers that find its addresses, and are asked nothing else: addresses, with a port or not. Not the system's resolver, which may be this very one, asking itself. The addresses found, IPv4 and IPv6, are asked in turn as one upstream server; they are kept for as long as the answer says, a minute at least and an hour at most, and while the bootstrap servers don't answer, asked again every 10 seconds then. An upstream they never found is passed over, as one that is down.
+
+```yaml
+resolvers:
+  lan:
+    listen: 192.168.1.0/24
+    upstream: [dns.example.net, 1.1.1.1]
+    bootstrap: [9.9.9.9]
+```
 - **`records`** are records of names of none of its zones, as a name of a public domain that the LAN reaches at a local address. Each name is absolute, with its trailing dot, its targets too.
 
 ## A zone
@@ -82,7 +91,7 @@ In order:
 
 1. A client outside `allow` is refused: `REFUSED`, and nothing is asked upstream.
 2. A name of the resolver's `records` is answered from them.
-3. A name of a zone, that of the zone with the longest suffix, as `printer.lab.home.arpa` of `lab.home.arpa` before `home.arpa`, is answered when a task publishes it or a record has it: the task's current addresses, as A and AAAA, or the records of its type. Answers of a zone are authoritative, `AA`.
+3. A name of a zone, that of the deepest zone that holds it, the one of the most labels, as `printer.lab.home.arpa` of `lab.home.arpa` before `home.arpa`, while `printer.home.arpa` is of `home.arpa`, is answered when a task publishes it or a record has it: the task's current addresses, as A and AAAA, or the records of its type. Answers of a zone are authoritative, `AA`.
    - Of another type, or of a task's name with no address yet, or no more, the answer is that there is none: `NOERROR`, empty, with an SOA of the zone, which the resolver makes, whose 10 seconds are how long a client keeps it. A host that shows has its name a moment after.
    - A wildcard, `*.dev`, answers any name under `dev` that has nothing of its own, and that has no name in between with something: `a.dev` and `a.b.dev`, but not `a.b.dev` when `b.dev`, or a name under it, has records. The answer has the name asked.
 4. Anything else, a name that a zone doesn't have as well as one of no zone, is forwarded to the upstream servers in order, each given 2 seconds, and over TCP when its answer over UDP doesn't fit; the first answer, whatever its code, is relayed as it is, with the client's id, and the client's EDNS, its size and its DO bit, went up with the query. None answering is `SERVFAIL`. Nothing is cached: every query is asked again.
@@ -101,7 +110,9 @@ They are checked at the start: a mistake stops it, saying where it is.
 |---|---|
 | A resolver without `listen` | `resolvers.lan.listen: where the resolver answers is to be given: the network of its clients, as 192.168.1.0/24, for the machine's address in it, or that address; without a port, 53` |
 | A resolver without `upstream` | `resolvers.lan.upstream: the servers the resolver asks what isn't its own are to be given, one or more, as 192.168.1.1 or 1.1.1.1:53: without them, it would answer no other name` |
-| An upstream that is a host name | `resolvers.lan.upstream: "dns.google": an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53: a host name would need a resolver to be found` |
+| An upstream by host name, without `bootstrap` | `resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one` |
+| A `bootstrap` with no upstream by host name | `resolvers.lan.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out` |
+| A `bootstrap` server by host name | `resolvers.lan.bootstrap: "dns.quad9.net": an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53` |
 | A credential whose `resolver` is no resolver | `credentials.home.settings.resolver: wan is no resolver: they are lan` |
 | A credential without `resolver`, with two resolvers | `credentials.home.settings.resolver: which resolver answers the zone is to be said, of lab, lan` |
 | A credential, with no resolver at all | `credentials.home: the provider resolver is a zone that a resolver answers, and there is none: add one to resolvers, with where it listens and the servers it asks` |
@@ -121,7 +132,7 @@ Two resolvers whose entries are two spellings of one address, as a network and t
 
 The resolvers start with the rest, before discovery: one that can't listen on one of its addresses stops the start, as the web server does, and nothing of it is left listening. They stop with the rest, at `SIGINT` or `SIGTERM`, the queries being answered first.
 
-The [web report](installation.md#the-web-report) shows each resolver, where it listens, whom it answers and how many queries of each kind; `/status.json` has them under `resolvers`; `/metrics` has `ipv6ddns_resolver_queries_total`, by `kind`, `local`, `nodata`, `forwarded`, `refused` and `servfail`, `ipv6ddns_resolver_upstream_failures_total`, by `upstream`, and `ipv6ddns_resolver_serving`. `/healthz` fails, with 503, while a resolver isn't serving.
+The [web report](installation.md#the-web-report) shows each resolver, where it listens, whom it answers and how many queries of each kind; `/status.json` has them under `resolvers`, with the addresses the bootstrap servers found for each upstream given by host name, `upstream_addresses`; `/metrics` has `ipv6ddns_resolver_queries_total`, by `kind`, `local`, `nodata`, `forwarded`, `refused` and `servfail`, `ipv6ddns_resolver_upstream_failures_total`, by `upstream`, and `ipv6ddns_resolver_serving`. `/healthz` fails, with 503, while a resolver isn't serving.
 
 ## Port 53
 
