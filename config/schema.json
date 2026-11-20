@@ -383,7 +383,16 @@
                 "key": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9+/]{43}=$",
-                    "description": "The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change. Without it, Home Assistant makes the key and gives it, as to ESPHome's devices: it is kept in state_file."
+                    "description": "The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change: nothing is written. Make one with openssl rand -base64 32. This, or key_provisioning: true."
+                },
+                "key_provisioning": {
+                    "type": "boolean",
+                    "description": "Whether Home Assistant makes the key and gives it when adding the device, as to ESPHome's devices: it is kept in key_provisioning_state_file. Default: false, and the block needs a key."
+                },
+                "key_provisioning_state_file": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "With key_provisioning: true, and only then: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. One for each instance: another with a state file that is in use doesn't start. Deleting it makes the device a new one, without a key."
                 },
                 "name": {
                     "type": "string",
@@ -408,11 +417,33 @@
                 "listen": {
                     "$ref": "#/$defs/stringList",
                     "description": "Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. It announces the port it listens on, one: entries of several ports need announce: false. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on."
-                },
-                "state_file": {
-                    "type": "string",
-                    "minLength": 1,
-                    "description": "Without a key: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. One for each instance: another with a state file that is in use doesn't start. Deleting it makes the device a new one, without a key."
+                }
+            },
+            "if": {
+                "required": [
+                    "key_provisioning"
+                ],
+                "properties": {
+                    "key_provisioning": {
+                        "const": true
+                    }
+                }
+            },
+            "then": {
+                "not": {
+                    "required": [
+                        "key"
+                    ]
+                }
+            },
+            "else": {
+                "required": [
+                    "key"
+                ],
+                "not": {
+                    "required": [
+                        "key_provisioning_state_file"
+                    ]
                 }
             }
         }

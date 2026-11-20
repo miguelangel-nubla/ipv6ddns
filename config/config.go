@@ -351,6 +351,9 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 
+	if err := checkHomeAssistantKey(byteValue); err != nil {
+		return config, err
+	}
 	if err := validateConfig(byteValue); err != nil {
 		return config, err
 	}

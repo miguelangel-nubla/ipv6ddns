@@ -63,9 +63,9 @@ type nameEntities struct {
 	problem               *esphome.BinarySensor
 }
 
-// newHomeAssistant makes the device: with the configuration's key, fixed, its MAC from it; or with
-// the state file, its MAC from the identity kept there, and the key Home Assistant gives kept there.
-// baseDir is the configuration's folder, which a relative state file is in.
+// newHomeAssistant makes the device: with the configuration's key, fixed, its MAC from it; or, with
+// key provisioning, its MAC from the identity kept in the state file, and the key Home Assistant
+// gives kept there. baseDir is the configuration's folder, which a relative state file is in.
 func newHomeAssistant(cfg config.HomeAssistant, baseDir string) (*homeAssistant, error) {
 	device := &esphome.Device{
 		Name: cfg.Name, FriendlyName: cfg.FriendlyName,
@@ -73,14 +73,14 @@ func newHomeAssistant(cfg config.HomeAssistant, baseDir string) (*homeAssistant,
 		Project: "miguelangel-nubla.ipv6ddns", ProjectVersion: Version,
 	}
 	stateFile := ""
-	if cfg.Key != "" {
+	if !cfg.KeyProvisioning {
 		key, err := esphome.ParseKey(cfg.Key)
 		if err != nil {
 			return nil, err
 		}
 		device.Key, device.MAC = key, esphome.MACFrom(key)
 	} else {
-		path := cfg.StateFile
+		path := cfg.KeyProvisioningStateFile
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(baseDir, path)
 		}
@@ -136,7 +136,7 @@ func loadDeviceState(path string) (*deviceState, error) {
 		state.Identity = make([]byte, 32)
 		rand.Read(state.Identity)
 		if err := state.save(path); err != nil {
-			return nil, fmt.Errorf("%w: without a key in the configuration, the key Home Assistant gives is kept there; set state_file to a file ipv6ddns can write", err)
+			return nil, fmt.Errorf("%w: with key_provisioning, the key Home Assistant gives is kept there; set key_provisioning_state_file to a file ipv6ddns can write, or give a key instead", err)
 		}
 		return &state, nil
 	default:
@@ -157,7 +157,7 @@ func (h *homeAssistant) lockState() (release func(), err error) {
 	}
 	release, err = lockFile(h.stateFile + ".lock")
 	if errors.Is(err, errLocked) {
-		return nil, fmt.Errorf("homeassistant: the state file %s is that of another ipv6ddns running: each instance is a device of its own, with its own state_file, and its own name", h.stateFile)
+		return nil, fmt.Errorf("homeassistant: the state file %s is that of another ipv6ddns running: each instance is a device of its own, with its own key_provisioning_state_file, and its own name", h.stateFile)
 	}
 	if err != nil {
 		// No lock to take, as beside a state file that is there in a folder that can't be

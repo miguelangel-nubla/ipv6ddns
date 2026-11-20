@@ -136,11 +136,11 @@ func TestHomeAssistantIntegration(t *testing.T) {
 	}
 }
 
-// Without a key, the device keeps its identity, and the key Home Assistant gives, in its state file:
+// With key provisioning, the device keeps its identity, and the key Home Assistant gives, in its state file:
 // the same device, with its key, after a restart.
 func TestHomeAssistantState(t *testing.T) {
 	dir := t.TempDir()
-	cfg := config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "ipv6ddns", Port: 6053, StateFile: "homeassistant.state"}
+	cfg := config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "ipv6ddns", Port: 6053, KeyProvisioning: true, KeyProvisioningStateFile: "homeassistant.state"}
 	h, err := newHomeAssistant(cfg, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestHomeAssistantState(t *testing.T) {
 	// A state file it can't write is an error at the start.
 	os.Chmod(dir, 0o500)
 	defer os.Chmod(dir, 0o700)
-	if _, err := newHomeAssistant(config.HomeAssistant{StateFile: "other.state"}, dir); err == nil && os.Geteuid() != 0 {
+	if _, err := newHomeAssistant(config.HomeAssistant{KeyProvisioning: true, KeyProvisioningStateFile: "other.state"}, dir); err == nil && os.Geteuid() != 0 {
 		t.Error("an unwritable state file: no error")
 	}
 }
@@ -211,7 +211,7 @@ func TestDeviceAnnounces(t *testing.T) {
 	if lo == nil {
 		t.Skip("no loopback interface with multicast")
 	}
-	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-announce-test", FriendlyName: "test", Port: 16099, StateFile: "s"}, t.TempDir())
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-announce-test", FriendlyName: "test", Port: 16099, KeyProvisioning: true, KeyProvisioningStateFile: "s"}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestDeviceAnnounces(t *testing.T) {
 // With listen, the device takes connections at those addresses only.
 func TestHomeAssistantListens(t *testing.T) {
 	port := freePort(t)
-	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-listen-test", FriendlyName: "test", Port: port, StateFile: "s",
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-listen-test", FriendlyName: "test", Port: port, KeyProvisioning: true, KeyProvisioningStateFile: "s",
 		Announce: new(bool), Entries: []listen.Entry{{Network: netip.MustParsePrefix("127.0.0.1/32"), Port: strconv.Itoa(port)}}}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestHomeAssistantListens(t *testing.T) {
 // The states are those of Home Assistant's connection of now: one of an earlier connection, which
 // Home Assistant doesn't send again, its entity gone meanwhile, is none, and an error in time.
 func TestHomeAssistantStatesOfAConnection(t *testing.T) {
-	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: 6053, StateFile: "s"}, t.TempDir())
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: 6053, KeyProvisioning: true, KeyProvisioningStateFile: "s"}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestEntityIDs(t *testing.T) {
 		t.Errorf("another order: %s, was %s", again[haName{"cf", "a-b", ""}], bases[haName{"cf", "a-b", ""}])
 	}
 
-	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: 6053, StateFile: "s"}, t.TempDir())
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: 6053, KeyProvisioning: true, KeyProvisioningStateFile: "s"}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +387,7 @@ func TestAddressesState(t *testing.T) {
 // waits for the announcement to be taken back, and for the connections.
 func TestHomeAssistantAnnouncesItsPort(t *testing.T) {
 	port := freePort(t)
-	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-port-test", FriendlyName: "test", Port: 6053, StateFile: "s",
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns-port-test", FriendlyName: "test", Port: 6053, KeyProvisioning: true, KeyProvisioningStateFile: "s",
 		Entries: []listen.Entry{{Host: "127.0.0.1", Port: strconv.Itoa(port)}}}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -445,7 +445,7 @@ func TestHomeAssistantStateFileCorrupt(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "homeassistant.state")
 		os.WriteFile(path, []byte(content), 0o600)
-		if _, err := newHomeAssistant(config.HomeAssistant{StateFile: "homeassistant.state"}, dir); err == nil || !strings.Contains(err.Error(), "isn't one") {
+		if _, err := newHomeAssistant(config.HomeAssistant{KeyProvisioning: true, KeyProvisioningStateFile: "homeassistant.state"}, dir); err == nil || !strings.Contains(err.Error(), "isn't one") {
 			t.Errorf("%s: %v, want an error", name, err)
 		}
 		if after, _ := os.ReadFile(path); string(after) != content {
@@ -494,7 +494,7 @@ func TestHomeAssistantStateFileOfOne(t *testing.T) {
 	dir := t.TempDir()
 	device := func(port int) *homeAssistant {
 		announce := false
-		h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: port, StateFile: "homeassistant.state", Announce: &announce,
+		h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Port: port, KeyProvisioning: true, KeyProvisioningStateFile: "homeassistant.state", Announce: &announce,
 			Entries: []listen.Entry{{Host: "127.0.0.1", Port: strconv.Itoa(port)}}}, dir)
 		if err != nil {
 			t.Fatal(err)
@@ -539,7 +539,7 @@ func TestHomeAssistantStateFileReadOnlyFolder(t *testing.T) {
 	dir := t.TempDir()
 	announce := false
 	port := strconv.Itoa(freePort(t))
-	cfg := config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", StateFile: "homeassistant.state", Announce: &announce,
+	cfg := config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", KeyProvisioning: true, KeyProvisioningStateFile: "homeassistant.state", Announce: &announce,
 		Entries: []listen.Entry{{Host: "127.0.0.1", Port: port}}}
 	if _, err := newHomeAssistant(cfg, dir); err != nil {
 		t.Fatal(err)
@@ -561,5 +561,27 @@ func TestHomeAssistantStateFileReadOnlyFolder(t *testing.T) {
 	running.Wait()
 	if _, err := os.Stat(filepath.Join(dir, "homeassistant.state.lock")); err == nil {
 		t.Error("a lock file was made in a folder that can't be written")
+	}
+}
+
+// With a key of its own, the device writes nothing: it serves, and its folder, the configuration's,
+// is as it was, with no state file and no lock file.
+func TestHomeAssistantKeyWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	announce := false
+	h, err := newHomeAssistant(config.HomeAssistant{Name: "ipv6ddns", FriendlyName: "test", Key: esphome.GenerateKey(), Announce: &announce,
+		Entries: []listen.Entry{{Host: "127.0.0.1", Port: strconv.Itoa(freePort(t))}}}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var running sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := h.serve(ctx, &running, nil, nil, t.Errorf); err != nil {
+		t.Errorf("with a key, the device doesn't serve: %v", err)
+	}
+	cancel()
+	running.Wait()
+	if files, err := os.ReadDir(dir); err != nil || len(files) > 0 {
+		t.Errorf("with a key, the device wrote in its folder: %v, %v", files, err)
 	}
 }

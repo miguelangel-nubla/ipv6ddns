@@ -70,7 +70,8 @@ webserver:
 homeassistant:
   name: ipv6ddns-two
   friendly_name: The second
-  state_file: two.state
+  key_provisioning: true
+  key_provisioning_state_file: two.state
   listen: "%s:6054"
 discovery:
   rediscover: 4s
@@ -233,6 +234,7 @@ webserver:
 homeassistant:
   name: ipv6ddns-three
   port: %d
+  key_provisioning: true
 discovery:
   rediscover: 3s
 tasks:
@@ -355,6 +357,7 @@ webserver:
   listen: [%d]
 homeassistant:
   port: %d
+  key_provisioning: true
 %s
 tasks:
   machine:

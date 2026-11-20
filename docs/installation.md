@@ -40,6 +40,15 @@ services:
 
 The health check needs the web server reachable at `127.0.0.1:8053`: `webserver.listen` `8053`, `:8053` or `127.0.0.1:8053`. The image has `bash`, `curl`, `jq`, `dig` and `ip` for the scripts of [command sources](sources.md).
 
+As a device of [Home Assistant](home-assistant-integration.md), give it the device's key yourself: made once with `openssl rand -base64 32`, in the container's environment, as `HOMEASSISTANT_KEY: ${HOMEASSISTANT_KEY}` beside the token.
+
+```yaml
+homeassistant:
+  key: ${HOMEASSISTANT_KEY}
+```
+
+Nothing is written then: the configuration stays mounted read-only, and the container needs no volume for data. With `key_provisioning: true` instead, the key Home Assistant gives is kept in a file beside the configuration, which is gone with the container unless that folder is a volume it can write: see [the key](home-assistant-integration.md#the-key).
+
 ## Flags
 
 | Flag | |
@@ -96,7 +105,7 @@ What two configurations would both take has to differ:
 |---|---|---|
 | [`webserver.listen`](#the-web-report) | Its own port, or address | The one started second doesn't start: `address already in use`, with the address |
 | [`homeassistant`](home-assistant-integration.md#several-devices) `port`, or `listen` | Its own port, when both have the block: 6053 by default | The same |
-| `homeassistant.state_file`, without a `key` | Its own file: by default `homeassistant.state` beside the configuration, so two configurations in one folder name theirs | The one started second doesn't start, and says which file |
+| `homeassistant.key_provisioning_state_file`, with `key_provisioning: true` | Its own file: by default `homeassistant.state` beside the configuration, so two configurations in one folder name theirs. None with a `key` | The one started second doesn't start, and says which file |
 | `homeassistant.name` | Its own name: `ipv6ddns` by default | The one started second runs, but isn't announced to Home Assistant, and logs why |
 | `-live` | Its own terminal | |
 

@@ -18,26 +18,26 @@ var (
 	envRef    = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 )
 
-// The add-on's starting configuration loads, and says nothing deprecated; and so does its example,
+// The add-on's starting configuration loads, and says nothing deprecated: its device is one
+// Home Assistant gives the key, kept in the add-on's folder, which stays. And so does its example,
 // uncommented.
 func TestAddonStarterConfig(t *testing.T) {
 	path := filepath.Join("..", "..", "homeassistant", "starter.config.yaml")
-	// As the add-on's start leaves it: the key beside the configuration.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "homeassistant.key"), []byte(esphome.GenerateKey()+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	starter := filepath.Join(dir, "config.yaml")
+	// As the add-on's start leaves it: alone in its folder.
+	starter := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(starter, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.NewConfig(starter)
 	if err != nil || len(cfg.Warnings) > 0 {
-		t.Errorf("%v, warnings %v", err, cfg.Warnings)
+		t.Fatalf("%v, warnings %v", err, cfg.Warnings)
+	}
+	if h := cfg.HomeAssistant; h == nil || !h.KeyProvisioning || h.Key != "" || h.KeyProvisioningStateFile != "homeassistant.state" {
+		t.Errorf("the device isn't one Home Assistant gives the key, kept in homeassistant.state: %+v", h)
 	}
 
 	// The example: the commented lines after the one that ends with "At Cloudflare:", up to the
@@ -109,8 +109,13 @@ func TestDocExamples(t *testing.T) {
 			if !regexp.MustCompile(`(?m)^credentials:`).MatchString(block) {
 				block += "\ncredentials: {}\n"
 			}
+			// A variable of the environment: a value, or a key in a key's.
 			for _, ref := range envRef.FindAllStringSubmatch(block, -1) {
-				t.Setenv(ref[1], "example")
+				value := "example"
+				if strings.HasSuffix(ref[1], "_KEY") {
+					value = esphome.GenerateKey()
+				}
+				t.Setenv(ref[1], value)
 			}
 			// A file a ${file:...} names: beside the configuration when relative, with a key in a
 			// key's, as the add-on makes it; an absolute one, a value.

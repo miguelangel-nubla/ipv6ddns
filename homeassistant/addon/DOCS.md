@@ -81,14 +81,28 @@ a local DNS, its LAN address: `self: true` with `ip: {family: [4], type:
 ## In Home Assistant
 
 The starting configuration makes ipv6ddns a device of Home Assistant's ESPHome
-integration: Home Assistant finds it under *Settings → Devices & services →
-Discovered*. Add it: Home Assistant makes its encryption key and gives it, as to
-ESPHome's devices, and the add-on keeps it in `homeassistant.state` in its
-folder. It shows each name's addresses,
+integration, with `key_provisioning: true`: Home Assistant finds it under
+*Settings → Devices & services → Discovered*. Add it: Home Assistant makes its
+encryption key and gives it, as to ESPHome's devices, and the add-on keeps it in
+`homeassistant.state` in its folder, which stays through restarts and updates.
+It shows each name's addresses,
 last update and update problems, and the hosts discovered, with a button to
 update now; and `homeassistant` sources read your entities, as a router's WAN
 address. See the
 [integration](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/home-assistant-integration.md).
+
+A `config.yaml` from before `key_provisioning`, up to v0.22.3, has
+`homeassistant: {}`, and the add-on doesn't start with it: its log says the
+device needs its key. The add-on leaves your `config.yaml` as it is: change
+those lines yourself, to
+
+```yaml
+homeassistant:
+  key_provisioning: true
+```
+
+and restart the add-on. It reads the `homeassistant.state` it has: the device,
+its key and its entities stay as they were in Home Assistant.
 
 ## The add-on's page
 

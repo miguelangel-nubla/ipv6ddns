@@ -43,8 +43,10 @@ credentials: {}
 
 # ipv6ddns as a device of Home Assistant's ESPHome integration: Home Assistant finds it, and shows
 # each name's addresses, last update and problems, with a button to update now; and homeassistant
-# sources read its entities. Home Assistant gives it its encryption key, kept in homeassistant.state.
-homeassistant: {}
+# sources read its entities. With key_provisioning, Home Assistant gives it its encryption key when
+# you add it, kept in homeassistant.state in this folder.
+homeassistant:
+  key_provisioning: true
 
 discovery:
   # Home Assistant's own containers, on its bridges, aren't hosts of the network.

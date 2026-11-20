@@ -46,6 +46,7 @@ type node struct {
 	AdditionalProperties any              `json:"additionalProperties"`
 	Items                *node            `json:"items"`
 	OneOf                []*node          `json:"oneOf"`
+	If                   *node            `json:"if"`
 	Else                 *node            `json:"else"`
 	Defs                 map[string]*node `json:"$defs"`
 }
@@ -170,8 +171,10 @@ func table(b *strings.Builder, n *node, keys []string, defs map[string]*node, de
 		switch {
 		case slices.Contains(n.Required, key):
 			desc = "**Required.** " + desc
-		case n.Else != nil && slices.Contains(n.Else.Required, key):
-			desc = "**Required**, without `params`. " + desc
+		// What an object needs without the key its condition is of: a plugin's fields without
+		// params, the Home Assistant device's key without key_provisioning.
+		case n.If != nil && len(n.If.Required) == 1 && n.Else != nil && slices.Contains(n.Else.Required, key):
+			desc = fmt.Sprintf("**Required**, without `%s`. %s", n.If.Required[0], desc)
 		}
 		fmt.Fprintf(b, "| `%s` | %s | %s |\n", key, cell(typeOf(p, defs)), cell(desc))
 	}
