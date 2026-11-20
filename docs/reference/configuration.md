@@ -10,6 +10,7 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 |---|---|---|
 | `tasks` | object | **Required.** The host names to keep, by task name: the addresses its filters match, and those of the sources it names, go to the host names of its endpoints. |
 | `credentials` | object | **Required.** The DNS providers to update, by credential name, which tasks' endpoints name. |
+| `resolvers` | object | DNS servers for the clients of a network, by name: each answers the zones of its resolver credentials, with the addresses the tasks give their names, and records of its own, and asks its upstream servers the rest. See the [resolver](../resolver.md). |
 | `discovery` | object | How hosts are discovered: on the local links, and by plugins reading routers' tables. |
 | `sources` | object | Sources of addresses without a MAC, as the network's public IPv4, by name, which tasks name in their sources. |
 | `lifetime` | duration | How long a discovered address stays after it was last seen, unless its family says. Default: 1h. The -lifetime flag, given, wins. |
@@ -93,10 +94,23 @@ The DNS providers to update, by credential name, which tasks' endpoints name. Th
 |---|---|---|
 | `provider` | string | **Required.** The DNS provider: see the providers reference. |
 | `settings` | object | **Required.** The provider's settings: see the providers reference. An unknown one is an error. |
-| `debounce` | duration | How long to wait for more changes before updating. Default: 10s. |
+| `debounce` | duration | How long to wait for more changes before updating. Default: 10s. A resolver credential's: none, as its updates are kept in memory, at once. |
 | `retry` | duration | How long to wait before retrying a failed update: addresses that change meanwhile wait for it too. At least 1s. Default: 1m. |
 | `debounce_time` | duration | Deprecated, and goes in v1.0: debounce. |
 | `retry_time` | duration | Deprecated, and goes in v1.0: retry. |
+
+## Resolvers
+
+`resolvers.<name>`
+
+DNS servers for the clients of a network, by name: each answers the zones of its resolver credentials, with the addresses the tasks give their names, and records of its own, and asks its upstream servers the rest. See the [resolver](../resolver.md).
+
+| Key | Takes | |
+|---|---|---|
+| `listen` | list, or comma separated | **Required.** Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports: 192.168.1.0/24, 192.168.1.2, [fd00::2]:5353; without a port, 53. A port alone is every address of the machine, a public one on a router too: give the network of the clients. |
+| `allow` | list, or comma separated | The networks of the clients it answers, or their addresses: 192.168.1.0/24, fd00::/64. A query from any other is REFUSED. Default: the networks of the machine's addresses it listens on. |
+| `upstream` | list, or comma separated | **Required.** The servers it asks what isn't its own, in order, each for 2s over UDP, and over TCP when the answer doesn't fit: addresses, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111]; without a port, 53. None answering is SERVFAIL. |
+| `records` | list of string | Records of names of none of its zones, one per entry, in the syntax of a zone file, every name absolute, with its trailing dot: www.example.com. CNAME nas.home.arpa. A record without a TTL has 1m. |
 
 ## Sources
 

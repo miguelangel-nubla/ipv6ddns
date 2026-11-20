@@ -219,3 +219,28 @@ func TestWebserverDefaultPort(t *testing.T) {
 		}
 	}
 }
+
+// /healthz fails while a resolver doesn't answer: here, one never started.
+func TestHealthzResolver(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	os.WriteFile(path, []byte(`
+resolvers:
+  lan: {listen: 192.0.2.1, upstream: 192.0.2.53}
+credentials:
+  home: {provider: resolver, settings: {zone: home.arpa}}
+tasks: {}
+`), 0o600)
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	webHandler(worker).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if response.Code != http.StatusServiceUnavailable || response.Body.String() != "resolver lan isn't serving: not started\n" {
+		t.Errorf("%d %q", response.Code, response.Body.String())
+	}
+}

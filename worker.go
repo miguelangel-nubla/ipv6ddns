@@ -13,6 +13,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
@@ -39,6 +40,8 @@ type Worker struct {
 	homeAssistant *homeAssistant
 	// The goroutines Start starts, for Shutdown.
 	running sync.WaitGroup
+	// The resolvers, by name's order.
+	resolvers []*resolver.Server
 	// Start was called: a second one would run every source and the matching twice.
 	started atomic.Bool
 }
@@ -138,6 +141,29 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		w.homeAssistant.addEntities(names, w.updateNow)
 	}
 
+	// The resolvers, each with the addresses of its zones' endpoints: a zone no task names has its
+	// records still.
+	for _, name := range slices.Sorted(maps.Keys(cfg.Resolvers)) {
+		spec := cfg.Resolvers[name].Spec
+		spec.Zones = slices.Clone(spec.Zones)
+		for i, z := range spec.Zones {
+			endpoint, err := w.endpoint(z.Credential)
+			if err != nil {
+				return nil, err
+			}
+			service, ok := endpoint.Service.(*ddns.Resolver)
+			if !ok {
+				return nil, fmt.Errorf("credential %s: not a resolver's zone", z.Credential)
+			}
+			spec.Zones[i].Addresses = service.Addresses()
+		}
+		server, err := resolver.New(spec, logger.Errorf)
+		if err != nil {
+			return nil, err
+		}
+		w.resolvers = append(w.resolvers, server)
+	}
+
 	// The credentials no task names are checked too: a mistake shows at the start.
 	for _, name := range slices.Sorted(maps.Keys(cfg.Credentials)) {
 		credential := cfg.Credentials[name]
@@ -231,6 +257,29 @@ func (w *Worker) Start(ctx context.Context) error {
 	}
 	for _, warning := range w.config.Warnings {
 		w.logger.Warn(warning)
+	}
+
+	// The resolvers first: one that can't listen stops the start, as the web server's address.
+	for i, r := range w.resolvers {
+		if err := r.Start(); err != nil {
+			for _, started := range w.resolvers[:i] {
+				started.Shutdown(context.Background())
+			}
+			return err
+		}
+		w.logger.Infof("resolver %s listening on %s", r.Status().Name, strings.Join(r.Addresses(), ", "))
+	}
+	if len(w.resolvers) > 0 {
+		w.running.Add(1)
+		go func() {
+			defer w.running.Done()
+			<-ctx.Done()
+			stopping, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			for _, r := range w.resolvers {
+				r.Shutdown(stopping)
+			}
+		}()
 	}
 
 	// Without plugins nor a family listening, there is nothing to discover: the names get the
@@ -379,8 +428,44 @@ func (w *Worker) matching(tasks []config.Task, discovered []*ipv6disc.Addr) *ipv
 func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
 	fmt.Fprint(&result, w.State.PrettyPrint(prefix, hideSensible))
+	fmt.Fprint(&result, w.prettyPrintResolvers(prefix))
 	fmt.Fprint(&result, w.discWorker.State.PrettyPrint(prefix, hideSensible))
 	fmt.Fprint(&result, w.discWorker.PrettyPrintStats(prefix))
 	fmt.Fprint(&result, w.config.PrettyPrint(prefix, hideSensible))
+	return result.String()
+}
+
+// prettyPrintResolvers tells, of each resolver, where it listens, whom it answers, and what it
+// answered: nothing without resolvers.
+func (w *Worker) prettyPrintResolvers(prefix string) string {
+	if len(w.resolvers) == 0 {
+		return ""
+	}
+	var result strings.Builder
+	fmt.Fprintf(&result, "%sResolvers:\n", prefix)
+	for _, r := range w.resolvers {
+		s := r.Status()
+		state := "serving"
+		if !s.Serving {
+			state = "not serving"
+			if s.Error != "" {
+				state += ": " + s.Error
+			}
+		}
+		fmt.Fprintf(&result, "%s    %s: %s\n", prefix, s.Name, state)
+		fmt.Fprintf(&result, "%s        Listening: %s\n", prefix, strings.Join(s.Listening, ", "))
+		fmt.Fprintf(&result, "%s        Allow: %s\n", prefix, strings.Join(s.Allow, ", "))
+		fmt.Fprintf(&result, "%s        Zones: %s\n", prefix, strings.Join(s.Zones, ", "))
+		var upstreams []string
+		for _, u := range s.Upstreams {
+			upstreams = append(upstreams, fmt.Sprintf("%s (%d failed)", u, s.UpstreamFailures[u]))
+		}
+		fmt.Fprintf(&result, "%s        Upstream: %s\n", prefix, strings.Join(upstreams, ", "))
+		var queries []string
+		for _, kind := range resolver.Kinds {
+			queries = append(queries, fmt.Sprintf("%s %d", kind, s.Queries[kind]))
+		}
+		fmt.Fprintf(&result, "%s        Queries: %s\n", prefix, strings.Join(queries, ", "))
+	}
 	return result.String()
 }

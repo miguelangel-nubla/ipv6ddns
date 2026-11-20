@@ -195,7 +195,7 @@
                     },
                     "debounce": {
                         "$ref": "#/$defs/duration",
-                        "description": "How long to wait for more changes before updating. Default: 10s."
+                        "description": "How long to wait for more changes before updating. Default: 10s. A resolver credential's: none, as its updates are kept in memory, at once."
                     },
                     "retry": {
                         "$ref": "#/$defs/duration",
@@ -217,6 +217,39 @@
                 "additionalProperties": false
             },
             "description": "The DNS providers to update, by credential name, which tasks' endpoints name."
+        },
+        "resolvers": {
+            "type": "object",
+            "description": "DNS servers for the clients of a network, by name: each answers the zones of its resolver credentials, with the addresses the tasks give their names, and records of its own, and asks its upstream servers the rest. See the [resolver](../resolver.md).",
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "listen": {
+                        "$ref": "#/$defs/stringList",
+                        "description": "Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports: 192.168.1.0/24, 192.168.1.2, [fd00::2]:5353; without a port, 53. A port alone is every address of the machine, a public one on a router too: give the network of the clients."
+                    },
+                    "allow": {
+                        "$ref": "#/$defs/stringList",
+                        "description": "The networks of the clients it answers, or their addresses: 192.168.1.0/24, fd00::/64. A query from any other is REFUSED. Default: the networks of the machine's addresses it listens on."
+                    },
+                    "upstream": {
+                        "$ref": "#/$defs/stringList",
+                        "description": "The servers it asks what isn't its own, in order, each for 2s over UDP, and over TCP when the answer doesn't fit: addresses, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111]; without a port, 53. None answering is SERVFAIL."
+                    },
+                    "records": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Records of names of none of its zones, one per entry, in the syntax of a zone file, every name absolute, with its trailing dot: www.example.com. CNAME nas.home.arpa. A record without a TTL has 1m."
+                    }
+                },
+                "required": [
+                    "listen",
+                    "upstream"
+                ]
+            }
         },
         "discovery": {
             "type": "object",

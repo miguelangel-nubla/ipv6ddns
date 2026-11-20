@@ -8,14 +8,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 )
 
 // Status is the state of the worker, to serve as JSON.
 type Status struct {
-	Hostnames  []HostnameStatus `json:"hostnames"`
-	Discovered []DiscoveredHost `json:"discovered"`
-	Sources    []source.Status  `json:"sources"`
+	Hostnames  []HostnameStatus  `json:"hostnames"`
+	Discovered []DiscoveredHost  `json:"discovered"`
+	Sources    []source.Status   `json:"sources"`
+	Resolvers  []resolver.Status `json:"resolvers"`
 }
 
 type HostnameStatus struct {
@@ -52,7 +54,11 @@ type DiscoveredAddress struct {
 // Status returns the state of the host names and of the discovery. hideSensible hides the errors,
 // which can tell secrets.
 func (w *Worker) Status(hideSensible bool) Status {
-	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Sources: []source.Status{}}
+	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Sources: []source.Status{}, Resolvers: []resolver.Status{}}
+
+	for _, r := range w.resolvers {
+		status.Resolvers = append(status.Resolvers, r.Status())
+	}
 
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
 		status.Sources = append(status.Sources, w.sources[name].Status(hideSensible))
@@ -174,6 +180,34 @@ func (s Status) WriteMetrics(out io.Writer) error {
 		}
 	}
 
+	resolverLabels := func(name string, extra ...string) string {
+		l := fmt.Sprintf(`resolver="%s"`, labelValue(name))
+		for i := 0; i < len(extra); i += 2 {
+			l += fmt.Sprintf(`,%s="%s"`, extra[i], labelValue(extra[i+1]))
+		}
+		return "{" + l + "}"
+	}
+	metric("ipv6ddns_resolver_serving", "gauge", "1 while a resolver answers on all its addresses.")
+	for _, r := range s.Resolvers {
+		serving := 0
+		if r.Serving {
+			serving = 1
+		}
+		fmt.Fprintf(&b, "ipv6ddns_resolver_serving%s %d\n", resolverLabels(r.Name), serving)
+	}
+	metric("ipv6ddns_resolver_queries_total", "counter", "The queries a resolver answered, by kind: local, nodata, forwarded, refused, servfail.")
+	for _, r := range s.Resolvers {
+		for _, kind := range resolver.Kinds {
+			fmt.Fprintf(&b, "ipv6ddns_resolver_queries_total%s %d\n", resolverLabels(r.Name, "kind", kind), r.Queries[kind])
+		}
+	}
+	metric("ipv6ddns_resolver_upstream_failures_total", "counter", "The queries an upstream server of a resolver didn't answer in time.")
+	for _, r := range s.Resolvers {
+		for _, upstream := range r.Upstreams {
+			fmt.Fprintf(&b, "ipv6ddns_resolver_upstream_failures_total%s %d\n", resolverLabels(r.Name, "upstream", upstream), r.UpstreamFailures[upstream])
+		}
+	}
+
 	addresses := 0
 	for _, host := range s.Discovered {
 		addresses += len(host.Addresses)
@@ -192,4 +226,18 @@ var labelEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 
 func labelValue(s string) string {
 	return labelEscaper.Replace(strings.ToValidUTF8(s, "\uFFFD"))
+}
+
+// Healthy tells whether every resolver answers: nil, or why one doesn't.
+func (w *Worker) Healthy() error {
+	for _, r := range w.resolvers {
+		if s := r.Status(); !s.Serving {
+			reason := s.Error
+			if reason == "" {
+				reason = "not started"
+			}
+			return fmt.Errorf("resolver %s isn't serving: %s", s.Name, reason)
+		}
+	}
+	return nil
 }

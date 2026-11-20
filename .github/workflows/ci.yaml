@@ -73,9 +73,12 @@ jobs:
         # and connected to by Home Assistant's libraries across a link; and the device dropping
         # a Home Assistant that vanishes, one that stops reading, and clients that say nothing.
         # And several instances at once, of the command as it is built: two on one machine, each
-        # with its ports, its DNS server and its device, and two on two machines of one link.
+        # with its ports, its DNS server and its device, and two on two machines of one link. And
+        # the resolver, asked with dig by the clients of the link.
         name: Live tests
         run: |
+          # dig asks the resolver, as its clients do.
+          command -v dig || { sudo apt-get update -qq && sudo apt-get install -yqq bind9-dnsutils; }
           go vet -tags integration ./...
           go build -race -o "$RUNNER_TEMP/ipv6ddns" ./cmd/ipv6ddns
           go test -race -tags integration -exec "sudo env ESPHOME_PYTHON=$(which python) IPV6DDNS_COMMAND=$RUNNER_TEMP/ipv6ddns" -v -run '^TestLive' . ./cmd/ipv6ddns ./pkg/listen ./pkg/esphome

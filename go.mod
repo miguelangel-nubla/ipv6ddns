@@ -12,6 +12,7 @@ require (
 	github.com/flynn/noise v1.1.0
 	github.com/go-routeros/routeros/v3 v3.0.1
 	github.com/google/uuid v1.6.0
+	github.com/miekg/dns v1.1.73
 	github.com/miguelangel-nubla/ipv6disc v0.18.1
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.2
 	github.com/oapi-codegen/runtime v1.9.0
@@ -45,7 +46,6 @@ require (
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mdlayher/ndp v1.1.0 // indirect
-	github.com/miekg/dns v1.1.72 // indirect
 	github.com/nsf/termbox-go v1.1.2 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect

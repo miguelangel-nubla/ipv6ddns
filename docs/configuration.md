@@ -34,6 +34,7 @@ discovery:      # how hosts are found: IPv6 by default
 - A **task** gives names their addresses. Its [filters](filtering.md) choose, among the addresses [discovery](discovery.md) finds, those of the task; its `sources` add the addresses of [sources](sources.md). Its `endpoints` say which names, at which credentials, get them. A name in several tasks gets the addresses of all.
 - A **credential** is a DNS provider with its settings: those of each provider are in the [providers reference](reference/providers.md). Its `debounce` gathers the changes of a moment into one update, and a failed update is retried after `retry`: until then the provider is left alone, and addresses that change meanwhile go with the retry, not before it.
 - **Sources** and **discovery** find the addresses.
+- A **resolver**, of `resolvers`, is a DNS server of ipv6ddns's own for the network's clients, which answers the zones of the `resolver` credentials: see the [resolver](resolver.md).
 
 An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`, `""` is the zone itself, `"*.nas"` a wildcard. Written whole, as `nas.home.example.com`, or in another case, it is the same name: the tasks that name it either way give it their addresses together.
 

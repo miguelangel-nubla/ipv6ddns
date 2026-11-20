@@ -64,7 +64,25 @@ tasks:
     endpoints:
       mylocaldns:
       - nas
+      # And in the zone ipv6ddns answers itself, as nas.home.arpa.
+      home:
+      - nas
+# A DNS server of ipv6ddns's own, for the clients of the LAN: it answers the zones of its resolver
+# credentials and asks the router the rest. See docs/resolver.md.
+resolvers:
+  lan:
+    listen: 192.168.1.0/24    # the machine's address in it, port 53
+    upstream: [192.168.1.1, 1.1.1.1]
+    records:
+      - www.mydomain.tld. CNAME nas.home.arpa.
 credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: home.arpa
+      records:
+        - printer A 192.168.1.20
+        - files CNAME nas
   duckdns:
     debounce: 10s
     provider: duckdns

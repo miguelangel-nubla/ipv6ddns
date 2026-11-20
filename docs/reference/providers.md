@@ -11,6 +11,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`openwrt`](#openwrt)
 - [`opnsense_unbound`](#opnsense_unbound)
 - [`pfsense_restapi_unbound`](#pfsense_restapi_unbound)
+- [`resolver`](#resolver)
 - [`route53`](#route53)
 - [`technitium`](#technitium)
 - [`windows`](#windows)
@@ -97,6 +98,17 @@ pfSense's Unbound host overrides, over the REST API package.
 | `key` | string | **Required.** An API key. |
 | `zone` | string | **Required.** The zone of the names. |
 | `ttl` | string | Unused: pfSense's host overrides have no TTL of their own. Kept so that the configurations giving it load. |
+
+## resolver
+
+A zone that a resolver of ipv6ddns answers, to the clients of its network, from memory: see the [resolver](../resolver.md). Its debounce defaults to none, as nothing is sent anywhere.
+
+| Key | Takes | |
+|---|---|---|
+| `resolver` | string | The resolver that answers the zone, of resolvers. Needed only with more than one. |
+| `zone` | string | **Required.** The zone: home.arpa. |
+| `records` | list of string | Records of names of the zone that no task publishes, one per entry, in the syntax of a zone file, relative to the zone or absolute within it: printer A 192.168.1.20, files CNAME nas, _ipp._tcp SRV 0 0 631 printer. A record without a TTL has the zone's. |
+| `ttl` | string | The TTL of the names' addresses, and of the records that give none: 5m, 1h. Default: 1m. |
 
 ## route53
 

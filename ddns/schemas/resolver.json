@@ -1,0 +1,33 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "A zone that a resolver of ipv6ddns answers, to the clients of its network, from memory: see the [resolver](../resolver.md). Its debounce defaults to none, as nothing is sent anywhere.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "resolver": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The resolver that answers the zone, of resolvers. Needed only with more than one."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The zone: home.arpa."
+        },
+        "records": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Records of names of the zone that no task publishes, one per entry, in the syntax of a zone file, relative to the zone or absolute within it: printer A 192.168.1.20, files CNAME nas, _ipp._tcp SRV 0 0 631 printer. A record without a TTL has the zone's."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The TTL of the names' addresses, and of the records that give none: 5m, 1h. Default: 1m."
+        }
+    },
+    "required": [
+        "zone"
+    ]
+}

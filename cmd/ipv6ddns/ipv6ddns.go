@@ -178,12 +178,18 @@ func main() {
 const shutdownTimeout = 30 * time.Second
 
 // webHandler serves the state: as text, JSON and Prometheus metrics, with the sensible data
-// hidden, as the server has no authentication. /healthz answers while the process runs.
+// hidden, as the server has no authentication. /healthz answers while the process runs, and its
+// resolvers answer: 503 when one doesn't.
 func webHandler(worker *ipv6ddns.Worker) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", statusHandler(worker))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if err := worker.Healthy(); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(err.Error() + "\n"))
+			return
+		}
 		w.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("GET /status.json", func(w http.ResponseWriter, r *http.Request) {

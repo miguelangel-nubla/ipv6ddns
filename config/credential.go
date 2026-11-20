@@ -36,6 +36,10 @@ func (c *Credential) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*c = Credential(credential.plain)
+	debounce := 10 * time.Second
+	if c.Provider == ResolverProvider {
+		debounce = DefaultResolverDebounce
+	}
 	for _, f := range []struct {
 		name, old string
 		value     *duration.Duration
@@ -43,7 +47,7 @@ func (c *Credential) UnmarshalJSON(b []byte) error {
 		into      *duration.Duration
 		def       time.Duration
 	}{
-		{"debounce", "debounce_time", credential.Debounce, &c.DebounceTime, &c.Debounce, 10 * time.Second},
+		{"debounce", "debounce_time", credential.Debounce, &c.DebounceTime, &c.Debounce, debounce},
 		{"retry", "retry_time", credential.Retry, &c.RetryTime, &c.Retry, time.Minute},
 	} {
 		switch {

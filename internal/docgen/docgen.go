@@ -219,6 +219,9 @@ func Configuration() (string, error) {
 	credential := asNode(root.Properties["credentials"].AdditionalProperties)
 	section("Credentials", "credentials.<name>", root.Properties["credentials"].Description+" The settings of each provider are in the [providers reference](providers.md).", credential, "properties", "credentials", "additionalProperties", "properties")
 
+	resolvers := asNode(root.Properties["resolvers"].AdditionalProperties)
+	section("Resolvers", "resolvers.<name>", root.Properties["resolvers"].Description, resolvers, "properties", "resolvers", "additionalProperties", "properties")
+
 	source := asNode(root.Properties["sources"].AdditionalProperties)
 	section("Sources", "sources.<name>", root.Properties["sources"].Description+" See [sources](../sources.md).", source, "properties", "sources", "additionalProperties", "properties")
 

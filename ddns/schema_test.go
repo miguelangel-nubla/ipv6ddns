@@ -20,6 +20,7 @@ func TestSettingsSchemasMatchProviders(t *testing.T) {
 		"opnsense_unbound":        {"opnsense_unbound", OpnsenseUnbound{}},
 		"pfsense_restapi_unbound": {"pfsense_restapi_unbound", PfsenseRestapiUnbound{}},
 		"route53":                 {"route53", Route53{}},
+		"resolver":                {"resolver", Resolver{}},
 		"technitium":              {"technitium", Technitium{}},
 		"windows":                 {"windows", WindowsDNS{}},
 	}

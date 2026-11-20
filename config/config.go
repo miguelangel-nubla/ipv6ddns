@@ -35,6 +35,9 @@ type Config struct {
 	Sources     map[string]Source     `json:"sources,omitempty"`
 	// A device of Home Assistant's ESPHome integration: off without it.
 	HomeAssistant *HomeAssistant `json:"homeassistant,omitempty"`
+	// DNS servers for the network's clients, by name, which answer the zones of the resolver
+	// credentials.
+	Resolvers map[string]Resolver `json:"resolvers,omitempty"`
 
 	// The settings that are flags too: a flag given wins. Lifetime is how long a discovered
 	// address stays after it was last seen, unless its family says.
@@ -354,6 +357,9 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := checkHomeAssistant(byteValue); err != nil {
 		return config, err
 	}
+	if err := checkResolvers(byteValue); err != nil {
+		return config, err
+	}
 	if err := validateConfig(byteValue); err != nil {
 		return config, err
 	}
@@ -425,6 +431,10 @@ func NewConfig(filename string) (config Config, err error) {
 				return config, fmt.Errorf("task %s: no credential %s for its endpoint", name, endpoint)
 			}
 		}
+	}
+
+	if err := config.setUpResolvers(); err != nil {
+		return config, err
 	}
 
 	config.BaseDir = filepath.Dir(filename)

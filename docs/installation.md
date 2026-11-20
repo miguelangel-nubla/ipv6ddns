@@ -90,7 +90,7 @@ The report has no authentication: behind a reverse proxy, list only an address t
 | Path | Serves |
 |---|---|
 | `/` | The report, as text: the names and their records, the discovered hosts, and the configuration |
-| `/healthz` | `ok`, while the process runs: for health checks |
+| `/healthz` | `ok`, while the process runs, and its [resolvers](resolver.md) answer: 503 with the reason when one doesn't. For health checks |
 | `/status.json` | The state, as JSON: the names and their records, the discovered hosts, and the sources' runs |
 | `/metrics` | Prometheus metrics: the addresses of each name, the updates by result, the last success |
 
