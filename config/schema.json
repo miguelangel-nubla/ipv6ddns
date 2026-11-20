@@ -227,7 +227,7 @@
                 "properties": {
                     "listen": {
                         "$ref": "#/$defs/stringList",
-                        "description": "Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports: 192.168.1.0/24, 192.168.1.2, [fd00::2]:5353; without a port, 53. A port alone is every address of the machine, a public one on a router too: give the network of the clients."
+                        "description": "Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports: 192.168.1.0/24, 192.168.1.2, [fd00::2]:5353; without a port, 53. A port alone is every address of the machine, a public one on a router too: give the network of the clients. An address and port is one resolver's, however two spell it."
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
@@ -235,11 +235,11 @@
                     },
                     "upstream": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The servers it asks what isn't its own, in order, each for 2s over UDP, and over TCP when the answer doesn't fit: addresses or host names, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net; without a port, 53. A host name needs bootstrap. None answering is SERVFAIL."
+                        "description": "The servers it asks what isn't its own, in order, each for 2s: plain DNS, over UDP, and over TCP when the answer doesn't fit, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, without a port 53; DNS over TLS, as tls://1.1.1.1 or tls://dns.example.net, without a port 853; or DNS over HTTPS, as https://dns.example.net/dns-query, without a port 443. An encrypted server's certificate is verified, against the system's certificate authorities, for the host given, and its connections are kept for the next queries. A host name needs bootstrap. None answering is SERVFAIL."
                     },
                     "bootstrap": {
                         "$ref": "#/$defs/stringList",
-                        "description": "With an upstream given by host name, and only then: the servers asked its addresses, and nothing else, in order: addresses, with a port or not. Not the system's resolver, which can be this one. The addresses found are kept for their TTL, a minute at least, an hour at most, and while these servers don't answer."
+                        "description": "With an upstream given by host name, plain or encrypted, and only then: the servers asked its addresses, and nothing else, in order, over plain DNS: addresses, with a port or not. Not the system's resolver, which can be this one. The addresses found are kept for their TTL, a minute at least, an hour at most, and while these servers don't answer."
                     },
                     "records": {
                         "type": "array",
@@ -247,6 +247,11 @@
                             "type": "string"
                         },
                         "description": "Records of names of none of its zones, one per entry, in the syntax of a zone file, every name absolute, with its trailing dot: www.example.com. CNAME nas.home.arpa. A record without a TTL has 1m."
+                    },
+                    "cache_size": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "How many answers of the upstream servers it keeps, each for its TTL, a day at most, an hour for a name that doesn't exist or has no data: beyond it, the one asked the longest ago goes first. Default: 10000; 0, none, and every query is asked. The local names are never kept: they follow discovery at once."
                     }
                 },
                 "required": [

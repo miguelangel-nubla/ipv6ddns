@@ -10,7 +10,9 @@ import (
 	"net/netip"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,20 +22,95 @@ import (
 )
 
 // fakeUpstream is a DNS server of the test's on a machine, at port 53 of its IPv4 address: it
-// answers every A query with answer, and a TXT query with many records; or, as told, slowly, not
-// at all, or truncated over UDP.
+// answers every A query with answer, or with the address hosts has for the name, a TXT query with
+// many records, and a PTR query with reverseName; a name under gone.test doesn't exist, and one
+// under empty.test has no data, each with an SOA of negative seconds. Or, as told, slowly, not at
+// all, or truncated over UDP.
 type fakeUpstream struct {
 	address string
 	answer  string
-	mode    atomic.Value // "", "slow", "down", "truncate"
-	udp     atomic.Int64
-	tcp     atomic.Int64
+	// The addresses of some names, absolute, in lower case, in place of answer.
+	hosts map[string]string
+	mode  atomic.Value // "", "slow", "down", "truncate"
+	// The TTL of its answers, and of that there is none.
+	ttl      atomic.Uint32
+	negative atomic.Uint32
+	udp      atomic.Int64
+	tcp      atomic.Int64
+	// The names asked, each as often as it was.
+	mutex sync.Mutex
+	asked map[string]int
+}
+
+// reverseName is the name the upstream servers of the tests give every address.
+const reverseName = "host.upstream.test."
+
+// host gives a name, absolute, an address of its own.
+func (u *fakeUpstream) host(name, address string) {
+	u.mutex.Lock()
+	defer u.mutex.Unlock()
+	u.hosts[name] = address
+}
+
+// times is how many times the upstream was asked the name, absolute.
+func (u *fakeUpstream) times(name string) int {
+	u.mutex.Lock()
+	defer u.mutex.Unlock()
+	return u.asked[strings.ToLower(name)]
+}
+
+// answerTo is the upstream's answer to a query.
+func (u *fakeUpstream) answerTo(req *dns.Msg) *dns.Msg {
+	resp := new(dns.Msg)
+	resp.SetReply(req)
+	resp.RecursionAvailable = true
+	q := req.Question[0]
+	name := strings.ToLower(q.Name)
+	u.mutex.Lock()
+	u.asked[name]++
+	u.mutex.Unlock()
+	ttl := u.ttl.Load()
+	header := func(rrtype uint16) dns.RR_Header {
+		return dns.RR_Header{Name: q.Name, Rrtype: rrtype, Class: dns.ClassINET, Ttl: ttl}
+	}
+	soa := func(zone string) {
+		negative := u.negative.Load()
+		resp.Ns = append(resp.Ns, &dns.SOA{Hdr: dns.RR_Header{Name: zone, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: negative},
+			Ns: "ns." + zone, Mbox: "hostmaster." + zone, Serial: 1, Refresh: 3600, Retry: 600, Expire: 86400, Minttl: negative})
+	}
+	switch {
+	case dns.IsSubDomain("gone.test.", name):
+		resp.Rcode = dns.RcodeNameError
+		soa("gone.test.")
+	case dns.IsSubDomain("empty.test.", name):
+		soa("empty.test.")
+	case q.Qtype == dns.TypeA:
+		answer := u.answer
+		u.mutex.Lock()
+		if a, ok := u.hosts[name]; ok {
+			answer = a
+		}
+		u.mutex.Unlock()
+		resp.Answer = append(resp.Answer, &dns.A{Hdr: header(dns.TypeA), A: net.ParseIP(answer)})
+	case q.Qtype == dns.TypeTXT:
+		for i := range 60 {
+			resp.Answer = append(resp.Answer, &dns.TXT{Hdr: header(dns.TypeTXT), Txt: []string{fmt.Sprintf("an upstream record, long enough to fill a message, %02d", i)}})
+		}
+	case q.Qtype == dns.TypePTR:
+		resp.Answer = append(resp.Answer, &dns.PTR{Hdr: header(dns.TypePTR), Ptr: reverseName})
+	}
+	if opt := req.IsEdns0(); opt != nil {
+		resp.SetEdns0(opt.UDPSize(), opt.Do())
+	}
+	return resp
 }
 
 func startUpstream(t *testing.T, m *livetest.Machine, answer string) *fakeUpstream {
 	t.Helper()
-	u := &fakeUpstream{address: net.JoinHostPort(m.IPv4.String(), "53"), answer: answer}
+	u := &fakeUpstream{address: net.JoinHostPort(m.IPv4.String(), "53"), answer: answer, hosts: make(map[string]string), asked: make(map[string]int)}
 	u.mode.Store("")
+	u.ttl.Store(30)
+	u.negative.Store(30)
 	var pc net.PacketConn
 	var l net.Listener
 	if err := m.Do(func() (err error) {
@@ -59,27 +136,15 @@ func startUpstream(t *testing.T, m *livetest.Machine, answer string) *fakeUpstre
 		case mode == "slow":
 			time.Sleep(3 * time.Second)
 		}
-		resp := new(dns.Msg)
-		resp.SetReply(req)
-		resp.RecursionAvailable = true
 		if mode == "truncate" && overUDP {
+			resp := new(dns.Msg)
+			resp.SetReply(req)
+			resp.RecursionAvailable = true
 			resp.Truncated = true
 			w.WriteMsg(resp)
 			return
 		}
-		q := req.Question[0]
-		switch q.Qtype {
-		case dns.TypeA:
-			resp.Answer = append(resp.Answer, &dns.A{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 30}, A: net.ParseIP(u.answer)})
-		case dns.TypeTXT:
-			for i := range 60 {
-				resp.Answer = append(resp.Answer, &dns.TXT{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 30}, Txt: []string{fmt.Sprintf("an upstream record, long enough to fill a message, %02d", i)}})
-			}
-		}
-		if opt := req.IsEdns0(); opt != nil {
-			resp.SetEdns0(opt.UDPSize(), opt.Do())
-		}
-		w.WriteMsg(resp)
+		w.WriteMsg(u.answerTo(req))
 	})
 	servers := []*dns.Server{{PacketConn: pc, Handler: handler}, {Listener: l, Handler: handler}}
 	for _, s := range servers {
@@ -100,7 +165,9 @@ type digAnswer struct {
 	// "name TYPE data", of the answer section.
 	answers   []string
 	authority []string
-	output    string
+	// The TTL of each, in seconds.
+	ttls, authorityTTLs []int
+	output              string
 }
 
 func (d digAnswer) String() string { return d.output }
@@ -117,6 +184,18 @@ func (d digAnswer) data(rrtype string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// ttl is the TTL of the first answer, or of the first record of the authority when there is no
+// answer: -1 with neither.
+func (d digAnswer) ttl() int {
+	switch {
+	case len(d.ttls) > 0:
+		return d.ttls[0]
+	case len(d.authorityTTLs) > 0:
+		return d.authorityTTLs[0]
+	}
+	return -1
 }
 
 // dig asks server, from the machine, with the real dig: args are dig's, as the name and the type.
@@ -153,10 +232,11 @@ func dig(t *testing.T, m *livetest.Machine, server string, args ...string) digAn
 				continue
 			}
 			rr := f[0] + " " + f[3] + " " + strings.Join(f[4:], " ")
+			ttl, _ := strconv.Atoi(f[1])
 			if section == "authority" {
-				d.authority = append(d.authority, rr)
+				d.authority, d.authorityTTLs = append(d.authority, rr), append(d.authorityTTLs, ttl)
 			} else {
-				d.answers = append(d.answers, rr)
+				d.answers, d.ttls = append(d.answers, rr), append(d.ttls, ttl)
 			}
 		}
 	}
@@ -287,6 +367,36 @@ tasks:
 		}
 	}
 
+	// The reverse of an address that a name has: the peer's, as discovered, and a record's, each
+	// resolver its own names'; of a wildcard's, or of any other address, the upstream server's.
+	peerReverse, err := dns.ReverseAddr(peer.IPv6.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		server, address, want string
+		aa                    bool
+	}{
+		{server, peer.IPv6.String(), "peer.home.arpa.", true},
+		{server6, peer.IPv6.String(), "peer.home.arpa.", true},
+		{server, "198.18.15.50", "printer.home.arpa.", true},
+		{server, "198.18.15.51", reverseName, false},
+		{server, "198.18.15.77", reverseName, false},
+		{server, "fd00:c612:15::77", reverseName, false},
+		{lab, "10.77.0.50", "printer.home.arpa.", true},
+		{lab, "198.18.15.50", reverseName, false},
+		{lab, peer.IPv6.String(), reverseName, false},
+	} {
+		d := dig(t, client, c.server, "-x", c.address)
+		if d.status != "NOERROR" || !slices.Equal(d.data("PTR"), []string{c.want}) || d.has("aa") != c.aa {
+			t.Errorf("the reverse of %s at %s: %s, want %s, aa %t", c.address, c.server, d, c.want, c.aa)
+		}
+	}
+	// The peer's was asked of the upstream server by the lab alone.
+	if got := upstream.times(peerReverse); got != 1 {
+		t.Errorf("the reverse of the peer's address was asked upstream %d times, want 1, by the lab", got)
+	}
+
 	// A local answer too big for UDP: TC, and whole over TCP, which dig retries with.
 	if d := dig(t, client, server, "+ignore", "+noedns", "big.example.org", "TXT"); !d.has("tc") {
 		t.Errorf("a forwarded answer too big, over UDP: %s", d)
@@ -307,20 +417,21 @@ tasks:
 		t.Error("the outsider's query went upstream")
 	}
 
-	// The upstream server truncates: asked again over TCP.
+	// The upstream server truncates: asked again over TCP. Of names not asked before, from here:
+	// those that were are in the cache.
 	upstream.mode.Store("truncate")
 	tcp := upstream.tcp.Load()
-	if d := dig(t, client, server, "example.org", "A"); !slices.Equal(d.answers, []string{"example.org. A 192.0.2.53"}) || upstream.tcp.Load() == tcp {
+	if d := dig(t, client, server, "truncated.example.org", "A"); !slices.Equal(d.answers, []string{"truncated.example.org. A 192.0.2.53"}) || upstream.tcp.Load() == tcp {
 		t.Errorf("past a truncated upstream answer: %s", d)
 	}
 	// Slow, then down: the second answers; and the lab, which has it alone, fails.
 	for _, mode := range []string{"slow", "down"} {
 		upstream.mode.Store(mode)
 		asked := upstream2.udp.Load()
-		if d := dig(t, client, server, "example.org", "A"); !slices.Equal(d.answers, []string{"example.org. A 192.0.2.54"}) || upstream2.udp.Load() == asked {
+		if d := dig(t, client, server, mode+".example.org", "A"); !slices.Equal(d.answers, []string{mode + ".example.org. A 192.0.2.54"}) || upstream2.udp.Load() == asked {
 			t.Errorf("the first upstream %s: %s", mode, d)
 		}
-		if d := dig(t, client, lab, "example.org", "A"); d.status != "SERVFAIL" {
+		if d := dig(t, client, lab, mode+".example.org", "A"); d.status != "SERVFAIL" {
 			t.Errorf("the only upstream %s: %s", mode, d)
 		}
 	}
@@ -352,6 +463,14 @@ tasks:
 	waitFor(t, 60*time.Second, "the peer's new address alone", func() bool {
 		return slices.Equal(dig(t, client, server, "peer.home.arpa", "AAAA").data("AAAA"), []string{moved.String()})
 	}, one.tells, tells(server, "peer.home.arpa", "AAAA"))
+	// And its reverse: the new address is the peer's, and the one it had is no more, though it
+	// was a moment ago: the upstream server's answer.
+	if d := dig(t, client, server, "-x", moved.String()); !slices.Equal(d.data("PTR"), []string{"peer.home.arpa."}) || !d.has("aa") {
+		t.Errorf("the reverse of the peer's new address: %s", d)
+	}
+	if d := dig(t, client, server, "-x", peer.IPv6.String()); !slices.Equal(d.data("PTR"), []string{reverseName}) || d.has("aa") {
+		t.Errorf("the reverse of the address the peer had: %s", d)
+	}
 	// It leaves: no data, until it is back.
 	peer.Leave(t)
 	waitFor(t, 60*time.Second, "the peer's name without addresses", func() bool {
@@ -406,8 +525,9 @@ tasks: {}
 	configure(t, srv, lan.Router, "srv", 8053, config).start().serving()
 	server := srv.IPv4.String()
 
+	// A name each: one asked again is in the cache.
 	for i := range 3 {
-		d := dig(t, client, server, "example.org", "A")
+		d := dig(t, client, server, fmt.Sprintf("n%d.example.org", i), "A")
 		if d.status != "NOERROR" || !slices.Equal(d.data("A"), []string{"192.0.2.53"}) {
 			t.Fatalf("query %d, forwarded to the upstream by name: %s", i, d)
 		}

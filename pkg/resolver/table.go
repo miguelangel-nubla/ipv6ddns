@@ -1,12 +1,14 @@
 // Package resolver is a DNS server for a network's clients: it answers the names of its zones,
 // with the addresses that tasks give them and the records written for them, and records of its
-// own, and asks its upstream servers the rest, whose answers it relays.
+// own, and asks its upstream servers the rest, whose answers it relays, and keeps for their TTL.
 //
 // Per query, in order: a client outside allow is REFUSED; a name of the resolver's records is
 // answered from them; a name of the zone with the longest suffix, if a task publishes it or a
-// record has it, is answered from those, with no data of a type it doesn't have; anything else is
-// forwarded, to the upstream servers in order, and SERVFAIL when none answers. A CNAME is followed
-// among the local names, up to MaxChain steps, and to the upstream servers past them.
+// record has it, is answered from those, with no data of a type it doesn't have; the reverse of
+// an address that one of those names has, a PTR query, with the names; anything else is answered
+// from the cache, or forwarded, to the upstream servers in order, over plain DNS, TLS or HTTPS,
+// and SERVFAIL when none answers. A CNAME is followed among the local names, up to MaxChain
+// steps, and to the upstream servers past them.
 package resolver
 
 import (
@@ -32,10 +34,13 @@ type Config struct {
 	// Where its errors are, in the configuration: resolvers.lan.
 	Path   string
 	Listen []listen.Entry
+	// The text of each listen entry, as written, for errors: or none.
+	ListenLines []string
 	// The networks of the clients it answers. None: the networks of the machine's addresses it
 	// listens on, read when it starts.
 	Allow []netip.Prefix
-	// host:port, in order: the host an address, or a host name, which Bootstrap finds.
+	// In order: host:port, of plain DNS, or tls://host[:port] or https://host[:port]/path, as
+	// written; the host an address, or a host name, which Bootstrap finds.
 	Upstreams []string
 	// host:port, addresses: the servers asked the addresses of the upstreams given by host name.
 	Bootstrap []string
@@ -44,6 +49,8 @@ type Config struct {
 	// The text of each record, as written, for errors: or none.
 	Lines []string
 	Zones []Zone
+	// How many answers forwarded it keeps: 0, none.
+	CacheSize int
 }
 
 // Zone is a credential's zone, which a resolver answers.
@@ -171,6 +178,8 @@ func (n *names) owner(name string) string {
 type table struct {
 	own   *names
 	zones []*names
+	// The names of each address that an A or AAAA record gives, for its reverse.
+	reverseOf map[netip.Addr][]reverseName
 }
 
 // namesOf returns the names that name is of: the zone's with the longest suffix, or the
@@ -309,6 +318,7 @@ func build(cfg Config) (*table, error) {
 	if err := t.checkLoops(cfg.Path); err != nil {
 		return nil, err
 	}
+	t.indexReverse()
 	return t, nil
 }
 

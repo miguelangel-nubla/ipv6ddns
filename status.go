@@ -195,11 +195,15 @@ func (s Status) WriteMetrics(out io.Writer) error {
 		}
 		fmt.Fprintf(&b, "ipv6ddns_resolver_serving%s %d\n", resolverLabels(r.Name), serving)
 	}
-	metric("ipv6ddns_resolver_queries_total", "counter", "The queries a resolver answered, by kind: local, nodata, forwarded, refused, servfail.")
+	metric("ipv6ddns_resolver_queries_total", "counter", "The queries a resolver answered, by kind: local, nodata, forwarded, cached, refused, servfail.")
 	for _, r := range s.Resolvers {
 		for _, kind := range resolver.Kinds {
 			fmt.Fprintf(&b, "ipv6ddns_resolver_queries_total%s %d\n", resolverLabels(r.Name, "kind", kind), r.Queries[kind])
 		}
+	}
+	metric("ipv6ddns_resolver_cache_entries", "gauge", "The answers of the upstream servers a resolver keeps, in its cache.")
+	for _, r := range s.Resolvers {
+		fmt.Fprintf(&b, "ipv6ddns_resolver_cache_entries%s %d\n", resolverLabels(r.Name), r.CacheEntries)
 	}
 	metric("ipv6ddns_resolver_upstream_failures_total", "counter", "The queries an upstream server of a resolver didn't answer in time.")
 	for _, r := range s.Resolvers {

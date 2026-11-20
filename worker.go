@@ -44,6 +44,8 @@ type Worker struct {
 	resolvers []*resolver.Server
 	// Start was called: a second one would run every source and the matching twice.
 	started atomic.Bool
+	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has.
+	stopped <-chan struct{}
 }
 
 // target is a host name at an endpoint, with the tasks that give it addresses. A name in more than
@@ -259,7 +261,11 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.logger.Warn(warning)
 	}
 
-	// The resolvers first: one that can't listen stops the start, as the web server's address.
+	// The resolvers first: two on one address, however spelled, or one that can't listen, stops
+	// the start, as the web server's address.
+	if err := resolver.CheckListen(w.resolvers); err != nil {
+		return err
+	}
 	for i, r := range w.resolvers {
 		if err := r.Start(); err != nil {
 			for _, started := range w.resolvers[:i] {
@@ -269,17 +275,12 @@ func (w *Worker) Start(ctx context.Context) error {
 		}
 		w.logger.Infof("resolver %s listening on %s", r.Status().Name, strings.Join(r.Addresses(), ", "))
 	}
-	if len(w.resolvers) > 0 {
-		w.running.Add(1)
-		go func() {
-			defer w.running.Done()
-			<-ctx.Done()
-			stopping, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			for _, r := range w.resolvers {
-				r.Shutdown(stopping)
-			}
-		}()
+	w.stopped = ctx.Done()
+	// A start that fails past them leaves none listening.
+	closeResolvers := func() {
+		for _, r := range w.resolvers {
+			r.Shutdown(context.Background())
+		}
 	}
 
 	// Without plugins nor a family listening, there is nothing to discover: the names get the
@@ -287,6 +288,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	d := w.config.Discovery
 	if len(d.Plugins) > 0 || d.IPv6.Enabled && d.IPv6.Listen || d.IPv4.Enabled && d.IPv4.Listen {
 		if err := w.discWorker.Start(ctx); err != nil {
+			closeResolvers()
 			return err
 		}
 	} else {
@@ -294,6 +296,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	}
 	if h := w.homeAssistant; h != nil {
 		if err := h.serve(ctx, &w.running, w.config.Discovery.Interfaces, w.config.Discovery.ExcludeInterfaces, w.logger.Errorf); err != nil {
+			closeResolvers()
 			return err
 		}
 		w.running.Add(1)
@@ -340,6 +343,10 @@ func (w *Worker) Start(ctx context.Context) error {
 // and for Home Assistant's connections to end and the device's announcement to be taken back,
 // once the context of Start is done: before that, it waits. The addresses discovered stop expiring
 // then, and stay for the status. It gives up when ctx is done, and what it waited for goes on.
+//
+// The resolvers stop here, once the context of Start is done: they answer no new query, and have
+// until ctx is done, the time the program gives its stop, to answer those being made; then the
+// queries still asked upstream are given up, and their addresses closed.
 func (w *Worker) Shutdown(ctx context.Context) error {
 	for _, t := range w.targets {
 		t.hostname.Stop()
@@ -347,6 +354,19 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 
 	stopped := make(chan struct{})
 	go func() {
+		var resolvers sync.WaitGroup
+		// The resolvers, as the rest, once Start's context is done: they answer the queries being
+		// made in the time ctx gives, the program's.
+		if w.stopped != nil && len(w.resolvers) > 0 {
+			<-w.stopped
+			for _, r := range w.resolvers {
+				resolvers.Add(1)
+				go func() {
+					defer resolvers.Done()
+					r.Shutdown(ctx)
+				}()
+			}
+		}
 		w.running.Wait()
 		w.discWorker.Wait()
 		// The addresses stay watched, each with its goroutine and timers, until this.
@@ -357,6 +377,7 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 		for _, t := range w.targets {
 			t.hostname.Wait()
 		}
+		resolvers.Wait()
 		close(stopped)
 	}()
 
@@ -466,6 +487,11 @@ func (w *Worker) prettyPrintResolvers(prefix string) string {
 			queries = append(queries, fmt.Sprintf("%s %d", kind, s.Queries[kind]))
 		}
 		fmt.Fprintf(&result, "%s        Queries: %s\n", prefix, strings.Join(queries, ", "))
+		cached := "none"
+		if s.CacheSize > 0 {
+			cached = fmt.Sprintf("%d of %d", s.CacheEntries, s.CacheSize)
+		}
+		fmt.Fprintf(&result, "%s        Cache: %s\n", prefix, cached)
 	}
 	return result.String()
 }

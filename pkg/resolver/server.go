@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -32,12 +33,13 @@ const (
 	Local     = "local"
 	NoData    = "nodata"
 	Forwarded = "forwarded"
+	Cached    = "cached"
 	Refused   = "refused"
 	ServFail  = "servfail"
 )
 
 // Kinds are the kinds of answer, in order.
-var Kinds = []string{Local, NoData, Forwarded, Refused, ServFail}
+var Kinds = []string{Local, NoData, Forwarded, Cached, Refused, ServFail}
 
 // Server is a resolver at work: New makes it, Start opens its addresses, Shutdown closes them.
 type Server struct {
@@ -48,8 +50,20 @@ type Server struct {
 
 	queries  map[string]*atomic.Uint64
 	failures map[string]*atomic.Uint64
-	// The upstream servers given by host name, by host:port as configured.
+	// The upstream servers, in order.
+	upstreams []*upstreamServer
+	// The upstream servers whose host is a host name, by their text as configured.
 	named map[string]*namedUpstream
+	// The answers forwarded, kept: nil for none.
+	cache *cache
+	now   func() time.Time
+	// The roots the certificates of encrypted upstream servers are verified against: the
+	// system's, nil, but in tests.
+	roots *x509.CertPool
+	// Done when the shutdown's time is over: the queries to the upstream servers still asked
+	// then are given up.
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	mutex     sync.Mutex
 	servers   []*dns.Server
@@ -70,24 +84,30 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 	if errorf == nil {
 		errorf = func(string, ...any) {}
 	}
-	s := &Server{config: cfg, table: t, timeout: UpstreamTimeout, errorf: errorf,
+	s := &Server{config: cfg, table: t, timeout: UpstreamTimeout, errorf: errorf, now: time.Now,
 		queries: make(map[string]*atomic.Uint64), failures: make(map[string]*atomic.Uint64)}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	for _, k := range Kinds {
 		s.queries[k] = new(atomic.Uint64)
+	}
+	if cfg.CacheSize > 0 {
+		s.cache = newCache(cfg.CacheSize, func() time.Time { return s.now() })
 	}
 	s.named = make(map[string]*namedUpstream)
 	for _, u := range cfg.Upstreams {
 		s.failures[u] = new(atomic.Uint64)
-		host, port, err := net.SplitHostPort(u)
+		srv, err := parseServer(u)
 		if err != nil {
 			return nil, fmt.Errorf("%s.upstream: %q: %w", cfg.Path, u, err)
 		}
-		if _, err := netip.ParseAddr(host); err != nil {
+		if srv.isName() {
 			if len(cfg.Bootstrap) == 0 {
 				return nil, fmt.Errorf("%s.upstream: %q is a host name, and there is no bootstrap to find it", cfg.Path, u)
 			}
-			s.named[u] = &namedUpstream{host: dns.Fqdn(host), port: port}
+			srv.named = &namedUpstream{host: dns.Fqdn(srv.host), port: srv.port}
+			s.named[u] = srv.named
 		}
+		s.upstreams = append(s.upstreams, srv)
 	}
 	return s, nil
 }
@@ -116,10 +136,10 @@ type namedUpstream struct {
 // targets are the addresses to send a query for upstream to: itself, of one that is an address;
 // those the bootstrap servers found, of one given by host name, asked again when their time is
 // over. None, when they never answered.
-func (s *Server) targets(upstream string) []string {
-	n, ok := s.named[upstream]
-	if !ok {
-		return []string{upstream}
+func (s *Server) targets(srv *upstreamServer) []string {
+	n := srv.named
+	if n == nil {
+		return []string{net.JoinHostPort(srv.host, srv.port)}
 	}
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
@@ -150,9 +170,9 @@ func (s *Server) lookUp(host string) ([]string, time.Duration) {
 			m := new(dns.Msg)
 			m.SetQuestion(host, qtype)
 			m.SetEdns0(ednsSize, false)
-			resp, err := s.ask(m, "udp", bootstrap)
+			resp, err := s.ask(s.ctx, m, "udp", bootstrap)
 			if err == nil && resp.Truncated {
-				resp, err = s.ask(m, "tcp", bootstrap)
+				resp, err = s.ask(s.ctx, m, "tcp", bootstrap)
 			}
 			if err != nil || resp.Rcode != dns.RcodeSuccess && resp.Rcode != dns.RcodeNameError {
 				continue
@@ -183,6 +203,9 @@ func (s *Server) Start() error {
 	addresses, err := listen.Addresses(s.config.Listen)
 	if err != nil {
 		return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+	}
+	for _, srv := range s.upstreams {
+		srv.open(s)
 	}
 	var (
 		conns     []net.PacketConn
@@ -256,17 +279,28 @@ func (s *Server) Start() error {
 }
 
 // Shutdown stops answering, and closes the addresses: it waits for the answers being made, until
-// ctx is done.
+// ctx is done, the program's time to stop, when the queries still asked upstream are given up.
+// The connections kept to the upstream servers are closed.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mutex.Lock()
 	s.stopping, s.serving = true, false
 	servers := s.servers
 	s.mutex.Unlock()
-	var errs []error
-	for _, srv := range servers {
-		if err := srv.ShutdownContext(ctx); err != nil {
-			errs = append(errs, err)
-		}
+	stop := context.AfterFunc(ctx, s.cancel)
+	defer stop()
+	var wg sync.WaitGroup
+	errs := make([]error, len(servers))
+	for i, srv := range servers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = srv.ShutdownContext(ctx)
+		}()
+	}
+	wg.Wait()
+	s.cancel()
+	for _, srv := range s.upstreams {
+		srv.close()
 	}
 	return errors.Join(errs...)
 }
@@ -403,14 +437,22 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 	var first lookup
 	if q.Qclass == dns.ClassINET {
 		first = s.table.lookup(q.Name, q.Qtype)
+		// The reverse of an address a name of the resolver's has, but of a PTR record written.
+		if first.kind != found && q.Qtype == dns.TypePTR {
+			if ptrs := s.table.reverse(q.Name); len(ptrs) > 0 {
+				resp := reply(req, dns.RcodeSuccess)
+				resp.Authoritative = true
+				resp.Answer = ptrs
+				return resp, Local
+			}
+		}
 	}
 	if first.kind == notLocal {
-		resp, err := s.exchange(req)
+		resp, kind, err := s.forward(req)
 		if err != nil {
 			return reply(req, dns.RcodeServerFailure), ServFail
 		}
-		resp.Id = req.Id
-		return resp, Forwarded
+		return resp, kind
 	}
 
 	resp := reply(req, dns.RcodeSuccess)
@@ -440,10 +482,11 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 		// CNAME.
 		up := new(dns.Msg)
 		up.SetQuestion(cname.Target, q.Qtype)
+		up.CheckingDisabled = req.CheckingDisabled
 		if opt := req.IsEdns0(); opt != nil {
 			up.SetEdns0(ednsSize, opt.Do())
 		}
-		upResp, err := s.exchange(up)
+		upResp, _, err := s.forward(up)
 		if err != nil {
 			return reply(req, dns.RcodeServerFailure), ServFail
 		}
@@ -469,47 +512,92 @@ func reply(req *dns.Msg, rcode int) *dns.Msg {
 	return resp
 }
 
-// exchange asks the upstream servers q, in order, each over UDP and again over TCP when the answer
-// doesn't fit; and returns the first answer, of whatever code, with an id of its own.
-func (s *Server) exchange(q *dns.Msg) (*dns.Msg, error) {
-	errs := make([]error, 0, len(s.config.Upstreams))
-	for _, upstream := range s.config.Upstreams {
-		targets := s.targets(upstream)
-		if len(targets) == 0 {
-			s.failures[upstream].Add(1)
-			errs = append(errs, fmt.Errorf("%s: no address found by the bootstrap servers", upstream))
-			continue
+// forward answers req from the cache, or asks the upstream servers, and keeps their answer when
+// it can be kept: with req's id, and its kind, Cached or Forwarded.
+func (s *Server) forward(req *dns.Msg) (*dns.Msg, string, error) {
+	if resp := s.cache.get(req); resp != nil {
+		return resp, Cached, nil
+	}
+	resp, err := s.exchange(s.ctx, req)
+	if err != nil {
+		return nil, "", err
+	}
+	s.cache.put(req, resp)
+	resp.Id = req.Id
+	return resp, Forwarded, nil
+}
+
+// exchange asks the upstream servers q, in order, and returns the first answer, of whatever code,
+// with an id of its own. Plain DNS is asked over UDP, and again over TCP when the answer doesn't
+// fit; DNS over TLS on a connection kept open; over HTTPS by its client. Each address of a server
+// given by host name is tried; then the next server.
+func (s *Server) exchange(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
+	errs := make([]error, 0, len(s.upstreams))
+	for _, srv := range s.upstreams {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		var failed []error
-		for _, target := range targets {
-			m := q.Copy()
+		if srv.transport == dnsOverHTTPS {
+			m := padded(q)
 			m.Id = dns.Id()
-			resp, err := s.ask(m, "udp", target)
-			if err == nil && resp.Truncated {
-				resp, err = s.ask(m, "tcp", target)
-			}
+			resp, err := s.askHTTPS(ctx, srv, m)
 			if err == nil {
-				return resp, nil
+				return unpadded(resp, q), nil
 			}
-			failed = append(failed, fmt.Errorf("%s: %w", target, err))
+			failed = append(failed, err)
+		} else {
+			targets := s.targets(srv)
+			if len(targets) == 0 {
+				s.failures[srv.label].Add(1)
+				errs = append(errs, fmt.Errorf("%s: no address found by the bootstrap servers", srv.label))
+				continue
+			}
+			for _, target := range targets {
+				var resp *dns.Msg
+				var err error
+				if srv.transport == dnsOverTLS {
+					m := padded(q)
+					m.Id = dns.Id()
+					if resp, err = s.askTLS(ctx, srv, m, target); err == nil {
+						resp = unpadded(resp, q)
+					}
+				} else {
+					m := q.Copy()
+					m.Id = dns.Id()
+					resp, err = s.ask(ctx, m, "udp", target)
+					if err == nil && resp.Truncated {
+						resp, err = s.ask(ctx, m, "tcp", target)
+					}
+				}
+				if err == nil {
+					return resp, nil
+				}
+				failed = append(failed, fmt.Errorf("%s: %w", target, err))
+			}
 		}
-		s.failures[upstream].Add(1)
-		errs = append(errs, fmt.Errorf("%s: %w", upstream, errors.Join(failed...)))
+		s.failures[srv.label].Add(1)
+		errs = append(errs, fmt.Errorf("%s: %w", srv.label, errors.Join(failed...)))
 	}
 	return nil, errors.Join(errs...)
 }
 
 // ask sends m to upstream over network, and reads its answer: over UDP whatever its size, as a
 // server that sends more than the query's EDNS says still answers, and an answer of another id,
-// or question, is no answer to it.
-func (s *Server) ask(m *dns.Msg, network, upstream string) (*dns.Msg, error) {
+// or question, is no answer to it. It gives up when ctx is done.
+func (s *Server) ask(ctx context.Context, m *dns.Msg, network, upstream string) (*dns.Msg, error) {
 	c := &dns.Client{Net: network, Timeout: s.timeout}
 	conn, err := c.Dial(upstream)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Now()) })
+	defer stop()
 	conn.SetDeadline(time.Now().Add(s.timeout))
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	conn.UDPSize = dns.MaxMsgSize
 	if err := conn.WriteMsg(m); err != nil {
 		return nil, err
@@ -519,7 +607,7 @@ func (s *Server) ask(m *dns.Msg, network, upstream string) (*dns.Msg, error) {
 		if err != nil {
 			return nil, err
 		}
-		if resp.Id == m.Id && len(resp.Question) == len(m.Question) && (len(m.Question) == 0 || strings.EqualFold(resp.Question[0].Name, m.Question[0].Name) && resp.Question[0].Qtype == m.Question[0].Qtype) {
+		if isAnswerTo(resp, m) {
 			return resp, nil
 		}
 	}
@@ -538,10 +626,13 @@ type Status struct {
 	Error string `json:"error,omitempty"`
 	// The queries answered, by kind.
 	Queries map[string]uint64 `json:"queries"`
-	// The queries an upstream server didn't answer, by server.
 	// The addresses the bootstrap servers found for the upstream servers given by host name.
 	UpstreamAddresses map[string][]string `json:"upstream_addresses,omitempty"`
-	UpstreamFailures  map[string]uint64   `json:"upstream_failures"`
+	// The queries an upstream server didn't answer, by server.
+	UpstreamFailures map[string]uint64 `json:"upstream_failures"`
+	// The answers in the cache; and how many it holds, 0 for no cache.
+	CacheEntries int `json:"cache_entries"`
+	CacheSize    int `json:"cache_size"`
 }
 
 func (s *Server) Status() Status {
@@ -554,6 +645,8 @@ func (s *Server) Status() Status {
 		Upstreams:        append([]string{}, s.config.Upstreams...),
 		Zones:            []string{},
 		Serving:          s.serving,
+		CacheEntries:     s.cache.len(),
+		CacheSize:        s.config.CacheSize,
 		Queries:          make(map[string]uint64),
 		UpstreamFailures: make(map[string]uint64),
 	}

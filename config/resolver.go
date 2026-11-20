@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net"
 	"net/netip"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,6 +34,9 @@ type Resolver struct {
 	Bootstrap StringList `json:"bootstrap,omitempty"`
 	// Records of names of no zone of its credentials, absolute, in the syntax of a zone file.
 	Records []string `json:"records,omitempty"`
+	// The answers forwarded that it keeps, for their TTL: entries. Default: DefaultCacheSize; 0,
+	// none.
+	CacheSize *int `json:"cache_size,omitempty"`
 
 	// The resolver, checked, with its zones.
 	Spec resolver.Config `json:"-"`
@@ -82,18 +86,29 @@ func (c *Config) setUpResolvers() error {
 		r := c.Resolvers[name]
 		path := "resolvers." + name
 		spec := resolver.Config{Name: name, Path: path}
-		var err error
 		if len(r.Listen) == 0 {
 			return fmt.Errorf("%s.listen: where the resolver answers is to be given", path)
 		}
-		if spec.Listen, err = listen.Parse(r.Listen, resolver.DefaultPort); err != nil {
-			return fmt.Errorf("%s.listen: %w", path, err)
+		// One by one: each entry with its text, as written, which the errors at start quote.
+		for _, line := range r.Listen {
+			entries, err := listen.Parse([]string{line}, resolver.DefaultPort)
+			if err != nil {
+				return fmt.Errorf("%s.listen: %w", path, err)
+			}
+			if e := entries[0]; !slices.Contains(spec.Listen, e) {
+				spec.Listen = append(spec.Listen, e)
+				spec.ListenLines = append(spec.ListenLines, strings.TrimSpace(line))
+			}
 		}
 		for _, e := range spec.Listen {
 			if other, ok := listening[e.String()]; ok {
 				return fmt.Errorf("resolvers %s and %s both listen on %s: an address and port is one resolver's", other, name, e)
 			}
 			listening[e.String()] = name
+		}
+		spec.CacheSize = resolver.DefaultCacheSize
+		if r.CacheSize != nil {
+			spec.CacheSize = *r.CacheSize
 		}
 		for _, a := range r.Allow {
 			p, err := parseNetwork(a)
@@ -125,7 +140,11 @@ func (c *Config) setUpResolvers() error {
 		}
 		switch {
 		case named != "" && len(spec.Bootstrap) == 0:
-			return fmt.Errorf("%s.upstream: %q is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one", path, named)
+			is := "is a host name"
+			if strings.Contains(named, "://") {
+				is = "is at a host name"
+			}
+			return fmt.Errorf("%s.upstream: %q %s: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one", path, named, is)
 		case named == "" && len(spec.Bootstrap) > 0:
 			return fmt.Errorf("%s.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out", path)
 		}
@@ -216,8 +235,12 @@ func parseNetwork(s string) (netip.Prefix, error) {
 }
 
 // parseUpstream reads an upstream server, as host:port: an address, or a host name, with a port
-// or not. It tells whether it is a host name.
+// or not; or a URL of DNS over TLS or over HTTPS, as written. It tells whether its host is a host
+// name.
 func parseUpstream(s string) (string, bool, error) {
+	if strings.Contains(s, "://") {
+		return parseEncrypted(s)
+	}
 	if address, err := parseServerAddress(s); err == nil {
 		return address, false, nil
 	}
@@ -237,6 +260,60 @@ func parseUpstream(s string) (string, bool, error) {
 		return "", false, invalid
 	}
 	return net.JoinHostPort(strings.ToLower(host), port), true, nil
+}
+
+// parseEncrypted reads an upstream server of DNS over TLS, tls://host[:port], or over HTTPS,
+// https://host[:port]/path: the host an address, or a host name, which bootstrap finds. It is
+// kept as written, which the status and the metrics name it by. It tells whether its host is a
+// host name.
+func parseEncrypted(s string) (string, bool, error) {
+	scheme, _, _ := strings.Cut(s, "://")
+	scheme = strings.ToLower(scheme)
+	if scheme != "tls" && scheme != "https" {
+		return "", false, fmt.Errorf("%q: the scheme %s: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query", s, scheme)
+	}
+	example := "tls://1.1.1.1, tls://[2606:4700:4700::1111]:853 or tls://dns.example.net"
+	if scheme == "https" {
+		example = "https://1.1.1.1/dns-query, https://[2606:4700:4700::1111]/dns-query or https://dns.example.net/dns-query"
+	}
+	invalid := fmt.Errorf("%q: the host is an address or a host name, with a port or not, as %s", s, example)
+	u, err := url.Parse(s)
+	if err != nil || u.Opaque != "" {
+		return "", false, invalid
+	}
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(s, "#") {
+		if scheme == "tls" {
+			return "", false, fmt.Errorf("%q: DNS over TLS is a host, with a port or not: no user, query or fragment", s)
+		}
+		return "", false, fmt.Errorf("%q: DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment", s)
+	}
+	switch {
+	case scheme == "tls" && u.Path != "":
+		return "", false, fmt.Errorf("%q: DNS over TLS is a host, with a port or not: no path, which is of https://", s)
+	case scheme == "https" && (u.Path == "" || u.Path == "/"):
+		return "", false, fmt.Errorf("%q: DNS over HTTPS is asked at a path, which is to be given, as %s/dns-query", s, strings.TrimSuffix(s, "/"))
+	}
+	host, port := u.Hostname(), u.Port()
+	if strings.HasSuffix(u.Host, ":") {
+		return "", false, invalid
+	}
+	if port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+			return "", false, fmt.Errorf("%q: the port %s: a port is from 1 to 65535", s, port)
+		}
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		// An IPv6 address in brackets, as a URL has it, and of no zone.
+		if a.Zone() != "" || a.Is6() && !strings.Contains(u.Host, "[") {
+			return "", false, invalid
+		}
+		return strings.TrimSpace(s), false, nil
+	}
+	name := strings.TrimSuffix(host, ".")
+	if _, ok := dns.IsDomainName(name); !ok || !strings.Contains(name, ".") || strings.ContainsAny(name, "[]:/ %") {
+		return "", false, invalid
+	}
+	return strings.TrimSpace(s), true, nil
 }
 
 // parseServerAddress reads a server's address, with a port or not, as host:port.

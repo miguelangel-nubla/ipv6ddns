@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -161,6 +162,98 @@ func TestResolverConfigErrors(t *testing.T) {
     upstream: dns.google:0
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
 			`resolvers.lan.upstream: "dns.google:0": an address or a host name, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net`},
+		{"an encrypted upstream by host name without bootstrap", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: [1.1.1.1, "tls://dns.example.net"]`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "tls://dns.example.net" is at a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one`},
+		{"a bootstrap with encrypted upstreams at addresses", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: ["tls://1.1.1.1", "https://[2606:4700:4700::1111]/dns-query"]
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			"resolvers.lan.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out"},
+		{"an unknown scheme", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "quic://dns.example.net"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "quic://dns.example.net": the scheme quic: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query`},
+		{"DNS over HTTP, not HTTPS", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "http://dns.example.net/dns-query"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "http://dns.example.net/dns-query": the scheme http: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query`},
+		{"DNS over HTTPS without a path", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "https://dns.example.net"
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "https://dns.example.net": DNS over HTTPS is asked at a path, which is to be given, as https://dns.example.net/dns-query`},
+		{"DNS over HTTPS with the root for a path", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "https://1.1.1.1:8443/"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "https://1.1.1.1:8443/": DNS over HTTPS is asked at a path, which is to be given, as https://1.1.1.1:8443/dns-query`},
+		{"DNS over HTTPS with a query", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "https://dns.example.net/dns-query?dns=x"
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "https://dns.example.net/dns-query?dns=x": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment`},
+		{"DNS over HTTPS with a fragment", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "https://dns.example.net/dns-query#x"
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "https://dns.example.net/dns-query#x": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment`},
+		{"DNS over HTTPS with a user", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "https://me:secret@dns.example.net/dns-query"
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "https://me:secret@dns.example.net/dns-query": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment`},
+		{"DNS over TLS with a path", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "tls://1.1.1.1/dns-query"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "tls://1.1.1.1/dns-query": DNS over TLS is a host, with a port or not: no path, which is of https://`},
+		{"DNS over TLS with a query", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "tls://1.1.1.1?x=1"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "tls://1.1.1.1?x=1": DNS over TLS is a host, with a port or not: no user, query or fragment`},
+		{"DNS over TLS at port 0", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "tls://1.1.1.1:0"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "tls://1.1.1.1:0": the port 0: a port is from 1 to 65535`},
+		{"DNS over HTTPS at port 0", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "https://dns.example.net:0/dns-query"
+    bootstrap: 9.9.9.9`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "https://dns.example.net:0/dns-query": the port 0: a port is from 1 to 65535`},
+		{"DNS over TLS at a port too high", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "tls://1.1.1.1:65536"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "tls://1.1.1.1:65536": the port 65536: a port is from 1 to 65535`},
+		{"DNS over TLS with no host", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "tls://:853"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "tls://:853": the host is an address or a host name, with a port or not, as tls://1.1.1.1, tls://[2606:4700:4700::1111]:853 or tls://dns.example.net`},
+		{"DNS over HTTPS at a name of one label", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: "https://router/dns-query"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "https://router/dns-query": the host is an address or a host name, with a port or not, as https://1.1.1.1/dns-query, https://[2606:4700:4700::1111]/dns-query or https://dns.example.net/dns-query`},
+		{"a cache of less than none", lanResolver + `
+    cache_size: -1`, homeCredential, nasTask,
+			"<schema>"},
+		{"a cache that isn't a number", lanResolver + `
+    cache_size: big`, homeCredential, nasTask,
+			"<schema>"},
 		{"a bad allow", lanResolver + `
     allow: [lan]`, homeCredential, nasTask,
 			`resolvers.lan.allow: "lan": a network, as 192.168.1.0/24 or fd00::/64, or an address`},
@@ -255,10 +348,63 @@ func TestResolverConfigErrors(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := resolverConfig(t, c.resolvers, c.credentials, c.tasks)
+			if c.want == "<schema>" {
+				// In the schema's words.
+				if err == nil || !strings.Contains(err.Error(), "cache_size") {
+					t.Errorf("got %v, want an error of cache_size", err)
+				}
+				return
+			}
 			if err == nil || err.Error() != c.want {
 				t.Errorf("got %v\nwant %s", err, c.want)
 			}
 		})
+	}
+}
+
+// Encrypted upstream servers, over TLS and over HTTPS, are kept as written: at addresses, and at
+// host names, which need the bootstrap servers.
+func TestResolverConfigEncrypted(t *testing.T) {
+	cfg, err := resolverConfig(t, `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: ["tls://1.1.1.1", "TLS://Dns.Example.NET:8853", "tls://[2606:4700:4700::1111]", "https://dns.example.net/dns-query", "https://9.9.9.9:5053/a/b", "https://[2620:fe::fe]:443/dns-query", 192.168.1.1]
+    bootstrap: 9.9.9.9`, homeCredential, nasTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := cfg.Resolvers["lan"].Spec
+	want := []string{"tls://1.1.1.1", "TLS://Dns.Example.NET:8853", "tls://[2606:4700:4700::1111]", "https://dns.example.net/dns-query", "https://9.9.9.9:5053/a/b", "https://[2620:fe::fe]:443/dns-query", "192.168.1.1:53"}
+	if !slices.Equal(spec.Upstreams, want) {
+		t.Errorf("upstreams: %q\nwant %q", spec.Upstreams, want)
+	}
+	// At addresses alone, no bootstrap.
+	if _, err := resolverConfig(t, `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: ["tls://1.1.1.1:853", "https://1.1.1.1/dns-query"]`, homeCredential, nasTask); err != nil {
+		t.Error(err)
+	}
+}
+
+// The cache is on, of 10000 answers, unless cache_size says: 0 is none. And the listen entries
+// keep their text, for the errors at start.
+func TestResolverConfigCache(t *testing.T) {
+	for text, want := range map[string]int{"": 10000, "\n    cache_size: 0": 0, "\n    cache_size: 250": 250} {
+		cfg, err := resolverConfig(t, `
+  lan:
+    listen: [192.168.1.0/24, " 192.168.1.2:5353", "192.168.1.0/24", "[fd00::2]", 192.168.1.2]
+    upstream: 192.168.1.1`+text, homeCredential, nasTask)
+		if err != nil {
+			t.Fatal(err)
+		}
+		spec := cfg.Resolvers["lan"].Spec
+		if spec.CacheSize != want {
+			t.Errorf("cache_size%s: %d, want %d", text, spec.CacheSize, want)
+		}
+		if lines := []string{"192.168.1.0/24", "192.168.1.2:5353", "[fd00::2]", "192.168.1.2"}; !slices.Equal(spec.ListenLines, lines) || len(spec.Listen) != len(lines) {
+			t.Errorf("listen: %+v, as written %q", spec.Listen, spec.ListenLines)
+		}
 	}
 }
 

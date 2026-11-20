@@ -137,6 +137,8 @@ func TestWorkerResolver(t *testing.T) {
 		`ipv6ddns_resolver_serving{resolver="lan"} 1`,
 		`ipv6ddns_resolver_queries_total{resolver="lan",kind="local"} `,
 		`ipv6ddns_resolver_queries_total{resolver="lan",kind="servfail"} 1`,
+		`ipv6ddns_resolver_queries_total{resolver="lan",kind="cached"} 0`,
+		`ipv6ddns_resolver_cache_entries{resolver="lan"} 0`,
 		`ipv6ddns_resolver_upstream_failures_total{resolver="lan",upstream="127.0.0.1:`,
 	} {
 		if !strings.Contains(metrics.String(), want) {
@@ -145,6 +147,11 @@ func TestWorkerResolver(t *testing.T) {
 	}
 	if report := w.PrettyPrint("", true); !strings.Contains(report, "Resolvers:\n    lan: serving\n        Listening: "+address) {
 		t.Errorf("report:\n%s", report)
+	} else if !strings.Contains(report, "        Cache: 0 of 10000\n") || !strings.Contains(report, ", cached 0,") {
+		t.Errorf("report, of the cache:\n%s", report)
+	}
+	if r := status.Resolvers[0]; r.CacheSize != 10000 || r.CacheEntries != 0 {
+		t.Errorf("status, of the cache: %+v", r)
 	}
 
 	other := resolverWorker(t, port)
@@ -164,6 +171,119 @@ func TestWorkerResolver(t *testing.T) {
 		t.Error("healthy once stopped")
 	}
 	if _, _, err := (&dns.Client{Timeout: 300 * time.Millisecond}).Exchange(new(dns.Msg).SetQuestion("nas.home.arpa.", dns.TypeA), address); err == nil {
+		t.Error("answering once stopped")
+	}
+}
+
+// workerOf is a worker of a configuration.
+func workerOf(t *testing.T, text string) *Worker {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+// Two resolvers on one address and port, spelled two ways, which the configuration alone can't
+// tell: the start does, before either listens, naming both and their entries.
+func TestWorkerResolversCollide(t *testing.T) {
+	port := freeDNSPort(t)
+	for _, c := range []struct{ lab, lan, want string }{
+		{"127.0.0.0/8", "127.0.0.1", "resolvers lab and lan both listen on 127.0.0.1:53: lab as 127.0.0.0/8, lan as 127.0.0.1: an address and port is one resolver's"},
+		{port, "127.0.0.1:" + port, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as " + port + ", lan as 127.0.0.1:" + port + ": an address and port is one resolver's"},
+		{"0.0.0.0:" + port, `["[::1]:` + port + `", "127.0.0.1:` + port + `"]`, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as 0.0.0.0:" + port + ", lan as 127.0.0.1:" + port + ": an address and port is one resolver's"},
+	} {
+		w := workerOf(t, fmt.Sprintf(`
+resolvers:
+  lab: {listen: %s, upstream: 192.0.2.1}
+  lan: {listen: %s, upstream: 192.0.2.1}
+credentials: {}
+tasks: {}
+discovery: {ipv6: false}
+`, c.lab, c.lan))
+		ctx, cancel := context.WithCancel(context.Background())
+		err := w.Start(ctx)
+		cancel()
+		if err == nil || err.Error() != c.want {
+			t.Errorf("got %v\nwant %s", err, c.want)
+		}
+		// Neither listens: the port is free.
+		if _, ok := strings.CutPrefix(c.lan, "127.0.0.1:"); ok {
+			l, err := net.Listen("tcp4", c.lan)
+			if err != nil {
+				t.Errorf("%s was left listening: %v", c.lan, err)
+			} else {
+				l.Close()
+			}
+		}
+	}
+}
+
+// The resolvers stop in the time the worker's shutdown is given, the program's, with no shorter
+// one of their own: a query whose upstream servers, three that never answer, take 6 seconds, is
+// answered, that none did, while the worker stops.
+func TestWorkerResolverShutdown(t *testing.T) {
+	var upstreams []string
+	for range 3 {
+		pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer pc.Close()
+		upstreams = append(upstreams, pc.LocalAddr().String())
+	}
+	port := freeDNSPort(t)
+	w := workerOf(t, fmt.Sprintf(`
+resolvers:
+  lan: {listen: "127.0.0.1:%s", upstream: [%s]}
+credentials: {}
+tasks: {}
+discovery: {ipv6: false}
+`, port, strings.Join(upstreams, ", ")))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	address := net.JoinHostPort("127.0.0.1", port)
+	answered := make(chan error, 1)
+	began := time.Now()
+	go func() {
+		resp, _, err := (&dns.Client{Net: "tcp", Timeout: 20 * time.Second}).Exchange(new(dns.Msg).SetQuestion("example.org.", dns.TypeA), address)
+		if err == nil && resp.Rcode != dns.RcodeServerFailure {
+			err = fmt.Errorf("%v", resp)
+		}
+		answered <- err
+	}()
+	// Once the query is being answered.
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+	stopping, done := context.WithTimeout(context.Background(), 30*time.Second)
+	defer done()
+	if err := w.Shutdown(stopping); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(began); took < 5500*time.Millisecond || took > 15*time.Second {
+		t.Errorf("stopped %s after the query, want the 6s its upstream servers take", took.Round(time.Millisecond))
+	}
+	select {
+	case err := <-answered:
+		if err != nil {
+			t.Errorf("the query being answered: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("the query being answered had no answer by the end of the shutdown")
+	}
+	if _, _, err := (&dns.Client{Timeout: 300 * time.Millisecond}).Exchange(new(dns.Msg).SetQuestion("example.org.", dns.TypeA), address); err == nil {
 		t.Error("answering once stopped")
 	}
 }

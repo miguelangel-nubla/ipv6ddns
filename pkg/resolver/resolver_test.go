@@ -79,6 +79,15 @@ type upstream struct {
 	// The last query, as received.
 	mutex sync.Mutex
 	last  *dns.Msg
+	// The answer to a query, in place of the usual, when it gives one.
+	handle func(req *dns.Msg) *dns.Msg
+}
+
+// answerWith makes handle the upstream's answers.
+func (u *upstream) answerWith(handle func(req *dns.Msg) *dns.Msg) {
+	u.mutex.Lock()
+	defer u.mutex.Unlock()
+	u.handle = handle
 }
 
 func newUpstream(t *testing.T) *upstream {
@@ -97,9 +106,16 @@ func newUpstream(t *testing.T) *upstream {
 		u.queries.Add(1)
 		u.mutex.Lock()
 		u.last = req.Copy()
+		handle := u.handle
 		u.mutex.Unlock()
 		if u.slow.Load() {
 			time.Sleep(time.Second)
+		}
+		if handle != nil {
+			if resp := handle(req); resp != nil {
+				w.WriteMsg(resp)
+				return
+			}
 		}
 		resp := new(dns.Msg)
 		resp.SetReply(req)
@@ -192,13 +208,30 @@ func testConfig(t *testing.T, upstreams ...string) (Config, *Addresses) {
 
 func start(t *testing.T, cfg Config) *Server {
 	t.Helper()
-	s, err := New(cfg, t.Errorf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.timeout = 300 * time.Millisecond
-	if err := s.Start(); err != nil {
-		t.Fatal(err)
+	return startWith(t, cfg, nil)
+}
+
+// startWith is start, of a server that prepare changes before it listens: its clock, its roots.
+func startWith(t *testing.T, cfg Config, prepare func(*Server)) *Server {
+	t.Helper()
+	var s *Server
+	// The port of the test's, any free one over UDP, can be another server's over TCP, of the
+	// tests that run: then another.
+	for try := 0; ; try++ {
+		var err error
+		if s, err = New(cfg, t.Errorf); err != nil {
+			t.Fatal(err)
+		}
+		s.timeout = 300 * time.Millisecond
+		if prepare != nil {
+			prepare(s)
+		}
+		if err = s.Start(); err == nil {
+			break
+		}
+		if try == 5 || !strings.Contains(err.Error(), "address already in use") {
+			t.Fatal(err)
+		}
 	}
 	t.Cleanup(func() { s.Shutdown(context.Background()) })
 	return s

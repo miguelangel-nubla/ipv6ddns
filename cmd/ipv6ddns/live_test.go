@@ -275,6 +275,8 @@ type instance struct {
 	output lockedBuffer
 	// With -live: what is typed at its terminal.
 	keys io.Writer
+	// More of the command's environment, as NAME=value.
+	env []string
 }
 
 // lockedBuffer is what the command wrote, read while it runs.
@@ -332,7 +334,7 @@ func (i *instance) start() *instance {
 	// Again, for one that ran and ended.
 	i.cmd = exec.Command(i.cmd.Args[0], i.cmd.Args[1:]...)
 	i.cmd.Stdout, i.cmd.Stderr = &i.output, &i.output
-	i.cmd.Env = append(os.Environ(), "TERM=xterm")
+	i.cmd.Env = append(append(os.Environ(), "TERM=xterm"), i.env...)
 	keys, err := i.cmd.StdinPipe()
 	if err != nil {
 		i.t.Fatal(err)
