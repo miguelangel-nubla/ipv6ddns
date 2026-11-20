@@ -25,13 +25,17 @@ var defaultResolvers = []resolver{
 }
 
 // dnsFetcher asks, for each family, the resolvers in order until one answers with an address of the
-// family: the query goes over that family, so it is the network's public one.
+// family: the query goes over that family, so it is the network's public one. Each family, and each
+// resolver of it, has its share of the time the run has left, so one that is silent leaves the
+// next its own.
 func dnsFetcher(families []int, resolvers []resolver) fetcher {
 	return func(ctx context.Context) ([]netip.Addr, error) {
 		var addrs []netip.Addr
 		var errs []error
-		for _, family := range families {
-			addr, err := resolve(ctx, family, resolvers)
+		for i, family := range families {
+			fctx, cancel := attempt(ctx, len(families)-i)
+			addr, err := resolve(fctx, family, resolvers)
+			cancel()
 			if err != nil {
 				errs = append(errs, fmt.Errorf("IPv%d: %w", family, err))
 				continue
@@ -43,13 +47,22 @@ func dnsFetcher(families []int, resolvers []resolver) fetcher {
 }
 
 func resolve(ctx context.Context, family int, resolvers []resolver) (netip.Addr, error) {
+	left := 0
+	for _, r := range resolvers {
+		if _, ok := r.servers[family]; ok {
+			left++
+		}
+	}
 	var errs []error
 	for _, r := range resolvers {
 		server, ok := r.servers[family]
 		if !ok {
 			continue
 		}
-		addr, err := r.ask(ctx, family, server)
+		actx, cancel := attempt(ctx, left)
+		left--
+		addr, err := r.ask(actx, family, server)
+		cancel()
 		if err == nil && !ofFamily(addr, family) {
 			err = fmt.Errorf("answered %s, not an IPv%d address", addr, family)
 		}
@@ -79,6 +92,14 @@ func (r resolver) ask(ctx context.Context, family int, server string) (netip.Add
 		records, err := client.LookupTXT(ctx, r.name)
 		if err != nil {
 			return netip.Addr{}, err
+		}
+		// Asked directly, the server answers the address alone. With the subnet of a client beside
+		// it, another resolver asked for us, as where the network redirects DNS to its own: the
+		// address is that resolver's.
+		for _, record := range records {
+			if strings.HasPrefix(strings.TrimSpace(record), "edns0-client-subnet") {
+				return netip.Addr{}, errors.New("another resolver relayed the query, so the answer is its address, not this network's: is DNS redirected here? An http source isn't")
+			}
 		}
 		for _, record := range records {
 			if addr, err := netip.ParseAddr(strings.TrimSpace(record)); err == nil {

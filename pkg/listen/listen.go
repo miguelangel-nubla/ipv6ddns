@@ -1,11 +1,15 @@
 // Package listen reads where to listen, as the web server and the Home Assistant device take it:
 // a list of ports, addresses, networks of the machine's addresses, and host names.
 //
-//	8053, :8053                         that port, on all addresses
+//	8053, :8053                         that port, on all addresses, IPv4 and IPv6
+//	0.0.0.0:8053, [::]:8053             that port, on all IPv4 addresses, or all IPv6 ones
 //	192.0.2.1:8053, [2001:db8::1]:8053  that address and port
 //	192.0.2.1, 2001:db8::1              that address, on the default port
 //	10.2.3.0/24, fd00::/64              each address of the machine in that network, on the default port
 //	myhost:8053, myhost                 each address the name resolves to, at start
+//
+// Networks and host names are read once, when listening starts: an address the machine gets
+// later isn't listened on.
 package listen
 
 import (
@@ -24,7 +28,8 @@ type Entry struct {
 	Host string
 	// Or a network of the machine's addresses, when valid.
 	Network netip.Prefix
-	Port    string
+	// In decimal, with no sign or leading zeros: one spelling, so the repeated are told.
+	Port string
 }
 
 func (e Entry) String() string {
@@ -85,9 +90,12 @@ func parseEntry(entry, defaultPort string) (Entry, error) {
 }
 
 func checked(e Entry, entry string) (Entry, error) {
-	if n, err := strconv.Atoi(e.Port); err != nil || n < 1 || n > 65535 {
+	// No sign, as "+8053", which net would take.
+	n, err := strconv.ParseUint(e.Port, 10, 16)
+	if err != nil || n < 1 {
 		return Entry{}, fmt.Errorf("%q: an invalid port", entry)
 	}
+	e.Port = strconv.FormatUint(n, 10)
 	if e.Network.IsValid() {
 		return e, nil
 	}
@@ -162,7 +170,8 @@ func machineAddresses() ([]netip.Addr, error) {
 }
 
 // Listen opens every address of entries, over TCP: a bad one stops it, closing the others, rather
-// than leaving part of the list up.
+// than leaving part of the list up. An address listens over its family alone, so 0.0.0.0 is all
+// the IPv4 addresses, and not the IPv6 ones too, as Go would have it; no address is both.
 func Listen(entries []Entry) ([]net.Listener, error) {
 	addresses, err := Addresses(entries)
 	if err != nil {
@@ -170,7 +179,7 @@ func Listen(entries []Entry) ([]net.Listener, error) {
 	}
 	var listeners []net.Listener
 	for _, a := range addresses {
-		l, err := net.Listen("tcp", a)
+		l, err := net.Listen(network(a), a)
 		if err != nil {
 			for _, l := range listeners {
 				l.Close()
@@ -180,6 +189,23 @@ func Listen(entries []Entry) ([]net.Listener, error) {
 		listeners = append(listeners, l)
 	}
 	return listeners, nil
+}
+
+// network is the network to listen on address over: of its family for an IP address, both for none.
+func network(address string) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil || host == "" {
+		return "tcp"
+	}
+	ip, err := netip.ParseAddr(host)
+	switch {
+	case err != nil:
+		return "tcp"
+	case ip.Unmap().Is4():
+		return "tcp4"
+	default:
+		return "tcp6"
+	}
 }
 
 // Interfaces are the interfaces of the machine that hold the addresses listeners listen on; all,
@@ -199,13 +225,25 @@ func Interfaces(listeners []net.Listener) (ifaces []net.Interface, all bool, err
 		}
 		for _, iface := range machine {
 			addrs, _ := iface.Addrs()
-			for _, a := range addrs {
-				if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP.Equal(tcp.IP) &&
-					!slices.ContainsFunc(ifaces, func(i net.Interface) bool { return i.Index == iface.Index }) {
-					ifaces = append(ifaces, iface)
-				}
+			if holds(iface, addrs, tcp) &&
+				!slices.ContainsFunc(ifaces, func(i net.Interface) bool { return i.Index == iface.Index }) {
+				ifaces = append(ifaces, iface)
 			}
 		}
 	}
 	return ifaces, false, nil
+}
+
+// holds tells whether iface, with addrs, has the address tcp listens on. A link-local one names
+// its interface, as its zone: another with the same address, as a VLAN of it, isn't listened on.
+func holds(iface net.Interface, addrs []net.Addr, tcp *net.TCPAddr) bool {
+	if tcp.Zone != "" && tcp.Zone != iface.Name && tcp.Zone != strconv.Itoa(iface.Index) {
+		return false
+	}
+	for _, a := range addrs {
+		if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP.Equal(tcp.IP) {
+			return true
+		}
+	}
+	return false
 }

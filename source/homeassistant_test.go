@@ -23,6 +23,8 @@ func TestHomeAssistantFetcher(t *testing.T) {
 		"sensor.wan/":          "203.0.113.7",
 		"sensor.both/":         "203.0.113.7, 2001:db8::1",
 		"sensor.router/wan_ip": "198.51.100.2",
+		"sensor.router/gone":   "None",
+		"sensor.zoned/":        "fe80::1%eth0",
 		"sensor.down/":         "unavailable",
 		"sensor.text/":         "connected",
 		"sensor.mapped/":       "::ffff:192.0.2.1",
@@ -35,6 +37,9 @@ func TestHomeAssistantFetcher(t *testing.T) {
 		{"sensor.mapped", "", "[192.0.2.1]"},
 		{"input_text.ip", "", "[]"},
 		{"sensor.down", "", "waiting: waiting for sensor.down, \"unavailable\" now"},
+		// An attribute without a value.
+		{"sensor.router", "gone", "waiting: waiting for sensor.router, attribute gone, \"None\" now"},
+		{"sensor.zoned", "", "[fe80::1%eth0]"},
 		{"sensor.text", "", "error: is no address"},
 		{"sensor.missing", "", "waiting: sensor.missing: waiting for Home Assistant to send the state"},
 	} {

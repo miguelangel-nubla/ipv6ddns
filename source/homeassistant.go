@@ -10,8 +10,8 @@ import (
 // homeAssistantFetcher reads the addresses in the state of a Home Assistant entity, or of its
 // attribute: one or more, separated by commas, semicolons or spaces, as "203.0.113.7" or
 // "203.0.113.7, 2001:db8::1". An empty state gives none, as an input_text cleared: the record goes.
-// Home Assistant not connected, and unknown and unavailable, its states for no value, as while it
-// starts, are a wait: the addresses stay for their lifetime.
+// Home Assistant not connected, and unknown, unavailable and None (an attribute without a value),
+// its states for no value, as while it starts, are a wait: the addresses stay for their lifetime.
 func homeAssistantFetcher(states HomeAssistantStates, entity, attribute string) fetcher {
 	what := entity
 	if attribute != "" {

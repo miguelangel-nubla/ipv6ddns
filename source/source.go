@@ -118,6 +118,16 @@ func (s *Source) runTimeout() time.Duration {
 	return min(max(s.config.Interval.Duration-time.Second, s.config.Interval.Duration/2), time.Minute)
 }
 
+// attempt bounds one try, of the left that remain, with its share of the time the run has left: one
+// that hangs doesn't take the time of the next ones, and what one that fails fast leaves is theirs.
+func attempt(ctx context.Context, left int) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok || left <= 1 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, time.Until(deadline)/time.Duration(left))
+}
+
 func (s *Source) run(ctx context.Context, logger *zap.SugaredLogger) {
 	ctx, cancel := context.WithTimeout(ctx, s.runTimeout())
 	defer cancel()
@@ -131,6 +141,8 @@ func (s *Source) run(ctx context.Context, logger *zap.SugaredLogger) {
 	// What a run gives stays, even when it failed for a part, as for one family of two.
 	current := make(map[netip.Addr]bool, len(addrs))
 	for _, ip := range addrs {
+		// Without a MAC, which is how the status tells them from the discovered ones: they stay in
+		// this collection, never in the discovery's state, which takes no address without one.
 		s.addrs.Seen(ipv6disc.NewAddr(nil, ip, s.name, s.config.Lifetime.Duration, nil), s.name)
 		current[ip.WithZone("")] = true
 	}

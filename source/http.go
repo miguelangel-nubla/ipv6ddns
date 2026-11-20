@@ -20,17 +20,20 @@ var defaultEchoURLs = map[int][]string{
 
 // httpFetcher asks, for each family, the echo services in order until one answers with an address
 // of the family: the request goes over that family, so it is the network's public one. urls,
-// when given, are asked for every family, in place of defaults.
+// when given, are asked for every family, in place of defaults. Each family, and each service of
+// it, has its share of the time the run has left, so one that hangs leaves the next its own.
 func httpFetcher(families []int, urls []string, defaults map[int][]string) fetcher {
 	return func(ctx context.Context) ([]netip.Addr, error) {
 		var addrs []netip.Addr
 		var errs []error
-		for _, family := range families {
+		for i, family := range families {
 			candidates := urls
 			if len(candidates) == 0 {
 				candidates = defaults[family]
 			}
-			addr, err := echo(ctx, family, candidates)
+			fctx, cancel := attempt(ctx, len(families)-i)
+			addr, err := echo(fctx, family, candidates)
+			cancel()
 			if err != nil {
 				errs = append(errs, fmt.Errorf("IPv%d: %w", family, err))
 				continue
@@ -53,8 +56,10 @@ func echo(ctx context.Context, family int, urls []string) (netip.Addr, error) {
 	defer client.CloseIdleConnections()
 
 	var errs []error
-	for _, url := range urls {
-		addr, err := ask(ctx, client, url)
+	for i, url := range urls {
+		actx, cancel := attempt(ctx, len(urls)-i)
+		addr, err := ask(actx, client, url)
+		cancel()
 		if err == nil && !ofFamily(addr, family) {
 			err = fmt.Errorf("answered %s, not an IPv%d address", addr, family)
 		}

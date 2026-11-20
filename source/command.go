@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 )
@@ -17,6 +18,10 @@ func commandFetcher(cfg config.Source, baseDir string) fetcher {
 	return func(ctx context.Context) ([]netip.Addr, error) {
 		cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
 		cmd.Dir = baseDir
+		// At the timeout, what it started goes with it, where the system can tell: a script's curl
+		// that hangs. And what stays running all the same doesn't keep this waiting for its output.
+		killWithChildren(cmd)
+		cmd.WaitDelay = time.Second
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		output, err := cmd.Output()

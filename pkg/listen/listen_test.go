@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParse(t *testing.T) {
@@ -28,6 +29,12 @@ func TestParse(t *testing.T) {
 		{"fd00::1/64", "fd00::/64 port 80"},
 		{"192.0.2.1, [2001:db8::1]:8053 ,myhost,9000", "192.0.2.1:80 [2001:db8::1]:8053 myhost:80 :9000"},
 		{"8053,:8053", ":8053"},
+		// One spelling of a port, so the repeated are told.
+		{"8053,08053,:08053", ":8053"},
+		{"192.0.2.1:08053,192.0.2.1:8053", "192.0.2.1:8053"},
+		{"0.0.0.0:8053,[::]:8053", "0.0.0.0:8053 [::]:8053"},
+		// Only its syntax is read here: what isn't an address is a host name, resolved at start.
+		{"1.2.3", "1.2.3:80"},
 	} {
 		entries, err := Parse(strings.Split(tt.list, ","), "80")
 		if err != nil {
@@ -46,7 +53,9 @@ func TestParse(t *testing.T) {
 
 func TestParseRefuses(t *testing.T) {
 	for _, list := range []string{"0", "65536", "192.0.2.1:0", "myhost:http", "192.0.2.1,", ",", "[2001:db8::1", "2001:db8::1]:80", "a:b:c",
-		"10.2.3.0/33", "10.2.3.0/24:8053", "myhost/24"} {
+		"10.2.3.0/33", "10.2.3.0/24:8053", "myhost/24", "+8053", "-8053", "192.0.2.1:+8053", "myhost:-1", "192.0.2.1:65536",
+		// A zone can hold anything, a bracket too: what doesn't read back as it was given.
+		"::%]"} {
 		if got, err := Parse(strings.Split(list, ","), "80"); err == nil {
 			t.Errorf("%q: %v, want an error", list, got)
 		}
@@ -63,7 +72,7 @@ func FuzzParse(f *testing.F) {
 			return
 		}
 		for _, e := range entries {
-			if n, err := strconv.Atoi(e.Port); err != nil || n < 1 || n > 65535 {
+			if n, err := strconv.Atoi(e.Port); err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != e.Port {
 				t.Errorf("%q gives %v, with an invalid port", list, e)
 			}
 			if !e.Network.IsValid() {
@@ -138,5 +147,128 @@ func TestInterfacesAll(t *testing.T) {
 	defer l.Close()
 	if _, all, err := Interfaces([]net.Listener{l}); err != nil || !all {
 		t.Errorf("listening on all addresses: all %v, %v", all, err)
+	}
+}
+
+// freePort is a port nothing listens on, on any address.
+func freePort(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	_, port, _ := net.SplitHostPort(l.Addr().String())
+	return port
+}
+
+// 0.0.0.0 is the IPv4 addresses and [::] the IPv6 ones: both can be listed, and one alone doesn't
+// listen on the other family. Go alone would have either be both, where the system does, as Linux.
+func TestListenFamilies(t *testing.T) {
+	if l, err := net.Listen("tcp6", "[::1]:0"); err != nil {
+		t.Skipf("no IPv6 loopback: %v", err)
+	} else {
+		l.Close()
+	}
+	listenFamilies(t, "127.0.0.1", "::1")
+}
+
+// listenFamilies checks which of two addresses of the machine's, an IPv4 one and an IPv6 one,
+// each list of entries is reached at.
+func listenFamilies(t *testing.T, ipv4, ipv6 string) {
+	port := freePort(t)
+	for _, c := range []struct {
+		entries    []string
+		listeners  int
+		ipv4, ipv6 bool
+		all        bool
+	}{
+		{[]string{"0.0.0.0:" + port}, 1, true, false, true},
+		{[]string{"[::]:" + port}, 1, false, true, true},
+		{[]string{"0.0.0.0:" + port, "[::]:" + port}, 2, true, true, true},
+		{[]string{"[::]:" + port, "0.0.0.0:" + port}, 2, true, true, true},
+		// A port alone is both, with one socket, where the system has those: Linux, unless its
+		// net.ipv6.bindv6only was set.
+		{[]string{port}, 1, true, true, true},
+		{[]string{ipv4 + ":" + port}, 1, true, false, false},
+		{[]string{"[" + ipv6 + "]:" + port}, 1, false, true, false},
+		{[]string{ipv4 + ":" + port, "[" + ipv6 + "]:" + port}, 2, true, true, false},
+	} {
+		entries, err := Parse(c.entries, "80")
+		if err != nil {
+			t.Fatal(err)
+		}
+		listeners, err := Listen(entries)
+		if err != nil {
+			t.Errorf("%v: %v", c.entries, err)
+			continue
+		}
+		if len(listeners) != c.listeners {
+			t.Errorf("%v: %d listeners, want %d", c.entries, len(listeners), c.listeners)
+		}
+		if _, all, err := Interfaces(listeners); err != nil || all != c.all {
+			t.Errorf("%v: all addresses %v, %v, want %v", c.entries, all, err, c.all)
+		}
+		for address, want := range map[string]bool{ipv4: c.ipv4, ipv6: c.ipv6} {
+			conn, err := net.DialTimeout("tcp", net.JoinHostPort(address, port), 5*time.Second)
+			if err == nil {
+				conn.Close()
+			}
+			if got := err == nil; got != want {
+				t.Errorf("%v: reached at %s: %v, want %v (%v)", c.entries, address, got, want, err)
+			}
+		}
+		for _, l := range listeners {
+			l.Close()
+		}
+	}
+}
+
+// An address that can't be listened on closes those opened before it.
+func TestListenClosesOnFailure(t *testing.T) {
+	taken, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer taken.Close()
+	port := freePort(t)
+	entries, err := Parse([]string{"127.0.0.1:" + port, taken.Addr().String()}, "80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listeners, err := Listen(entries); err == nil {
+		t.Fatalf("an address in use: got %d listeners, want an error", len(listeners))
+	}
+	again, err := Listen(entries[:1])
+	if err != nil {
+		t.Fatalf("the first address was left open: %v", err)
+	}
+	again[0].Close()
+}
+
+func TestHolds(t *testing.T) {
+	linkLocal := []net.Addr{&net.IPNet{IP: net.ParseIP("fe80::1"), Mask: net.CIDRMask(64, 128)}}
+	lan := net.Interface{Index: 2, Name: "eth0"}
+	vlan := net.Interface{Index: 7, Name: "eth0.10"}
+	for _, tt := range []struct {
+		zone      string
+		lan, vlan bool
+	}{
+		{"", true, true}, // no zone: by the address alone
+		{"eth0", true, false},
+		{"eth0.10", false, true},
+		{"7", false, true}, // an interface Go has no name of
+		{"eth1", false, false},
+	} {
+		tcp := &net.TCPAddr{IP: net.ParseIP("fe80::1"), Port: 6053, Zone: tt.zone}
+		if got := holds(lan, linkLocal, tcp); got != tt.lan {
+			t.Errorf("zone %q, eth0: %v", tt.zone, got)
+		}
+		if got := holds(vlan, linkLocal, tcp); got != tt.vlan {
+			t.Errorf("zone %q, eth0.10: %v", tt.zone, got)
+		}
+	}
+	if holds(lan, linkLocal, &net.TCPAddr{IP: net.ParseIP("fe80::2")}) {
+		t.Error("another address")
 	}
 }
