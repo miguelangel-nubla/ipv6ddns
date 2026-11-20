@@ -58,3 +58,10 @@ A test fails when the pages are behind, when a key has no description, or when a
 3. `Update` makes the records of a name exactly the addresses given: it adds those missing, and removes the others, of both A and AAAA. It runs when the addresses change and again after an error, never periodically: it returns `nil` only once the change is applied and served, also when the update before it failed halfway, and every wait for the provider has a timeout.
 4. Test it against a fake of the provider's API, as the others do, through prefix changes, and an update that fails halfway. Where the real server runs in a container, add it to `tools/live-providers.sh` and `ddns/live_test.go`.
 5. Add it to the test of `ddns/schema_test.go`, and regenerate the reference.
+
+## Releases
+
+A tag makes a release: goreleaser builds it and publishes it on GitHub, with its images. Work goes to `dev`, where CI runs on every push, and reaches `main` when it is released.
+
+- **A prerelease** is a tag of `dev` with a prerelease part: `v0.23.0-rc.1`, `-rc.2`, `-beta.1`. GitHub marks it a prerelease, not the latest release, and its images have its own tags only: `latest`, `vX` and `vX.Y` stay on the last release, so nobody gets it who didn't ask for it. An ipv6ddns prerelease can take an ipv6disc prerelease in `go.mod`, which Go takes as any version: `go get github.com/miguelangel-nubla/ipv6disc@v0.19.0-rc.1`. The add-on repository is told of releases only, so Home Assistant users get none of them.
+- **A release** is `dev` merged into `main`, and tagged there: `v0.23.0`.

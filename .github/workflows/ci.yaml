@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      # Where the prereleases are made from.
+      - dev
   # Weekly too: new vulnerabilities, and new Go releases, come without a commit.
   schedule:
     - cron: '47 4 * * 1'
