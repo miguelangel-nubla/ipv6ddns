@@ -1,7 +1,6 @@
 version: 2
 before:
   hooks:
-    - go generate ./...
     - go mod tidy
 builds:
   - main: ./cmd/ipv6ddns

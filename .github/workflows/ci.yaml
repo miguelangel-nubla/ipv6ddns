@@ -29,8 +29,12 @@ jobs:
           go-version: 'stable'
           check-latest: true
       -
-        name: Generate
-        run: go generate ./...
+        # The Gravity API client is committed, so that go install and an import of the module
+        # build: it is what its schema, pinned in ddns/gravity/main.go, generates.
+        name: The generated code is up to date
+        run: |
+          go generate ./...
+          git diff --exit-code -- ddns/gravity
       -
         # Home Assistant's library for ESPHome devices, at the version Home Assistant uses: the
         # tests of the integration connect with it, and fail rather than skip without it.
@@ -62,13 +66,55 @@ jobs:
           ESPHOME_COMPAT_REQUIRED: "1"
           ESPHOME_MDNS_INTERFACES: mdns0,mdns1
       -
-        # The binary as the release builds it, for this platform only.
+        # What only a real socket or a real link tells, as root, for the network namespaces: the
+        # families an entry listens on, on Linux; the port the device announces by mDNS, found
+        # and connected to by Home Assistant's libraries across a link; and the device dropping
+        # a Home Assistant that vanishes, one that stops reading, and clients that say nothing.
+        name: Live tests
+        run: |
+          go vet -tags integration ./...
+          go test -race -tags integration -exec "sudo env ESPHOME_PYTHON=$(which python)" -v -run '^TestLive' . ./pkg/listen ./pkg/esphome
+      -
+        # The binaries as the release builds them, for every platform: one that no longer
+        # compiles shows here, not at the tag.
         name: Build
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: build --snapshot --clean --single-target
+          args: build --snapshot --clean
+
+  # The DNS providers against the real servers that run in a container, of the versions pinned in
+  # the script: Technitium DNS Server, Gravity, OpenWrt, and Mikrotik RouterOS under QEMU. A fake
+  # of an API is written by the hand that wrote its provider, and agrees with it.
+  providers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        # RouterOS is an x86 machine: with KVM it boots in seconds, and emulated without.
+        name: KVM for the runner's user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      -
+        name: Vet
+        run: go vet -tags live ./ddns
+      -
+        name: Live tests of the providers
+        run: tools/live-providers.sh
 
   # 64-bit atomic operations need an alignment 32-bit platforms don't give by themselves.
   test-32-bit:
@@ -85,9 +131,6 @@ jobs:
         with:
           go-version: 'stable'
           check-latest: true
-      -
-        name: Generate
-        run: go generate ./...
       -
         name: Test
         run: GOARCH=386 go test ./...
@@ -107,11 +150,11 @@ jobs:
           go-version: 'stable'
           check-latest: true
       -
-        name: Generate
-        run: go generate ./...
-      -
         name: Staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+        run: |
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags integration ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags live ./ddns
 
   # Vulnerabilities in the code the module calls, of its dependencies and of Go.
   vulncheck:
@@ -128,9 +171,6 @@ jobs:
         with:
           go-version: 'stable'
           check-latest: true
-      -
-        name: Generate
-        run: go generate ./...
       -
         name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
@@ -150,5 +190,8 @@ jobs:
         with:
           path: homeassistant/addon
       -
+        # The image's entry point: it is copied with its mode, so it has to be executable here.
         name: Check the start script
-        run: sh -n homeassistant/run.sh
+        run: |
+          sh -n homeassistant/run.sh
+          test "$(git ls-files -s homeassistant/run.sh | cut -d' ' -f1)" = 100755

@@ -28,9 +28,7 @@ jobs:
           check-latest: true
       -
         name: Test
-        run: |
-          go generate ./...
-          go test ./...
+        run: go test ./...
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0

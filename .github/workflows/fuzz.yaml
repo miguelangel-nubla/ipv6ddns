@@ -33,9 +33,6 @@ jobs:
           go-version: 'stable'
           check-latest: true
       -
-        name: Generate
-        run: go generate ./...
-      -
         name: List the fuzz tests
         id: list
         run: |
@@ -70,9 +67,6 @@ jobs:
         with:
           go-version: 'stable'
           check-latest: true
-      -
-        name: Generate
-        run: go generate ./...
       -
         name: Find the corpus
         id: corpus
