@@ -22,6 +22,9 @@ type Credential struct {
 	deprecated   []string
 }
 
+// MinRetry is the least time between a failed update and its retry.
+const MinRetry = time.Second
+
 func (c *Credential) UnmarshalJSON(b []byte) error {
 	type plain Credential
 	var credential struct {

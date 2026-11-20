@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,22 @@ func TestPagesUpToDate(t *testing.T) {
 		}
 		if got, err := os.ReadFile(path); err != nil || string(got) != want {
 			t.Errorf("%s is behind the schemas: go test ./internal/docgen -update", path)
+		}
+	}
+}
+
+// The descriptions are ipv6disc's, read by the users of both: what is true of one program's image
+// only, as ipv6disc's having no CAs, belongs in its documentation, not in them.
+func TestPluginFieldDescriptionsAreOfNoImage(t *testing.T) {
+	for _, def := range pluginDefs {
+		described, err := PluginFieldDescriptions(def.pluginType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, description := range described {
+			if strings.Contains(description, "Docker image") {
+				t.Errorf("%s %s: %q is of ipv6disc's image", def.pluginType, name, description)
+			}
 		}
 	}
 }

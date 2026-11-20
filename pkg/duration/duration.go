@@ -5,6 +5,7 @@ package duration
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -22,7 +23,13 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	case nil:
 		// Keep the default.
 	case float64:
-		d.Duration = time.Duration(value * float64(time.Second))
+		// Beyond what a time.Duration holds, about 292 years, the conversion depends on the
+		// machine: negative on some.
+		nanoseconds := value * float64(time.Second)
+		if nanoseconds >= math.MaxInt64 || nanoseconds <= math.MinInt64 {
+			return fmt.Errorf("invalid duration: %s seconds is out of range", b)
+		}
+		d.Duration = time.Duration(nanoseconds)
 	case string:
 		parsed, err := time.ParseDuration(value)
 		if err != nil {

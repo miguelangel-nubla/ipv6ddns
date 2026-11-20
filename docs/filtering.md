@@ -50,14 +50,14 @@ filter:
 
 #### `filter.self`
 
-*   **`self`** (Boolean): The addresses of the machine ipv6ddns runs on, rather than of a MAC: a server, a Home Assistant host. No MAC to look up, and no change when its network card does. They are those of the interfaces discovery runs on, while the family listens: leave out with `discovery.exclude_interfaces` the bridges of containers, whose addresses are this machine's too. See [this machine](#6-this-machine-ipv6ddns-runs-on).
+*   **`self`** (Boolean): The addresses of the machine ipv6ddns runs on, rather than of a MAC: a server, a Home Assistant host. No MAC to look up, and no change when its network card does. They are those of the interfaces discovery runs on, while the family listens, so not those of an interface without a MAC, as a PPP link or a tunnel (see [interfaces](discovery.md#interfaces)): take those from a [source](sources.md), as a `command` one that reads the interface. An address the interface no longer has leaves within a minute, not a lifetime later. Leave out with `discovery.exclude_interfaces` the bridges of containers, whose addresses are this machine's too. See [this machine](#6-this-machine-ipv6ddns-runs-on).
 
 #### `filter.mac`
 
 *   **`address`** (Single String): Exact match of the MAC address.
-    *   Example: `00:11:22:33:44:55`
+    *   Example: `00:11:22:33:44:55`. Written as `00-11-22-33-44-55` or `0011.2233.4455`, it is the same MAC. What is no MAC is a configuration error.
 *   **`mask`** (List of Strings): Match against a mask. Useful for matching OUI (Vendor) or ranges. All provided masks must match.
-    *   Format: `VALUE/MASK`
+    *   Format: `VALUE/MASK`, both whole MACs. An entry that isn't is a configuration error.
     *   Example: `00:11:22:00:00:00/ff:ff:ff:00:00:00` (Matches any device with 00:11:22 OUI)
 *   **`type`** (List of Strings): Match protocol-defined MAC types. All types must match.
     *   Values: `global`, `local`, `unicast`, `multicast`; `!type` for not of the type.
@@ -83,8 +83,10 @@ filter:
         *   `temporary`: an IPv6 privacy address of this machine's, which its kernel says is temporary: it changes every day or so. Known on Linux, and for the [`self`](#filterself) addresses only.
     *   `!type`: not of the type, as `!temporary`.
     *   **Common Use Case**: `type: ["global"]` (Public IPs only).
-*   **`mask`** (List of Strings): generic bitwise mask match.
-    *   Format: `VALUE/MASK`
+*   **`mask`** (List of Strings): generic bitwise mask match: the address must equal `VALUE` in the bits `MASK` sets. All provided masks must match.
+    *   Format: `VALUE/MASK`, both whole addresses of one family. `MASK` is an address, not a prefix length: `::1/64` is a configuration error, as any entry that isn't two addresses. For a subnet, use `prefix`.
+    *   Example: `::1/::ffff:ffff:ffff:ffff` (the IPv6 addresses whose interface ID is `::1`, whatever the prefix), or `0.0.0.5/0.0.0.255` (the IPv4 addresses ending in `.5`).
+    *   A mask matches the addresses of its own family only: with `family: [4, 6]`, an IPv6 mask leaves the IPv4 addresses out.
 
 #### `filter.source`
 

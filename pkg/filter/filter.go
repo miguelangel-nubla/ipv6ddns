@@ -2,6 +2,8 @@ package filter
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"slices"
@@ -10,45 +12,49 @@ import (
 	"github.com/miguelangel-nubla/ipv6disc"
 )
 
+// CheckMAC tells whether the MAC is the filter's, in any form net.ParseMAC reads: the configuration
+// keeps the canonical one. A filter that is no MAC matches none.
 func CheckMAC(mac net.HardwareAddr, filter string) bool {
 	if filter == "" {
 		return true
 	}
-	return strings.EqualFold(mac.String(), filter)
-}
-
-func CheckMACMask(mac net.HardwareAddr, filters []string) bool {
-	if len(filters) == 0 {
+	if strings.EqualFold(mac.String(), filter) {
 		return true
 	}
+	want, err := net.ParseMAC(filter)
+	return err == nil && bytes.Equal(mac, want)
+}
 
+// ParseMACMask reads a VALUE/MASK pair of MACs, as 00:11:22:00:00:00/ff:ff:ff:00:00:00.
+func ParseMACMask(s string) (value, mask net.HardwareAddr, err error) {
+	v, m, ok := strings.Cut(s, "/")
+	if !ok || strings.Contains(m, "/") {
+		return nil, nil, errors.New("not VALUE/MASK, as 00:11:22:00:00:00/ff:ff:ff:00:00:00")
+	}
+	if value, err = net.ParseMAC(v); err != nil {
+		return nil, nil, fmt.Errorf("the value %q is not a MAC, as 00:11:22:00:00:00", v)
+	}
+	if mask, err = net.ParseMAC(m); err != nil {
+		return nil, nil, fmt.Errorf("the mask %q is not a MAC, as ff:ff:ff:00:00:00", m)
+	}
+	if len(value) != len(mask) {
+		return nil, nil, fmt.Errorf("the mask is %d bytes, the value %d", len(mask), len(value))
+	}
+	return value, mask, nil
+}
+
+// CheckMACMask tells whether the MAC matches every VALUE/MASK pair. A pair that doesn't parse
+// matches none: the configuration refuses it, and a filter must not take every host for it.
+func CheckMACMask(mac net.HardwareAddr, filters []string) bool {
 	for _, f := range filters {
-		parts := strings.Split(f, "/")
-		if len(parts) != 2 {
-			continue
-		}
-		targetMAC, err := net.ParseMAC(parts[0])
-		if err != nil {
-			continue
-		}
-		maskMAC, err := net.ParseMAC(parts[1])
-		if err != nil {
-			continue
-		}
-
-		if len(mac) != len(targetMAC) || len(mac) != len(maskMAC) {
+		value, mask, err := ParseMACMask(f)
+		if err != nil || len(mac) != len(value) {
 			return false
 		}
-
-		match := true
 		for i := range mac {
-			if (mac[i] & maskMAC[i]) != (targetMAC[i] & maskMAC[i]) {
-				match = false
-				break
+			if (mac[i] & mask[i]) != (value[i] & mask[i]) {
+				return false
 			}
-		}
-		if !match {
-			return false
 		}
 	}
 	return true
@@ -215,43 +221,50 @@ func CheckSuffix(ip netip.Addr, suffix string) bool {
 	return strings.HasSuffix(ip.WithZone("").String(), strings.ToLower(suffix))
 }
 
+// ParseIPMask reads a VALUE/MASK pair of addresses of one family, as ::1/::ffff:ffff:ffff:ffff or
+// 0.0.0.5/0.0.0.255. The mask is an address, not a prefix length.
+func ParseIPMask(s string) (value, mask netip.Addr, err error) {
+	const hint = "the mask is an address, as ::ffff:ffff:ffff:ffff or 0.0.0.255, not a prefix length: ip.prefix takes 2001:db8::/32"
+	v, m, ok := strings.Cut(s, "/")
+	if !ok || strings.Contains(m, "/") {
+		return value, mask, errors.New("not VALUE/MASK, as ::1/::ffff:ffff:ffff:ffff")
+	}
+	if value, err = netip.ParseAddr(v); err != nil || value.Zone() != "" {
+		return netip.Addr{}, netip.Addr{}, fmt.Errorf("the value %q is not an address, as ::1", v)
+	}
+	if mask, err = netip.ParseAddr(m); err != nil || mask.Zone() != "" {
+		return netip.Addr{}, netip.Addr{}, fmt.Errorf("the mask %q is not an address: %s", m, hint)
+	}
+	value, mask = value.Unmap(), mask.Unmap()
+	if value.Is4() != mask.Is4() {
+		return netip.Addr{}, netip.Addr{}, errors.New("the value and the mask are not of the same family")
+	}
+	return value, mask, nil
+}
+
+// CheckMask tells whether the address matches every VALUE/MASK pair: within its family, so a pair
+// of the other family matches none of its addresses. A pair that doesn't parse matches none
+// either: the configuration refuses it, and a filter must not take every address for it.
 func CheckMask(ip netip.Addr, filters []string) bool {
 	if len(filters) == 0 {
 		return true
 	}
-	if !ip.Is6() {
+	ip = ip.Unmap().WithZone("")
+	if !ip.IsValid() {
 		return false
 	}
 
-	ipBytes := ip.As16()
-
 	for _, f := range filters {
-		parts := strings.Split(f, "/")
-		if len(parts) != 2 {
-			continue
-		}
-
-		valIP, err := netip.ParseAddr(parts[0])
-		if err != nil {
-			continue
-		}
-		maskIP, err := netip.ParseAddr(parts[1])
-		if err != nil {
-			continue
-		}
-
-		valBytes := valIP.As16()
-		maskBytes := maskIP.As16()
-
-		match := true
-		for i := 0; i < 16; i++ {
-			if (ipBytes[i] & maskBytes[i]) != (valBytes[i] & maskBytes[i]) {
-				match = false
-				break
-			}
-		}
-		if !match {
+		value, mask, err := ParseIPMask(f)
+		if err != nil || value.Is4() != ip.Is4() {
 			return false
+		}
+		// AsSlice: 4 bytes or 16, the same for the three, so no ::ffff: prefix enters.
+		ipBytes, valueBytes, maskBytes := ip.AsSlice(), value.AsSlice(), mask.AsSlice()
+		for i := range ipBytes {
+			if (ipBytes[i] & maskBytes[i]) != (valueBytes[i] & maskBytes[i]) {
+				return false
+			}
 		}
 	}
 	return true

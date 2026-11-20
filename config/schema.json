@@ -14,21 +14,23 @@
                             "properties": {
                                 "self": {
                                     "type": "boolean",
-                                    "description": "The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen."
+                                    "description": "The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen. Not those of an interface without a MAC, as a PPP link or a tunnel: a source gives them."
                                 },
                                 "mac": {
                                     "type": "object",
                                     "properties": {
                                         "address": {
                                             "type": "string",
-                                            "description": "The MAC address, exactly: 00:11:22:33:44:55."
+                                            "pattern": "^([0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{4}(\\.[0-9A-Fa-f]{4}){2})?$",
+                                            "description": "The MAC address: 00:11:22:33:44:55. Also read as 00-11-22-33-44-55 or 0011.2233.4455."
                                         },
                                         "mask": {
                                             "type": "array",
                                             "items": {
-                                                "type": "string"
+                                                "type": "string",
+                                                "pattern": "^[^/]+/[^/]+$"
                                             },
-                                            "description": "VALUE/MASK pairs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's."
+                                            "description": "VALUE/MASK pairs of MACs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's."
                                         },
                                         "type": {
                                             "type": "array",
@@ -90,9 +92,10 @@
                                         "mask": {
                                             "type": "array",
                                             "items": {
-                                                "type": "string"
+                                                "type": "string",
+                                                "pattern": "^[^/]+/[^/]+$"
                                             },
-                                            "description": "VALUE/MASK pairs, all of which the address must match."
+                                            "description": "VALUE/MASK pairs of addresses of one family, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff for the IPv6 addresses ending in ::1, 0.0.0.5/0.0.0.255 for the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair matches the addresses of its family only."
                                         },
                                         "family": {
                                             "type": "array",
@@ -196,7 +199,7 @@
                     },
                     "retry": {
                         "$ref": "#/$defs/duration",
-                        "description": "How long to wait before retrying a failed update. Default: 1m."
+                        "description": "How long to wait before retrying a failed update: addresses that change meanwhile wait for it too. At least 1s. Default: 1m."
                     },
                     "debounce_time": {
                         "$ref": "#/$defs/duration",
@@ -396,7 +399,7 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "The port Home Assistant connects to. Default: 6053, ESPHome's."
+                    "description": "The port Home Assistant connects to, which the device announces. Default: 6053, ESPHome's."
                 },
                 "announce": {
                     "type": "boolean",
@@ -404,7 +407,7 @@
                 },
                 "listen": {
                     "$ref": "#/$defs/stringList",
-                    "description": "Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on."
+                    "description": "Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. It announces the port it listens on, one: entries of several ports need announce: false. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on."
                 },
                 "state_file": {
                     "type": "string",
@@ -571,6 +574,18 @@
             },
             "additionalProperties": false,
             "description": "A plugin over the Mikrotik API.",
+            "dependencies": {
+                "tls_fingerprint": {
+                    "properties": {
+                        "use_tls": {
+                            "const": true
+                        }
+                    },
+                    "required": [
+                        "use_tls"
+                    ]
+                }
+            },
             "if": {
                 "required": [
                     "params"

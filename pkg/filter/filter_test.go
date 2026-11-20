@@ -29,7 +29,12 @@ func TestCheckMAC(t *testing.T) {
 		{"Empty filter", "00:11:22:33:44:55", "", true},
 		{"Match", "00:11:22:33:44:55", "00:11:22:33:44:55", true},
 		{"Mismatch", "00:11:22:33:44:55", "00:11:22:33:44:56", false},
-		{"Case insensitive", "00:11:22:33:44:55", "00:11:22:33:44:55", true},
+		{"Case insensitive", "00:11:22:aa:bb:cc", "00:11:22:AA:BB:CC", true},
+		// The forms net.ParseMAC reads, as Windows and Cisco write them.
+		{"Dashes", "00:11:22:33:44:55", "00-11-22-33-44-55", true},
+		{"Dots", "00:11:22:33:44:55", "0011.2233.4455", true},
+		{"Dashes, mismatch", "00:11:22:33:44:55", "00-11-22-33-44-56", false},
+		{"Not a MAC", "00:11:22:33:44:55", "00:11:22:33:44", false},
 	}
 
 	for _, tt := range tests {
@@ -115,6 +120,13 @@ func TestCheckMACMask(t *testing.T) {
 			filter: "02:00:00:00:00:00/02:00:00:00:00:00",
 			want:   true,
 		},
+		// What doesn't parse matches nothing, rather than everything.
+		{name: "Short mask", mac: "de:ad:be:ef:00:01", filter: "00:11:22:00:00:00/ff:ff:ff", want: false},
+		{name: "No slash", mac: "00:11:22:33:44:55", filter: "00:11:22:33:44:55", want: false},
+		{name: "Two slashes", mac: "00:11:22:33:44:55", filter: "00:11:22:33:44:55/ff:ff:ff:ff:ff:ff/00", want: false},
+		{name: "Invalid value", mac: "00:11:22:33:44:55", filter: "nope/ff:ff:ff:ff:ff:ff", want: false},
+		{name: "Longer than the MAC", mac: "00:11:22:33:44:55", filter: "00:00:00:00:00:00:00:00/00:00:00:00:00:00:00:00", want: false},
+		{name: "Dashes", mac: "00:11:22:33:44:55", filter: "00-11-22-00-00-00/ff-ff-ff-00-00-00", want: true},
 	}
 
 	for _, tt := range tests {
@@ -194,6 +206,22 @@ func TestCheckMask(t *testing.T) {
 		{"Match odd", "2001:db8::1", "::1/::1", true},
 		{"Match odd (fail)", "2001:db8::2", "::1/::1", false},
 		{"Match even", "2001:db8::2", "::0/::1", true},
+		{"Zone ignored", "fe80::1%eth0", "::1/::ffff", true},
+		// Within the address's family.
+		{"IPv4 match", "192.168.1.5", "0.0.0.5/0.0.0.255", true},
+		{"IPv4 mismatch", "192.168.1.6", "0.0.0.5/0.0.0.255", false},
+		{"IPv4-mapped is IPv4", "::ffff:192.168.1.5", "0.0.0.5/0.0.0.255", true},
+		{"IPv4 against an IPv6 mask", "192.168.1.5", "::5/::ff", false},
+		{"IPv6 against an IPv4 mask", "2001:db8::5", "0.0.0.5/0.0.0.255", false},
+		// What doesn't parse matches nothing, rather than everything.
+		{"Prefix length for a mask", "2001:db8::1", "::1/64", false},
+		{"Prefix length 128", "2001:db8::1", "::1/128", false},
+		{"No slash", "2001:db8::1", "::1", false},
+		{"Two slashes", "2001:db8::1", "::1/::1/::1", false},
+		{"Invalid value", "2001:db8::1", "nope/::1", false},
+		{"Mixed families", "2001:db8::1", "::1/0.0.0.255", false},
+		{"Zone in the mask", "2001:db8::1", "::1/::1%eth0", false},
+		{"Empty", "2001:db8::1", "", false},
 	}
 
 	for _, tt := range tests {

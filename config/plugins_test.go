@@ -9,12 +9,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/miguelangel-nubla/ipv6ddns/internal/schematest"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins/linux"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins/mikrotik"
 )
 
 const hostKey = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+// A certificate's SHA-256, as the schema takes it: 64 hex digits, with colons or not.
+const (
+	fingerprint       = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+	fingerprintColons = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+)
 
 func TestPluginParams(t *testing.T) {
 	// A password with what the params use: commas, backslashes.
@@ -106,11 +113,56 @@ func TestPluginConfigs(t *testing.T) {
 		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n":                                                      "needs a password or an identity file",
 		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n      identity_file: /k\n      use_tls: true\n":        "use_tls is not allowed",
 		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      password: p\n      tls_fingerprint: nothex\n": "tls_fingerprint",
-		"      type: mikrotik\n      params: 60s\n":                                                                                          "invalid mikrotik config",
+		// What only the plugin type checks, and the schema says where it can.
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      tls_fingerprint: " + fingerprint + "\n":                       "use_tls",
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      use_tls: false\n      tls_fingerprint: " + fingerprint + "\n": "use_tls",
+		"      type: mikrotik\n      params: 60s,a,u,p,false," + fingerprint + "\n":                                                                          "tls_fingerprint needs use_tls=true",
+		"      type: mikrotik\n      params: 60s,a,u,p,yes\n":                                                                                                "use_tls",
+		"      type: mikrotik\n      interval: \"0\"\n      address: a\n      username: u\n":                                                                 "interval",
+		"      type: mikrotik\n      params: 60s\n":                                                                                                          "invalid mikrotik config",
 	} {
 		_, err := load(plugin)
 		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "Must validate") {
 			t.Errorf("%q: got %v, want an error with %q only", plugin, err, want)
+		}
+	}
+
+	// What the schema's patterns take of a fingerprint and a host key, the plugin types take too.
+	for _, plugin := range []string{
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      use_tls: true\n      tls_fingerprint: " + fingerprint + "\n",
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      use_tls: true\n      tls_fingerprint: " + strings.ToUpper(fingerprintColons) + "\n",
+		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n      password: p\n      host_key: SHA256:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM+/0A\n",
+		"      type: freebsd\n      interval: 1h30m\n      address: a\n      username: u\n      identity_file: /k\n      host_key: " + hostKey + "\n",
+	} {
+		if _, err := load(plugin); err != nil {
+			t.Errorf("%q: %v", plugin, err)
+		}
+	}
+
+	// A password with all the params use, commas, backslashes, an equals sign and a space at its
+	// end, arrives whole: the fields are escaped, and the first one, the interval, has no "=" for
+	// the params to be taken as name=value.
+	const password = `a=b,c\d `
+	t.Setenv("IPV6DDNS_TEST_ROUTER_PASSWORD", password)
+	for _, typeName := range []string{"mikrotik", "linux"} {
+		cfg, err := load("      type: " + typeName + "\n      interval: 1m\n      address: 1.2.3.4\n      username: a\n      password: ${IPV6DDNS_TEST_ROUTER_PASSWORD}\n")
+		if err != nil {
+			t.Fatalf("%s: %v", typeName, err)
+		}
+		params, _ := cfg.Discovery.Plugins["router"].PluginParams()
+		if want := `1m,1.2.3.4,a,a=b\,c\\d `; params != want {
+			t.Errorf("%s: params %q, want %q", typeName, params, want)
+		}
+		var got string
+		if typeName == "mikrotik" {
+			mcfg, _ := mikrotik.ParseConfig(params)
+			got = mcfg.Password
+		} else {
+			lcfg, _ := linux.ParseConfig(params)
+			got = lcfg.Password
+		}
+		if got != password {
+			t.Errorf("%s: the password read back as %q", typeName, got)
 		}
 	}
 
@@ -170,4 +222,26 @@ func TestPluginSchemaMatchesTheTypes(t *testing.T) {
 			t.Errorf("%s: the schema requires %v, ipv6disc %v", typeName, schemaRequired, required)
 		}
 	}
+}
+
+// The fields of PluginConfig are those of the schema's plugin types together: the schema's
+// own check stops at their $ref.
+func TestPluginSchemaMatchesPluginConfig(t *testing.T) {
+	var schema struct {
+		Defs map[string]struct {
+			Properties map[string]any `json:"properties"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(configSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	properties := maps.Clone(schema.Defs["plugin"].Properties)
+	for _, def := range []string{"sshPlugin", "mikrotikPlugin"} {
+		maps.Copy(properties, schema.Defs[def].Properties)
+	}
+	all, err := json.Marshal(map[string]any{"type": "object", "properties": properties})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schematest.Check(t, string(all), PluginConfig{})
 }

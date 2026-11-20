@@ -227,6 +227,21 @@ func TestNewConfigChecks(t *testing.T) {
 	if _, err := NewConfig(write(`{"tasks": {}, "credentials": {}, "unknown": 1}`)); err == nil {
 		t.Error("an unknown key: want an error")
 	}
+
+	// A retry of nothing would try a failing provider again without a pause.
+	credential := func(times string) string {
+		return `{"tasks": {}, "credentials": {"duck": {"provider": "duckdns", "settings": {}, ` + times + `}}}`
+	}
+	for _, times := range []string{`"retry": 0`, `"retry": "0s"`, `"retry": "500ms"`, `"retry_time": 0`, `"retry": "-1m"`, `"debounce": "-1s"`} {
+		if _, err := NewConfig(write(credential(times))); err == nil {
+			t.Errorf("%s: want an error", times)
+		}
+	}
+	for _, times := range []string{`"retry": "1s"`, `"debounce": 0`, `"debounce_time": 0, "retry_time": 1`} {
+		if _, err := NewConfig(write(credential(times))); err != nil {
+			t.Errorf("%s: %v", times, err)
+		}
+	}
 }
 
 // Every setting of the schema says what it is: the configuration reference is made of them.
@@ -321,6 +336,51 @@ func TestSchemaSaysTheDefaults(t *testing.T) {
 	} {
 		if got := description(c.path...); !strings.Contains(got, c.want) {
 			t.Errorf("%s: %q, want it to say %q", strings.Join(c.path, "."), got, c.want)
+		}
+	}
+}
+
+// A key given twice in YAML is an error: the last one would win, and the first task's names, or
+// credentials, be gone without a word.
+func TestDuplicateKeysAreErrors(t *testing.T) {
+	for name, content := range map[string]string{
+		"two tasks of a name": "tasks:\n  web:\n    endpoints:\n      duck: [www]\n  web:\n    endpoints:\n      duck: [other]\n" + duckCredential,
+		"two credentials":     "tasks: {}\n" + duckCredential + duckCredential,
+		"a setting twice":     "tasks: {}\nlifetime: 1h\nlifetime: 2h\n" + duckCredential,
+	} {
+		if _, err := loadConfig(t, content); err == nil || !strings.Contains(err.Error(), "already set in map") {
+			t.Errorf("%s: got %v, want an error", name, err)
+		}
+	}
+}
+
+// A block with nothing under it, null in YAML, is an error by the schema: it would otherwise
+// read as a family off, or as no block at all.
+func TestEmptyBlocksAreErrors(t *testing.T) {
+	for _, content := range []string{
+		"tasks:\n" + duckCredential,
+		"tasks: {}\nhomeassistant:\n" + duckCredential,
+		"tasks: {}\ndiscovery:\n" + duckCredential,
+		"tasks: {}\ndiscovery:\n  ipv6:\n" + duckCredential,
+		"tasks: {}\ndiscovery:\n  ipv4:\n    lifetime:\n" + duckCredential,
+		"tasks: {}\nlifetime:\n" + duckCredential,
+	} {
+		if _, err := loadConfig(t, content); err == nil || !strings.Contains(err.Error(), "not valid") {
+			t.Errorf("%q: got %v, want an error", content, err)
+		}
+	}
+}
+
+// YAML is for .yaml and .yml: any other name is read as JSON.
+func TestConfigFileNames(t *testing.T) {
+	dir := t.TempDir()
+	for name, yaml := range map[string]bool{"config.yaml": true, "config.yml": true, "config.json": false, "config.conf": false, "config.YAML": false} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("tasks: {}\ncredentials: {}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewConfig(path); (err == nil) != yaml {
+			t.Errorf("%s: got %v, read as YAML: want %t", name, err, yaml)
 		}
 	}
 }

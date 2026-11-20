@@ -294,6 +294,15 @@ func validateConfig(configData []byte) error {
 				fmt.Fprintf(&errs, "\n- %s: not a duration, as 90s, 1m30s or 1h", desc.Field())
 				continue
 			}
+			// A filter's patterns too: the MAC, and the VALUE/MASK pairs.
+			if desc.Type() == "pattern" && strings.HasSuffix(desc.Field(), ".mac.address") {
+				fmt.Fprintf(&errs, "\n- %s: not a MAC address, as 00:11:22:33:44:55", desc.Field())
+				continue
+			}
+			if desc.Type() == "pattern" && strings.Contains(desc.Field(), ".mask.") {
+				fmt.Fprintf(&errs, "\n- %s: not VALUE/MASK, both written whole, as ::1/::ffff:ffff:ffff:ffff: the mask is no prefix length", desc.Field())
+				continue
+			}
 			fmt.Fprintf(&errs, "\n- %s", desc)
 		}
 		return errors.New(errs.String())
@@ -329,7 +338,9 @@ func NewConfig(filename string) (config Config, err error) {
 	}
 
 	if strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
-		byteValue, err = yaml.YAMLToJSON(byteValue)
+		// Strict: a key given twice, as a task's name after a copy, is an error, rather than the
+		// last one alone being kept.
+		byteValue, err = yaml.YAMLToJSONStrict(byteValue)
 		if err != nil {
 			return config, err
 		}
@@ -386,14 +397,25 @@ func NewConfig(filename string) (config Config, err error) {
 	}
 	config.Warnings = append(config.Warnings, webserverWarnings...)
 	for _, name := range slices.Sorted(maps.Keys(config.Credentials)) {
+		// A failing provider is tried again at every retry: with none it would be without a pause.
+		if retry := config.Credentials[name].Retry; retry.Duration < MinRetry {
+			return config, fmt.Errorf("credentials.%s: invalid retry %s: at least %s", name, retry.Duration, MinRetry)
+		}
+		if debounce := config.Credentials[name].Debounce; debounce.Duration < 0 {
+			return config, fmt.Errorf("credentials.%s: invalid debounce %s: not negative", name, debounce.Duration)
+		}
 		for _, old := range config.Credentials[name].deprecated {
 			newName := map[string]string{"debounce_time": "debounce", "retry_time": "retry"}[old]
 			config.Warnings = append(config.Warnings, fmt.Sprintf("credentials.%s.%s is deprecated, and goes in v1.0: it is %s", name, old, newName))
 		}
 	}
 
-	for name, task := range config.Tasks {
+	for _, name := range slices.Sorted(maps.Keys(config.Tasks)) {
+		task := config.Tasks[name]
 		task.Name = name
+		if err := task.checkFilters(); err != nil {
+			return config, fmt.Errorf("task %s: %w", name, err)
+		}
 		config.Tasks[name] = task
 		for endpoint := range task.Endpoints {
 			if _, ok := config.Credentials[endpoint]; !ok {

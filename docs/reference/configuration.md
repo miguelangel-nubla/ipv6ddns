@@ -39,7 +39,7 @@ Each filter set: an address that every rule of one set matches is the task's. Se
 
 | Key | Takes | |
 |---|---|---|
-| `self` | boolean | The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen. |
+| `self` | boolean | The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen. Not those of an interface without a MAC, as a PPP link or a tunnel: a source gives them. |
 | `mac` | object | Rules on the MAC address of the host. |
 | `ip` | object | Rules on the address. |
 | `source` | list of string | Names of what must all have seen the address: discovery plugins, or local interfaces. |
@@ -52,8 +52,8 @@ Rules on the MAC address of the host.
 
 | Key | Takes | |
 |---|---|---|
-| `address` | string | The MAC address, exactly: 00:11:22:33:44:55. |
-| `mask` | list of string | VALUE/MASK pairs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's. |
+| `address` | string | The MAC address: 00:11:22:33:44:55. Also read as 00-11-22-33-44-55 or 0011.2233.4455. |
+| `mask` | list of string | VALUE/MASK pairs of MACs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's. |
 | `type` | list of `local`, `global`, `unicast`, `multicast`, `!local`, `!global`, `!unicast`, `!multicast` | MAC types, all of which must apply: global, local, unicast, multicast. "!type": not of the type. |
 
 ## Filter ip
@@ -67,7 +67,7 @@ Rules on the address.
 | `type` | list of `global`, `private`, `ula`, `cgnat`, `link_local`, `eui64`, `random`, `temporary`, `!global`, `!private`, `!ula`, `!cgnat`, `!link_local`, `!eui64`, `!random`, `!temporary` | Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6, not from the MAC), temporary (an IPv6 privacy address of this machine's, which changes every day or so). "!type": not of the type, as "!temporary". |
 | `prefix` | string | A prefix the address must be in: 2001:db8::/32, 192.168.1.0/24. |
 | `suffix` | string | The end of the address, in its canonical lower case form: ::1, dead:beef. |
-| `mask` | list of string | VALUE/MASK pairs, all of which the address must match. |
+| `mask` | list of string | VALUE/MASK pairs of addresses of one family, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff for the IPv6 addresses ending in ::1, 0.0.0.5/0.0.0.255 for the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair matches the addresses of its family only. |
 | `family` | list of `4`, `6` | 4, 6 or both. Default: 6. |
 
 ## Task ipv4, deprecated
@@ -94,7 +94,7 @@ The DNS providers to update, by credential name, which tasks' endpoints name. Th
 | `provider` | string | **Required.** The DNS provider: see the providers reference. |
 | `settings` | object | **Required.** The provider's settings: see the providers reference. An unknown one is an error. |
 | `debounce` | duration | How long to wait for more changes before updating. Default: 10s. |
-| `retry` | duration | How long to wait before retrying a failed update. Default: 1m. |
+| `retry` | duration | How long to wait before retrying a failed update: addresses that change meanwhile wait for it too. At least 1s. Default: 1m. |
 | `debounce_time` | duration | Deprecated, and goes in v1.0: debounce. |
 | `retry_time` | duration | Deprecated, and goes in v1.0: retry. |
 
@@ -156,9 +156,9 @@ Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant 
 | `key` | string | The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change. Without it, Home Assistant makes the key and gives it, as to ESPHome's devices: it is kept in state_file. |
 | `name` | string | The device's name in the network: lower case letters, digits and hyphens. Default: ipv6ddns. |
 | `friendly_name` | string | The name Home Assistant shows. Default: the name. |
-| `port` | number | The port Home Assistant connects to. Default: 6053, ESPHome's. |
+| `port` | number | The port Home Assistant connects to, which the device announces. Default: 6053, ESPHome's. |
 | `announce` | boolean | Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true. |
-| `listen` | list, or comma separated | Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on. |
+| `listen` | list, or comma separated | Where the device listens, and announces itself, on the interfaces that hold those addresses: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, port. It announces the port it listens on, one: entries of several ports need announce: false. Only where Home Assistant can reach it, when the machine is on other networks too, as a container on several: 10.2.3.0/24. Default: every address, announced on the interfaces discovery runs on. |
 | `state_file` | string | Without a key: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. Deleting it makes the device a new one, without a key. |
 
 ## Discovery families
@@ -194,7 +194,7 @@ A plugin over SSH, linux or freebsd: with a password, an identity file, or both.
 | `username` | string | **Required**, without `params`. The SSH user. |
 | `password` | string | Its password. Or an identity_file, or both. |
 | `identity_file` | string | The SSH private key file. |
-| `host_key` | string | The fingerprint of the host's SSH key, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted, and the log warns with the fingerprint seen. |
+| `host_key` | string | The fingerprint of the host's SSH key, any of them when it has several, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted, and the log warns with the fingerprint seen. |
 
 ### `mikrotik`
 
@@ -208,5 +208,5 @@ A plugin over the Mikrotik API.
 | `address` | string | **Required**, without `params`. The router, with its port unless the default: 8728, or 8729 with TLS. |
 | `username` | string | **Required**, without `params`. An API user: the read and api policies are enough. |
 | `password` | string | Its password. |
-| `use_tls` | boolean | true: the API over TLS, the api-ssl service. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, in hex, when it can't be verified otherwise. |
+| `use_tls` | boolean | true or false: the API over TLS, the api-ssl service. Without it, the password crosses the network in the clear. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, 64 hex digits, colons allowed, when the system's CAs can't verify it, as the self-signed one RouterOS makes. It needs use_tls. |

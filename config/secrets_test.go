@@ -18,10 +18,16 @@ func TestExpandString(t *testing.T) {
 		"plain":                     "plain",
 		"${IPV6DDNS_TEST_PASSWORD}": "p,a$s",
 		"60s,router,admin,${IPV6DDNS_TEST_PASSWORD}": "60s,router,admin,p,a$s",
-		"${file:token}":                           "from-file",
-		"${file:" + absolute + "}":                "absolute-file",
-		"$${NOT_EXPANDED}":                        "${NOT_EXPANDED}",
-		"a $ alone, and $NAME":                    "a $ alone, and $NAME",
+		"${file:token}":            "from-file",
+		"${file:" + absolute + "}": "absolute-file",
+		"$${NOT_EXPANDED}":         "${NOT_EXPANDED}",
+		"a $ alone, and $NAME":     "a $ alone, and $NAME",
+		// Each $${ loses one $, wherever it is: no variable right after a literal $.
+		"$${A} and $${B}":                         "${A} and ${B}",
+		"$$${IPV6DDNS_TEST_PASSWORD}":             "$${IPV6DDNS_TEST_PASSWORD}",
+		"$ ${IPV6DDNS_TEST_PASSWORD}":             "$ p,a$s",
+		"$${file:token}${file:token}":             "${file:token}from-file",
+		"a } before, ${file:token}":               "a } before, from-file",
 		"${IPV6DDNS_TEST_PASSWORD}-${file:token}": "p,a$s-from-file",
 	} {
 		got, err := expandString(in, dir)

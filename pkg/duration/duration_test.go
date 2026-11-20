@@ -18,7 +18,8 @@ func TestUnmarshalJSON(t *testing.T) {
 			t.Errorf("%s: got %s, %v, want %s", in, d, err, want)
 		}
 	}
-	for _, in := range []string{`"soon"`, `true`, `[]`} {
+	// 1e12 and such: more seconds than a time.Duration holds.
+	for _, in := range []string{`"soon"`, `true`, `[]`, `1e12`, `-1e12`, `1e300`, `9223372036.854775807`} {
 		var d Duration
 		if err := json.Unmarshal([]byte(in), &d); err == nil {
 			t.Errorf("%s: want an error", in)

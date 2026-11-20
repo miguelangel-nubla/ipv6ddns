@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net"
 	"net/netip"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/filter"
@@ -65,4 +67,35 @@ func (f Filters) Match(addr *ipv6disc.Addr) bool {
 		filter.CheckSuffix(addr.Addr, f.IP.Suffix) &&
 		filter.CheckMask(addr.Addr, f.IP.Mask) &&
 		filter.CheckSource(addr, f.Source)
+}
+
+// checkFilters checks what the schema can't of the task's filters, and writes their MAC in its
+// canonical form, 00:11:22:33:44:55, which is what matches and what the report shows. A rule
+// that doesn't parse is an error: skipped, the filter would take every host.
+func (t *Task) checkFilters() error {
+	for i := range t.Filters {
+		f := &t.Filters[i]
+		if f.MAC.Address != "" {
+			mac, err := net.ParseMAC(f.MAC.Address)
+			if err != nil || len(mac) != 6 {
+				return fmt.Errorf("filter %d: mac.address %q: not a MAC address, as 00:11:22:33:44:55", i+1, f.MAC.Address)
+			}
+			f.MAC.Address = mac.String()
+		}
+		for _, m := range f.MAC.Mask {
+			value, _, err := filter.ParseMACMask(m)
+			if err == nil && len(value) != 6 {
+				err = fmt.Errorf("a MAC is 6 bytes, not %d", len(value))
+			}
+			if err != nil {
+				return fmt.Errorf("filter %d: mac.mask %q: %w", i+1, m, err)
+			}
+		}
+		for _, m := range f.IP.Mask {
+			if _, _, err := filter.ParseIPMask(m); err != nil {
+				return fmt.Errorf("filter %d: ip.mask %q: %w", i+1, m, err)
+			}
+		}
+	}
+	return nil
 }

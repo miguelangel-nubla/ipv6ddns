@@ -24,13 +24,14 @@ type HomeAssistant struct {
 	// The device's name in the network, and the one Home Assistant shows. Defaults: ipv6ddns.
 	Name         string `json:"name,omitempty"`
 	FriendlyName string `json:"friendly_name,omitempty"`
-	// The port Home Assistant connects to. Default: ESPHome's, 6053.
+	// The port Home Assistant connects to, which the device announces. Default: ESPHome's, 6053.
 	Port int `json:"port,omitempty"`
 	// Whether the device announces itself by mDNS, for Home Assistant to find it. Default: true.
 	Announce *bool `json:"announce,omitempty"`
 	// Where the device listens, and announces itself, on the interfaces that hold those
 	// addresses: ports, addresses, networks of the machine's addresses and host names, as listen
-	// takes them; without a port, Port. Only where Home Assistant can reach it, when the machine is
+	// takes them; without a port, Port. It announces the port it listens on, one: entries of
+	// several ports need Announce false. Only where Home Assistant can reach it, when the machine is
 	// on other networks too, as a container on several: 10.2.3.0/24. Default: every address,
 	// announced on the interfaces discovery runs on.
 	Listen StringList `json:"listen,omitempty"`
@@ -84,6 +85,14 @@ func (c *Config) setUpHomeAssistant() error {
 	entries, err := listen.Parse(listenOn, strconv.Itoa(h.Port))
 	if err != nil {
 		return fmt.Errorf("homeassistant.listen: %w", err)
+	}
+	// Home Assistant connects to the port announced, which is one.
+	if h.Announces() {
+		for _, e := range entries {
+			if e.Port != entries[0].Port {
+				return fmt.Errorf("homeassistant.listen: ports %s and %s: the device announces one port; give one, or announce: false", entries[0].Port, e.Port)
+			}
+		}
 	}
 	h.Entries = entries
 	return nil

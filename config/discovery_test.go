@@ -2,10 +2,14 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
 )
 
 func TestDiscoveryFamilies(t *testing.T) {
@@ -135,7 +139,8 @@ func TestHomeAssistantConfig(t *testing.T) {
 		t.Errorf("without a key: %v, %+v", err, given.HomeAssistant)
 	}
 
-	listen, err := loadConfig(t, "homeassistant: {port: 6054, listen: [10.2.3.75, 10.2.3.9/24, '[fd00::1]:7000']}\ntasks: {}\n"+duckCredential)
+	// The ports of the entries may differ when the device announces none.
+	listen, err := loadConfig(t, "homeassistant: {port: 6054, announce: false, listen: [10.2.3.75, 10.2.3.9/24, '[fd00::1]:7000']}\ntasks: {}\n"+duckCredential)
 	if err != nil || fmt.Sprint(listen.HomeAssistant.Entries) != "[10.2.3.75:6054 10.2.3.0/24 port 6054 [fd00::1]:7000]" {
 		t.Errorf("listen: %v, %v", err, listen.HomeAssistant)
 	}
@@ -143,8 +148,24 @@ func TestHomeAssistantConfig(t *testing.T) {
 		t.Errorf("listen, by default: %v", given.HomeAssistant.Entries)
 	}
 
+	// One port, another than port: the one announced.
+	if one, err := loadConfig(t, "homeassistant: {listen: ['10.2.3.4:7000', '[fd00::1]:7000']}\ntasks: {}\n"+duckCredential); err != nil || one.HomeAssistant.Entries[0].Port != "7000" {
+		t.Errorf("listen, at one port of its own: %v, %v", err, one.HomeAssistant)
+	}
+
+	// A key in a file ends in a new line, as openssl rand -base64 32 writes it.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "homeassistant.key"), []byte(key+"\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("homeassistant:\n  key: ${file:homeassistant.key}\ntasks: {}\n"+duckCredential), 0o600)
+	if fromFile, err := NewConfig(filepath.Join(dir, "config.yaml")); err != nil {
+		t.Errorf("a key in a file, with its new line: %v", err)
+	} else if parsed, err := esphome.ParseKey(fromFile.HomeAssistant.Key); err != nil || len(parsed) != 32 {
+		t.Errorf("a key in a file, with its new line: %q, %v", fromFile.HomeAssistant.Key, err)
+	}
+
 	for name, c := range map[string]struct{ config, want string }{
 		"a listen entry":             {"homeassistant: {listen: ['a:b:c']}\n", "homeassistant.listen"},
+		"two ports, announced":       {"homeassistant: {listen: [10.2.3.75, '[fd00::1]:7000']}\n", "announces one port"},
 		"a listen network with port": {"homeassistant: {listen: ['10.2.3.0/24:6053']}\n", "homeassistant.listen"},
 		"a source without the block": {"sources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\n", "needs the homeassistant block"},
 		"a source without an entity": {"homeassistant: {key: " + key + "}\nsources:\n  wan:\n    type: homeassistant\n", "entity"},

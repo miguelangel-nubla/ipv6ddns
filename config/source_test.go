@@ -105,7 +105,9 @@ func TestInvalidSources(t *testing.T) {
 		"lifetime under interval":  {"sources:\n  s:\n    type: dns\n    interval: 10m\n    lifetime: 1m\n", "lifetime"},
 		"unknown setting":          {"sources:\n  s:\n    type: dns\n    intreval: 1m\n", "intreval"},
 		"no such source":           {"tasks:\n  web:\n    sources: [nope]\n    endpoints:\n      duck: [www]\n", "no source nope"},
-		"ipv4 block clashes":       {"sources:\n  web.ipv4:\n    type: dns\ntasks:\n  web:\n    ipv4:\n      interval: 1m\n      lifetime: 3m\n      command: x\n    endpoints:\n      duck: [www]\n", "web.ipv4"},
+		// The ipv4 block is a source as any other, with its checks.
+		"ipv4 block, lifetime under interval": {"tasks:\n  web:\n    ipv4:\n      interval: 5m\n      lifetime: 1m\n      command: x\n    endpoints:\n      duck: [www]\n", "source web.ipv4: invalid lifetime 1m0s: at least the interval"},
+		"ipv4 block clashes":                  {"sources:\n  web.ipv4:\n    type: dns\ntasks:\n  web:\n    ipv4:\n      interval: 1m\n      lifetime: 3m\n      command: x\n    endpoints:\n      duck: [www]\n", "web.ipv4"},
 	} {
 		content := tt.config
 		if !strings.Contains(content, "tasks:") {
@@ -137,5 +139,27 @@ tasks:
 	}
 	if _, err := loadConfig(t, "tasks:\n  lan:\n    filter:\n      - ip:\n          family: [5]\n    endpoints:\n      duck: [nas]\n"+duckCredential); err == nil {
 		t.Error("family 5: want an error")
+	}
+}
+
+// The report hides what of a source can hold a token: a command's arguments, and all of an http
+// source's urls but their scheme and host.
+func TestSourceDescribeHides(t *testing.T) {
+	http := Source{Type: SourceHTTP, Family: []int{4}, URLs: []string{"https://user:pw@echo.example:8443/ip/SECRETPATH?token=SECRETTOKEN#f", "http://[2001:db8::1]/x", "https:///nohost?token=SECRETTOKEN"}}
+	http.Interval.Duration, http.Lifetime.Duration = 5*time.Minute, 15*time.Minute
+
+	if got, want := http.describe(true), "http, IPv4, from https://echo.example:8443, http://[2001:db8::1], <sensible data hidden>, every 5m0s, kept 15m0s"; got != want {
+		t.Errorf("hidden: got %q, want %q", got, want)
+	}
+	if got := http.describe(false); !strings.Contains(got, "from "+strings.Join(http.URLs, ", ")) {
+		t.Errorf("shown: got %q", got)
+	}
+
+	command := Source{Type: SourceCommand, Command: "curl", Args: []string{"https://example.com/ip?key=SECRETTOKEN"}}
+	if got := command.describe(true); strings.Contains(got, "SECRETTOKEN") || !strings.Contains(got, "curl") {
+		t.Errorf("command, hidden: got %q", got)
+	}
+	if got := command.describe(false); !strings.Contains(got, "SECRETTOKEN") {
+		t.Errorf("command, shown: got %q", got)
 	}
 }

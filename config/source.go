@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"net/netip"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -112,7 +113,7 @@ func (s Source) withDefaults() (Source, error) {
 }
 
 // describe tells what the source is, in a line. hideSensible hides the arguments of a command,
-// which can hold a token.
+// and the urls of an http source but their host, which can hold a token.
 func (s Source) describe(hideSensible bool) string {
 	var b strings.Builder
 	b.WriteString(s.Type)
@@ -124,7 +125,14 @@ func (s Source) describe(hideSensible bool) string {
 		}
 		b.WriteString(", " + strings.Join(families, " and "))
 		if len(s.URLs) > 0 {
-			b.WriteString(", from " + strings.Join(s.URLs, ", "))
+			urls := s.URLs
+			if hideSensible {
+				urls = make([]string, len(s.URLs))
+				for i, u := range s.URLs {
+					urls[i] = hideURL(u)
+				}
+			}
+			b.WriteString(", from " + strings.Join(urls, ", "))
 		}
 	case SourceCommand:
 		b.WriteString(": " + s.Command)
@@ -141,6 +149,15 @@ func (s Source) describe(hideSensible bool) string {
 	}
 	fmt.Fprintf(&b, ", every %s, kept %s", s.Interval, s.Lifetime)
 	return b.String()
+}
+
+// hideURL returns the scheme and host of the URL alone: its user, path and query can hold a token.
+func hideURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "<sensible data hidden>"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // IPv4Command is the ipv4 block of a task, from before sources: a command source, which it
