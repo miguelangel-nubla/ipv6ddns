@@ -135,6 +135,13 @@ credentials:
 		}
 	}
 
+	// The reverse of an address of the LAN, a unique local one, that no name has: no such name, of
+	// the resolver's own, as RFC 6303 has it, not asked of the upstream server.
+	unnamed := strings.TrimSuffix(printer.IPv6.String(), "20") + "99"
+	if d := dig(t, client, server, "-x", unnamed); d.status != "NXDOMAIN" || !d.has("aa") {
+		t.Errorf("the reverse of %s, which no name has: %s", unnamed, d)
+	}
+
 	// The provider has a name for each, and the name written with its own addresses.
 	for name, m := range map[string]*livetest.Machine{"printer.lan.example": printer, "laptop.lan.example": laptop, "nas.lan.example": printer} {
 		waitFor(t, 30*time.Second, name+" at the provider", func() bool { return dns.has(name, m.IPv6) }, one.tells, dns.tells)

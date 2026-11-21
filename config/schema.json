@@ -259,6 +259,11 @@
                         "type": "integer",
                         "minimum": 0,
                         "description": "How many answers of the upstream servers it keeps, each for its TTL, a day at most, an hour for a name that doesn't exist or has no data: beyond it, the one asked the longest ago goes first. Default: 10000; 0, none, and every query is asked. The local names are never kept: they follow discovery at once."
+                    },
+                    "private_reverse": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether it answers itself the reverse of the addresses of the private networks that it has no name of, with no such name, as RFC 6303 asks, so that their questions don't leave the network: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and the documentation's, and fd00::/8, fe80::/10, ::1 and 2001:db8::/32. The reverse of a network an upstream server is in, given by its address, is asked of it all the same: a router knows the names of its DHCP clients. false: all of them are asked of the upstream servers."
                     }
                 },
                 "required": [

@@ -152,7 +152,35 @@ The address of a host has its name back: `dig -x 192.168.1.20`, a `PTR` query of
 
 They come sorted, each once, in an authoritative answer, `AA`, with the zone's `ttl`, or the record's own when it gives one; the shortest, when the names differ in it. A wildcard is no host, and has no reverse. A `PTR` record written, in `records`, for the reverse name itself, is answered as any record, in the place of these.
 
-The reverse of any other address is forwarded, as any other name: the router's names for its DHCP clients keep answering. And a resolver gives the reverse of the names it answers itself alone: of two with a zone of one name, a split horizon, each tells an address's name as its own zone has it.
+### Private networks
+
+The reverse of an address of a private network that the resolver has no name of is no such name, `NXDOMAIN`, answered by the resolver itself, as [RFC 6303](https://www.rfc-editor.org/rfc/rfc6303) asks: the question doesn't leave the network, to servers that know nothing of it, and the client has its answer at once. The networks are those that are no one's on the internet:
+
+| | IPv4 | IPv6 |
+|---|---|---|
+| Private | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` | `fd00::/8`, the unique local addresses |
+| Shared by carriers, [RFC 7793](https://www.rfc-editor.org/rfc/rfc7793) | `100.64.0.0/10` | |
+| Link-local | `169.254.0.0/16` | `fe80::/10` |
+| This host, the loopback | `0.0.0.0/8`, `127.0.0.0/8` | `::`, `::1` |
+| The documentation's | `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24` | `2001:db8::/32` |
+| Broadcast | `255.255.255.255` | |
+
+Each is a zone of its own, as `168.192.in-addr.arpa`, whose apex has the SOA and NS records RFC 6303 gives it; a name of it the resolver has an address of, asked another type than `PTR`, has no data.
+
+The network an upstream server is in, given by its address, is asked of that server all the same: a router knows the names of its DHCP clients, and keeps answering them. With `upstream: 192.168.1.1`, the reverse of `192.168.1.30` is the router's to answer, and that of `10.0.0.5` the resolver's. A router that names the hosts of other private networks too, as its other VLANs, wants every reverse asked of it: `private_reverse: false`, which forwards them all, as any other name.
+
+```yaml
+resolvers:
+  lan:
+    listen: 192.168.1.0/24
+    upstream:
+      - 192.168.1.1   # its DHCP server gives 10.20.0.0/16 too, to the cameras' VLAN
+    private_reverse: false
+```
+
+### Other addresses
+
+The reverse of any other address is forwarded, as any other name. And a resolver gives the reverse of the names it answers itself alone: of two with a zone of one name, a split horizon, each tells an address's name as its own zone has it.
 
 ## The cache
 

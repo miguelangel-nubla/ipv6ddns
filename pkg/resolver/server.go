@@ -65,6 +65,9 @@ type Server struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// The reverse zones of the private networks it answers itself: absolute, in lower case.
+	private []string
+
 	mutex     sync.Mutex
 	servers   []*dns.Server
 	listening []string
@@ -108,6 +111,9 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 			s.named[u] = srv.named
 		}
 		s.upstreams = append(s.upstreams, srv)
+	}
+	if cfg.PrivateReverse {
+		s.private = privateZones(s.upstreams)
 	}
 	return s, nil
 }
@@ -445,6 +451,14 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 				resp.Answer = ptrs
 				return resp, Local
 			}
+		}
+	}
+	// A name of a private network's reverse zone that it has nothing of: no such name, said here,
+	// not asked of servers that know nothing of it either. One whose address has a name of the
+	// resolver's, asked another type, has no data.
+	if first.kind == notLocal && q.Qclass == dns.ClassINET {
+		if zone := s.privateZone(q.Name); zone != "" {
+			return answerPrivate(req, zone, len(s.table.reverse(q.Name)) > 0)
 		}
 	}
 	if first.kind == notLocal {
