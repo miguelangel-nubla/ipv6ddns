@@ -16,6 +16,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 	"github.com/miguelangel-nubla/ipv6disc"
+	disc "github.com/miguelangel-nubla/ipv6disc/pkg/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -216,8 +217,10 @@ func TestPrettyPrintHidesSensibleData(t *testing.T) {
 	cfg := config.Config{
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("hidden", time.Millisecond, time.Hour)},
-		Discovery:   config.Discovery{IPv6: config.DefaultDiscovery().IPv6, Plugins: map[string]config.PluginConfig{"router": {Type: "mikrotik", Params: "60s,192.0.2.1,admin," + secret}}},
-		Sources:     map[string]config.Source{"wan": wan, "echo": echo},
+		Discovery: discoveryWith(func(d *config.Discovery) {
+			d.Plugins = map[string]disc.Plugin{"router": {Type: "mikrotik", Fields: map[string]string{"interval": "60s", "address": "192.0.2.1", "username": "admin", "password": secret}}}
+		}),
+		Sources: map[string]config.Source{"wan": wan, "echo": echo},
 	}
 	credential := cfg.Credentials["dns"]
 	credential.RawSettings = json.RawMessage(`{"id": "hidden", "token": "` + secret + `"}`)
@@ -443,7 +446,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 		Credentials: map[string]config.Credential{"dns": fakeCredential("sources", time.Millisecond, time.Hour)},
 		Sources:     map[string]config.Source{"wan": wan},
 		// The IPv4 neighbors discovered: still, a filter without family leaves them out.
-		Discovery: config.Discovery{IPv6: config.DefaultDiscovery().IPv6, IPv4: config.Family{Enabled: true}},
+		Discovery: discoveryWith(func(d *config.Discovery) { d.IPv4 = disc.Family{Enabled: true} }),
 	}
 	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
@@ -490,7 +493,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 
 func TestDiscoveryIPv4(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
-		cfg := config.Config{Discovery: config.Discovery{IPv6: config.DefaultDiscovery().IPv6, IPv4: config.Family{Enabled: enabled}}}
+		cfg := config.Config{Discovery: discoveryWith(func(d *config.Discovery) { d.IPv4 = disc.Family{Enabled: enabled} })}
 		w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -508,7 +511,7 @@ func TestDiscoveryIPv4(t *testing.T) {
 }
 
 func TestWorkerDiscoveryFamilies(t *testing.T) {
-	cfg := config.Config{Discovery: config.Discovery{IPv6: config.Family{}, IPv4: config.Family{Enabled: true}}}
+	cfg := config.Config{Discovery: discoveryWith(func(d *config.Discovery) { d.IPv6, d.IPv4 = disc.Family{}, disc.Family{Enabled: true} })}
 	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -568,7 +571,7 @@ func TestEndpointUpdatesOneAtATime(t *testing.T) {
 func TestWorkerFollowsTheStateAndShutdownClosesIt(t *testing.T) {
 	cfg := config.Config{
 		// IPv6 taken, but nothing listening: Start opens no socket.
-		Discovery:   config.Discovery{IPv6: config.Family{Enabled: true}},
+		Discovery:   discoveryWith(func(d *config.Discovery) { d.IPv6 = disc.Family{Enabled: true} }),
 		Tasks:       map[string]config.Task{"a": {Name: "a", Filters: []config.Filters{macFilter(macA)}, Endpoints: map[string][]string{"dns": {"nas"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("follows", time.Millisecond, time.Hour)},
 	}

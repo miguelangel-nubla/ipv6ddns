@@ -70,7 +70,7 @@ dockers_v2:
     flags:
       - "--pull"
       - "--target=ipv6ddns"
-  # The Home Assistant add-on: the same, started from its options. It pulls the tag of its version,
+  # The Home Assistant add-on: the same, started with its folder's configuration. It pulls the tag of its version,
   # without the v.
   -
     id: addon

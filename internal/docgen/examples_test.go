@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,6 +39,50 @@ func TestAddonStarterConfig(t *testing.T) {
 	}
 	if h := cfg.HomeAssistant; h == nil || !h.KeyProvisioning || h.Key != "" || h.KeyProvisioningStateFile != "homeassistant.state" {
 		t.Errorf("the device isn't one Home Assistant gives the key, kept in homeassistant.state: %+v", h)
+	}
+
+	// The add-on's page is served where Home Assistant's Supervisor asks for it, at the port the
+	// add-on says is its ingress: the starting configuration says so, as nothing else does.
+	if !slices.Equal(cfg.Webserver.Listen, []string{"172.30.32.1:8053"}) || cfg.LogLevel != "info" {
+		t.Errorf("the starting configuration serves the report at %v, and logs at %q", cfg.Webserver.Listen, cfg.LogLevel)
+	}
+	addon, err := os.ReadFile(filepath.Join("..", "..", "homeassistant", "addon", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No option of its own, and so neither key: CI's linter of add-ons takes one that says its
+	// default, as options: {}, for an error.
+	var manifest map[string]any
+	if err := yaml.Unmarshal(addon, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest["ingress"] != true || manifest["ingress_port"] != float64(8053) {
+		t.Errorf("the add-on's page: ingress %v at %v, want it at 8053", manifest["ingress"], manifest["ingress_port"])
+	}
+	for _, key := range []string{"options", "schema"} {
+		if value, ok := manifest[key]; ok {
+			t.Errorf("the add-on has %s, %v: it has no option of its own, and an empty one fails the linter", key, value)
+		}
+	}
+	if _, err := os.Stat(filepath.Join("..", "..", "homeassistant", "addon", "translations")); err == nil {
+		t.Error("the add-on has translations, of options it doesn't have")
+	}
+	// And the add-on's start gives the program its file, and nothing else: no flag there is none of.
+	run, err := os.ReadFile(filepath.Join("..", "..", "homeassistant", "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(run), "\nexec ipv6ddns -config_file \"$config\"\n") {
+		t.Errorf("the add-on starts the program otherwise than with its file:\n%s", run)
+	}
+	// And its documentation has the lines a configuration from before needs, as the starting one has them.
+	docs, err := os.ReadFile(filepath.Join("..", "..", "homeassistant", "addon", "DOCS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const lines = "webserver:\n  listen: 172.30.32.1:8053\n"
+	if !strings.Contains(string(docs), "```yaml\n"+lines+"```") || !strings.Contains(string(content), "\n"+lines) {
+		t.Errorf("the add-on's documentation, or its starting configuration, doesn't have the lines of its page:\n%s", lines)
 	}
 
 	// The example: the commented lines after the one that ends with "At Cloudflare:", up to the

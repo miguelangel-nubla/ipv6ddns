@@ -38,7 +38,6 @@ func TestLiveTwoInstancesOneMachine(t *testing.T) {
 	keyOne := esphome.GenerateKey()
 
 	one := configure(t, machine, router, "one", 8053, fmt.Sprintf(`
-lifetime: 9s
 webserver:
   listen: ["%s:8053"]
 homeassistant:
@@ -47,6 +46,7 @@ homeassistant:
   key: %s
   listen: 6053
 discovery:
+  lifetime: 9s
   rediscover: 3s
 tasks:
   peer:
@@ -65,7 +65,6 @@ credentials:
 %s`, machine.IPv4, keyOne, peer.MAC, lan.Prefix(), lan.Prefix(), dnsOne.credential("first", "1s")))
 
 	two := configure(t, machine, router, "two", 8054, fmt.Sprintf(`
-lifetime: 12s
 webserver:
   listen: [8054]
 homeassistant:
@@ -75,8 +74,10 @@ homeassistant:
   key_provisioning_state_file: two.state
   listen: "%s:6054"
 discovery:
+  lifetime: 12s
   rediscover: 4s
   ipv4:
+    enabled: true
     lifetime: 2m
 tasks:
   peer:
@@ -229,7 +230,6 @@ credentials:
 	dnsThree := startProvider(t, router, 5383, "token-three", "three.example")
 	third := func(webPort, devicePort int) string {
 		return fmt.Sprintf(`
-lifetime: 9s
 webserver:
   listen: [%d]
 homeassistant:
@@ -237,6 +237,7 @@ homeassistant:
   listen: [%d]
   key_provisioning: true
 discovery:
+  lifetime: 9s
   rediscover: 3s
 tasks:
   peer:
@@ -545,18 +546,16 @@ func TestLiveTwoInstancesTwoMachines(t *testing.T) {
 	// other's machine's; and the peer's again at the server they share, under one name.
 	config := func(name, key, lifetime, rediscover, discovery string, own *provider, mate *livetest.Machine, more string) string {
 		return fmt.Sprintf(`
-lifetime: %s
 webserver:
   listen: [8053]
 homeassistant:
-  name: ipv6ddns-%s
-  key: %s
+  name: ipv6ddns-%[2]s
+  key: %[3]s
   listen: 6053
 discovery:
-  rediscover: %s
-  ipv6:
-    solicit: true
-%s
+  lifetime: %[1]s
+  rediscover: %[4]s
+%[5]s
 tasks:
   peer:
     filter:
@@ -585,9 +584,12 @@ credentials:
 	}
 	// a alone asks: for the peer's IPv4 address, and for the addresses of the MAC nobody has.
 	instanceA := configure(t, a, router, "a", 8053, config("a", keyA, "9s", "3s", `  ipv4:
+    enabled: true
     active: false
-    solicit: true
-    lifetime: 2m`, dnsA, b, fmt.Sprintf(`  peer4:
+    lifetime: 2m
+  solicit:
+    ipv6: true
+    ipv4: true`, dnsA, b, fmt.Sprintf(`  peer4:
     filter:
       - mac: {address: "%s"}
         ip: {family: [4]}
@@ -603,8 +605,11 @@ credentials:
       own: [ghost]`, peer.MAC, ghostMAC, ghostMAC)))
 	// b takes every IPv4 address it comes to know, whoever has it.
 	instanceB := configure(t, b, router, "b", 8053, config("b", keyB, "12s", "4s", `  ipv4:
+    enabled: true
     active: false
-    lifetime: 2m`, dnsB, a, `  ipv4:
+    lifetime: 2m
+  solicit:
+    ipv6: true`, dnsB, a, `  ipv4:
     filter:
       - ip: {family: [4], prefix: "198.18.13.0/24"}
     endpoints:

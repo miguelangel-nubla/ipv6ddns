@@ -12,11 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
-	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
-
-	// The plugin types, which say their fields.
-	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
+	disc "github.com/miguelangel-nubla/ipv6disc/pkg/config"
 	"github.com/xeipuuv/gojsonschema"
 	"sigs.k8s.io/yaml"
 )
@@ -39,78 +35,12 @@ type Config struct {
 	// credentials.
 	Resolvers map[string]Resolver `json:"resolvers,omitempty"`
 
-	// The settings that are flags too: a flag given wins. Lifetime is how long a discovered
-	// address stays after it was last seen, unless its family says.
-	Lifetime  duration.Duration `json:"lifetime"`
-	LogLevel  string            `json:"log_level,omitempty"`
-	Webserver Webserver         `json:"webserver,omitzero"`
-	// Deprecated: webserver.listen. NewConfig moves it there.
-	WebserverListen StringList `json:"webserver_listen,omitempty"`
+	// The level of the log: info without it.
+	LogLevel  string    `json:"log_level,omitempty"`
+	Webserver Webserver `json:"webserver,omitzero"`
 
 	// What in the configuration to change, as a deprecated setting: NewConfig sets them, to log.
 	Warnings []string `json:"-"`
-}
-
-type Discovery struct {
-	// How each family is discovered. Default: IPv6 by listening and active probes, no IPv4.
-	// Filters take IPv4 addresses only with ip.family 4.
-	IPv6    Family                  `json:"ipv6"`
-	IPv4    Family                  `json:"ipv4"`
-	Plugins map[string]PluginConfig `json:"plugins"`
-	// The interfaces the local discovery runs on, and those it doesn't: names or patterns, as
-	// "docker*". None means all. The plugins aren't concerned.
-	Interfaces        StringList `json:"interfaces,omitempty"`
-	ExcludeInterfaces StringList `json:"exclude_interfaces,omitempty"`
-	// How often the active discovery probes every host. Default: a third of the lifetime.
-	Rediscover duration.Duration `json:"rediscover"`
-
-	// Deprecated: ipv6.listen, ipv6.active and ipv6.solicit. NewConfig moves them there.
-	Listen       *bool `json:"listen,omitempty"`
-	Active       *bool `json:"active,omitempty"`
-	SolicitEUI64 *bool `json:"solicit_eui64,omitempty"`
-}
-
-// PluginConfig is a discovery plugin: its params in one string, as ipv6disc takes them, or in
-// fields.
-type PluginConfig struct {
-	Type   string `json:"type"`
-	Params string `json:"params,omitempty"`
-
-	Interval string `json:"interval,omitempty"`
-	Address  string `json:"address,omitempty"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-	// linux and freebsd.
-	IdentityFile string `json:"identity_file,omitempty"`
-	HostKey      string `json:"host_key,omitempty"`
-	// mikrotik.
-	UseTLS         bool   `json:"use_tls,omitempty"`
-	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
-}
-
-// PluginParams returns the params of the plugin in one string, for plugins.Create: its fields
-// joined, escaped so that any value can hold a comma.
-func (p PluginConfig) PluginParams() (string, error) {
-	values := make(map[string]string)
-	for name, value := range map[string]string{
-		"interval": p.Interval, "address": p.Address, "username": p.Username, "password": p.Password,
-		"identity_file": p.IdentityFile, "host_key": p.HostKey, "tls_fingerprint": p.TLSFingerprint,
-	} {
-		if value != "" {
-			values[name] = value
-		}
-	}
-	if p.UseTLS {
-		values["use_tls"] = "true"
-	}
-	if p.Params != "" {
-		if len(values) > 0 {
-			return "", errors.New("give the params, or their fields, not both")
-		}
-		return p.Params, nil
-	}
-	// The plugin type says what its fields are, and their order.
-	return plugins.FieldParams(p.Type, values)
 }
 
 func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
@@ -233,42 +163,53 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	}
 
 	result.WriteString(prefix + "    Discovery:\n")
+	d := c.Discovery
+	fmt.Fprintf(&result, "%s        Lifetime: %s\n", prefix, d.Lifetime)
 	for _, family := range []struct {
 		name string
-		f    Family
-	}{{"IPv6", c.Discovery.IPv6}, {"IPv4", c.Discovery.IPv4}} {
+		f    disc.Family
+	}{{"IPv6", d.IPv6}, {"IPv4", d.IPv4}} {
 		if !family.f.Enabled {
 			result.WriteString(prefix + "        " + family.name + ": off\n")
 			continue
 		}
-		fmt.Fprintf(&result, "%s        %s: listen %t, active %t, solicit %t", prefix, family.name, family.f.Listen, family.f.Active, family.f.Solicit)
-		if family.f.Lifetime.Duration > 0 {
-			fmt.Fprintf(&result, ", lifetime %s", family.f.Lifetime.Duration)
+		fmt.Fprintf(&result, "%s        %s: listen %t, active %t", prefix, family.name, family.f.Listen, family.f.Active)
+		if family.f.Lifetime > 0 {
+			fmt.Fprintf(&result, ", lifetime %s", family.f.Lifetime)
 		}
 		result.WriteString("\n")
 	}
-	if len(c.Discovery.Interfaces) > 0 {
-		fmt.Fprintf(&result, "%s        Interfaces: %s\n", prefix, strings.Join(c.Discovery.Interfaces, ", "))
+	var solicited []string
+	if d.Solicit.IPv6 {
+		solicited = append(solicited, "IPv6")
 	}
-	if len(c.Discovery.ExcludeInterfaces) > 0 {
-		fmt.Fprintf(&result, "%s        Excluded interfaces: %s\n", prefix, strings.Join(c.Discovery.ExcludeInterfaces, ", "))
+	if d.Solicit.IPv4 {
+		solicited = append(solicited, "IPv4")
 	}
-	if len(c.Discovery.Plugins) > 0 {
-		result.WriteString(prefix + "        Plugins:\n")
-
-		// Sort plugin keys
-		pluginKeys := make([]string, 0, len(c.Discovery.Plugins))
-		for k := range c.Discovery.Plugins {
-			pluginKeys = append(pluginKeys, k)
+	if len(solicited) > 0 {
+		fmt.Fprintf(&result, "%s        Solicit: %s\n", prefix, strings.Join(solicited, ", "))
+	}
+	if d.Hostnames.Enabled {
+		result.WriteString(prefix + "        Hostnames: kept")
+		if d.Hostnames.Lifetime > 0 {
+			fmt.Fprintf(&result, ", lifetime %s", d.Hostnames.Lifetime)
 		}
-		sort.Strings(pluginKeys)
-
-		for _, name := range pluginKeys {
-			plugin := c.Discovery.Plugins[name]
+		result.WriteString("\n")
+	}
+	if len(d.Interfaces) > 0 {
+		fmt.Fprintf(&result, "%s        Interfaces: %s\n", prefix, strings.Join(d.Interfaces, ", "))
+	}
+	if len(d.ExcludeInterfaces) > 0 {
+		fmt.Fprintf(&result, "%s        Excluded interfaces: %s\n", prefix, strings.Join(d.ExcludeInterfaces, ", "))
+	}
+	if len(d.Plugins) > 0 {
+		result.WriteString(prefix + "        Plugins:\n")
+		for _, name := range slices.Sorted(maps.Keys(d.Plugins)) {
+			plugin := d.Plugins[name]
 			result.WriteString(prefix + "            " + name + ":\n")
 			result.WriteString(prefix + "                Type: " + plugin.Type + "\n")
 			if !hideSensible {
-				params, err := plugin.PluginParams()
+				params, err := plugin.Params()
 				if err != nil {
 					params = err.Error()
 				}
@@ -360,51 +301,33 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := checkResolvers(byteValue); err != nil {
 		return config, err
 	}
+	if err := checkDiscovery(byteValue); err != nil {
+		return config, err
+	}
 	if err := validateConfig(byteValue); err != nil {
 		return config, err
 	}
 
 	// Set defaults
 	config.Discovery = DefaultDiscovery()
-	config.Lifetime = duration.Duration{Duration: DefaultLifetime}
 
 	if err := json.Unmarshal(byteValue, &config); err != nil {
 		return config, err
 	}
 
-	var pluginWarnings []string
-	for _, name := range slices.Sorted(maps.Keys(config.Discovery.Plugins)) {
-		plugin := config.Discovery.Plugins[name]
-		params, err := plugin.PluginParams()
-		if err == nil {
-			// The plugin type's own checks, as when it is made: nothing runs yet.
-			_, err = plugins.Create(plugin.Type, name, params, DefaultLifetime)
-		}
-		if err != nil {
-			return config, fmt.Errorf("plugin %s: %w", name, err)
-		}
-		if plugin.Params != "" {
-			pluginWarnings = append(pluginWarnings, fmt.Sprintf("discovery.plugins.%s.params is deprecated, and goes in v1.0: give its fields, as interval, address, username", name))
-		}
-	}
-
-	discoveryWarnings, err := config.Discovery.setUpDiscovery()
-	if err != nil {
-		return config, err
-	}
+	// Read, and valid, by checkDiscovery: its warnings.
+	discoveryWarnings, _ := config.Discovery.validate()
 	config.Warnings, err = config.setUpSources()
 	if err != nil {
 		return config, err
 	}
-	config.Warnings = slices.Concat(discoveryWarnings, pluginWarnings, config.Warnings)
+	config.Warnings = slices.Concat(familyWarnings(byteValue), discoveryWarnings, config.Warnings)
 	if err := config.setUpHomeAssistant(); err != nil {
 		return config, err
 	}
-	webserverWarnings, err := config.setUpWebserver()
-	if err != nil {
+	if err := config.setUpWebserver(); err != nil {
 		return config, err
 	}
-	config.Warnings = append(config.Warnings, webserverWarnings...)
 	for _, name := range slices.Sorted(maps.Keys(config.Credentials)) {
 		// A failing provider is tried again at every retry: with none it would be without a pause.
 		if retry := config.Credentials[name].Retry; retry.Duration < MinRetry {

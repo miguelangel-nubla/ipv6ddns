@@ -68,7 +68,10 @@ discovery:
   plugins:
     router:
       type: mikrotik
-      params: 60s,192.0.2.1,admin,${IPV6DDNS_TEST_ROUTER_PASSWORD}
+      interval: 60s
+      address: 192.0.2.1
+      username: admin
+      password: ${IPV6DDNS_TEST_ROUTER_PASSWORD}
 `), 0o600)
 
 	cfg, err := NewConfig(path)
@@ -78,8 +81,8 @@ discovery:
 	if got := string(cfg.Credentials["duck"].RawSettings); !strings.Contains(got, "01234567-89ab-cdef-0123-456789abcdef") {
 		t.Errorf("settings: %s", got)
 	}
-	if got := cfg.Discovery.Plugins["router"].Params; got != "60s,192.0.2.1,admin,secret" {
-		t.Errorf("params: %s", got)
+	if got, err := cfg.Discovery.Plugins["router"].Params(); err != nil || got != "1m0s,192.0.2.1,admin,secret" {
+		t.Errorf("params: %s, %v", got, err)
 	}
 
 	// The error tells where.

@@ -1,7 +1,8 @@
 #!/bin/sh
 # The start of the Home Assistant add-on: the configuration is config.yaml in the add-on's folder,
-# addon_configs/<id>_ipv6ddns (app_configs in recent versions), at /config here; the add-on's
-# options are /data/options.json.
+# addon_configs/<id>_ipv6ddns (app_configs in recent versions), at /config here. It has all the
+# settings, as in any other install: the level of the log, and where the report is served, which
+# the starting configuration has for the add-on's page.
 set -eu
 
 config=/config/config.yaml
@@ -10,8 +11,4 @@ if [ ! -f "$config" ]; then
 	echo "ipv6ddns: no configuration yet: wrote a starting one, config.yaml in the add-on's folder, addon_configs/<id>_ipv6ddns (app_configs in recent versions). Edit it, and restart the add-on." >&2
 fi
 
-log_level=$(jq -r '.log_level // "info"' /data/options.json 2>/dev/null || echo info)
-
-# INGRESS_LISTEN, to try it outside Home Assistant. The report through Home Assistant only: the Supervisor reaches an add-on of the host's network at
-# the host's address on its own network, which the network outside doesn't reach.
-exec ipv6ddns -config_file "$config" -log_level "$log_level" -webserver_listen "${INGRESS_LISTEN:-172.30.32.1:8053}"
+exec ipv6ddns -config_file "$config"

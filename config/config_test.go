@@ -217,7 +217,7 @@ func TestNewConfigChecks(t *testing.T) {
 	if c := cfg.Credentials["duck"]; c.Debounce.Duration != 10*time.Second || c.Retry.Duration != time.Minute {
 		t.Errorf("default times: %+v", c)
 	}
-	if d := cfg.Discovery; !d.IPv6.Enabled || !d.IPv6.Listen || !d.IPv6.Active || d.IPv6.Solicit || d.IPv4.Enabled {
+	if d := cfg.Discovery; !d.IPv6.Enabled || !d.IPv6.Listen || !d.IPv6.Active || d.Solicit != (Solicit{}) || d.IPv4.Enabled {
 		t.Errorf("discovery defaults: %+v", cfg.Discovery)
 	}
 
@@ -328,7 +328,6 @@ func TestSchemaSaysTheDefaults(t *testing.T) {
 		path []string
 		want string
 	}{
-		{[]string{"lifetime"}, "Default: " + short(DefaultLifetime) + "."},
 		{[]string{"credentials", "additionalProperties", "properties", "debounce"}, "Default: " + short(credential.Debounce.Duration) + "."},
 		{[]string{"credentials", "additionalProperties", "properties", "retry"}, "Default: " + short(credential.Retry.Duration) + "."},
 		{[]string{"sources", "additionalProperties", "properties", "interval"}, "Default: " + short(source.Interval.Duration) + "."},
@@ -346,7 +345,7 @@ func TestDuplicateKeysAreErrors(t *testing.T) {
 	for name, content := range map[string]string{
 		"two tasks of a name": "tasks:\n  web:\n    endpoints:\n      duck: [www]\n  web:\n    endpoints:\n      duck: [other]\n" + duckCredential,
 		"two credentials":     "tasks: {}\n" + duckCredential + duckCredential,
-		"a setting twice":     "tasks: {}\nlifetime: 1h\nlifetime: 2h\n" + duckCredential,
+		"a setting twice":     "tasks: {}\nlog_level: info\nlog_level: debug\n" + duckCredential,
 	} {
 		if _, err := loadConfig(t, content); err == nil || !strings.Contains(err.Error(), "already set in map") {
 			t.Errorf("%s: got %v, want an error", name, err)
@@ -355,7 +354,7 @@ func TestDuplicateKeysAreErrors(t *testing.T) {
 }
 
 // A block with nothing under it, null in YAML, is an error by the schema: it would otherwise
-// read as a family off, or as no block at all.
+// read as no block at all.
 func TestEmptyBlocksAreErrors(t *testing.T) {
 	for _, content := range []string{
 		"tasks:\n" + duckCredential,
@@ -363,7 +362,9 @@ func TestEmptyBlocksAreErrors(t *testing.T) {
 		"tasks: {}\ndiscovery:\n" + duckCredential,
 		"tasks: {}\ndiscovery:\n  ipv6:\n" + duckCredential,
 		"tasks: {}\ndiscovery:\n  ipv4:\n    lifetime:\n" + duckCredential,
-		"tasks: {}\nlifetime:\n" + duckCredential,
+		"tasks: {}\ndiscovery:\n  lifetime:\n" + duckCredential,
+		"tasks: {}\ndiscovery:\n  protocols:\n    mdns:\n" + duckCredential,
+		"tasks: {}\ndiscovery:\n  solicit:\n" + duckCredential,
 	} {
 		if _, err := loadConfig(t, content); err == nil || !strings.Contains(err.Error(), "not valid") {
 			t.Errorf("%q: got %v, want an error", content, err)

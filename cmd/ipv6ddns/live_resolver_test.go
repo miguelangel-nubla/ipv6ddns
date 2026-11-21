@@ -271,13 +271,13 @@ func TestLiveResolver(t *testing.T) {
 	upstream2 := startUpstream(t, up2, "192.0.2.54")
 
 	config := fmt.Sprintf(`
-lifetime: 9s
 webserver:
   listen: [8053]
 discovery:
+  lifetime: 9s
   rediscover: 3s
-  ipv6:
-    solicit: true
+  solicit:
+    ipv6: true
 resolvers:
   lan:
     listen: [198.18.15.0/24, "fd00:c612:15::/64"]

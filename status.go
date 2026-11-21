@@ -14,10 +14,13 @@ import (
 
 // Status is the state of the worker, to serve as JSON.
 type Status struct {
-	Hostnames  []HostnameStatus  `json:"hostnames"`
-	Discovered []DiscoveredHost  `json:"discovered"`
-	Sources    []source.Status   `json:"sources"`
-	Resolvers  []resolver.Status `json:"resolvers"`
+	Hostnames  []HostnameStatus `json:"hostnames"`
+	Discovered []DiscoveredHost `json:"discovered"`
+	// The protocols of the local discovery that run, as the configuration names them: those
+	// enabled whose family is on, and listens.
+	Protocols []string          `json:"protocols"`
+	Sources   []source.Status   `json:"sources"`
+	Resolvers []resolver.Status `json:"resolvers"`
 }
 
 type HostnameStatus struct {
@@ -37,8 +40,17 @@ type HostnameStatus struct {
 }
 
 type DiscoveredHost struct {
-	MAC       string              `json:"mac"`
+	MAC string `json:"mac"`
+	// The names of the host, with discovery.hostnames: what it, or its router, says it is called.
+	Names     []DiscoveredName    `json:"names,omitempty"`
 	Addresses []DiscoveredAddress `json:"addresses"`
+}
+
+// DiscoveredName is a name a host has, and what said it: protocols of the local discovery, as
+// mdns, or plugins by their name.
+type DiscoveredName struct {
+	Name    string   `json:"name"`
+	Sources []string `json:"sources"`
 }
 
 type DiscoveredAddress struct {
@@ -54,7 +66,7 @@ type DiscoveredAddress struct {
 // Status returns the state of the host names and of the discovery. hideSensible hides the errors,
 // which can tell secrets.
 func (w *Worker) Status(hideSensible bool) Status {
-	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Sources: []source.Status{}, Resolvers: []resolver.Status{}}
+	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Protocols: []string{}, Sources: []source.Status{}, Resolvers: []resolver.Status{}}
 
 	for _, r := range w.resolvers {
 		status.Resolvers = append(status.Resolvers, r.Status())
@@ -97,9 +109,14 @@ func (w *Worker) Status(hideSensible bool) Status {
 		}
 	}
 
+	status.Protocols = append(status.Protocols, w.discWorker.Protocols()...)
 	all := w.discWorker.GetAll()
+	names := w.discWorker.AllNames()
 	for _, mac := range slices.Sorted(maps.Keys(all)) {
 		host := DiscoveredHost{MAC: mac}
+		for _, name := range names[mac] {
+			host.Names = append(host.Names, DiscoveredName{Name: name.Name, Sources: name.Sources})
+		}
 		for _, addr := range all[mac].Get() {
 			host.Addresses = append(host.Addresses, DiscoveredAddress{
 				Address: addr.WithZone("").String(),

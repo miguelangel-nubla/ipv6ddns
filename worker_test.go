@@ -4,8 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,8 +19,113 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6disc"
+	disc "github.com/miguelangel-nubla/ipv6disc/pkg/config"
 	"go.uber.org/zap"
 )
+
+// discoveryWith is the discovery of a configuration that says nothing of it, changed.
+func discoveryWith(change func(*config.Discovery)) config.Discovery {
+	d := config.DefaultDiscovery()
+	change(&d)
+	return d
+}
+
+// loadConfig reads a configuration, as the command does: a file.
+func loadConfig(t *testing.T, content string) config.Config {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+// The discovery the worker runs is the configuration's, its protocols too: a configuration that
+// names none runs those ipv6disc has by default, not none, which is what a discovery made
+// without them runs; and one that names them, those it says.
+func TestWorkerRunsTheProtocolsOfTheConfiguration(t *testing.T) {
+	for name, tt := range map[string]struct {
+		config string
+		want   []string
+	}{
+		"no discovery block": {"", []string{"ndp", "ping", "ssdp", "wsd"}},
+		"no protocols key":   {"discovery:\n  exclude_interfaces: [docker0]\n", []string{"ndp", "ping", "ssdp", "wsd"}},
+		"some of them": {"discovery:\n  protocols:\n    ssdp: {enabled: false}\n    wsd: {enabled: false}\n    mdns: {enabled: true}\n",
+			[]string{"ndp", "ping", "mdns"}},
+		"IPv4, without its sweep": {"discovery:\n  ipv4: {enabled: true}\n  protocols:\n    arp-sweep: {enabled: false}\n    arp-listen: {enabled: false}\n",
+			[]string{"ndp", "ping", "ssdp", "wsd", "arp"}},
+		"a family that doesn't listen": {"discovery:\n  ipv6: {listen: false}\n", []string{}},
+		"the names' own": {"discovery:\n  hostnames: {enabled: true}\n  protocols:\n    llmnr: {enabled: true}\n    dns: {enabled: true, servers: 192.0.2.53}\n",
+			[]string{"ndp", "ping", "ssdp", "wsd", "llmnr", "dns"}},
+	} {
+		w, err := NewWorker(zap.NewNop().Sugar(), loadConfig(t, tt.config+"tasks: {}\ncredentials: {}\n"))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := w.Status(true).Protocols; !slices.Equal(got, tt.want) {
+			t.Errorf("%s: the status has the protocols %v, want %v", name, got, tt.want)
+		}
+		line := "Protocols: none\n"
+		if len(tt.want) > 0 {
+			line = "Protocols: " + strings.Join(tt.want, ", ") + "\n"
+		}
+		if page := w.PrettyPrint("", true); !strings.Contains(page, line) {
+			t.Errorf("%s: the page has no %q:\n%s", name, line, page)
+		}
+	}
+
+	// As JSON: a list, empty with none.
+	w, err := NewWorker(zap.NewNop().Sugar(), config.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := json.Marshal(w.Status(true)); !strings.Contains(string(status), `"protocols":[]`) {
+		t.Errorf("a discovery of nothing: %s", status)
+	}
+}
+
+// A host's names are where the hosts are: the status, and the page, which -live shows too. With
+// discovery.hostnames, and not without.
+func TestStatusHasTheNamesOfTheHosts(t *testing.T) {
+	hw, _ := net.ParseMAC(macA)
+	for _, kept := range []bool{true, false} {
+		cfg := loadConfig(t, fmt.Sprintf("discovery:\n  hostnames: {enabled: %t}\ntasks: {}\ncredentials: {}\n", kept))
+		w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(w.discWorker.State.Close)
+		register(t, w, macA, "2001:db8::a", time.Hour)
+		w.discWorker.RegisterName(hw, "Printer.local.", "mdns", time.Hour)
+		w.discWorker.RegisterName(hw, "printer", "router", time.Hour)
+		w.discWorker.RegisterName(hw, "laserjet", "router", time.Hour)
+
+		discovered := w.Status(true).Discovered
+		if len(discovered) != 1 || discovered[0].MAC != macA {
+			t.Fatalf("hostnames %t: discovered %+v", kept, discovered)
+		}
+		want := []DiscoveredName(nil)
+		onPage := macA + "\n"
+		if kept {
+			want = []DiscoveredName{{Name: "laserjet", Sources: []string{"router"}}, {Name: "printer", Sources: []string{"mdns", "router"}}}
+			onPage = macA + " laserjet (router), printer (mdns,router)\n"
+		}
+		if got := discovered[0].Names; !reflect.DeepEqual(got, want) {
+			t.Errorf("hostnames %t: the names of the status are %+v, want %+v", kept, got, want)
+		}
+		if page := w.PrettyPrint("", true); !strings.Contains(page, onPage) {
+			t.Errorf("hostnames %t: the page has no %q:\n%s", kept, onPage, page)
+		}
+		encoded, _ := json.Marshal(discovered[0])
+		if has := strings.Contains(string(encoded), `"names":[{"name":"laserjet","sources":["router"]}`); has != kept {
+			t.Errorf("hostnames %t: as JSON, %s", kept, encoded)
+		}
+	}
+}
 
 func addr(mac, ip string) *ipv6disc.Addr {
 	hw, _ := net.ParseMAC(mac)
@@ -148,7 +258,7 @@ func TestWorkerWithSourcesOnly(t *testing.T) {
 	wan.Interval.Duration, wan.Lifetime.Duration = time.Hour, 3*time.Hour
 	cfg := config.Config{
 		// Asking the hosts with no family listening starts no discovery either, and asks nobody.
-		Discovery:   config.Discovery{IPv6: config.Family{Enabled: true, Solicit: true}},
+		Discovery:   discoveryWith(func(d *config.Discovery) { d.IPv6, d.Solicit.IPv6 = disc.Family{Enabled: true}, true }),
 		Tasks:       map[string]config.Task{"web": {Name: "web", Sources: []string{"wan"}, Endpoints: map[string][]string{"dns": {"www"}}}},
 		Credentials: map[string]config.Credential{"dns": fakeCredential("sources-only", time.Millisecond, time.Hour)},
 		Sources:     map[string]config.Source{"wan": wan},

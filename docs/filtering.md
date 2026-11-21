@@ -97,7 +97,7 @@ Addresses without a MAC, as the network's public IPv4, don't go through filters:
 
 ### Addresses that stay quiet
 
-A host's stable IPv6 address, or the IPv4 address of a host that sends nothing, may never be seen: with `solicit`, the hosts the filters name are asked for them. See [solicitation](discovery.md#solicitation).
+A host's stable IPv6 address, or the IPv4 address of a host that sends nothing, may never be seen: with `discovery.solicit`, the hosts the filters name are asked for them. See [solicitation](discovery.md#solicitation).
 
 ## Examples
 
@@ -186,4 +186,4 @@ discovery:
   exclude_interfaces: [docker*, br-*, veth*, hassio]
 ```
 
-For a local DNS, its address on the LAN: `self: true` with `ip: {family: [4], type: [private]}`, and `discovery.ipv4: true`.
+For a local DNS, its address on the LAN: `self: true` with `ip: {family: [4], type: [private]}`, and `discovery.ipv4.enabled: true`.

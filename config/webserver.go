@@ -9,26 +9,17 @@ import (
 // Webserver serves the report, /status.json and /metrics.
 type Webserver struct {
 	// Where: ports, addresses, networks of the machine's addresses and host names, as listen
-	// takes them; without a port, 8053. None: no web server. The -webserver_listen flag, given,
-	// wins.
+	// takes them; without a port, 8053. None: no web server.
 	Listen StringList `json:"listen,omitempty"`
 }
 
 // DefaultWebserverPort is the port of the web server's entries that give none.
 const DefaultWebserverPort = "8053"
 
-// setUpWebserver takes the deprecated webserver_listen, and checks the entries.
-func (c *Config) setUpWebserver() ([]string, error) {
-	var warnings []string
-	if len(c.WebserverListen) > 0 {
-		if len(c.Webserver.Listen) > 0 {
-			return nil, fmt.Errorf("webserver_listen is the deprecated form of webserver.listen: give one of them")
-		}
-		c.Webserver.Listen, c.WebserverListen = c.WebserverListen, nil
-		warnings = append(warnings, "webserver_listen is deprecated, and goes in v1.0: it is webserver.listen")
-	}
+// setUpWebserver checks the entries.
+func (c *Config) setUpWebserver() error {
 	if _, err := listen.Parse(c.Webserver.Listen, DefaultWebserverPort); err != nil {
-		return nil, fmt.Errorf("webserver.listen: %w", err)
+		return fmt.Errorf("webserver.listen: %w", err)
 	}
-	return warnings, nil
+	return nil
 }

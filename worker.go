@@ -56,28 +56,23 @@ type target struct {
 	tasks    []config.Task
 }
 
-// NewWorker makes the worker of the configuration; Start runs it. A lifetime left zero is an
-// hour; a rediscovery interval, a third of the shortest lifetime of the families on.
+// NewWorker makes the worker of the configuration; Start runs it. The discovery is the
+// configuration's, whole: its families, its names and its protocols, which a configuration read
+// by config.NewConfig has by default, and one made by hand has from config.DefaultDiscovery. A
+// lifetime left zero is an hour; a rediscovery interval, a third of the shortest lifetime of the
+// families on.
 func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
-	lifetime := cfg.Lifetime.Duration
-	if lifetime == 0 {
-		lifetime = config.DefaultLifetime
+	discovery := cfg.Discovery.Config()
+	if discovery.Lifetime == 0 {
+		discovery.Lifetime = config.DefaultLifetime
 	}
 	w := &Worker{
-		State: NewState(),
-		discWorker: ipv6disc.NewWorker(logger, ipv6disc.Config{
-			Lifetime:   lifetime,
-			Rediscover: cfg.Discovery.Rediscover.Duration,
-			IPv6:       discoveryFamily(cfg.Discovery.IPv6),
-			IPv4:       discoveryFamily(cfg.Discovery.IPv4),
-
-			Interfaces:        cfg.Discovery.Interfaces,
-			ExcludeInterfaces: cfg.Discovery.ExcludeInterfaces,
-		}),
-		logger:  logger,
-		config:  cfg,
-		sources: make(map[string]*source.Source),
-		rematch: make(chan struct{}, 1),
+		State:      NewState(),
+		discWorker: ipv6disc.NewWorker(logger, discovery),
+		logger:     logger,
+		config:     cfg,
+		sources:    make(map[string]*source.Source),
+		rematch:    make(chan struct{}, 1),
 	}
 
 	// Home Assistant's states for its sources; nil, not a nil *homeAssistant, without it.
@@ -328,7 +323,7 @@ func (w *Worker) Start(ctx context.Context) error {
 		}
 	}()
 
-	if d := w.config.Discovery; d.IPv6.Enabled && d.IPv6.Solicit || d.IPv4.Enabled && d.IPv4.Solicit {
+	if d := w.config.Discovery; d.IPv6.Enabled && d.Solicit.IPv6 || d.IPv4.Enabled && d.Solicit.IPv4 {
 		w.running.Add(1)
 		go func() {
 			defer w.running.Done()
@@ -408,11 +403,6 @@ func (w *Worker) askRematch() {
 	case w.rematch <- struct{}{}:
 	default:
 	}
-}
-
-// discoveryFamily is the ipv6disc family of the configuration's.
-func discoveryFamily(f config.Family) ipv6disc.Family {
-	return ipv6disc.Family{Enabled: f.Enabled, Listen: f.Listen, Active: f.Active, Lifetime: f.Lifetime.Duration}
 }
 
 // lookForChanges gives each host name the addresses its tasks match now.

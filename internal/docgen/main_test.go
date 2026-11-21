@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/miguelangel-nubla/ipv6disc"
 )
 
 var update = flag.Bool("update", false, "write the pages")
@@ -27,6 +29,45 @@ func TestPagesUpToDate(t *testing.T) {
 		}
 		if got, err := os.ReadFile(path); err != nil || string(got) != want {
 			t.Errorf("%s is behind the schemas: go test ./internal/docgen -update", path)
+		}
+	}
+}
+
+// The reference has the discovery as ipv6disc has it: every protocol, with its options and their
+// defaults, and what is ipv6ddns's own beside them.
+func TestConfigurationHasTheDiscovery(t *testing.T) {
+	page, err := Configuration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, protocol := range ipv6disc.ProtocolNames() {
+		if !strings.Contains(page, "### "+protocol+"\n\n`discovery.protocols."+protocol+"`\n") {
+			t.Errorf("no section of the %s protocol", protocol)
+		}
+	}
+	for _, want := range []string{
+		"## Discovery\n\n`discovery`\n",
+		"| `lifetime` | duration | `1h` | How long an address stays after it was last seen, unless its family says. |",
+		"## Discovery IPv4\n\n`discovery.ipv4`\n",
+		"| `enabled` | boolean | `false` | Whether the family's addresses are kept",
+		"## Discovery hostnames\n\n`discovery.hostnames`\n",
+		"## Discovery solicit\n\n`discovery.solicit`\n",
+		"| `ipv6` | boolean | `false` | For each filter that names a mac.address and the eui64 type",
+		"| `ask` | boolean | `true` | ",
+		"| `max_prefix` | number | `22` | ",
+		"| `servers` | list, or comma separated | - | ",
+		"| `plugins` | object | - | ",
+		"## Discovery plugins\n\n`discovery.plugins.<name>`\n",
+		"| `interval` | duration | **Required.** How often the table is read: 60s, 5m. |",
+		"| `use_tls` | boolean | ",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the reference has no %q", want)
+		}
+	}
+	for _, gone := range []string{"webserver_listen", "solicit_eui64", "`params`", "flag", "Deprecated, and goes in v1.0: discovery"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("the reference still has %q", gone)
 		}
 	}
 }

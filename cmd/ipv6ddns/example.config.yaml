@@ -1,6 +1,4 @@
-# Settings that are flags too: a flag given on the command line wins.
-lifetime: 1h                  # how long a discovered address stays after it was last seen
-log_level: info
+log_level: info               # debug, info, warn, error
 webserver:
   listen: [8053]              # the report, /status.json and /metrics; or "8053,[::1]:8054"
 
@@ -175,19 +173,33 @@ credentials:
       # host_key: SHA256:...
       zone: example.com
       ttl: 1h
-# The same ways for each family: listen, passive; active, probing every host; solicit, asking the
-# hosts the filters want. The plugins read the tables of the families on.
+# The discovery is ipv6disc's, with its keys: docs/discovery.md. The families are the switches
+# of all their protocols at once: listen, the local discovery; active, probing every host. The
+# plugins read the tables of the families enabled.
 discovery:
+  lifetime: 1h        # how long a discovered address stays after it was last seen
   ipv6:
-    listen: true      # NDP
+    enabled: true
+    listen: true      # NDP, and the answers of the probes
     active: true      # multicast ping, SSDP, WS-Discovery
-    solicit: true     # the EUI-64 addresses eui64 filters want
   # Off by default. Filters take IPv4 addresses only with ip.family 4, as the mynas task.
   ipv4:
+    enabled: true
     listen: true      # the kernel's ARP table
     active: false     # a sweep of the subnets would broadcast an ARP request for each address
-    solicit: true     # ARP to the MACs IPv4 filters name, alone, on the subnets of their ip.prefix
-    lifetime: 5m      # an address not seen for 5m goes: the top-level lifetime by default
+    lifetime: 5m      # an address not seen for 5m goes: discovery.lifetime by default
+  # Asking the hosts the filters want, which aren't otherwise found. Off by default.
+  solicit:
+    ipv6: true        # the EUI-64 addresses eui64 filters want
+    ipv4: true        # ARP to the MACs IPv4 filters name, alone, on the subnets of their ip.prefix
+  # The names of the hosts, which the status page shows beside their MAC. Off by default.
+  hostnames:
+    enabled: true
+  # Each protocol has its switch, and its options: those that find hosts are on by default,
+  # those that tell names off. Every one is in docs/reference/configuration.md.
+  protocols:
+    ssdp: {enabled: false}    # no search for UPnP devices
+    mdns: {enabled: true}     # the hosts that announce themselves, and their names
   # Not on the bridges of containers: their hosts aren't the network's.
   exclude_interfaces: [docker*, br-*, veth*]
   plugins:

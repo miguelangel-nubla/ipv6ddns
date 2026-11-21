@@ -58,7 +58,7 @@ tasks:
   nas:
     sources: [wan]
     endpoints: {home: [nas]}
-discovery: {ipv6: false}
+discovery: {ipv6: {enabled: false}}
 `, port, freeDNSPort(t))
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
@@ -208,7 +208,7 @@ resolvers:
   lan: {listen: %s, upstream: 192.0.2.1}
 credentials: {}
 tasks: {}
-discovery: {ipv6: false}
+discovery: {ipv6: {enabled: false}}
 `, c.lab, c.lan))
 		ctx, cancel := context.WithCancel(context.Background())
 		err := w.Start(ctx)
@@ -247,7 +247,7 @@ resolvers:
   lan: {listen: "127.0.0.1:%s", upstream: [%s]}
 credentials: {}
 tasks: {}
-discovery: {ipv6: false}
+discovery: {ipv6: {enabled: false}}
 `, port, strings.Join(upstreams, ", ")))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

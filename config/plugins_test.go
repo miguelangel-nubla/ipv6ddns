@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/miguelangel-nubla/ipv6ddns/internal/schematest"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins/linux"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins/mikrotik"
@@ -22,49 +21,6 @@ const (
 	fingerprint       = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 	fingerprintColons = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
 )
-
-func TestPluginParams(t *testing.T) {
-	// A password with what the params use: commas, backslashes.
-	const password = `p,a\s\,s`
-
-	ssh, err := PluginConfig{Type: "linux", Interval: "60s", Address: "192.0.2.1", Username: "root", Password: password, HostKey: hostKey}.PluginParams()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := linux.ParseConfig(ssh)
-	if err != nil || cfg.Password != password || cfg.HostKey != hostKey || cfg.IdentityFile != "" || cfg.Address != "192.0.2.1" {
-		t.Errorf("linux: %q read back as %+v, %v", ssh, cfg, err)
-	}
-
-	minimal, _ := PluginConfig{Type: "freebsd", Interval: "60s", Address: "fw", Username: "root", IdentityFile: "/key"}.PluginParams()
-	if minimal != "60s,fw,root,,/key" {
-		t.Errorf("freebsd: got %q", minimal)
-	}
-
-	routeros, err := PluginConfig{Type: "mikrotik", Interval: "1m", Address: "192.0.2.1", Username: "admin", Password: password, UseTLS: true}.PluginParams()
-	if err != nil {
-		t.Fatal(err)
-	}
-	mcfg, err := mikrotik.ParseConfig(routeros)
-	if err != nil || mcfg.Password != password || !mcfg.UseTLS || mcfg.TLSFingerprint != "" {
-		t.Errorf("mikrotik: %q read back as %+v, %v", routeros, mcfg, err)
-	}
-
-	if got, _ := (PluginConfig{Type: "linux", Params: "60s,a,b,c"}).PluginParams(); got != "60s,a,b,c" {
-		t.Errorf("params: got %q", got)
-	}
-
-	for _, wrong := range []PluginConfig{
-		{Type: "linux", Interval: "60s", Address: "a", Username: "b", UseTLS: true},
-		{Type: "mikrotik", Interval: "60s", Address: "a", Username: "b", HostKey: hostKey},
-		{Type: "nope", Interval: "60s", Address: "a", Username: "b"},
-		{Type: "linux", Params: "60s,a,b,c", Address: "a"},
-	} {
-		if _, err := wrong.PluginParams(); err == nil {
-			t.Errorf("%+v: want an error", wrong)
-		}
-	}
-}
 
 func TestPluginConfigs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -85,15 +41,16 @@ func TestPluginConfigs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	params, _ := cfg.Discovery.Plugins["router"].PluginParams()
+	params, _ := cfg.Discovery.Plugins["router"].Params()
 	if mcfg, err := mikrotik.ParseConfig(params); err != nil || mcfg.Password != "with,a comma" || !mcfg.UseTLS {
 		t.Errorf("got %q, read back as %+v, %v", params, mcfg, err)
 	}
 
 	for name, plugin := range map[string]string{
+		"params":             "      type: linux\n      params: 60s,a,b,c\n",
 		"params and fields":  "      type: linux\n      params: 60s,a,b,c\n      address: a\n",
 		"fields missing":     "      type: linux\n      interval: 60s\n",
-		"unknown type":       "      type: openbsd\n      params: 60s,a,b,c\n",
+		"unknown type":       "      type: openbsd\n      interval: 60s\n",
 		"unknown field":      "      type: linux\n      interval: 60s\n      address: a\n      username: b\n      passwrd: c\n",
 		"wrong type's field": "      type: linux\n      interval: 60s\n      address: a\n      username: b\n      use_tls: true\n",
 		"invalid host key":   "      type: linux\n      interval: 60s\n      address: a\n      username: b\n      host_key: abc\n",
@@ -105,24 +62,21 @@ func TestPluginConfigs(t *testing.T) {
 		}
 	}
 
-	// What is wrong is said, without the schema's combinations around it.
+	// What is wrong is said, in ipv6disc's words, without the schema's combinations around it.
 	for plugin, want := range map[string]string{
-		"      type: linux\n": "interval is required",
-		"      type: linux\n      params: 60s,a,b,c\n      address: a\n":                                                                     "not both",
-		"      type: mikrotik\n      interval: 60\n      address: a\n      username: u\n":                                                    "interval",
+		"      type: linux\n": "discovery.plugins.router: a linux plugin needs its interval",
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: 60\n":                                                  "discovery.plugins.router.username: 60 is not a string: write it in quotes",
 		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n":                                                      "needs a password or an identity file",
-		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n      identity_file: /k\n      use_tls: true\n":        "use_tls is not allowed",
+		"      type: linux\n      interval: 60s\n      address: a\n      username: u\n      identity_file: /k\n      use_tls: true\n":        "discovery.plugins.router.use_tls: no such field of a linux plugin",
 		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      password: p\n      tls_fingerprint: nothex\n": "tls_fingerprint",
-		// What only the plugin type checks, and the schema says where it can.
+		// What only the plugin type checks.
 		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      tls_fingerprint: " + fingerprint + "\n":                       "use_tls",
 		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      use_tls: false\n      tls_fingerprint: " + fingerprint + "\n": "use_tls",
-		"      type: mikrotik\n      params: 60s,a,u,p,false," + fingerprint + "\n":                                                                          "tls_fingerprint needs use_tls=true",
-		"      type: mikrotik\n      params: 60s,a,u,p,yes\n":                                                                                                "use_tls",
+		"      type: mikrotik\n      interval: 60s\n      address: a\n      username: u\n      use_tls: yes please\n":                                        "discovery.plugins.router.use_tls: \"yes please\" is not true or false",
 		"      type: mikrotik\n      interval: \"0\"\n      address: a\n      username: u\n":                                                                 "interval",
-		"      type: mikrotik\n      params: 60s\n":                                                                                                          "invalid mikrotik config",
 	} {
 		_, err := load(plugin)
-		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "Must validate") {
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "Must validate") || !strings.HasPrefix(err.Error(), "discovery.plugins.router") {
 			t.Errorf("%q: got %v, want an error with %q only", plugin, err, want)
 		}
 	}
@@ -149,8 +103,8 @@ func TestPluginConfigs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", typeName, err)
 		}
-		params, _ := cfg.Discovery.Plugins["router"].PluginParams()
-		if want := `1m,1.2.3.4,a,a=b\,c\\d `; params != want {
+		params, _ := cfg.Discovery.Plugins["router"].Params()
+		if want := `1m0s,1.2.3.4,a,a=b\,c\\d `; params != want {
 			t.Errorf("%s: params %q, want %q", typeName, params, want)
 		}
 		var got string
@@ -165,29 +119,21 @@ func TestPluginConfigs(t *testing.T) {
 			t.Errorf("%s: the password read back as %q", typeName, got)
 		}
 	}
-
-	// The params in one string still work, with a warning.
-	cfg, err = load("      type: linux\n      params: 60s,a,b,c\n")
-	if err != nil || len(cfg.Warnings) != 1 || !strings.Contains(cfg.Warnings[0], "params is deprecated") {
-		t.Errorf("params: %v, warnings %v", err, cfg.Warnings)
-	}
 }
 
-// The schema's plugin fields are those the plugin types of ipv6disc register, and requires the
-// same of them.
+// The schema's plugin fields are those the plugin types of ipv6disc register, and it requires the
+// same of them: ipv6disc's own schema, which its tests hold to its types, under its names here.
 func TestPluginSchemaMatchesTheTypes(t *testing.T) {
 	var schema struct {
 		Defs map[string]struct {
 			Properties map[string]any `json:"properties"`
-			Else       struct {
-				Required []string `json:"required"`
-			} `json:"else"`
+			Required   []string       `json:"required"`
 		} `json:"$defs"`
 	}
 	if err := json.Unmarshal(configSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	defs := map[string]string{"linux": "sshPlugin", "freebsd": "sshPlugin", "mikrotik": "mikrotikPlugin"}
+	defs := map[string]string{"linux": "discoverySshPlugin", "freebsd": "discoverySshPlugin", "mikrotik": "discoveryMikrotikPlugin"}
 	if !slices.Equal(slices.Sorted(maps.Keys(defs)), plugins.Types()) {
 		t.Fatalf("the schema has %v, ipv6disc %v", slices.Sorted(maps.Keys(defs)), plugins.Types())
 	}
@@ -206,7 +152,7 @@ func TestPluginSchemaMatchesTheTypes(t *testing.T) {
 		d := schema.Defs[def]
 		var properties []string
 		for name := range d.Properties {
-			if name != "type" && name != "params" {
+			if name != "type" {
 				properties = append(properties, name)
 			}
 		}
@@ -215,33 +161,10 @@ func TestPluginSchemaMatchesTheTypes(t *testing.T) {
 		if !slices.Equal(names, properties) {
 			t.Errorf("%s: the schema's fields %v, ipv6disc's %v", typeName, properties, names)
 		}
-		// Without params, by fields, it requires what the type does.
-		schemaRequired := slices.Sorted(slices.Values(d.Else.Required))
+		schemaRequired := slices.Sorted(slices.Values(d.Required))
 		slices.Sort(required)
 		if !slices.Equal(schemaRequired, required) {
 			t.Errorf("%s: the schema requires %v, ipv6disc %v", typeName, schemaRequired, required)
 		}
 	}
-}
-
-// The fields of PluginConfig are those of the schema's plugin types together: the schema's
-// own check stops at their $ref.
-func TestPluginSchemaMatchesPluginConfig(t *testing.T) {
-	var schema struct {
-		Defs map[string]struct {
-			Properties map[string]any `json:"properties"`
-		} `json:"$defs"`
-	}
-	if err := json.Unmarshal(configSchema, &schema); err != nil {
-		t.Fatal(err)
-	}
-	properties := maps.Clone(schema.Defs["plugin"].Properties)
-	for _, def := range []string{"sshPlugin", "mikrotikPlugin"} {
-		maps.Copy(properties, schema.Defs[def].Properties)
-	}
-	all, err := json.Marshal(map[string]any{"type": "object", "properties": properties})
-	if err != nil {
-		t.Fatal(err)
-	}
-	schematest.Check(t, string(all), PluginConfig{})
 }

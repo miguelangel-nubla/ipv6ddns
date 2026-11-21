@@ -29,7 +29,7 @@ const solicitPrefixInterval = 2 * time.Second
 // to each alone, so a quiet host is found with nothing broadcast.
 func (w *Worker) solicitLoop(ctx context.Context) {
 	d := w.config.Discovery
-	solicitIPv6, solicitIPv4 := d.IPv6.Enabled && d.IPv6.Solicit, d.IPv4.Enabled && d.IPv4.Solicit
+	solicitIPv6, solicitIPv4 := d.IPv6.Enabled && d.Solicit.IPv6, d.IPv4.Enabled && d.Solicit.IPv4
 	ipv4Targets := ipv4SolicitTargets(w.config.Tasks)
 	ipv6 := eui64Solicitor{tasks: w.config.Tasks, solicit: w.discWorker.Solicit, logger: w.logger}
 

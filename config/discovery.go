@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
+	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
+	disc "github.com/miguelangel-nubla/ipv6disc/pkg/config"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 )
 
-// DefaultLifetime is how long a discovered address stays after it was last seen, by default.
+// DefaultLifetime is how long a discovered address stays after it was last seen, by default:
+// discovery.lifetime. ipv6disc's own is longer.
 const DefaultLifetime = time.Hour
 
 // StringList is a list of strings: in the configuration, a list, or one string of comma separated
@@ -44,112 +47,247 @@ func (l *StringList) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Family is how a family's addresses are discovered: the same for IPv6 and IPv4. It is true,
-// false, or an object of the ways, each defaulting as in true.
-type Family struct {
-	// Whether the family is discovered at all: its addresses, and the plugins reading them.
-	Enabled bool `json:"enabled"`
-	// Passive local discovery. IPv6: NDP, and the answers of the protocols. IPv4: the kernel's
-	// neighbor table.
-	Listen bool `json:"listen"`
-	// Probing every host of the local links. IPv6: multicast ping, SSDP and WS-Discovery. IPv4: a
-	// sweep of the subnets, which broadcasts an ARP request for each address.
-	Active bool `json:"active"`
-	// Asking the hosts the filters want, which aren't otherwise found. IPv6: a neighbor
-	// solicitation for the EUI-64 address of their MAC. IPv4: ARP requests to their MAC alone.
-	Solicit bool `json:"solicit"`
-	// How long the family's addresses stay after they were last seen, the plugins' too: the
-	// lifetime of the configuration when not given.
-	Lifetime duration.Duration `json:"lifetime"`
-
-	// Whether the configuration has it, rather than the default; and as an object of ways, rather
-	// than true or false.
-	set, object bool
+// Discovery is how hosts are discovered: ipv6disc's own configuration, the same keys its command
+// takes in its file, read by its decoder; and what is ipv6ddns's, the solicitation of the hosts
+// the filters want. A Discovery's zero value discovers nothing: DefaultDiscovery is what a
+// configuration that says nothing has.
+type Discovery struct {
+	// lifetime, rediscover, interfaces, exclude_interfaces, ipv6, ipv4, hostnames, protocols and
+	// plugins: ipv6disc says what each is.
+	disc.Discovery
+	// Asking the hosts the filters want, which aren't otherwise found: ipv6ddns's, as the targets
+	// are the filters'.
+	Solicit Solicit `json:"solicit"`
 }
 
-// familyOn is a family as true sets it.
-var familyOn = Family{Enabled: true, Listen: true, Active: true}
+// Solicit is which family's hosts are asked for, of those the filters name by their MAC. A
+// family that is off is not asked.
+type Solicit struct {
+	// A neighbor solicitation for the EUI-64 address of their MAC, on each /64 listened on.
+	IPv6 bool `json:"ipv6"`
+	// ARP requests to their MAC alone.
+	IPv4 bool `json:"ipv4"`
+}
 
-// DefaultDiscovery is the discovery of a configuration that doesn't say: IPv6 by listening and
-// active probes, no IPv4. A Discovery's zero value discovers nothing.
+// DefaultDiscovery is the discovery of a configuration that doesn't say: ipv6disc's, IPv6 by the
+// protocols that find hosts, no IPv4 and no names, with the lifetime of ipv6ddns; and nothing
+// solicited.
 func DefaultDiscovery() Discovery {
-	return Discovery{IPv6: familyOn}
+	d := Discovery{Discovery: disc.DefaultDiscovery()}
+	d.Lifetime = disc.Duration(DefaultLifetime)
+	return d
 }
 
-func (f *Family) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	var on bool
-	if err := json.Unmarshal(b, &on); err == nil {
-		*f = Family{}
-		if on {
-			*f = familyOn
+// discoveryKeys are the keys of the discovery block, in their order: ipv6disc's, then ipv6ddns's.
+func discoveryKeys() []string {
+	var keys []string
+	for _, typ := range []reflect.Type{reflect.TypeFor[disc.Discovery](), reflect.TypeFor[Discovery]()} {
+		for i := range typ.NumField() {
+			if name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ","); name != "" && name != "-" {
+				keys = append(keys, name)
+			}
 		}
-		f.set = true
+	}
+	return keys
+}
+
+// UnmarshalJSON reads the discovery block over what d has, strictly: solicit, which is
+// ipv6ddns's, is taken off, and the rest is ipv6disc's to read. Every error is told, each with
+// its path from the top of the configuration.
+func (d *Discovery) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if string(b) == "null" {
 		return nil
 	}
-	type plain Family
-	family := plain(familyOn)
-	if err := json.Unmarshal(b, &family); err != nil {
-		return err
+	var block map[string]json.RawMessage
+	if err := json.Unmarshal(b, &block); err != nil {
+		return fmt.Errorf("discovery: %s is not a mapping of its keys", b)
 	}
-	*f = Family(family)
-	f.set, f.object = true, true
-	return nil
-}
-
-// setUpDiscovery turns the discovery settings from before the families, listen, active and
-// solicit_eui64, into the IPv6 ones, with warnings to move them.
-func (d *Discovery) setUpDiscovery() ([]string, error) {
-	var warnings []string
-	old := map[string]*bool{"listen": d.Listen, "active": d.Active, "solicit_eui64": d.SolicitEUI64}
-	for _, key := range []string{"listen", "active", "solicit_eui64"} {
-		value := old[key]
-		if value == nil {
-			continue
-		}
-		if d.IPv6.set {
-			return nil, fmt.Errorf("discovery.%s is the deprecated form of discovery.ipv6: give one of them", key)
-		}
-		// Before the families, listen and active were IPv4's too, which was only true or false.
-		ipv4 := !d.IPv4.object
-		switch key {
-		case "listen":
-			d.IPv6.Listen = *value
-			if ipv4 {
-				d.IPv4.Listen = *value
-			}
-		case "active":
-			d.IPv6.Active = *value
-			if ipv4 {
-				d.IPv4.Active = *value
-			}
-		case "solicit_eui64":
-			d.IPv6.Solicit = *value
-			ipv4 = false
-		}
-		newKey := map[string]string{"listen": "listen", "active": "active", "solicit_eui64": "solicit"}[key]
-		also := ""
-		if ipv4 && d.IPv4.Enabled {
-			also = " and discovery.ipv4." + newKey
-		}
-		warnings = append(warnings, fmt.Sprintf("discovery.%s is deprecated, and goes in v1.0: it is discovery.ipv6.%s%s", key, newKey, also))
-	}
-	d.Listen, d.Active, d.SolicitEUI64 = nil, nil, nil
 
 	var errs []error
-	for name, f := range map[string]Family{"ipv6": d.IPv6, "ipv4": d.IPv4} {
-		if f.Lifetime.Duration < 0 {
-			errs = append(errs, fmt.Errorf("discovery.%s: a negative lifetime", name))
+	known := discoveryKeys()
+	rest := make(map[string]json.RawMessage)
+	for _, key := range slices.Sorted(maps.Keys(block)) {
+		switch {
+		case key == "solicit":
+			errs = append(errs, d.Solicit.read(block[key]))
+		case !slices.Contains(known, key):
+			errs = append(errs, fmt.Errorf("discovery.%s: no such key: discovery has %s", key, strings.Join(known, ", ")))
+		default:
+			rest[key] = block[key]
 		}
 	}
-	for _, pattern := range slices.Concat(d.Interfaces, d.ExcludeInterfaces) {
-		if _, err := path.Match(pattern, ""); err != nil {
-			errs = append(errs, fmt.Errorf("discovery: invalid interface pattern %q", pattern))
+	// What moved, said before ipv6disc says it knows no such key.
+	errs = append(errs, movedDiscoveryKeys(rest))
+
+	library, err := json.Marshal(rest)
+	if err != nil {
+		return err
+	}
+	errs = append(errs, prefixed(d.Discovery.UnmarshalJSON(library), func(string) string { return "discovery." }))
+	return errors.Join(errs...)
+}
+
+// read reads discovery.solicit, strictly.
+func (s *Solicit) read(raw json.RawMessage) error {
+	raw = bytes.TrimSpace(raw)
+	if string(raw) == "null" {
+		return nil
+	}
+	var block map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &block); err != nil {
+		var on bool
+		if json.Unmarshal(raw, &on) == nil {
+			return fmt.Errorf("discovery.solicit: %s is not its settings: it is written solicit: {ipv6: %t}, and ipv4 beside it for IPv4", raw, on)
+		}
+		return fmt.Errorf("discovery.solicit: %s is not a mapping of its keys", raw)
+	}
+	var errs []error
+	for _, key := range slices.Sorted(maps.Keys(block)) {
+		var family *bool
+		switch key {
+		case "ipv6":
+			family = &s.IPv6
+		case "ipv4":
+			family = &s.IPv4
+		default:
+			errs = append(errs, fmt.Errorf("discovery.solicit.%s: no such key: discovery.solicit has ipv6, ipv4", key))
+			continue
+		}
+		if value := bytes.TrimSpace(block[key]); string(value) != "null" && json.Unmarshal(value, family) != nil {
+			errs = append(errs, fmt.Errorf("discovery.solicit.%s: %s is not true or false", key, value))
 		}
 	}
+	return errors.Join(errs...)
+}
+
+// movedDiscoveryKeys tells the keys of the discovery block that are elsewhere now, each with
+// where, and takes them off the block: ipv6disc would say only that there is no such key.
+func movedDiscoveryKeys(block map[string]json.RawMessage) error {
+	var errs []error
+	for _, family := range []string{"ipv6", "ipv4"} {
+		var keys map[string]json.RawMessage
+		if json.Unmarshal(block[family], &keys) != nil {
+			continue
+		}
+		if _, ok := keys["solicit"]; ok {
+			errs = append(errs, fmt.Errorf("discovery.%[1]s.solicit is discovery.solicit.%[1]s now: the solicitation has its own block, solicit: {%[1]s: true}, beside the families", family))
+			delete(keys, "solicit")
+			block[family], _ = json.Marshal(keys)
+		}
+	}
+	var all map[string]json.RawMessage
+	if json.Unmarshal(block["plugins"], &all) == nil {
+		for _, name := range slices.Sorted(maps.Keys(all)) {
+			var keys map[string]json.RawMessage
+			if json.Unmarshal(all[name], &keys) != nil {
+				continue
+			}
+			if _, ok := keys["params"]; !ok {
+				continue
+			}
+			fields := "interval, address, username and the others of its type"
+			var typeName string
+			if json.Unmarshal(keys["type"], &typeName) == nil {
+				if known, err := plugins.Fields(typeName); err == nil {
+					names := make([]string, len(known))
+					for i, field := range known {
+						names[i] = field.Name
+					}
+					fields = strings.Join(names, ", ")
+				}
+			}
+			errs = append(errs, fmt.Errorf("discovery.plugins.%s.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: %s", name, fields))
+			// Without its fields, the plugin would be told to lack each of them too.
+			delete(all, name)
+		}
+		block["plugins"], _ = json.Marshal(all)
+	}
+	return errors.Join(errs...)
+}
+
+// prefixed returns every error of err, which ipv6disc joined, with what prefix says before it:
+// theirs start at the keys of the discovery, and a configuration has those under discovery.
+func prefixed(err error, prefix func(message string) string) error {
+	if err == nil {
+		return nil
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var errs []error
+		for _, e := range joined.Unwrap() {
+			errs = append(errs, prefixed(e, prefix))
+		}
+		return errors.Join(errs...)
+	}
+	return fmt.Errorf("%s%w", prefix(err.Error()), err)
+}
+
+// validate tells what of the discovery can't run, as ipv6disc tells it: the protocols enabled
+// that can't be, the lifetimes, the interfaces' patterns, and the plugins, each made and dropped
+// to know. And what runs, but does nothing: warnings.
+func (d Discovery) validate() (warnings []string, err error) {
+	err = prefixed(d.Discovery.Validate(), func(message string) string {
+		// A plugin's error has its path; the others are of the discovery as a whole.
+		if strings.HasPrefix(message, "plugins.") {
+			return "discovery."
+		}
+		return "discovery: "
+	})
 	// The answers to the IPv6 solicitations are read listening.
-	if d.IPv6.Enabled && d.IPv6.Solicit && !d.IPv6.Listen {
-		warnings = append(warnings, "discovery.ipv6.solicit does nothing without discovery.ipv6.listen, which reads the answers")
+	if d.Solicit.IPv6 && d.IPv6.Enabled && !d.IPv6.Listen {
+		warnings = append(warnings, "discovery.solicit.ipv6 does nothing without discovery.ipv6.listen, which reads the answers")
 	}
-	return warnings, errors.Join(errs...)
+	for _, family := range []struct {
+		name          string
+		solicit, runs bool
+	}{{"ipv6", d.Solicit.IPv6, d.IPv6.Enabled}, {"ipv4", d.Solicit.IPv4, d.IPv4.Enabled}} {
+		if family.solicit && !family.runs {
+			warnings = append(warnings, fmt.Sprintf("discovery.solicit.%[1]s does nothing without discovery.%[1]s.enabled", family.name))
+		}
+	}
+	return warnings, err
+}
+
+// checkDiscovery reads the discovery block of the configuration before the schema does: the
+// errors are ipv6disc's, in words, each with its path, where the schema would tell of its
+// combinations. And the keys that are elsewhere now, each with where.
+func checkDiscovery(configData []byte) error {
+	var top map[string]json.RawMessage
+	if json.Unmarshal(configData, &top) != nil {
+		// Not a mapping: the schema's to say.
+		return nil
+	}
+	var errs []error
+	if _, ok := top["lifetime"]; ok {
+		errs = append(errs, errors.New("lifetime is discovery.lifetime now: move it under discovery, beside the families"))
+	}
+	if _, ok := top["webserver_listen"]; ok {
+		errs = append(errs, errors.New("webserver_listen is webserver.listen now: write it as webserver: {listen: ...}"))
+	}
+	if block, ok := top["discovery"]; ok {
+		d := DefaultDiscovery()
+		if err := d.UnmarshalJSON(block); err != nil {
+			errs = append(errs, err)
+		} else if _, err := d.validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// familyWarnings tells the IPv4 block that has settings, and no enabled, which is off by default:
+// it runs, and what it says does nothing. Up to v0.22.3 such a block turned IPv4 on.
+func familyWarnings(configData []byte) []string {
+	var top struct {
+		Discovery struct {
+			IPv4 map[string]json.RawMessage `json:"ipv4"`
+		} `json:"discovery"`
+	}
+	if json.Unmarshal(configData, &top) != nil || len(top.Discovery.IPv4) == 0 {
+		return nil
+	}
+	if _, ok := top.Discovery.IPv4["enabled"]; ok {
+		return nil
+	}
+	return []string{fmt.Sprintf("discovery.ipv4 has %s, and no enabled: IPv4 is off, and they do nothing, until it has enabled: true", strings.Join(slices.Sorted(maps.Keys(top.Discovery.IPv4)), ", "))}
 }

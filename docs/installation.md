@@ -55,17 +55,16 @@ Nothing is written then: the configuration stays mounted read-only, and the cont
 | Flag | |
 |---|---|
 | `-config_file` | The configuration file, YAML or JSON. Default: `config.yaml` |
-| `-lifetime` | How long a discovered address stays after it was last seen. Default: 1h |
-| `-log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal`. Default: `info` |
-| `-webserver_listen` | Where to serve the web report: below |
 | `-live` | Show the report in the terminal, updating, instead of the log: nothing is logged but what stops the start, so the configuration's warnings and the errors of the plugins don't show. It needs a terminal, and `q`, Esc, Ctrl-C or a signal ends it |
 | `-version` | Print the version |
 
-`-lifetime`, `-log_level` and `-webserver_listen` are in the [configuration file](reference/configuration.md#top-level) too, as `lifetime`, `log_level` and `webserver.listen`: a flag given on the command line wins over the file.
+Everything else is in the [configuration file](reference/configuration.md): the level of the log, `log_level`, where the web report is served, `webserver.listen`, and the lifetime of the addresses, `discovery.lifetime`, which were flags [up to v0.22.3](configuration.md#upgrading-from-v0223). A flag there is none of is an error, which shows the flags there are, as `-h` does.
+
+A boolean flag is turned off as `-live=false`, not `-live false`: a word that is no flag, nor a flag's value, is an error.
 
 ## The web report
 
-`webserver.listen` takes a list of what to listen on, in any combination; on the command line, comma separated:
+`webserver.listen` takes a list of what to listen on, in any combination, or one string of them, comma separated:
 
 ```yaml
 webserver:
@@ -89,9 +88,9 @@ The report has no authentication: behind a reverse proxy, list only an address t
 
 | Path | Serves |
 |---|---|
-| `/` | The report, as text: the names and their records, the discovered hosts, and the configuration |
+| `/` | The report, as text: the names and their records, the discovered hosts, each with its [names](discovery.md#names) when they are kept, the protocols that run, and the configuration |
 | `/healthz` | `ok`, while the process runs, and its [resolvers](resolver.md) answer: 503 with the reason when one doesn't. For health checks |
-| `/status.json` | The state, as JSON: the names and their records, the discovered hosts, and the sources' runs |
+| `/status.json` | The state, as JSON: the names and their records, the discovered hosts, each with its `names` when they are kept, the `protocols` that run, and the sources' runs |
 | `/metrics` | Prometheus metrics: the addresses of each name, the updates by result, the last success |
 
 ## Several instances

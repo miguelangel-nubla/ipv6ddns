@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,27 +17,40 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
-	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var showVersion bool
-var configFile string
-var logLevel string
-var lifetime time.Duration
-var live bool
-var webserverListen string
+// The flags: the rest is the configuration file's.
+var (
+	configFile  string
+	live        bool
+	showVersion bool
+)
+
+// reference is where every key of the configuration file is told.
+const reference = "https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md"
 
 func init() {
-	flag.BoolVar(&showVersion, "version", false, "Show the current version")
-	flag.StringVar(&configFile, "config_file", "config.yaml", "Path to the configuration file, default: config.yaml")
-	flag.StringVar(&logLevel, "log_level", "info", "Logging level (debug, info, warn, error, fatal, panic), in place of the configuration's log_level. Default: info")
-	flag.DurationVar(&lifetime, "lifetime", config.DefaultLifetime, "Time to keep a discovered host entry after it has been last seen, in place of the configuration's lifetime. Default: 1h")
-	flag.BoolVar(&live, "live", false, "Show the current state live on the terminal, default: false")
-	flag.StringVar(&webserverListen, "webserver_listen", "", "Show the same live output to a browser, listening on this comma-separated list of addresses, host names and ports: 8053, 192.0.2.1, 192.0.2.1:8053, [2001:db8::1]:8053, myhost:8053 (no port: 8053), in place of the configuration's webserver_listen. Default: disabled")
+	defineFlags()
+}
+
+// defineFlags defines the flags on flag.CommandLine, each with its default: the tests define them
+// again on a new one, as a flag set can't forget what it was given.
+func defineFlags() {
+	flag.StringVar(&configFile, "config_file", "config.yaml", "The configuration file, YAML or JSON: the names to keep, the providers, the discovery, the level of the log and the web server")
+	flag.BoolVar(&live, "live", false, "Show the state in the terminal, updating, instead of the log")
+	flag.BoolVar(&showVersion, "version", false, "Show the version, and exit")
+	flag.Usage = usage
+}
+
+// usage lists the flags, as flag does, and tells where the rest is.
+func usage() {
+	fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
+	flag.PrintDefaults()
+	fmt.Fprintf(flag.CommandLine.Output(), "\nEverything else is in the configuration file, whose keys are at:\n  %s\n", reference)
 }
 
 // unexpectedArgs is the error of the words left after the flags. There are none to give: flag
@@ -72,26 +84,22 @@ func main() {
 	if err != nil {
 		sugar.Fatalf("error reading config: %s", err)
 	}
-	if err := applyConfigSettings(config, given(), level); err != nil {
+	if err := setLogLevel(config.LogLevel, level); err != nil {
 		sugar.Fatalf("error in config: %s", err)
 	}
 
-	config.Lifetime.Duration = lifetime
 	worker, err := ipv6ddns.NewWorker(sugar, config)
 	if err != nil {
 		sugar.Fatalf("error in config: %s", err)
 	}
 
-	for name, pCfg := range config.Discovery.Plugins {
-		params, err := pCfg.PluginParams()
-		if err != nil {
-			sugar.Fatalf("plugin %s: %s", name, err)
-		}
-		p, err := plugins.Create(pCfg.Type, name, params, lifetime)
-		if err != nil {
-			sugar.Fatalf("can't create plugin %s: %s", pCfg.Type, err)
-		}
-
+	// The plugins get the lifetime of the discovery: a family's own, when given, is the state's
+	// to put in its place.
+	plugins, err := config.Discovery.NewPlugins()
+	if err != nil {
+		sugar.Fatalf("can't create the plugins: %s", err)
+	}
+	for _, p := range plugins {
 		worker.RegisterPlugin(p)
 	}
 
@@ -117,8 +125,8 @@ func main() {
 	}
 
 	var servers []*http.Server
-	if webserverListen != "" {
-		entries, err := listen.Parse(strings.Split(webserverListen, ","), webserverPort)
+	if len(config.Webserver.Listen) > 0 {
+		entries, err := listen.Parse(config.Webserver.Listen, webserverPort)
 		if err != nil {
 			closeTerminal()
 			sugar.Fatalf("webserver.listen: %s", err)
@@ -220,46 +228,29 @@ func wrapPrettyPrint(worker *ipv6ddns.Worker, prefix string, hideSensible bool) 
 	return result.String()
 }
 
-// given returns the flags given on the command line, which win over the configuration.
-func given() map[string]bool {
-	flags := make(map[string]bool)
-	flag.Visit(func(f *flag.Flag) { flags[f.Name] = true })
-	return flags
-}
-
 // webserverPort is that of the web server's entries that give none.
 const webserverPort = config.DefaultWebserverPort
 
-// applyConfigSettings takes the settings of the configuration that are flags too, for the flags
-// not given: the lifetime, the logging level and the web server's addresses.
-func applyConfigSettings(cfg config.Config, given map[string]bool, level zap.AtomicLevel) error {
-	if !given["lifetime"] {
-		lifetime = cfg.Lifetime.Duration
+// setLogLevel gives the log the level of the configuration, info without one. With -live nothing
+// writes over the terminal: the level stays, and one there is none of is still an error.
+func setLogLevel(logLevel string, level zap.AtomicLevel) error {
+	if logLevel == "" {
+		return nil
 	}
-	if lifetime <= 0 {
-		return fmt.Errorf("invalid lifetime %s: it must be positive", lifetime)
+	zapLevel, err := getLogLevel(logLevel)
+	if err != nil {
+		return fmt.Errorf("invalid log_level %q", logLevel)
 	}
-	if !given["webserver_listen"] && len(cfg.Webserver.Listen) > 0 {
-		webserverListen = strings.Join(cfg.Webserver.Listen, ",")
-	}
-	if !given["log_level"] && cfg.LogLevel != "" {
-		zapLevel, err := getLogLevel(cfg.LogLevel)
-		if err != nil {
-			return fmt.Errorf("invalid log_level %q", cfg.LogLevel)
-		}
-		if !live {
-			level.SetLevel(zapLevel)
-		}
+	if !live {
+		level.SetLevel(zapLevel)
 	}
 	return nil
 }
 
+// initializeLogger makes the log, at info until the configuration is read, which says its level:
+// what is wrong with the configuration is logged as an error, at any level it could say.
 func initializeLogger() (*zap.SugaredLogger, zap.AtomicLevel) {
-	zapLevel, err := getLogLevel(logLevel)
-	if err != nil {
-		log.Fatalf("invalid log level: %s", logLevel)
-	}
-
+	zapLevel := zap.InfoLevel
 	if live {
 		zapLevel = zapcore.FatalLevel
 	}

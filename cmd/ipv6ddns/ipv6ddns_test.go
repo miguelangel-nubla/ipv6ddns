@@ -2,20 +2,19 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
-	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
-	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"go.uber.org/zap"
 )
 
@@ -33,14 +32,90 @@ func TestExampleConfig(t *testing.T) {
 	if _, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	for name, p := range cfg.Discovery.Plugins {
-		params, err := p.PluginParams()
-		if err != nil {
-			t.Fatalf("plugin %s: %v", name, err)
+	created, err := cfg.Discovery.NewPlugins()
+	if err != nil || len(created) != len(cfg.Discovery.Plugins) {
+		t.Errorf("the plugins: %d of %d, %v", len(created), len(cfg.Discovery.Plugins), err)
+	}
+}
+
+// resetFlags gives the test the flags as a new process has them, none given, and leaves them so:
+// a flag set can't forget what it was given, so the test has one of its own, and the process's,
+// which has those of the tests too, comes back after it.
+func resetFlags(t *testing.T) {
+	t.Helper()
+	original := flag.CommandLine
+	define := func() {
+		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+		flag.CommandLine.Usage = func() { flag.Usage() }
+		defineFlags()
+	}
+	define()
+	t.Cleanup(func() {
+		// The values the flags were given are of the variables, which both sets have.
+		configFile, live, showVersion = "config.yaml", false, false
+		define()
+		flag.CommandLine = original
+	})
+}
+
+// The command has three flags, and no other: the rest is the configuration file's.
+func TestFlags(t *testing.T) {
+	resetFlags(t)
+	var names []string
+	flag.VisitAll(func(f *flag.Flag) { names = append(names, f.Name) })
+	if !slices.Equal(names, []string{"config_file", "live", "version"}) {
+		t.Errorf("the flags are %v", names)
+	}
+	if err := flag.CommandLine.Parse(nil); err != nil || configFile != "config.yaml" || live || showVersion {
+		t.Errorf("without flags: config_file %q, live %v, version %v, %v", configFile, live, showVersion, err)
+	}
+	if err := flag.CommandLine.Parse([]string{"-config_file", "other.yaml", "-live", "-version"}); err != nil || configFile != "other.yaml" || !live || !showVersion {
+		t.Errorf("with them: config_file %q, live %v, version %v, %v", configFile, live, showVersion, err)
+	}
+}
+
+// What was a flag is one no more, as any the command never had: its setting is a key of the
+// configuration file, which the usage tells where to find.
+func TestOldFlagsAreUnknown(t *testing.T) {
+	for _, old := range []string{"-log_level=debug", "-lifetime=1h", "-webserver_listen=8053", "-log_level", "-webserver_listen"} {
+		resetFlags(t)
+		var out strings.Builder
+		flag.CommandLine.SetOutput(&out)
+		name, _, _ := strings.Cut(old, "=")
+		if err := flag.CommandLine.Parse([]string{old, "debug"}); err == nil || err.Error() != "flag provided but not defined: "+name {
+			t.Errorf("%s: %v, want it not defined", old, err)
 		}
-		if _, err := plugins.Create(p.Type, name, params, time.Hour); err != nil {
-			t.Errorf("plugin %s: %v", name, err)
+		if !strings.Contains(out.String(), "Usage of") || !strings.Contains(out.String(), reference) {
+			t.Errorf("%s: no usage with where the configuration is told:\n%s", old, out.String())
 		}
+	}
+}
+
+// The usage, which -h and -help show too, lists the flags there are, and tells where the keys
+// of the configuration file are: the reference, which is there.
+func TestUsage(t *testing.T) {
+	for _, help := range []string{"-h", "-help"} {
+		resetFlags(t)
+		var out strings.Builder
+		flag.CommandLine.SetOutput(&out)
+		if err := flag.CommandLine.Parse([]string{help}); !errors.Is(err, flag.ErrHelp) {
+			t.Fatalf("%s: %v", help, err)
+		}
+		usage := out.String()
+		for _, want := range []string{"Usage of", "  -config_file string\n", "  -live\n", "  -version\n", "\nEverything else is in the configuration file, whose keys are at:\n  " + reference + "\n"} {
+			if !strings.Contains(usage, want) {
+				t.Errorf("%s: no %q in:\n%s", help, want, usage)
+			}
+		}
+		for _, gone := range []string{"log_level", "lifetime", "webserver_listen"} {
+			if strings.Contains(usage, gone) {
+				t.Errorf("%s: %s is in the usage:\n%s", help, gone, usage)
+			}
+		}
+	}
+	const prefix = "https://github.com/miguelangel-nubla/ipv6ddns/blob/main/"
+	if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(strings.TrimPrefix(reference, prefix)))); err != nil || !strings.HasPrefix(reference, prefix) {
+		t.Errorf("the reference, %s: %v", reference, err)
 	}
 }
 
@@ -102,7 +177,10 @@ discovery:
   plugins:
     router:
       type: mikrotik
-      params: 60s,192.0.2.1,admin,`+secret+`
+      interval: 60s
+      address: 192.0.2.1
+      username: admin
+      password: "`+secret+`"
 `), 0o600)
 	cfg, err := config.NewConfig(path)
 	if err != nil {
@@ -148,61 +226,33 @@ discovery:
 	}
 }
 
-func TestApplyConfigSettings(t *testing.T) {
-	defer func(l time.Duration, w, lv string, lo bool) { lifetime, webserverListen, logLevel, live = l, w, lv, lo }(lifetime, webserverListen, logLevel, live)
+// The level of the log is the configuration's: info without one.
+func TestSetLogLevel(t *testing.T) {
+	defer func(lo bool) { live = lo }(live)
 
-	cfg := config.Config{LogLevel: "debug", Webserver: config.Webserver{Listen: config.StringList{"8053", "[::1]:8054"}}}
-	cfg.Lifetime.Duration = 10 * time.Minute
-
-	// The configuration's, for the flags not given.
-	lifetime, webserverListen, logLevel = time.Hour, "", "info"
 	level := zap.NewAtomicLevelAt(zap.InfoLevel)
-	if err := applyConfigSettings(cfg, map[string]bool{}, level); err != nil {
-		t.Fatal(err)
+	if err := setLogLevel("", level); err != nil || level.Level() != zap.InfoLevel {
+		t.Errorf("no log_level: %v, %s", err, level.Level())
 	}
-	if lifetime != 10*time.Minute || webserverListen != "8053,[::1]:8054" || level.Level() != zap.DebugLevel {
-		t.Errorf("from the configuration: %s, %q, %s", lifetime, webserverListen, level.Level())
+	if err := setLogLevel("debug", level); err != nil || level.Level() != zap.DebugLevel {
+		t.Errorf("log_level debug: %v, %s", err, level.Level())
 	}
-
-	// The flags given win.
-	lifetime, webserverListen, logLevel = 2*time.Hour, "9000", "warn"
-	level = zap.NewAtomicLevelAt(zap.WarnLevel)
-	if err := applyConfigSettings(cfg, map[string]bool{"lifetime": true, "webserver_listen": true, "log_level": true}, level); err != nil {
-		t.Fatal(err)
-	}
-	if lifetime != 2*time.Hour || webserverListen != "9000" || level.Level() != zap.WarnLevel {
-		t.Errorf("the flags: %s, %q, %s", lifetime, webserverListen, level.Level())
-	}
-
-	// A flag given empty wins too: no web server, whatever the configuration says.
-	webserverListen = ""
-	if err := applyConfigSettings(cfg, map[string]bool{"webserver_listen": true}, level); err != nil || webserverListen != "" {
-		t.Errorf("-webserver_listen \"\": %v, %q", err, webserverListen)
+	if err := setLogLevel("loud", level); err == nil || err.Error() != `invalid log_level "loud"` || level.Level() != zap.DebugLevel {
+		t.Errorf("a bad log level: %v, %s", err, level.Level())
 	}
 
 	// With -live nothing writes over the terminal: the level stays, and a bad one is still an error.
 	live = true
-	level = zap.NewAtomicLevelAt(zap.FatalLevel)
-	if err := applyConfigSettings(cfg, map[string]bool{}, level); err != nil || level.Level() != zap.FatalLevel {
+	logger, level := initializeLogger()
+	if err := setLogLevel("debug", level); err != nil || level.Level() != zap.FatalLevel || logger.Desugar().Core().Enabled(zap.ErrorLevel) {
 		t.Errorf("-live: %v, level %s, want fatal", err, level.Level())
 	}
-	if err := applyConfigSettings(config.Config{LogLevel: "loud"}, map[string]bool{"lifetime": true}, level); err == nil {
+	if err := setLogLevel("loud", level); err == nil {
 		t.Error("-live and a bad log level: want an error")
 	}
 	live = false
-
-	if err := applyConfigSettings(config.Config{LogLevel: "loud"}, map[string]bool{"lifetime": true}, level); err == nil {
-		t.Error("a bad log level: want an error")
-	}
-
-	// A zero lifetime in the file: an error, unless the flag gives one.
-	zero := config.Config{}
-	if err := applyConfigSettings(zero, map[string]bool{}, level); err == nil {
-		t.Error("lifetime 0: want an error")
-	}
-	lifetime = 30 * time.Minute
-	if err := applyConfigSettings(zero, map[string]bool{"lifetime": true}, level); err != nil || lifetime != 30*time.Minute {
-		t.Errorf("lifetime 0 and -lifetime 30m: %v, %s", err, lifetime)
+	if logger, level := initializeLogger(); level.Level() != zap.InfoLevel || !logger.Desugar().Core().Enabled(zap.InfoLevel) {
+		t.Errorf("the log before the configuration is read: %s", level.Level())
 	}
 }
 

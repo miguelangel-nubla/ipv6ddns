@@ -41,6 +41,15 @@
 tasks: {}
 credentials: {}
 
+# The add-on's page in Home Assistant: the report, served to Home Assistant alone, at the address
+# its Supervisor reaches the add-on at, which the network outside doesn't. Keep these lines:
+# without them the add-on still runs, and its page shows an error.
+webserver:
+  listen: 172.30.32.1:8053
+
+# How much the log says: debug, info, warn or error.
+log_level: info
+
 # ipv6ddns as a device of Home Assistant's ESPHome integration: Home Assistant finds it, and shows
 # each name's addresses, last update and problems, with a button to update now; and homeassistant
 # sources read its entities. With key_provisioning, Home Assistant gives it its encryption key when

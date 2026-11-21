@@ -1,5 +1,5 @@
-# Two images from one: ipv6ddns, and the Home Assistant add-on, which is the same started from the
-# add-on's options. goreleaser builds each with its --target.
+# Two images from one: ipv6ddns, and the Home Assistant add-on, which is the same started with the
+# configuration of the add-on's folder. goreleaser builds each with its --target.
 
 FROM alpine:3.22 AS ipv6ddns
 

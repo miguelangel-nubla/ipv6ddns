@@ -24,16 +24,16 @@ the network's public IPv4.
 says. A file beside it is `/config/<file>` for the add-on: keep a token out of
 `config.yaml` with `${file:/config/cloudflare_token}`.
 
-The add-on's own option:
+Every setting is there, as in any other install of ipv6ddns: the add-on has no
+options of its own. How much the log says is `log_level` in `config.yaml`,
+`debug`, `info`, `warn` or `error`: the starting configuration has it at
+`info`. And these lines of it serve the report for [the add-on's
+page](#the-add-ons-page): keep them.
 
-| Option | |
-|---|---|
-| `log_level` | `debug`, `info`, `warn` or `error`. Default: `info` |
-
-The lifetime, and everything else, are in `config.yaml`, but for two keys the
-add-on sets itself, which do nothing there: `log_level`, which is the option
-above, and `webserver.listen`, since the report is served to Home Assistant
-only, for the add-on's page.
+```yaml
+webserver:
+  listen: 172.30.32.1:8053
+```
 
 ## Publishing Home Assistant itself
 
@@ -75,7 +75,7 @@ are endpoints of this one task: `[ha, mqtt, nodered]`.
 
 For
 a local DNS, its LAN address: `self: true` with `ip: {family: [4], type:
-[private]}`, and `discovery: {ipv4: true}`. The other filters and options:
+[private]}`, and `discovery: {ipv4: {enabled: true}}`. The other filters and options:
 [filtering](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/filtering.md).
 
 ## In Home Assistant
@@ -108,7 +108,23 @@ its key and its entities stay as they were in Home Assistant.
 ## The add-on's page
 
 It shows the report of ipv6ddns: the names and their records, and the hosts
-discovered. It is served to Home Assistant only, not to the network.
+discovered. It is served to Home Assistant only, not to the network: at
+`172.30.32.1:8053`, the address Home Assistant's Supervisor reaches the add-on
+at, which `webserver.listen` in the starting `config.yaml` says.
+
+A `config.yaml` from up to v0.22.3 doesn't have those lines: the add-on gave
+the address itself then, and took the level of the log from an option of its
+own, which is gone. With such a file the add-on still runs, and updates your
+names, but its page in Home Assistant shows an error, as nothing serves it. The add-on leaves your `config.yaml` as it is: add these
+lines to it yourself, at the top level, as `tasks` is,
+
+```yaml
+webserver:
+  listen: 172.30.32.1:8053
+```
+
+and restart the add-on. If the log level option was not `info`, add
+`log_level: debug`, or the level it had, the same way.
 
 ## Network
 

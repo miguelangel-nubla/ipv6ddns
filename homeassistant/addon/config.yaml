@@ -20,13 +20,12 @@ privileged:
 # versions).
 map:
   - addon_config:rw
-# The report, on the add-on's page.
+# The report, on the add-on's page: at the port the starting config.yaml serves it,
+# webserver.listen.
 ingress: true
 ingress_port: 8053
 panel_icon: mdi:dns
 panel_title: ipv6ddns
-options:
-  log_level: info
-schema:
-  log_level: list(debug|info|warn|error)
+# No options nor schema: the add-on has no option of its own, as every setting is in config.yaml,
+# the level of the log too.
 image: ghcr.io/miguelangel-nubla/ipv6ddns-addon
