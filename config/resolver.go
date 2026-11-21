@@ -205,6 +205,11 @@ func (c *Config) setUpResolvers() error {
 		}
 		for _, task := range slices.Sorted(maps.Keys(c.Tasks)) {
 			for _, hostname := range c.Tasks[task].Endpoints[credential] {
+				// A template's names come and go with the hosts: the resolver has them as they are
+				// given addresses.
+				if IsTemplate(hostname) {
+					continue
+				}
 				if n := resolver.Name(hostname, zone); z.Tasks[n] == "" {
 					z.Tasks[n] = task
 				}

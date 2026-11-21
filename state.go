@@ -11,8 +11,9 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 )
 
-// State holds the host names to update, by provider and endpoint. It is built once, so its maps
-// don't change after.
+// State holds the host names to update, by provider and endpoint. Its providers and endpoints are
+// built once, and don't change after; an endpoint's names do, those of the tasks' templates, which
+// come and go with the hosts.
 type State struct {
 	providers map[string]*Provider
 }
@@ -28,6 +29,8 @@ type Endpoint struct {
 	hostnames map[string]*Hostname
 	// The same, by the name of their records: see recordName.
 	names map[string]*Hostname
+	// For the two maps: the names of a template are added, and taken out, while the status reads.
+	mutex sync.RWMutex
 	// One update of the service at a time, whatever the name: the providers read the records and
 	// then change them, some over a session each, and all the names of a task change at once.
 	updateMutex sync.Mutex
@@ -53,6 +56,14 @@ func NewEndpoint(service ddns.Service) *Endpoint {
 	}
 }
 
+// list returns the endpoint's host names as they are now, by their spelling, and those spellings
+// in order.
+func (e *Endpoint) list() ([]string, map[string]*Hostname) {
+	e.mutex.RLock()
+	defer e.mutex.RUnlock()
+	return slices.Sorted(maps.Keys(e.hostnames)), maps.Clone(e.hostnames)
+}
+
 func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 	var result strings.Builder
 
@@ -66,9 +77,10 @@ func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 			fmt.Fprintf(&result, "%s        Endpoint: %s\n", prefix, endpointKey)
 			endpoint := provider.endpoints[endpointKey]
 
-			for _, hostnameKey := range slices.Sorted(maps.Keys(endpoint.hostnames)) {
+			keys, hostnames := endpoint.list()
+			for _, hostnameKey := range keys {
 				fmt.Fprintf(&result, "%s            %s:", prefix, endpoint.Domain(hostnameKey))
-				writeHostnameStatus(&result, prefix+"                ", endpoint.hostnames[hostnameKey].status(), hideSensible)
+				writeHostnameStatus(&result, prefix+"                ", hostnames[hostnameKey].status(), hideSensible)
 			}
 		}
 	}

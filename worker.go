@@ -46,6 +46,29 @@ type Worker struct {
 	started atomic.Bool
 	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has.
 	stopped <-chan struct{}
+
+	// The tasks' host names that are templates, each with its task and endpoint.
+	templates []*templateTarget
+	// The names the templates make now, and made, until they have nothing left to remove.
+	dynamic      map[dynamicKey]*Hostname
+	dynamicMutex sync.Mutex
+	// The names of the templates that a name written as it is has, told once each.
+	taken map[dynamicKey]bool
+}
+
+// templateTarget is a host name of a task that is a template, at an endpoint: a name for each host
+// the task's filters match, by what the host is called.
+type templateTarget struct {
+	task        config.Task
+	endpointKey string
+	endpoint    *Endpoint
+	template    config.Template
+}
+
+// dynamicKey is a name of a template, at its endpoint, by the name of its records.
+type dynamicKey struct {
+	endpoint *Endpoint
+	name     string
 }
 
 // target is a host name at an endpoint, with the tasks that give it addresses. A name in more than
@@ -73,6 +96,8 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		config:     cfg,
 		sources:    make(map[string]*source.Source),
 		rematch:    make(chan struct{}, 1),
+		dynamic:    make(map[dynamicKey]*Hostname),
+		taken:      make(map[dynamicKey]bool),
 	}
 
 	// Home Assistant's states for its sources; nil, not a nil *homeAssistant, without it.
@@ -108,6 +133,14 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 			// A task that spells a name twice gives it its addresses once.
 			named := make(map[*Hostname]bool)
 			for _, hostnameKey := range task.Endpoints[endpointKey] {
+				if config.IsTemplate(hostnameKey) {
+					template, err := config.ParseTemplate(hostnameKey)
+					if err != nil {
+						return nil, fmt.Errorf("task %s: endpoint %s: the name %q: %w", taskName, endpointKey, hostnameKey, err)
+					}
+					w.templates = append(w.templates, &templateTarget{task: task, endpointKey: endpointKey, endpoint: endpoint, template: template})
+					continue
+				}
 				hostname := w.hostname(endpointKey, endpoint, hostnameKey)
 				if named[hostname] {
 					continue
@@ -130,7 +163,9 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 			provider := w.State.providers[providerKey]
 			for _, endpointKey := range slices.Sorted(maps.Keys(provider.endpoints)) {
 				endpoint := provider.endpoints[endpointKey]
-				for _, hostnameKey := range slices.Sorted(maps.Keys(endpoint.hostnames)) {
+				// The names written as they are: a template's come later, and have no entity.
+				keys, _ := endpoint.list()
+				for _, hostnameKey := range keys {
 					names = append(names, haName{endpointKey, hostnameKey, endpoint.Domain(hostnameKey)})
 				}
 			}
@@ -205,7 +240,10 @@ func (w *Worker) endpoint(endpointKey string) (*Endpoint, error) {
 // records with its own addresses, and remove the other's.
 func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey string) *Hostname {
 	name := recordName(endpoint, hostnameKey)
-	if hostname, ok := endpoint.names[name]; ok {
+	endpoint.mutex.RLock()
+	hostname, ok := endpoint.names[name]
+	endpoint.mutex.RUnlock()
+	if ok {
 		return hostname
 	}
 
@@ -227,10 +265,12 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 
 		return err
 	}
-	hostname := NewHostname(updateAction, credential.Debounce.Duration, credential.Retry.Duration)
+	hostname = NewHostname(updateAction, credential.Debounce.Duration, credential.Retry.Duration)
 	hostname.endpointMutex = &endpoint.updateMutex
+	endpoint.mutex.Lock()
 	endpoint.hostnames[hostnameKey] = hostname
 	endpoint.names[name] = hostname
+	endpoint.mutex.Unlock()
 	return hostname
 }
 
@@ -372,6 +412,13 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 		for _, t := range w.targets {
 			t.hostname.Wait()
 		}
+		// The names of the templates, once the matching, which makes them, has stopped.
+		w.dynamicMutex.Lock()
+		for _, h := range w.dynamic {
+			h.Stop()
+			h.Wait()
+		}
+		w.dynamicMutex.Unlock()
 		resolvers.Wait()
 		close(stopped)
 	}()
@@ -395,6 +442,11 @@ func (w *Worker) updateNow() {
 	for _, t := range w.targets {
 		t.hostname.ScheduleUpdate(0)
 	}
+	w.dynamicMutex.Lock()
+	defer w.dynamicMutex.Unlock()
+	for _, h := range w.dynamic {
+		h.ScheduleUpdate(0)
+	}
 }
 
 // askRematch tells the worker to match again, at once.
@@ -414,6 +466,102 @@ func (w *Worker) lookForChanges() {
 
 	for _, t := range w.targets {
 		t.hostname.SetAddrCollection(w.matching(t.tasks, discovered))
+	}
+	w.expandTemplates(discovered)
+}
+
+// expandTemplates gives the names of the tasks' templates the addresses of their hosts, as the
+// hosts are called now: a name for each host a template's task matches, or one for all those of
+// a name. A name no host has any more is left without addresses, which removes its records, and
+// is then forgotten. A name that is written as it is, at the endpoint, is that one's: the
+// template's is left out, and said once.
+func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr) {
+	if len(w.templates) == 0 {
+		return
+	}
+	type named struct {
+		target      *templateTarget
+		hostnameKey string
+		addrs       *ipv6disc.AddrCollection
+	}
+	wanted := make(map[dynamicKey]*named)
+	add := func(t *templateTarget, hostnameKey string, addrs []*ipv6disc.Addr) {
+		key := dynamicKey{t.endpoint, recordName(t.endpoint, hostnameKey)}
+		n, ok := wanted[key]
+		if !ok {
+			n = &named{target: t, hostnameKey: hostnameKey, addrs: ipv6disc.NewAddrCollection()}
+			wanted[key] = n
+		}
+		for _, addr := range addrs {
+			n.addrs.Add(addr)
+		}
+	}
+	for _, t := range w.templates {
+		// The hosts the task matches, by MAC, in the MACs' order.
+		hosts := make(map[string][]*ipv6disc.Addr)
+		for _, addr := range discovered {
+			if len(addr.Hw) > 0 && t.task.Match(addr) {
+				hosts[addr.Hw.String()] = append(hosts[addr.Hw.String()], addr)
+			}
+		}
+		macs := slices.Sorted(maps.Keys(hosts))
+		if !t.template.Hostname {
+			for _, mac := range macs {
+				add(t, t.template.Expand("", 0, hosts[mac][0].Hw), hosts[mac])
+			}
+			continue
+		}
+		// Those of each name, in that order: a host's place among them is {n}.
+		called := make(map[string][]string)
+		for _, mac := range macs {
+			for _, name := range w.discWorker.NamesOf(hosts[mac][0].Hw) {
+				called[name.Name] = append(called[name.Name], mac)
+			}
+		}
+		for name, of := range called {
+			for i, mac := range of {
+				add(t, t.template.Expand(name, i+1, hosts[mac][0].Hw), hosts[mac])
+			}
+		}
+	}
+
+	w.dynamicMutex.Lock()
+	defer w.dynamicMutex.Unlock()
+	for key, n := range wanted {
+		hostname, ok := w.dynamic[key]
+		if !ok {
+			key.endpoint.mutex.RLock()
+			_, written := key.endpoint.names[key.name]
+			key.endpoint.mutex.RUnlock()
+			if written {
+				if !w.taken[key] {
+					w.taken[key] = true
+					w.logger.Warnf("endpoint %s: %s is a name written in the configuration, which has it: the hosts called so, by the template %q of task %s, are left out of it", n.target.endpointKey, key.name, n.target.template.Text, n.target.task.Name)
+				}
+				continue
+			}
+			hostname = w.hostname(n.target.endpointKey, key.endpoint, n.hostnameKey)
+			w.dynamic[key] = hostname
+		}
+		hostname.SetAddrCollection(n.addrs)
+	}
+	for key, hostname := range w.dynamic {
+		if _, ok := wanted[key]; ok {
+			continue
+		}
+		hostname.SetAddrCollection(ipv6disc.NewAddrCollection())
+		if hostname.idle() {
+			hostname.Stop()
+			key.endpoint.mutex.Lock()
+			delete(key.endpoint.names, key.name)
+			for spelling, h := range key.endpoint.hostnames {
+				if h == hostname {
+					delete(key.endpoint.hostnames, spelling)
+				}
+			}
+			key.endpoint.mutex.Unlock()
+			delete(w.dynamic, key)
+		}
 	}
 }
 

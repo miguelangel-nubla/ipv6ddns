@@ -162,6 +162,14 @@ func (h *Hostname) Wait() {
 	defer h.updateMutex.Unlock()
 }
 
+// idle tells whether the name has no addresses and nothing left to do about it: none to remove
+// at its endpoint, no update running, scheduled or failed. A template's name is forgotten then.
+func (h *Hostname) idle() bool {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	return len(h.addrs.Get()) == 0 && !h.updateRunning && h.updateError == nil && !h.updatedTime.Before(h.nextUpdateTime)
+}
+
 func (h *Hostname) status() hostnameStatus {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()

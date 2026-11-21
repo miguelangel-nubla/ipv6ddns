@@ -99,7 +99,12 @@ func (t *table) reverse(asked string) []dns.RR {
 	found := slices.Clone(t.reverseOf[addr])
 	for _, n := range t.zones {
 		ttl := uint32(n.zone.TTL.Seconds())
-		for name := range n.tasks {
+		// The tasks' names, and those their templates made, which are there while they have
+		// addresses: not one that a record has, whose answer is the record's.
+		for _, name := range n.zone.Addresses.Names() {
+			if _, task := n.tasks[name]; !task && len(n.records[name]) > 0 {
+				continue
+			}
 			if !isWildcard(name) && t.namesOf(name) == n && slices.Contains(n.zone.Addresses.Get(name), addr) {
 				found = append(found, reverseName{name, ttl})
 			}

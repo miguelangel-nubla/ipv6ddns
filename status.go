@@ -80,8 +80,9 @@ func (w *Worker) Status(hideSensible bool) Status {
 		provider := w.State.providers[providerKey]
 		for _, endpointKey := range slices.Sorted(maps.Keys(provider.endpoints)) {
 			endpoint := provider.endpoints[endpointKey]
-			for _, hostnameKey := range slices.Sorted(maps.Keys(endpoint.hostnames)) {
-				s := endpoint.hostnames[hostnameKey].status()
+			keys, hostnames := endpoint.list()
+			for _, hostnameKey := range keys {
+				s := hostnames[hostnameKey].status()
 				h := HostnameStatus{
 					Provider:      providerKey,
 					Endpoint:      endpointKey,

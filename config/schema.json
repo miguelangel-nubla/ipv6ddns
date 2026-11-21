@@ -132,7 +132,7 @@
                                 "type": "string"
                             }
                         },
-                        "description": "The host names to update, by credential: a name in the credential's zone, \"\" for the zone itself, \"*.name\" for a wildcard."
+                        "description": "The host names to update, by credential: a name in the credential's zone, \"\" for the zone itself, \"*.name\" for a wildcard. Or a template, a name for each host the filters match, by what the host is called, which needs discovery.hostnames: \"{hostname}\" is the name of every host called so, with the addresses of them all; \"{n}.{hostname}\" one of each, numbered from 1 by MAC among those there now; \"{mac}\" the host's MAC, its twelve digits. A name written as it is wins over a template's."
                     },
                     "ipv4": {
                         "type": "object",

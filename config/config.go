@@ -356,6 +356,10 @@ func NewConfig(filename string) (config Config, err error) {
 		}
 	}
 
+	if err := config.checkTemplates(); err != nil {
+		return config, err
+	}
+
 	if err := config.setUpResolvers(); err != nil {
 		return config, err
 	}

@@ -26,7 +26,7 @@ The host names to keep, by task name: the addresses its filters match, and those
 | Key | Takes | |
 |---|---|---|
 | `filter` | list of object | Filter sets: an address any of them matches is the task's. Within a set, every rule must match. |
-| `endpoints` | object | **Required.** The host names to update, by credential: a name in the credential's zone, "" for the zone itself, "*.name" for a wildcard. |
+| `endpoints` | object | **Required.** The host names to update, by credential: a name in the credential's zone, "" for the zone itself, "*.name" for a wildcard. Or a template, a name for each host the filters match, by what the host is called, which needs discovery.hostnames: "{hostname}" is the name of every host called so, with the addresses of them all; "{n}.{hostname}" one of each, numbered from 1 by MAC among those there now; "{mac}" the host's MAC, its twelve digits. A name written as it is wins over a template's. |
 | `ipv4` | object | Deprecated, and goes in v1.0: a command source, in sources, does the same. |
 | `sources` | list of string | The sources whose addresses the task's names get too. |
 

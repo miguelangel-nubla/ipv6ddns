@@ -111,6 +111,16 @@ func (a *Addresses) Get(name string) []netip.Addr {
 	return a.names[strings.ToLower(dns.Fqdn(name))]
 }
 
+// Names returns the names that have addresses now, absolute.
+func (a *Addresses) Names() []string {
+	if a == nil {
+		return nil
+	}
+	a.mutex.RLock()
+	defer a.mutex.RUnlock()
+	return slices.Sorted(maps.Keys(a.names))
+}
+
 // names are the names of a zone, or the resolver's own, under apex.
 type names struct {
 	apex    string
@@ -218,12 +228,19 @@ type lookup struct {
 func (t *table) lookup(asked string, qtype uint16) lookup {
 	name := strings.ToLower(asked)
 	n := t.namesOf(name)
-	owner := n.owner(name)
+	// A name the zone was given addresses for that it didn't know of: a task's template made it,
+	// for a host called so. It answers while it has addresses, before a wildcard above it, and
+	// after the names written, the tasks' and the records', which stay theirs.
+	given := n.zone != nil && !n.has(name) && !isWildcard(name) && len(n.zone.Addresses.Get(name)) > 0
+	owner := name
+	if !given {
+		owner = n.owner(name)
+	}
 	if owner == "" {
 		return lookup{kind: notLocal, names: n}
 	}
 	var records []dns.RR
-	if _, ok := n.tasks[owner]; ok {
+	if _, ok := n.tasks[owner]; ok || given {
 		ttl := uint32(n.zone.TTL.Seconds())
 		for _, addr := range n.zone.Addresses.Get(owner) {
 			header := dns.RR_Header{Name: asked, Class: dns.ClassINET, Ttl: ttl}

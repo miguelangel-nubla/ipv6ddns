@@ -71,7 +71,7 @@ discovery:
       enabled: true
 ```
 
-The web report and `-live` show a host's names after its MAC, each with what said it, and `/status.json` has them as the host's `names`. That is all they are for yet: to tell which host a MAC is, when writing a filter. A task's names are still those of its `endpoints`.
+The web report and `-live` show a host's names after its MAC, each with what said it, and `/status.json` has them as the host's `names`. They tell which host a MAC is, when writing a filter; and a task can name its hosts by them, with a [template](hostnames.md) among its `endpoints`, as `{hostname}`.
 
 ## Local IPv4 addresses
 

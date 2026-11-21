@@ -56,6 +56,13 @@ func (f *fakeService) Update(hostname string, addresses *ipv6disc.AddrCollection
 
 func (f *fakeService) Domain(hostname string) string { return hostname + ".fake" }
 
+// updatesOf returns the updates of hostname so far.
+func (f *fakeService) updatesOf(hostname string) [][]string {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	return slices.Clone(f.updates[hostname])
+}
+
 // waitFor waits until the last update of hostname is want.
 func (f *fakeService) waitFor(t *testing.T, hostname string, want ...string) {
 	t.Helper()
