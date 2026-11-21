@@ -635,7 +635,9 @@ type Status struct {
 	Allow     []string `json:"allow"`
 	Upstreams []string `json:"upstreams"`
 	Zones     []string `json:"zones"`
-	Serving   bool     `json:"serving"`
+	// The names of each zone that have addresses now, of its tasks.
+	ZoneNames map[string]int `json:"zone_names"`
+	Serving   bool           `json:"serving"`
 	// Why it isn't serving, when it stopped on its own.
 	Error string `json:"error,omitempty"`
 	// The queries answered, by kind.
@@ -672,8 +674,11 @@ func (s *Server) Status() Status {
 			status.Allow = append(status.Allow, p.String())
 		}
 	}
+	status.ZoneNames = map[string]int{}
 	for _, z := range s.config.Zones {
-		status.Zones = append(status.Zones, strings.TrimSuffix(z.Name, "."))
+		name := strings.TrimSuffix(z.Name, ".")
+		status.Zones = append(status.Zones, name)
+		status.ZoneNames[name] = len(z.Addresses.Names())
 	}
 	if s.err != nil {
 		status.Error = s.err.Error()

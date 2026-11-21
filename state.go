@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+
+	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 )
 
 // State holds the host names to update, by provider and endpoint. Its providers and endpoints are
@@ -64,62 +66,101 @@ func (e *Endpoint) list() ([]string, map[string]*Hostname) {
 	return slices.Sorted(maps.Keys(e.hostnames)), maps.Clone(e.hostnames)
 }
 
+// PrettyPrint is the page of the names: a summary, and each name of each endpoint, with how its
+// updates go, and its addresses, each with how long it has left, how long it has been seen, and
+// what has it, lined up.
 func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
-	var result strings.Builder
-
-	fmt.Fprintf(&result, "%sDNS:\n", prefix)
-
+	type named struct {
+		domain string
+		status hostnameStatus
+	}
+	var t pretty.Table
+	var all []named
+	byEndpoint := map[string][]named{}
 	for _, providerKey := range slices.Sorted(maps.Keys(s.providers)) {
-		fmt.Fprintf(&result, "%s    Provider: %s\n", prefix, providerKey)
 		provider := s.providers[providerKey]
-
 		for _, endpointKey := range slices.Sorted(maps.Keys(provider.endpoints)) {
-			fmt.Fprintf(&result, "%s        Endpoint: %s\n", prefix, endpointKey)
 			endpoint := provider.endpoints[endpointKey]
-
 			keys, hostnames := endpoint.list()
 			for _, hostnameKey := range keys {
-				fmt.Fprintf(&result, "%s            %s:", prefix, endpoint.Domain(hostnameKey))
-				writeHostnameStatus(&result, prefix+"                ", hostnames[hostnameKey].status(), hideSensible)
+				n := named{endpoint.Domain(hostnameKey), hostnames[hostnameKey].status()}
+				all = append(all, n)
+				byEndpoint[providerKey+"\x00"+endpointKey] = append(byEndpoint[providerKey+"\x00"+endpointKey], n)
 			}
 		}
 	}
-
-	return result.String()
+	with, failing := 0, 0
+	for _, n := range all {
+		if len(n.status.addrs.Get()) > 0 {
+			with++
+		}
+		if n.status.updateError != nil {
+			failing++
+		}
+	}
+	t.Line(fmt.Sprintf("DNS: %d names, %d with addresses, %d without; %d failing", len(all), with, len(all)-with, failing))
+	now := time.Now()
+	for _, providerKey := range slices.Sorted(maps.Keys(s.providers)) {
+		t.Line("    Provider: " + providerKey)
+		for _, endpointKey := range slices.Sorted(maps.Keys(s.providers[providerKey].endpoints)) {
+			t.Line("        Endpoint: " + endpointKey)
+			for _, n := range byEndpoint[providerKey+"\x00"+endpointKey] {
+				writeHostnameStatus(&t, "            ", n.domain, n.status, hideSensible, now)
+			}
+		}
+	}
+	return t.Render(prefix)
 }
 
-func writeHostnameStatus(result *strings.Builder, prefix string, status hostnameStatus, hideSensible bool) {
+// writeHostnameStatus adds a name to t: a line of it and how its updates go, and a row of each of
+// its addresses, of the MAC and what saw it for a discovered one, of its source for one without a
+// MAC.
+func writeHostnameStatus(t *pretty.Table, indent, domain string, status hostnameStatus, hideSensible bool, now time.Time) {
+	line := indent + domain + ":"
 	if status.updateRunning {
-		fmt.Fprint(result, " (update running)")
+		line += " (update running)"
 	}
-	if status.nextUpdateTime.After(time.Now()) {
-		fmt.Fprintf(result, " (next update: %v)", time.Until(status.nextUpdateTime).Round(time.Second))
+	if status.nextUpdateTime.After(now) {
+		why := ""
+		switch status.nextUpdateReason {
+		case updateDebounce:
+			why = fmt.Sprintf(", waiting for the %s debounce", status.debounce)
+		case updateRetry:
+			why = ", retrying after the error"
+		}
+		line += fmt.Sprintf(" (next update: %v%s)", status.nextUpdateTime.Sub(now).Round(time.Second), why)
 	}
 	if !status.updatedTime.IsZero() {
-		fmt.Fprintf(result, " (last update: %s)", status.updatedTime.Format(time.RFC3339))
+		line += fmt.Sprintf(" (last update: %s)", status.updatedTime.Format(time.RFC3339))
 	}
 	if status.updateError != nil {
 		err := status.updateError.Error()
 		if hideSensible {
 			err = "<sensible data hidden>"
 		}
-		fmt.Fprintf(result, " (last update error: %s)", err)
+		line += fmt.Sprintf(" (last update error: %s)", err)
 	}
+	t.Line(line)
 
-	// One line per address: the MAC and what saw it, for a discovered one; the source, for one
-	// without a MAC.
-	for _, addr := range status.addrs.Get() {
+	addrs := status.addrs.Get()
+	if len(addrs) == 0 {
+		gone := "(no address)"
+		if !status.emptiedTime.IsZero() {
+			gone = fmt.Sprintf("(no address: the last one went %s ago)", strings.TrimSpace(pretty.Up(now.Sub(status.emptiedTime))))
+		}
+		t.Line(indent + "    " + gone)
+		return
+	}
+	for _, addr := range addrs {
 		ip := addr.WithZone("").String()
 		if addr.Is6() {
 			ip = "[" + ip + "]"
 		}
-		sources := strings.Join(addr.Sources(), ",")
-		if len(addr.Hw) == 0 {
-			fmt.Fprintf(result, "\n%s%s from source %s", prefix, ip, sources)
-		} else {
-			fmt.Fprintf(result, "\n%s%s from %s seen over %s", prefix, ip, addr.Hw, sources)
+		sources := strings.Join(addr.Sources(), ", ")
+		rest := "source " + sources
+		if len(addr.Hw) > 0 {
+			rest = addr.Hw.String() + "  " + sources
 		}
+		t.Row(indent+"    "+ip, addr.GetExpiration().Sub(now), now.Sub(addr.FirstSeen()), rest)
 	}
-
-	fmt.Fprint(result, "\n")
 }

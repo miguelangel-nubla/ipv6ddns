@@ -9,23 +9,35 @@
 > Your ISP changes your IPv6 prefix, a laptop picks a new address, a camera can't run a DDNS client: `myserver.example.com` keeps working.
 
 ```
-DNS:
+DNS: 3 names, 3 with addresses, 0 without; 0 failing
     Provider: cloudflare
         Endpoint: cloudflare
             www.example.com: (last update: 2026-01-25T01:49:35Z)
-                [2001:db8:1234:5678:abcd:ef01:2345:6789] from 12:34:56:78:90:ab seen over eth0,router
-                203.0.113.99 from source wan
+                [2001:db8:1234:5678:abcd:ef01:2345:6789]   35m15s  up   2d 5h        12:34:56:78:90:ab  eth0, router
+                203.0.113.99                               27m 2s  up      9h14m     source wan
     Provider: technitium
         Endpoint: home-dns
-            nas.home.example.com: (last update: 2026-01-25T01:22:03Z)
-                192.168.1.50 from 00:11:22:33:44:55 seen over eth0
-                [fd12:3456:789a::50] from 00:11:22:33:44:55 seen over eth0
-Discovery:
+            nas.home.example.com: (next update: 7s, waiting for the 10s debounce)
+                192.168.1.50                                2m51s  up  12d           00:11:22:33:44:55  eth0
+                [fd12:3456:789a::50]                       41m37s  up  12d           00:11:22:33:44:55  eth0
+Discovery: 2 hosts, 1 named, 3 addresses
     00:11:22:33:44:55
-        192.168.1.50 2m51s eth0
-        fd12:3456:789a::50 41m37s eth0
+        names:
+            nas                                      3h59m12s  up  12d
+                mdns on eth0                         3h59m12s  up  12d
+                reported by router from leases       3h51m 7s  up   3d 4h
+        addresses:
+            192.168.1.50                                2m51s  up  12d
+                arp:answered on eth0                    2m51s  up  12d
+                reported by router from leases        (lease)  up   3d 4h
+            fd12:3456:789a::50                         41m37s  up  12d
+                ndp:answered on eth0                   41m37s  up  12d
+                mdns:announced on eth0                 38m 5s  up      6h20m
     12:34:56:78:90:ab
-        2001:db8:1234:5678:abcd:ef01:2345:6789 35m15s eth0,router
+        addresses:
+            2001:db8:1234:5678:abcd:ef01:2345:6789     35m15s  up   2d 5h
+                ndp:heard on eth0                      35m15s  up   2d 5h
+                reported by router from neighbors         58s  up   2d 5h
 ```
 
 ## How it works

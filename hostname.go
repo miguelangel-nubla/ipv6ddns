@@ -32,10 +32,14 @@ type Hostname struct {
 	updatedTime     time.Time
 	nextUpdateTime  time.Time
 	nextUpdateTimer *time.Timer
-	updateRunning   bool
-	updateError     error
-	updates         int
-	failures        int
+	// Why the next update waits: the debounce, a retry after a failure, or one asked for.
+	nextUpdateReason string
+	// When the name lost its last address: zero while it has one, or never had.
+	emptiedTime   time.Time
+	updateRunning bool
+	updateError   error
+	updates       int
+	failures      int
 	// No more updates once stopped.
 	stopped bool
 
@@ -52,13 +56,16 @@ type Hostname struct {
 
 // hostnameStatus is a snapshot of a Hostname, for display.
 type hostnameStatus struct {
-	addrs          *ipv6disc.AddrCollection
-	updatedTime    time.Time
-	nextUpdateTime time.Time
-	updateRunning  bool
-	updateError    error
-	updates        int
-	failures       int
+	addrs            *ipv6disc.AddrCollection
+	updatedTime      time.Time
+	nextUpdateTime   time.Time
+	nextUpdateReason string
+	debounce         time.Duration
+	emptiedTime      time.Time
+	updateRunning    bool
+	updateError      error
+	updates          int
+	failures         int
 }
 
 // SetAddrCollection sets the addresses the name should have. The valid ones only count, and a
@@ -68,10 +75,22 @@ func (h *Hostname) SetAddrCollection(addrCollection *ipv6disc.AddrCollection) {
 
 	h.mutex.Lock()
 	changed := !h.addrs.Equal(addrCollection)
+	had, has := len(h.addrs.Get()) > 0, len(addrCollection.Get()) > 0
 	h.addrs = addrCollection
+	switch {
+	case has:
+		h.emptiedTime = time.Time{}
+	case had:
+		h.emptiedTime = time.Now()
+	}
 	if changed {
 		h.addrsChanges++
-		h.scheduleUpdateAt(latest(time.Now().Add(h.updateDebounceTime), h.retryNotBefore))
+		debounced := time.Now().Add(h.updateDebounceTime)
+		reason := updateDebounce
+		if h.retryNotBefore.After(debounced) {
+			reason = updateRetry
+		}
+		h.scheduleUpdateAt(latest(debounced, h.retryNotBefore), reason)
 	}
 	h.mutex.Unlock()
 }
@@ -81,15 +100,23 @@ func (h *Hostname) SetAddrCollection(addrCollection *ipv6disc.AddrCollection) {
 func (h *Hostname) ScheduleUpdate(timeout time.Duration) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	h.scheduleUpdateAt(time.Now().Add(timeout))
+	h.scheduleUpdateAt(time.Now().Add(timeout), updateAsked)
 }
 
-// scheduleUpdateAt runs an update at that time, in place of the one scheduled already, with the
-// mutex held.
-func (h *Hostname) scheduleUpdateAt(at time.Time) {
+// Why an update waits, as the page says it.
+const (
+	updateDebounce = "debounce"
+	updateRetry    = "retry"
+	updateAsked    = "asked"
+)
+
+// scheduleUpdateAt runs an update at that time, for reason, in place of the one scheduled already,
+// with the mutex held.
+func (h *Hostname) scheduleUpdateAt(at time.Time, reason string) {
 	if h.stopped {
 		return
 	}
+	h.nextUpdateReason = reason
 
 	if h.nextUpdateTimer != nil {
 		h.nextUpdateTimer.Stop()
@@ -138,7 +165,7 @@ func (h *Hostname) update() {
 		// Addresses that changed meanwhile have their update scheduled, by the debounce time
 		// alone: it waits for the retry too, and is the retry, with the addresses of then.
 		if h.addrsChanges == changes || h.nextUpdateTime.Before(h.retryNotBefore) {
-			h.scheduleUpdateAt(h.retryNotBefore)
+			h.scheduleUpdateAt(h.retryNotBefore, updateRetry)
 		}
 	}
 	h.mutex.Unlock()
@@ -175,13 +202,16 @@ func (h *Hostname) status() hostnameStatus {
 	defer h.mutex.Unlock()
 
 	return hostnameStatus{
-		addrs:          h.addrs,
-		updatedTime:    h.updatedTime,
-		nextUpdateTime: h.nextUpdateTime,
-		updateRunning:  h.updateRunning,
-		updateError:    h.updateError,
-		updates:        h.updates,
-		failures:       h.failures,
+		addrs:            h.addrs,
+		updatedTime:      h.updatedTime,
+		nextUpdateTime:   h.nextUpdateTime,
+		nextUpdateReason: h.nextUpdateReason,
+		debounce:         h.updateDebounceTime,
+		emptiedTime:      h.emptiedTime,
+		updateRunning:    h.updateRunning,
+		updateError:      h.updateError,
+		updates:          h.updates,
+		failures:         h.failures,
 	}
 }
 

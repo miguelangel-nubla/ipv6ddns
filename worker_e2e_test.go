@@ -493,7 +493,7 @@ func TestWorkerAddsSourcesAndKeepsIPv4Out(t *testing.T) {
 	if !strings.Contains(metrics.String(), `ipv6ddns_source_addresses{source="wan"} 1`) {
 		t.Errorf("no source in the metrics:\n%s", metrics.String())
 	}
-	if page := w.State.PrettyPrint("", true); !strings.Contains(page, "203.0.113.7 from source wan") {
+	if page := w.State.PrettyPrint("", true); !regexp.MustCompile(`\n +203\.0\.113\.7 +[0-9hms ]+ +up +[0-9dhms ]+ +source wan\n`).MatchString(page) {
 		t.Errorf("the source isn't on the page:\n%s", page)
 	}
 }

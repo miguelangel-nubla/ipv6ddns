@@ -601,7 +601,13 @@ func (w *Worker) prettyPrintResolvers(prefix string) string {
 		return ""
 	}
 	var result strings.Builder
-	fmt.Fprintf(&result, "%sResolvers:\n", prefix)
+	serving := 0
+	for _, r := range w.resolvers {
+		if r.Status().Serving {
+			serving++
+		}
+	}
+	fmt.Fprintf(&result, "%sResolvers: %d, %d serving\n", prefix, len(w.resolvers), serving)
 	for _, r := range w.resolvers {
 		s := r.Status()
 		state := "serving"
@@ -614,7 +620,11 @@ func (w *Worker) prettyPrintResolvers(prefix string) string {
 		fmt.Fprintf(&result, "%s    %s: %s\n", prefix, s.Name, state)
 		fmt.Fprintf(&result, "%s        Listening: %s\n", prefix, strings.Join(s.Listening, ", "))
 		fmt.Fprintf(&result, "%s        Allow: %s\n", prefix, strings.Join(s.Allow, ", "))
-		fmt.Fprintf(&result, "%s        Zones: %s\n", prefix, strings.Join(s.Zones, ", "))
+		var zones []string
+		for _, z := range s.Zones {
+			zones = append(zones, fmt.Sprintf("%s (%d names)", z, s.ZoneNames[z]))
+		}
+		fmt.Fprintf(&result, "%s        Zones: %s\n", prefix, strings.Join(zones, ", "))
 		var upstreams []string
 		for _, u := range s.Upstreams {
 			upstreams = append(upstreams, fmt.Sprintf("%s (%d failed)", u, s.UpstreamFailures[u]))

@@ -35,8 +35,12 @@ type HostnameStatus struct {
 	Domain    string   `json:"domain"`
 	Addresses []string `json:"addresses"`
 
-	LastUpdate    *time.Time `json:"last_update,omitempty"`
-	NextUpdate    *time.Time `json:"next_update,omitempty"`
+	LastUpdate *time.Time `json:"last_update,omitempty"`
+	NextUpdate *time.Time `json:"next_update,omitempty"`
+	// Why the next update waits: debounce, retry, after an error, or asked.
+	NextUpdateReason string `json:"next_update_reason,omitempty"`
+	// When it lost its last address, while it has none.
+	Emptied       *time.Time `json:"emptied,omitempty"`
 	UpdateRunning bool       `json:"update_running"`
 	// The error of the last update, if it failed.
 	LastError string `json:"last_error,omitempty"`
@@ -56,6 +60,23 @@ type DiscoveredHost struct {
 type DiscoveredName struct {
 	Name    string   `json:"name"`
 	Sources []string `json:"sources"`
+	// When it was first said, and until when it stays: the last of those of Said.
+	FirstSeen time.Time `json:"first_seen"`
+	Expires   time.Time `json:"expires"`
+	// Each that said it, with its own times.
+	Said []DiscoveredNameSource `json:"said"`
+}
+
+// DiscoveredNameSource is one that said a name: a protocol, on an interface or none; or a report, of
+// a plugin, from a table, as its router's leases.
+type DiscoveredNameSource struct {
+	Source    string    `json:"source"`
+	Interface string    `json:"interface,omitempty"`
+	Reported  bool      `json:"reported,omitempty"`
+	From      string    `json:"from,omitempty"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	Expires   time.Time `json:"expires"`
 }
 
 type DiscoveredAddress struct {
@@ -139,6 +160,10 @@ func (w *Worker) Status(hideSensible bool) Status {
 				}
 				if s.nextUpdateTime.After(time.Now()) {
 					h.NextUpdate = &s.nextUpdateTime
+					h.NextUpdateReason = s.nextUpdateReason
+				}
+				if !s.emptiedTime.IsZero() {
+					h.Emptied = &s.emptiedTime
 				}
 				if s.updateError != nil {
 					h.LastError = s.updateError.Error()
@@ -157,7 +182,12 @@ func (w *Worker) Status(hideSensible bool) Status {
 	for _, mac := range slices.Sorted(maps.Keys(all)) {
 		host := DiscoveredHost{MAC: mac}
 		for _, name := range names[mac] {
-			host.Names = append(host.Names, DiscoveredName{Name: name.Name, Sources: name.Sources})
+			n := DiscoveredName{Name: name.Name, Sources: name.Sources, FirstSeen: name.FirstSeen, Expires: name.Expiration, Said: []DiscoveredNameSource{}}
+			for _, s := range name.Said {
+				n.Said = append(n.Said, DiscoveredNameSource{Source: s.Source, Interface: s.On, Reported: s.Reported, From: s.From,
+					FirstSeen: s.FirstSeen, LastSeen: s.LastSeen, Expires: s.Expiration()})
+			}
+			host.Names = append(host.Names, n)
 		}
 		for _, addr := range all[mac].Get() {
 			host.Addresses = append(host.Addresses, DiscoveredAddress{

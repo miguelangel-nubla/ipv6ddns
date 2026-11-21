@@ -109,7 +109,7 @@ credentials: {}
 	for _, i := range []*instance{withNames, withDefaults} {
 		waitFor(t, 30*time.Second, "peer's name at "+i.name+", by mDNS", func() bool { return slices.Equal(named(i), []string{"printer by mdns"}) }, i.tells,
 			func() string { return fmt.Sprintf("%s has the names %v", i.name, named(i)) })
-		if page, line := i.page("/"), peer.MAC+" printer (mdns)\n"; !strings.Contains(page, line) {
+		if page, line := i.page("/"), peer.MAC+"\n        names:\n            printer "; !strings.Contains(page, line) || !strings.Contains(page, "\n                mdns on ") {
 			t.Errorf("the page of %s has no %q:\n%s", i.name, line, page)
 		}
 	}
@@ -158,7 +158,7 @@ credentials: {}
 		if got := named(i); len(got) != 0 {
 			t.Errorf("%s learns no names, and has %v of the peer", i.name, got)
 		}
-		if page := i.page("/"); !strings.Contains(page, peer.MAC+"\n") || strings.Contains(page, "printer") {
+		if page := i.page("/"); !strings.Contains(page, peer.MAC+"\n        addresses:\n") || strings.Contains(page, "printer") {
 			t.Errorf("the page of %s has the peer's name, or not the peer:\n%s", i.name, page)
 		}
 	}

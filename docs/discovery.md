@@ -83,7 +83,7 @@ discovery:
       names: false
 ```
 
-The web report and `-live` show a host's names after its MAC, each with what said it, and `/status.json` has them as the host's `names`. They tell which host a MAC is, when writing a filter; and a task can name its hosts by them, with a [template](hostnames.md) among its `endpoints`, as `{hostname}`.
+The web report and `-live` show a host's names under its MAC, each with what said it, and when: how long each source has left, and how long it has said it. `/status.json` has them as the host's `names`, with each source under `said`. They tell which host a MAC is, when writing a filter; and a task can name its hosts by them, with a [template](hostnames.md) among its `endpoints`, as `{hostname}`.
 
 ## Local IPv4 addresses
 

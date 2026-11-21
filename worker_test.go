@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -119,20 +118,32 @@ func TestStatusHasTheNamesOfTheHosts(t *testing.T) {
 		if len(discovered) != 1 || discovered[0].MAC != macA {
 			t.Fatalf("hostnames %t: discovered %+v", kept, discovered)
 		}
-		want := []DiscoveredName(nil)
-		onPage := macA + "\n"
-		if kept {
-			want = []DiscoveredName{{Name: "laserjet", Sources: []string{"router"}}, {Name: "printer", Sources: []string{"mdns", "router"}}}
-			onPage = macA + " laserjet (router), printer (mdns,router)\n"
+		// Each name, of its sources, each with its times: in the status and on the page.
+		var got []string
+		for _, n := range discovered[0].Names {
+			var said []string
+			for _, s := range n.Said {
+				said = append(said, s.Source)
+				if !s.Reported || s.Expires.Before(s.LastSeen) || s.FirstSeen.IsZero() {
+					t.Errorf("hostnames %t: %s, said by %+v", kept, n.Name, s)
+				}
+			}
+			got = append(got, n.Name+" ("+strings.Join(n.Sources, ",")+") said by "+strings.Join(said, ","))
+			if time.Until(n.Expires) < 59*time.Minute || n.FirstSeen.IsZero() {
+				t.Errorf("hostnames %t: the times of %s: %+v", kept, n.Name, n)
+			}
 		}
-		if got := discovered[0].Names; !reflect.DeepEqual(got, want) {
-			t.Errorf("hostnames %t: the names of the status are %+v, want %+v", kept, got, want)
+		if want := []string{"laserjet (router) said by router", "printer (mdns,router) said by mdns,router"}; !slices.Equal(got, want) {
+			t.Errorf("hostnames %t: the names of the status are %q, want %q", kept, got, want)
 		}
-		if page := w.PrettyPrint("", true); !strings.Contains(page, onPage) {
-			t.Errorf("hostnames %t: the page has no %q:\n%s", kept, onPage, page)
+		page := w.PrettyPrint("", true)
+		for _, line := range []string{macA + "\n        names:\n", "            laserjet ", "                reported by mdns ", "                reported by router "} {
+			if !strings.Contains(page, line) {
+				t.Errorf("hostnames %t: the page has no %q:\n%s", kept, line, page)
+			}
 		}
 		encoded, _ := json.Marshal(discovered[0])
-		if has := strings.Contains(string(encoded), `"names":[{"name":"laserjet","sources":["router"]}`); has != kept {
+		if !strings.Contains(string(encoded), `"names":[{"name":"laserjet","sources":["router"],"first_seen":`) || !strings.Contains(string(encoded), `"said":[{"source":"router","reported":true,`) {
 			t.Errorf("hostnames %t: as JSON, %s", kept, encoded)
 		}
 	}

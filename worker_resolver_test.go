@@ -158,7 +158,7 @@ func TestWorkerResolver(t *testing.T) {
 			t.Errorf("metrics without %s:\n%s", want, metrics.String())
 		}
 	}
-	if report := w.PrettyPrint("", true); !strings.Contains(report, "Resolvers:\n    lan: serving\n        Listening: "+address) {
+	if report := w.PrettyPrint("", true); !strings.Contains(report, "Resolvers: 1, 1 serving\n    lan: serving\n        Listening: "+address) {
 		t.Errorf("report:\n%s", report)
 	} else if !strings.Contains(report, "        Cache: 0 of 10000\n") || !strings.Contains(report, ", cached 0,") {
 		t.Errorf("report, of the cache:\n%s", report)
