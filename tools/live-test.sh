@@ -49,4 +49,5 @@ exec docker run --rm --privileged \
 	-v ipv6ddns-pip-cache:/root/.cache/pip \
 	-w /src/ipv6ddns -e GOFLAGS=-buildvcs=false -e AIOESPHOMEAPI="$aioesphomeapi" \
 	-e ESPHOME_PYTHON=/venv/bin/python -e ESPHOME_COMPAT_REQUIRED=1 -e ESPHOME_MDNS_INTERFACES=mdns0,mdns1 \
+	-e IPV6DDNS_SOAK="${IPV6DDNS_SOAK:-}" \
 	"$@"

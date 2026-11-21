@@ -267,9 +267,11 @@ func exchangeOn(ctx context.Context, c *dotConn, m *dns.Msg, deadline time.Time)
 	}
 }
 
-// isAnswerTo tells whether resp is the answer to m: its id, and its question.
+// isAnswerTo tells whether resp is the answer to m: a response, with its id, and its question. A
+// query isn't one, as m itself come back, from a server that echoes, or from the resolver's own
+// socket.
 func isAnswerTo(resp, m *dns.Msg) bool {
-	return resp.Id == m.Id && len(resp.Question) == len(m.Question) && (len(m.Question) == 0 || strings.EqualFold(resp.Question[0].Name, m.Question[0].Name) && resp.Question[0].Qtype == m.Question[0].Qtype)
+	return resp.Response && resp.Id == m.Id && len(resp.Question) == len(m.Question) && (len(m.Question) == 0 || strings.EqualFold(resp.Question[0].Name, m.Question[0].Name) && resp.Question[0].Qtype == m.Question[0].Qtype)
 }
 
 // askHTTPS sends m to a server of DNS over HTTPS, POST, as RFC 8484 has it, with the id 0, which

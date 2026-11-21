@@ -128,8 +128,8 @@ func TestDiscoveryErrors(t *testing.T) {
 		// The keys that moved.
 		"the lifetime of before":   {"lifetime: 30m\n", "lifetime is discovery.lifetime now: move it under discovery, beside the families"},
 		"the web server of before": {"webserver_listen: 8053\n", "webserver_listen is webserver.listen now: listen, under webserver"},
-		"ipv6.solicit":             {"discovery:\n  ipv6:\n    solicit: true\n", "discovery.ipv6.solicit is discovery.solicit.ipv6 now: the solicitation has its own block, solicit: {ipv6: true}, beside the families"},
-		"ipv4.solicit":             {"discovery:\n  ipv4:\n    enabled: true\n    solicit: true\n", "discovery.ipv4.solicit is discovery.solicit.ipv4 now: the solicitation has its own block, solicit: {ipv4: true}, beside the families"},
+		"ipv6.solicit":             {"discovery:\n  ipv6:\n    solicit: true\n", "discovery.ipv6.solicit is discovery.solicit.ipv6 now: the solicitation has its own block, solicit, beside the families, with ipv6: true under it"},
+		"ipv4.solicit":             {"discovery:\n  ipv4:\n    enabled: true\n    solicit: true\n", "discovery.ipv4.solicit is discovery.solicit.ipv4 now: the solicitation has its own block, solicit, beside the families, with ipv4: true under it"},
 		"a plugin's params":        {"discovery:\n  plugins:\n    router:\n      type: linux\n      params: '60s,a,b,c'\n", "discovery.plugins.router.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: interval, address, username, password, identity_file, host_key"},
 		"a mikrotik's params":      {"discovery:\n  plugins:\n    router:\n      type: mikrotik\n      params: '60s,a,b,c'\n", "discovery.plugins.router.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: interval, address, username, password, use_tls, tls_fingerprint"},
 		"params of no type":        {"discovery:\n  plugins:\n    router:\n      params: '60s,a,b,c'\n", "discovery.plugins.router.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: interval, address, username and the others of its type"},

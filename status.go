@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -21,6 +23,8 @@ type Status struct {
 	Protocols []string          `json:"protocols"`
 	Sources   []source.Status   `json:"sources"`
 	Resolvers []resolver.Status `json:"resolvers"`
+	// The program itself: its goroutines, its memory, its open files.
+	Process ProcessStatus `json:"process"`
 }
 
 type HostnameStatus struct {
@@ -67,6 +71,7 @@ type DiscoveredAddress struct {
 // which can tell secrets.
 func (w *Worker) Status(hideSensible bool) Status {
 	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Protocols: []string{}, Sources: []source.Status{}, Resolvers: []resolver.Status{}}
+	status.Process = processStatus()
 
 	for _, r := range w.resolvers {
 		status.Resolvers = append(status.Resolvers, r.Status())
@@ -133,6 +138,27 @@ func (w *Worker) Status(hideSensible bool) Status {
 		}
 	}
 	return status
+}
+
+// ProcessStatus is what the program itself takes: what grows without end when something is never
+// let go, to watch over days.
+type ProcessStatus struct {
+	Goroutines int `json:"goroutines"`
+	// The memory of the heap in use, in bytes.
+	HeapBytes uint64 `json:"heap_bytes"`
+	// The open files and sockets: where the system tells, as Linux; 0 elsewhere.
+	OpenFiles int `json:"open_files"`
+}
+
+func processStatus() ProcessStatus {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	p := ProcessStatus{Goroutines: runtime.NumGoroutine(), HeapBytes: m.HeapInuse}
+	if entries, err := os.ReadDir("/proc/self/fd"); err == nil {
+		// Less the one that reads the folder.
+		p.OpenFiles = max(len(entries)-1, 0)
+	}
+	return p
 }
 
 // WriteMetrics writes the status as Prometheus metrics, in their text format.
@@ -234,6 +260,16 @@ func (s Status) WriteMetrics(out io.Writer) error {
 	for _, host := range s.Discovered {
 		addresses += len(host.Addresses)
 	}
+	// By the names every Go program gives them, which the dashboards know.
+	metric("go_goroutines", "gauge", "The goroutines there are.")
+	fmt.Fprintf(&b, "go_goroutines %d\n", s.Process.Goroutines)
+	metric("go_memstats_heap_inuse_bytes", "gauge", "The memory of the heap in use.")
+	fmt.Fprintf(&b, "go_memstats_heap_inuse_bytes %d\n", s.Process.HeapBytes)
+	if s.Process.OpenFiles > 0 {
+		metric("process_open_fds", "gauge", "The open files and sockets.")
+		fmt.Fprintf(&b, "process_open_fds %d\n", s.Process.OpenFiles)
+	}
+
 	metric("ipv6ddns_discovered_hosts", "gauge", "The MAC addresses discovered.")
 	fmt.Fprintf(&b, "ipv6ddns_discovered_hosts %d\n", len(s.Discovered))
 	metric("ipv6ddns_discovered_addresses", "gauge", "The IP addresses discovered.")

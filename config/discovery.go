@@ -171,7 +171,7 @@ func movedDiscoveryKeys(block map[string]json.RawMessage) error {
 			continue
 		}
 		if _, ok := keys["solicit"]; ok {
-			errs = append(errs, fmt.Errorf("discovery.%[1]s.solicit is discovery.solicit.%[1]s now: the solicitation has its own block, solicit: {%[1]s: true}, beside the families", family))
+			errs = append(errs, fmt.Errorf("discovery.%[1]s.solicit is discovery.solicit.%[1]s now: the solicitation has its own block, solicit, beside the families, with %[1]s: true under it", family))
 			delete(keys, "solicit")
 			block[family], _ = json.Marshal(keys)
 		}

@@ -99,7 +99,7 @@ The report has no authentication: behind a reverse proxy, list only an address t
 | `/` | The report, as text: the names and their records, the discovered hosts, each with its [names](discovery.md#names) when they are kept, the protocols that run, and the configuration |
 | `/healthz` | `ok`, while the process runs, and its [resolvers](resolver.md) answer: 503 with the reason when one doesn't. For health checks |
 | `/status.json` | The state, as JSON: the names and their records, the discovered hosts, each with its `names` when they are kept, the `protocols` that run, and the sources' runs |
-| `/metrics` | Prometheus metrics: the addresses of each name, the updates by result, the last success |
+| `/metrics` | Prometheus metrics: the addresses of each name, the updates by result, the last success; and the program's own, `go_goroutines`, `go_memstats_heap_inuse_bytes` and, on Linux, `process_open_fds`, which stay level over days in a program that lets go of what it is done with |
 
 ## Several instances
 

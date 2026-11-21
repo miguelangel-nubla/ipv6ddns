@@ -1,0 +1,34 @@
+name: soak
+
+# The command at work for a quarter of an hour, every night, with hosts that come and go and
+# clients that ask its resolver: its goroutines, its open files and its memory are to stay level.
+# What grows a little with every host, or query, shows in that time, and not in the minute the
+# test has among the others.
+on:
+  schedule:
+    - cron: '43 2 * * *'
+  workflow_dispatch:
+    inputs:
+      length:
+        description: How long it runs
+        default: 15m
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        # In the container of the live tests, which has what they need: avahi and dig.
+        name: Soak
+        env:
+          IPV6DDNS_SOAK: ${{ inputs.length || '15m' }}
+        run: tools/live-test.sh -timeout 50m -run '^TestLiveSoak$' ./cmd/ipv6ddns

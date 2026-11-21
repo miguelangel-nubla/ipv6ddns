@@ -1,0 +1,198 @@
+# Settings that are flags too: a flag given on the command line wins.
+lifetime: 1h                  # how long a discovered address stays after it was last seen
+log_level: info
+webserver_listen: [8053]      # the report, /status.json and /metrics; or "8053,[::1]:8054"
+
+# Addresses without a MAC, for the tasks that name them.
+sources:
+  # The network's public IPv4, as DNS resolvers see it: the A record of a server behind NAT.
+  wan:
+    type: dns
+    family: [4]
+    interval: 3m
+  # Or from an echo service over HTTPS, or a command of yours:
+  wan-http:
+    type: http
+    family: [4, 6]
+  wan-command:
+    type: command
+    command: curl
+    args: [-s, --ipv4, ifconfig.me]
+    interval: 3m
+    lifetime: 10m
+  # Addresses that don't change, or that discovery can't reach.
+  fixed:
+    type: static
+    addresses: [192.168.1.123]
+tasks:
+  myhome:
+    filter:
+      - mac:
+          address: 00:11:22:33:44:55
+        ip:
+          prefix: 2000::/3
+    # And the public IPv4, for the A record.
+    sources: [wan]
+    endpoints:
+      mycloudflaresettings:
+        - ""
+  mylocalonlyserver:
+    endpoints:
+      mylocaldns:
+      - myserver
+      - "*.myserver"
+    sources: [fixed]
+    filter:
+      - mac:
+          address: 00:11:22:33:44:56
+        ip:
+          prefix: fc00::/7
+          type:
+            - eui64
+        source:
+          - mikrotik-lan
+  # A device's local IPv4 addresses, once IPv4 discovery finds them: a filter takes IPv6 only
+  # unless its family says.
+  mynas:
+    filter:
+      - mac:
+          address: 00:11:22:33:44:57
+        ip:
+          family: [4]
+          type: [private]
+    endpoints:
+      mylocaldns:
+      - nas
+credentials:
+  duckdns:
+    debounce_time: 10s
+    provider: duckdns
+    settings:
+      api_token: 01234567-89ab-cdef-0123-456789abcdef
+  mycloudflaresettings:
+    debounce_time: 10s
+    provider: cloudflare
+    settings:
+      api_token: 01234567-89ab-cdef-0123-456789abcdef
+      proxied: false
+      ttl: 1m
+      zone: mydomain.tld
+  mylocaldns:
+    debounce_time: 10s
+    provider: gravity
+    settings:
+      api_key: mykey
+      server: http://192.168.x.x
+      ttl: 10m
+      zone: myzone.
+  myopenwrtrouter:
+    provider: openwrt
+    settings:
+      address: 192.168.1.1:22
+      password: password
+      ssh_key: <optional>/path/to/private/key
+      # Recommended: the fingerprint of the host's SSH key. Without it any key is accepted, and
+      # the log warns with the fingerprint seen. To get it: ssh-keyscan HOST | ssh-keygen -lf -
+      # host_key: SHA256:...
+      ttl: 10m
+      username: root
+      zone: lan
+  myopnsensebox:
+    debounce_time: 5s
+    provider: opnsense_unbound
+    retry_time: 1m
+    settings:
+      address: https://opnsense.local
+      key: your_api_key
+      secret: your_api_secret
+      ttl: 1h
+      # tls_fingerprint: the server certificate's SHA-256, in hex, when it can't be verified
+      zone: example.com
+  mypfsensebox:
+    debounce_time: 5s
+    provider: pfsense_restapi_unbound
+    retry_time: 1m
+    settings:
+      address: https://pfsense.local
+      key: your_api_key
+      # tls_fingerprint: the server certificate's SHA-256, in hex, when it can't be verified
+      ttl: 1h
+      zone: example.com
+  myrouteros:
+    provider: mikrotik
+    settings:
+      address: 192.168.88.1:8729
+      password: password
+      # tls_fingerprint: the server certificate's SHA-256, in hex, when it can't be verified
+      ttl: 5m
+      use_tls: true
+      username: admin
+      zone: lan
+  mytechnitiumserver:
+    provider: technitium
+    settings:
+      address: http://127.0.0.1:5380
+      # tls_fingerprint: the server certificate's SHA-256, in hex, when it can't be verified
+      token: mytoken
+      ttl: 5m
+      zone: example.com
+  myroute53:
+    provider: route53
+    settings:
+      access_key_id: AKIA...
+      secret_access_key: your_secret_key
+      region: us-east-1
+      hosted_zone_id: Z1234567890
+      ttl: 1h
+  mywindowsdnsserver:
+    provider: windows
+    settings:
+      # Optional: address to connect via SSH. If empty it will run locally on the Windows Server itself
+      address: 192.168.1.5
+      username: Administrator
+      password: password
+      ssh_key: <optional>/path/to/private/key
+      # Recommended: the fingerprint of the host's SSH key. Without it any key is accepted, and
+      # the log warns with the fingerprint seen. To get it: ssh-keyscan HOST | ssh-keygen -lf -
+      # host_key: SHA256:...
+      zone: example.com
+      ttl: 1h
+# The same ways for each family: listen, passive; active, probing every host; solicit, asking the
+# hosts the filters want. The plugins read the tables of the families on.
+discovery:
+  ipv6:
+    listen: true      # NDP
+    active: true      # multicast ping, SSDP, WS-Discovery
+    solicit: true     # the EUI-64 addresses eui64 filters want
+  # Off by default. Filters take IPv4 addresses only with ip.family 4, as the mynas task.
+  ipv4:
+    listen: true      # the kernel's ARP table
+    active: false     # a sweep of the subnets would broadcast an ARP request for each address
+    solicit: true     # ARP to the MACs IPv4 filters name, alone, on the subnets of their ip.prefix
+    lifetime: 5m      # an address not seen for 5m goes: the top-level lifetime by default
+  # Not on the bridges of containers: their hosts aren't the network's.
+  exclude_interfaces: [docker*, br-*, veth*]
+  plugins:
+    mikrotik-lan:
+      type: mikrotik
+      interval: 90s
+      address: 192.168.88.1:8729
+      username: admin
+      # From the environment variable: see Secrets in the README.
+      password: ${ROUTER_PASSWORD}
+      use_tls: true
+      # tls_fingerprint: <optional, the SHA-256 of the router's certificate>
+    pfsense-box:
+      type: freebsd
+      interval: 90s
+      address: pfsense.local
+      username: admin
+      identity_file: /path/to/id_rsa
+      # Recommended: the fingerprint of the host's SSH key. To get it: ssh-keyscan HOST | ssh-keygen -lf -
+      # host_key: SHA256:...
+    linux-server:
+      type: linux
+      interval: 90s
+      address: "[2001:db8::1]:2222"
+      username: user
+      identity_file: /path/to/id_rsa      # instead of a password, or besides it

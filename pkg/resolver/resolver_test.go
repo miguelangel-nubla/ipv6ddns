@@ -16,7 +16,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 )
 
-func mustRecords(t *testing.T, origin string, lines ...string) []dns.RR {
+func mustRecords(t testing.TB, origin string, lines ...string) []dns.RR {
 	t.Helper()
 	var records []dns.RR
 	for _, line := range lines {
@@ -93,14 +93,7 @@ func (u *upstream) answerWith(handle func(req *dns.Msg) *dns.Msg) {
 func newUpstream(t *testing.T) *upstream {
 	t.Helper()
 	u := &upstream{}
-	pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := net.Listen("tcp4", pc.LocalAddr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
+	pc, l := listenBoth(t)
 	u.address = pc.LocalAddr().String()
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, req *dns.Msg) {
 		u.queries.Add(1)
@@ -154,6 +147,27 @@ func newUpstream(t *testing.T) *upstream {
 	return u
 }
 
+// listenBoth listens on a port of 127.0.0.1 that is free over UDP and over TCP: the one the system
+// gives for UDP can be taken over TCP, as by a connection of a test before that has just closed,
+// and then another is asked.
+func listenBoth(t testing.TB) (net.PacketConn, net.Listener) {
+	t.Helper()
+	for try := 0; ; try++ {
+		pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		l, err := net.Listen("tcp4", pc.LocalAddr().String())
+		if err == nil {
+			return pc, l
+		}
+		pc.Close()
+		if try == 50 {
+			t.Fatal(err)
+		}
+	}
+}
+
 func (u *upstream) lastQuery() *dns.Msg {
 	u.mutex.Lock()
 	defer u.mutex.Unlock()
@@ -161,7 +175,7 @@ func (u *upstream) lastQuery() *dns.Msg {
 }
 
 // deadAddress is a UDP address nothing answers at: a server that is down.
-func deadAddress(t *testing.T) string {
+func deadAddress(t testing.TB) string {
 	t.Helper()
 	pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
@@ -174,7 +188,7 @@ func deadAddress(t *testing.T) string {
 
 // testConfig is a resolver on 127.0.0.1, at a port of its own, with zones home.arpa, with the
 // task names nas and *.dev, and lab.home.arpa, and records of its own.
-func testConfig(t *testing.T, upstreams ...string) (Config, *Addresses) {
+func testConfig(t testing.TB, upstreams ...string) (Config, *Addresses) {
 	addresses := NewAddresses()
 	return Config{
 		Name:      "lan",
@@ -506,7 +520,11 @@ func TestStartTaken(t *testing.T) {
 	cfg, _ := testConfig(t, up.address)
 	first := start(t, cfg)
 	_, port, _ := net.SplitHostPort(first.Addresses()[0])
-	_, free, _ := net.SplitHostPort(deadAddress(t))
+	// Free over UDP and over TCP both: it is listened on, and then to be free again.
+	pc, l := listenBoth(t)
+	_, free, _ := net.SplitHostPort(pc.LocalAddr().String())
+	pc.Close()
+	l.Close()
 	cfg2, _ := testConfig(t, up.address)
 	cfg2.Listen = []listen.Entry{{Host: "127.0.0.1", Port: free}, {Host: "127.0.0.1", Port: port}}
 	second, err := New(cfg2, t.Errorf)
