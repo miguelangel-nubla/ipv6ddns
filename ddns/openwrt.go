@@ -178,9 +178,16 @@ func uciDomains(output string) map[string]uciDomain {
 		if !ok {
 			continue
 		}
-		value = strings.Trim(value, "'")
+		// A quoted value has both its quotes: one alone is no value of uci's.
+		if quoted, ok := strings.CutPrefix(value, "'"); ok {
+			if value, ok = strings.CutSuffix(quoted, "'"); !ok {
+				continue
+			}
+		} else if strings.Contains(value, "'") {
+			continue
+		}
 		path := strings.Split(key, ".")
-		if len(path) < 2 || path[0] != "dhcp" {
+		if len(path) < 2 || path[0] != "dhcp" || path[1] == "" {
 			continue
 		}
 		id := path[1]
