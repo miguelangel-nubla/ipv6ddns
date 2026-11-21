@@ -16,10 +16,13 @@ tasks:
       - mac:
           address: "00:11:22:33:44:55"
         ip:
-          type: [global]    # the server's own IPv6, for the AAAA record
-    sources: [wan]          # and the public IPv4, for the A record
+          type:             # the server's own IPv6, for the AAAA record
+            - global
+    sources:                # and the public IPv4, for the A record
+      - wan
     endpoints:
-      cloudflare: [www]
+      cloudflare:
+        - www
 credentials:
   cloudflare:
     provider: cloudflare

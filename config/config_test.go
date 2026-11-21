@@ -146,10 +146,14 @@ tasks:
       - mac:
           address: "00:11:22:33:44:66"
         ip:
-          type: ["global", "eui64"]
-        source: ["mikrotik-lan"]
+          type:
+            - "global"
+            - "eui64"
+        source:
+          - "mikrotik-lan"
     endpoints:
-      creds: ["host"]
+      creds:
+        - "host"
 credentials:
   creds:
     provider: test
@@ -343,7 +347,7 @@ func TestSchemaSaysTheDefaults(t *testing.T) {
 // credentials, be gone without a word.
 func TestDuplicateKeysAreErrors(t *testing.T) {
 	for name, content := range map[string]string{
-		"two tasks of a name": "tasks:\n  web:\n    endpoints:\n      duck: [www]\n  web:\n    endpoints:\n      duck: [other]\n" + duckCredential,
+		"two tasks of a name": "tasks:\n  web:\n    endpoints:\n      duck:\n        - www\n  web:\n    endpoints:\n      duck:\n        - other\n" + duckCredential,
 		"two credentials":     "tasks: {}\n" + duckCredential + duckCredential,
 		"a setting twice":     "tasks: {}\nlog_level: info\nlog_level: debug\n" + duckCredential,
 	} {

@@ -1,28 +1,36 @@
 log_level: info               # debug, info, warn, error
 webserver:
-  listen: [8053]              # the report, /status.json and /metrics; or "8053,[::1]:8054"
+  listen:                     # the report, /status.json and /metrics; or "8053,[::1]:8054"
+    - 8053
 
 # Addresses without a MAC, for the tasks that name them.
 sources:
   # The network's public IPv4, as DNS resolvers see it: the A record of a server behind NAT.
   wan:
     type: dns
-    family: [4]
+    family:
+      - 4
     interval: 3m
   # Or from an echo service over HTTPS, or a command of yours:
   wan-http:
     type: http
-    family: [4, 6]
+    family:
+      - 4
+      - 6
   wan-command:
     type: command
     command: curl
-    args: [-s, --ipv4, ifconfig.me]
+    args:
+      - -s
+      - --ipv4
+      - ifconfig.me
     interval: 3m
     lifetime: 10m
   # Addresses that don't change, or that discovery can't reach.
   fixed:
     type: static
-    addresses: [192.168.1.123]
+    addresses:
+      - 192.168.1.123
 tasks:
   myhome:
     filter:
@@ -31,7 +39,8 @@ tasks:
         ip:
           prefix: 2000::/3
     # And the public IPv4, for the A record.
-    sources: [wan]
+    sources:
+      - wan
     endpoints:
       mycloudflaresettings:
         - ""
@@ -40,7 +49,8 @@ tasks:
       mylocaldns:
       - myserver
       - "*.myserver"
-    sources: [fixed]
+    sources:
+      - fixed
     filter:
       - mac:
           address: 00:11:22:33:44:56
@@ -57,8 +67,10 @@ tasks:
       - mac:
           address: 00:11:22:33:44:57
         ip:
-          family: [4]
-          type: [private]
+          family:
+            - 4
+          type:
+            - private
     endpoints:
       mylocaldns:
       - nas
@@ -70,7 +82,9 @@ tasks:
 resolvers:
   lan:
     listen: 192.168.1.0/24    # the machine's address in it, port 53
-    upstream: [192.168.1.1, 1.1.1.1]
+    upstream:
+      - 192.168.1.1
+      - 1.1.1.1
     records:
       - www.mydomain.tld. CNAME nas.home.arpa.
 credentials:
@@ -198,10 +212,15 @@ discovery:
   # Each protocol has its switch, and its options: those that find hosts are on by default,
   # those that tell names off. Every one is in docs/reference/configuration.md.
   protocols:
-    ssdp: {enabled: false}    # no search for UPnP devices
-    mdns: {enabled: true}     # the hosts that announce themselves, and their names
+    ssdp:                     # no search for UPnP devices
+      enabled: false
+    mdns:                     # the hosts that announce themselves, and their names
+      enabled: true
   # Not on the bridges of containers: their hosts aren't the network's.
-  exclude_interfaces: [docker*, br-*, veth*]
+  exclude_interfaces:
+    - docker*
+    - br-*
+    - veth*
   plugins:
     mikrotik-lan:
       type: mikrotik

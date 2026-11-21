@@ -53,13 +53,13 @@ func TestWorkerRunsTheProtocolsOfTheConfiguration(t *testing.T) {
 		want   []string
 	}{
 		"no discovery block": {"", []string{"ndp", "ping", "ssdp", "wsd"}},
-		"no protocols key":   {"discovery:\n  exclude_interfaces: [docker0]\n", []string{"ndp", "ping", "ssdp", "wsd"}},
-		"some of them": {"discovery:\n  protocols:\n    ssdp: {enabled: false}\n    wsd: {enabled: false}\n    mdns: {enabled: true}\n",
+		"no protocols key":   {"discovery:\n  exclude_interfaces:\n    - docker0\n", []string{"ndp", "ping", "ssdp", "wsd"}},
+		"some of them": {"discovery:\n  protocols:\n    ssdp:\n      enabled: false\n    wsd:\n      enabled: false\n    mdns:\n      enabled: true\n",
 			[]string{"ndp", "ping", "mdns"}},
-		"IPv4, without its sweep": {"discovery:\n  ipv4: {enabled: true}\n  protocols:\n    arp-sweep: {enabled: false}\n    arp-listen: {enabled: false}\n",
+		"IPv4, without its sweep": {"discovery:\n  ipv4:\n    enabled: true\n  protocols:\n    arp-sweep:\n      enabled: false\n    arp-listen:\n      enabled: false\n",
 			[]string{"ndp", "ping", "ssdp", "wsd", "arp"}},
-		"a family that doesn't listen": {"discovery:\n  ipv6: {listen: false}\n", []string{}},
-		"the names' own": {"discovery:\n  hostnames: {enabled: true}\n  protocols:\n    llmnr: {enabled: true}\n    dns: {enabled: true, servers: 192.0.2.53}\n",
+		"a family that doesn't listen": {"discovery:\n  ipv6:\n    listen: false\n", []string{}},
+		"the names' own": {"discovery:\n  hostnames:\n    enabled: true\n  protocols:\n    llmnr:\n      enabled: true\n    dns:\n      enabled: true\n      servers: 192.0.2.53\n",
 			[]string{"ndp", "ping", "ssdp", "wsd", "llmnr", "dns"}},
 	} {
 		w, err := NewWorker(zap.NewNop().Sugar(), loadConfig(t, tt.config+"tasks: {}\ncredentials: {}\n"))
@@ -93,7 +93,7 @@ func TestWorkerRunsTheProtocolsOfTheConfiguration(t *testing.T) {
 func TestStatusHasTheNamesOfTheHosts(t *testing.T) {
 	hw, _ := net.ParseMAC(macA)
 	for _, kept := range []bool{true, false} {
-		cfg := loadConfig(t, fmt.Sprintf("discovery:\n  hostnames: {enabled: %t}\ntasks: {}\ncredentials: {}\n", kept))
+		cfg := loadConfig(t, fmt.Sprintf("discovery:\n  hostnames:\n    enabled: %t\ntasks: {}\ncredentials: {}\n", kept))
 		w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 		if err != nil {
 			t.Fatal(err)

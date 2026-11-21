@@ -215,7 +215,8 @@ func TestLiveResolverEncrypted(t *testing.T) {
 	server := srv.IPv4.String()
 	config := fmt.Sprintf(`
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 resolvers:
   dot:
     listen: "%[1]s:5301"
@@ -230,11 +231,17 @@ resolvers:
     bootstrap: %[2]s
   wrongdot:
     listen: "%[1]s:5304"
-    upstream: ["tls://wrong.upstream.test", "tls://untrusted.upstream.test:8853", %[4]s]
+    upstream:
+      - "tls://wrong.upstream.test"
+      - "tls://untrusted.upstream.test:8853"
+      - %[4]s
     bootstrap: %[2]s
   wrongdoh:
     listen: "%[1]s:5305"
-    upstream: ["https://wrong.upstream.test/dns-query", "https://untrusted.upstream.test:8443/dns-query", %[4]s]
+    upstream:
+      - "https://wrong.upstream.test/dns-query"
+      - "https://untrusted.upstream.test:8443/dns-query"
+      - %[4]s
     bootstrap: %[2]s
 credentials: {}
 tasks: {}
@@ -339,7 +346,8 @@ func TestLiveResolverCache(t *testing.T) {
 	server := srv.IPv4.String()
 	instance := configure(t, srv, lan.Router, "srv", 8053, fmt.Sprintf(`
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 resolvers:
   lan:
     listen: 198.18.18.0/24
@@ -452,10 +460,15 @@ func TestLiveResolverCollision(t *testing.T) {
 	config := func(lab, lan string) string {
 		return fmt.Sprintf(`
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 resolvers:
-  lab: {listen: %s, upstream: 192.0.2.1}
-  lan: {listen: %s, upstream: 192.0.2.1}
+  lab:
+    listen: %s
+    upstream: 192.0.2.1
+  lan:
+    listen: %s
+    upstream: 192.0.2.1
 credentials: {}
 tasks: {}
 `, lab, lan)

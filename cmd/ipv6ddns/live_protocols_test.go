@@ -37,7 +37,8 @@ func TestLiveProtocolsAndNames(t *testing.T) {
 	config := func(discovery string) string {
 		return fmt.Sprintf(`
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 discovery:
   lifetime: 30s
   rediscover: 3s
@@ -49,12 +50,15 @@ credentials: {}
 	withNames := configure(t, names, router, "names", 8053, config(`  hostnames:
     enabled: true
   protocols:
-    mdns: {enabled: true}
-    ssdp: {enabled: false}`)).start().serving()
+    mdns:
+      enabled: true
+    ssdp:
+      enabled: false`)).start().serving()
 	// No protocol named: the defaults, which the worker has to run, not none.
 	withDefaults := configure(t, plain, router, "plain", 8053, config("")).start().serving()
 	withoutNames := configure(t, quiet, router, "quiet", 8053, config(`  protocols:
-    mdns: {enabled: true}`)).start().serving()
+    mdns:
+      enabled: true`)).start().serving()
 
 	// The protocols each says it runs, as its configuration has them.
 	for _, c := range []struct {

@@ -51,7 +51,8 @@ tasks:
       - mac:
           address: "00:11:22:33:44:55"
         ip:
-          type: [global]
+          type:
+            - global
     endpoints:
       cloudflare:
         - www           # www.example.com

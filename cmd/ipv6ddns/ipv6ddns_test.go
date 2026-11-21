@@ -163,11 +163,13 @@ tasks:
       interval: 1h
       lifetime: 1h
       command: curl
-      args: ["https://example.com/ip?key=`+secret+`"]
+      args:
+        - "https://example.com/ip?key=`+secret+`"
 sources:
   echo:
     type: http
-    urls: ["https://user:`+secret+`@echo.example/ip/`+secret+`?token=`+secret+`"]
+    urls:
+      - "https://user:`+secret+`@echo.example/ip/`+secret+`?token=`+secret+`"
 credentials:
   duck:
     provider: duckdns
@@ -275,9 +277,14 @@ func TestHealthzResolver(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	os.WriteFile(path, []byte(`
 resolvers:
-  lan: {listen: 192.0.2.1, upstream: 192.0.2.53}
+  lan:
+    listen: 192.0.2.1
+    upstream: 192.0.2.53
 credentials:
-  home: {provider: resolver, settings: {zone: home.arpa}}
+  home:
+    provider: resolver
+    settings:
+      zone: home.arpa
 tasks: {}
 `), 0o600)
 	cfg, err := config.NewConfig(path)

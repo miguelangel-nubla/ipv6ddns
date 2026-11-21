@@ -151,9 +151,11 @@ sources:
     entity: sensor.router_wan_ip      # or its attribute: attribute: wan_ip
 tasks:
   home:
-    sources: [router-wan]
+    sources:
+      - router-wan
     endpoints:
-      cloudflare: [home]
+      cloudflare:
+        - home
 credentials:
   cloudflare:
     provider: cloudflare
@@ -194,13 +196,19 @@ sources:
     entity: input_text.vpn_address
 tasks:
   vpn:
-    sources: [vpn]
+    sources:
+      - vpn
     endpoints:
-      cloudflare: [vpn]
+      cloudflare:
+        - vpn
 credentials:
   cloudflare:
     provider: cloudflare
-    settings: {api_token: "${CLOUDFLARE_TOKEN}", zone: example.com, ttl: 5m, proxied: false}
+    settings:
+      api_token: "${CLOUDFLARE_TOKEN}"
+      zone: example.com
+      ttl: 5m
+      proxied: false
 ```
 
 It takes one address or more, separated by commas or spaces: `203.0.113.7, 2001:db8::7`.
@@ -214,7 +222,9 @@ A select helper picks the server, and a template sensor gives its address: a nam
 input_select:
   web_server:
     name: Web server
-    options: [primary, standby]
+    options:
+      - primary
+      - standby
 
 template:
   - sensor:
@@ -233,8 +243,10 @@ automation:
         for: "00:02:00"
     actions:
       - action: input_select.select_option
-        target: {entity_id: input_select.web_server}
-        data: {option: standby}
+        target:
+          entity_id: input_select.web_server
+        data:
+          option: standby
 ```
 
 `binary_sensor.web_primary_ping` is one of the [Ping integration](https://www.home-assistant.io/integrations/ping/)'s.
@@ -249,13 +261,19 @@ sources:
     entity: sensor.web_server_address
 tasks:
   www:
-    sources: [web]
+    sources:
+      - web
     endpoints:
-      cloudflare: [www]
+      cloudflare:
+        - www
 credentials:
   cloudflare:
     provider: cloudflare
-    settings: {api_token: "${CLOUDFLARE_TOKEN}", zone: example.com, ttl: 5m, proxied: false}
+    settings:
+      api_token: "${CLOUDFLARE_TOKEN}"
+      zone: example.com
+      ttl: 5m
+      proxied: false
 ```
 
 ### Devices discovery doesn't reach
@@ -273,13 +291,19 @@ sources:
     attribute: ip
 tasks:
   printer:
-    sources: [printer]
+    sources:
+      - printer
     endpoints:
-      lan: [printer]
+      lan:
+        - printer
 credentials:
   lan:
     provider: technitium
-    settings: {address: "http://192.0.2.53:5380", token: "${TECHNITIUM_TOKEN}", zone: lan.example.com, ttl: 5m}
+    settings:
+      address: "http://192.0.2.53:5380"
+      token: "${TECHNITIUM_TOKEN}"
+      zone: lan.example.com
+      ttl: 5m
 ```
 
 `printer.lan.example.com` then has the printer's address. An integration that drops the attribute when the device leaves leaves it at the last address: Home Assistant sends nothing for an attribute gone, so ipv6ddns keeps what it last sent, until Home Assistant connects again, when a state it doesn't send is an error. One that sets it to none sends `None`, a wait, and the record stays for the source's `lifetime`.
@@ -310,13 +334,19 @@ sources:
     entity: sensor.wan_addresses
 tasks:
   home:
-    sources: [wan]
+    sources:
+      - wan
     endpoints:
-      cloudflare: [home]
+      cloudflare:
+        - home
 credentials:
   cloudflare:
     provider: cloudflare
-    settings: {api_token: "${CLOUDFLARE_TOKEN}", zone: example.com, ttl: 5m, proxied: false}
+    settings:
+      api_token: "${CLOUDFLARE_TOKEN}"
+      zone: example.com
+      ttl: 5m
+      proxied: false
 ```
 
 ### Alerts, and updating now
@@ -344,7 +374,8 @@ automation:
         to: "on"
     actions:
       - action: button.press
-        target: {entity_id: button.ipv6ddns_update_now}
+        target:
+          entity_id: button.ipv6ddns_update_now
 ```
 
 ## How it works

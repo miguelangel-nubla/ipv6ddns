@@ -14,7 +14,7 @@ IPv6 is discovered by default, IPv4 when asked. Each family has its switches, un
 | `active` (default on): probing every host | Multicast ping, SSDP and WS-Discovery, on each link | A sweep: a UDP packet to each address of the local subnets (a /22 at most, or the /24 of the address), so the kernel resolves the hosts. It broadcasts an ARP request for each address |
 | `lifetime` | How long the family's addresses stay after they were last seen | The same |
 
-A family is a mapping of its switches, never `true` or `false` alone: `ipv4: true` is an error that says how it is written, `ipv4: {enabled: true}`.
+A family is a mapping of its switches, never `true` or `false` alone: `ipv4: true` is an error that says how it is written: `enabled: true` under `ipv4`.
 
 ```yaml
 discovery:
@@ -48,9 +48,12 @@ By default those that find hosts are on, and those that tell names off. One that
 ```yaml
 discovery:
   protocols:
-    ssdp: {enabled: false}
-    wsd: {enabled: false}
-    mdns: {enabled: true}
+    ssdp:
+      enabled: false
+    wsd:
+      enabled: false
+    mdns:
+      enabled: true
 ```
 
 What can't run is an error at start, not a protocol left out without a word: one there is none of, `ping`, `ssdp` or `wsd` without `ndp`, which tells them the MAC of what they hear, `arp-listen`, `dhcp` or `lldp` anywhere but on Linux, `dns` without `servers`, and one that only learns names without `hostnames`. The log says at start which run, the web report and `-live` show them under `Protocols`, and `/status.json` has them as `protocols`. Each, with its options and defaults, is in the [reference](reference/configuration.md#discovery-protocols).
@@ -64,7 +67,8 @@ discovery:
   hostnames:
     enabled: true
   protocols:
-    mdns: {enabled: true}
+    mdns:
+      enabled: true
 ```
 
 The web report and `-live` show a host's names after its MAC, each with what said it, and `/status.json` has them as the host's `names`. That is all they are for yet: to tell which host a MAC is, when writing a filter. A task's names are still those of its `endpoints`.
@@ -83,10 +87,13 @@ tasks:
       - mac:
           address: "00:11:22:33:44:55"
         ip:
-          family: [4]
-          type: [private]
+          family:
+            - 4
+          type:
+            - private
     endpoints:
-      home-dns: [nas]
+      home-dns:
+        - nas
 credentials:
   home-dns:
     provider: technitium
@@ -124,7 +131,10 @@ The local discovery runs on every interface that is up, not a loopback and has a
 
 ```yaml
 discovery:
-  exclude_interfaces: [docker*, br-*, veth*]
+  exclude_interfaces:
+    - docker*
+    - br-*
+    - veth*
 ```
 
 The interfaces without a MAC, as PPP links, WireGuard and other tunnels, are left out, and their own addresses with them: a host is its MAC, and there is none there. An address of this machine on such an interface comes from a [source](sources.md). For IPv6, an interface with only a link-local address is not listened on either.

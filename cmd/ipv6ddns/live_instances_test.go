@@ -39,7 +39,8 @@ func TestLiveTwoInstancesOneMachine(t *testing.T) {
 
 	one := configure(t, machine, router, "one", 8053, fmt.Sprintf(`
 webserver:
-  listen: ["%s:8053"]
+  listen:
+    - "%s:8053"
 homeassistant:
   name: ipv6ddns-one
   friendly_name: The first
@@ -51,22 +52,28 @@ discovery:
 tasks:
   peer:
     filter:
-      - mac: {address: "%s"}
-        ip: {prefix: "%s"}
+      - mac:
+          address: "%s"
+        ip:
+          prefix: "%s"
     endpoints:
-      first: [peer]
+      first:
+        - peer
   machine:
     filter:
       - self: true
-        ip: {prefix: "%s"}
+        ip:
+          prefix: "%s"
     endpoints:
-      first: [machine]
+      first:
+        - machine
 credentials:
 %s`, machine.IPv4, keyOne, peer.MAC, lan.Prefix(), lan.Prefix(), dnsOne.credential("first", "1s")))
 
 	two := configure(t, machine, router, "two", 8054, fmt.Sprintf(`
 webserver:
-  listen: [8054]
+  listen:
+    - 8054
 homeassistant:
   name: ipv6ddns-two
   friendly_name: The second
@@ -82,12 +89,18 @@ discovery:
 tasks:
   peer:
     filter:
-      - mac: {address: "%s"}
-        ip: {prefix: "%s"}
-      - mac: {address: "%s"}
-        ip: {family: [4]}
+      - mac:
+          address: "%s"
+        ip:
+          prefix: "%s"
+      - mac:
+          address: "%s"
+        ip:
+          family:
+            - 4
     endpoints:
-      second: [other]
+      second:
+        - other
 credentials:
 %s`, machine.IPv4, peer.MAC, lan.Prefix(), peer.MAC, dnsTwo.credential("second", "2s")))
 
@@ -231,10 +244,12 @@ credentials:
 	third := func(webPort, devicePort int) string {
 		return fmt.Sprintf(`
 webserver:
-  listen: [%d]
+  listen:
+    - %d
 homeassistant:
   name: ipv6ddns-three
-  listen: [%d]
+  listen:
+    - %d
   key_provisioning: true
 discovery:
   lifetime: 9s
@@ -242,9 +257,11 @@ discovery:
 tasks:
   peer:
     filter:
-      - mac: {address: "%s"}
+      - mac:
+          address: "%s"
     endpoints:
-      third: [peer]
+      third:
+        - peer
 credentials:
 %s`, webPort, devicePort, peer.MAC, dnsThree.credential("third", "0s"))
 	}
@@ -356,18 +373,22 @@ func TestLiveInstancesOfOneDevice(t *testing.T) {
 	config := func(name string, webPort, devicePort int, device string) string {
 		return fmt.Sprintf(`
 webserver:
-  listen: [%d]
+  listen:
+    - %d
 homeassistant:
-  listen: [%d]
+  listen:
+    - %d
   key_provisioning: true
 %s
 tasks:
   machine:
     filter:
       - self: true
-        ip: {prefix: "%s"}
+        ip:
+          prefix: "%s"
     endpoints:
-      dns: [%s]
+      dns:
+        - %s
 credentials:
 %s`, webPort, devicePort, device, lan.Prefix(), name, dns.credential("dns", "1s"))
 	}
@@ -547,7 +568,8 @@ func TestLiveTwoInstancesTwoMachines(t *testing.T) {
 	config := func(name, key, lifetime, rediscover, discovery string, own *provider, mate *livetest.Machine, more string) string {
 		return fmt.Sprintf(`
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 homeassistant:
   name: ipv6ddns-%[2]s
   key: %[3]s
@@ -559,25 +581,38 @@ discovery:
 tasks:
   peer:
     filter:
-      - mac: {address: "%[6]s"}
-        ip: {prefix: "%[7]s"}
-      - mac: {address: "%[6]s"}
-        ip: {prefix: "%[7]s", type: [eui64]}
+      - mac:
+          address: "%[6]s"
+        ip:
+          prefix: "%[7]s"
+      - mac:
+          address: "%[6]s"
+        ip:
+          prefix: "%[7]s"
+          type:
+            - eui64
     endpoints:
-      own: [peer]
-      pair: [ha]
+      own:
+        - peer
+      pair:
+        - ha
   me:
     filter:
       - self: true
-        ip: {prefix: "%[7]s"}
+        ip:
+          prefix: "%[7]s"
     endpoints:
-      own: [me]
+      own:
+        - me
   mate:
     filter:
-      - mac: {address: "%[8]s"}
-        ip: {prefix: "%[7]s"}
+      - mac:
+          address: "%[8]s"
+        ip:
+          prefix: "%[7]s"
     endpoints:
-      own: [mate]
+      own:
+        - mate
 %[9]s
 credentials:
 %[10]s%[11]s`, lifetime, name, key, rediscover, discovery, peer.MAC, lan.Prefix(), mate.MAC, more, own.credential("own", "1s"), dnsPair.credential("pair", "1s"))
@@ -591,18 +626,29 @@ credentials:
     ipv6: true
     ipv4: true`, dnsA, b, fmt.Sprintf(`  peer4:
     filter:
-      - mac: {address: "%s"}
-        ip: {family: [4]}
+      - mac:
+          address: "%s"
+        ip:
+          family:
+            - 4
     endpoints:
-      own: [peer4]
+      own:
+        - peer4
   ghost:
     filter:
-      - mac: {address: "%s"}
-        ip: {type: [eui64]}
-      - mac: {address: "%s"}
-        ip: {family: [4]}
+      - mac:
+          address: "%s"
+        ip:
+          type:
+            - eui64
+      - mac:
+          address: "%s"
+        ip:
+          family:
+            - 4
     endpoints:
-      own: [ghost]`, peer.MAC, ghostMAC, ghostMAC)))
+      own:
+        - ghost`, peer.MAC, ghostMAC, ghostMAC)))
 	// b takes every IPv4 address it comes to know, whoever has it.
 	instanceB := configure(t, b, router, "b", 8053, config("b", keyB, "12s", "4s", `  ipv4:
     enabled: true
@@ -611,9 +657,13 @@ credentials:
   solicit:
     ipv6: true`, dnsB, a, `  ipv4:
     filter:
-      - ip: {family: [4], prefix: "198.18.13.0/24"}
+      - ip:
+          family:
+            - 4
+          prefix: "198.18.13.0/24"
     endpoints:
-      own: [ipv4]`))
+      own:
+        - ipv4`))
 
 	// What is true of the link: the addresses each MAC has.
 	truth := map[string][]netip.Addr{peer.MAC: {stable}}
@@ -885,16 +935,19 @@ func TestLiveTwoInstancesLive(t *testing.T) {
 	config := func(webPort int, dns *provider) string {
 		return fmt.Sprintf(`
 webserver:
-  listen: [%d]
+  listen:
+    - %d
 discovery:
   rediscover: 3s
 tasks:
   machine:
     filter:
       - self: true
-        ip: {prefix: "%s"}
+        ip:
+          prefix: "%s"
     endpoints:
-      dns: [machine]
+      dns:
+        - machine
 credentials:
 %s`, webPort, lan.Prefix(), dns.credential("dns", "1s"))
 	}

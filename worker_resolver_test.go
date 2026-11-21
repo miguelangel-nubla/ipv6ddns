@@ -48,17 +48,30 @@ credentials:
     provider: resolver
     settings:
       zone: home.arpa
-      records: [files CNAME nas]
+      records:
+        - files CNAME nas
   office:
     provider: resolver
-    settings: {zone: office.test, records: [printer A 192.0.2.20]}
+    settings:
+      zone: office.test
+      records:
+        - printer A 192.0.2.20
 sources:
-  wan: {type: static, addresses: [192.0.2.7, "2001:db8::7"]}
+  wan:
+    type: static
+    addresses:
+      - 192.0.2.7
+      - "2001:db8::7"
 tasks:
   nas:
-    sources: [wan]
-    endpoints: {home: [nas]}
-discovery: {ipv6: {enabled: false}}
+    sources:
+      - wan
+    endpoints:
+      home:
+        - nas
+discovery:
+  ipv6:
+    enabled: false
 `, port, freeDNSPort(t))
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
@@ -204,11 +217,17 @@ func TestWorkerResolversCollide(t *testing.T) {
 	} {
 		w := workerOf(t, fmt.Sprintf(`
 resolvers:
-  lab: {listen: %s, upstream: 192.0.2.1}
-  lan: {listen: %s, upstream: 192.0.2.1}
+  lab:
+    listen: %s
+    upstream: 192.0.2.1
+  lan:
+    listen: %s
+    upstream: 192.0.2.1
 credentials: {}
 tasks: {}
-discovery: {ipv6: {enabled: false}}
+discovery:
+  ipv6:
+    enabled: false
 `, c.lab, c.lan))
 		ctx, cancel := context.WithCancel(context.Background())
 		err := w.Start(ctx)
@@ -244,10 +263,15 @@ func TestWorkerResolverShutdown(t *testing.T) {
 	port := freeDNSPort(t)
 	w := workerOf(t, fmt.Sprintf(`
 resolvers:
-  lan: {listen: "127.0.0.1:%s", upstream: [%s]}
+  lan:
+    listen: "127.0.0.1:%s"
+    upstream:
+      - %s
 credentials: {}
 tasks: {}
-discovery: {ipv6: {enabled: false}}
+discovery:
+  ipv6:
+    enabled: false
 `, port, strings.Join(upstreams, ", ")))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

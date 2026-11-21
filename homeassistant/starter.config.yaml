@@ -16,18 +16,24 @@
 #     filter:
 #       - self: true
 #         ip:
-#           type: [global, "!temporary"]
-#     sources: [wan]
+#           type:
+#             - global
+#             - "!temporary"
+#     sources:
+#       - wan
 #     endpoints:
-#       cloudflare: [ha]
+#       cloudflare:
+#         - ha
 #   webserver:
 #     filter:
 #       - mac:
 #           address: "00:11:22:33:44:55"
 #         ip:
-#           type: [global]
+#           type:
+#             - global
 #     endpoints:
-#       cloudflare: [www]
+#       cloudflare:
+#         - www
 #
 # credentials:
 #   cloudflare:
@@ -63,4 +69,7 @@ homeassistant:
 
 discovery:
   # Home Assistant's own containers, on its bridges, aren't hosts of the network.
-  exclude_interfaces: [hassio, docker0, "veth*"]
+  exclude_interfaces:
+    - hassio
+    - docker0
+    - "veth*"

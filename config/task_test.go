@@ -101,26 +101,55 @@ func host(mac, address string) *ipv6disc.Addr {
 }
 
 func filterConfig(filter string) string {
-	return "tasks:\n  web:\n    filter:\n      - " + filter + "\n    endpoints:\n      duck: [www]\n" + duckCredential
+	// A filter of several lines is one item: the lines after the first are under it.
+	filter = strings.ReplaceAll(filter, "\n", "\n        ")
+	return "tasks:\n  web:\n    filter:\n      - " + filter + "\n    endpoints:\n      duck:\n        - www\n" + duckCredential
 }
 
 // A mask that doesn't parse is an error, as it loads: skipped, the filter would match every host,
 // and take the whole network to the task's names.
 func TestInvalidMasksAreErrors(t *testing.T) {
 	for filter, want := range map[string]string{
-		`mac: {mask: ["00:11:22:00:00:00/ff:ff:ff"]}`:                      `task web: filter 1: mac.mask "00:11:22:00:00:00/ff:ff:ff": the mask "ff:ff:ff" is not a MAC`,
-		`mac: {mask: ["00:11:22:00:00:00"]}`:                               "not VALUE/MASK",
-		`mac: {mask: ["00:11:22:00:00:00/ff:ff:ff:00:00:00/"]}`:            "not VALUE/MASK",
-		`mac: {mask: ["nope/ff:ff:ff:00:00:00"]}`:                          `the value "nope" is not a MAC`,
-		`mac: {mask: ["00:11:22:33:44:55:66:77/ff:ff:ff:ff:ff:ff:ff:ff"]}`: "a MAC is 6 bytes",
-		`ip: {mask: ["::1/64"]}`:                                           `task web: filter 1: ip.mask "::1/64": the mask "64" is not an address`,
-		`ip: {mask: ["::1/128"]}`:                                          "not a prefix length",
-		`ip: {mask: ["::1"]}`:                                              "not VALUE/MASK",
-		`ip: {mask: ["::1/::ffff/::1"]}`:                                   "not VALUE/MASK",
-		`ip: {mask: ["one/::ffff"]}`:                                       `the value "one" is not an address`,
-		`ip: {mask: ["::1/0.0.0.255"]}`:                                    "not of the same family",
-		`ip: {mask: ["fe80::1%eth0/::ffff"]}`:                              "is not an address",
-		`ip: {mask: ["::1/::ffff", "::1/64"]}`:                             `ip.mask "::1/64"`,
+		`mac:
+  mask:
+    - "00:11:22:00:00:00/ff:ff:ff"`: `task web: filter 1: mac.mask "00:11:22:00:00:00/ff:ff:ff": the mask "ff:ff:ff" is not a MAC`,
+		`mac:
+  mask:
+    - "00:11:22:00:00:00"`: "not VALUE/MASK",
+		`mac:
+  mask:
+    - "00:11:22:00:00:00/ff:ff:ff:00:00:00/"`: "not VALUE/MASK",
+		`mac:
+  mask:
+    - "nope/ff:ff:ff:00:00:00"`: `the value "nope" is not a MAC`,
+		`mac:
+  mask:
+    - "00:11:22:33:44:55:66:77/ff:ff:ff:ff:ff:ff:ff:ff"`: "a MAC is 6 bytes",
+		`ip:
+  mask:
+    - "::1/64"`: `task web: filter 1: ip.mask "::1/64": the mask "64" is not an address`,
+		`ip:
+  mask:
+    - "::1/128"`: "not a prefix length",
+		`ip:
+  mask:
+    - "::1"`: "not VALUE/MASK",
+		`ip:
+  mask:
+    - "::1/::ffff/::1"`: "not VALUE/MASK",
+		`ip:
+  mask:
+    - "one/::ffff"`: `the value "one" is not an address`,
+		`ip:
+  mask:
+    - "::1/0.0.0.255"`: "not of the same family",
+		`ip:
+  mask:
+    - "fe80::1%eth0/::ffff"`: "is not an address",
+		`ip:
+  mask:
+    - "::1/::ffff"
+    - "::1/64"`: `ip.mask "::1/64"`,
 	} {
 		_, err := loadConfig(t, filterConfig(filter))
 		if err == nil || !strings.Contains(err.Error(), want) {
@@ -141,7 +170,15 @@ func TestInvalidMasksAreErrors(t *testing.T) {
 }
 
 func TestMasksOfBothFamilies(t *testing.T) {
-	cfg, err := loadConfig(t, filterConfig(`{mac: {mask: ["00-11-22-00-00-00/ff-ff-ff-00-00-00"]}, ip: {family: [4, 6], mask: ["0.0.0.5/0.0.0.255"]}}`))
+	cfg, err := loadConfig(t, filterConfig(`mac:
+  mask:
+    - "00-11-22-00-00-00/ff-ff-ff-00-00-00"
+ip:
+  family:
+    - 4
+    - 6
+  mask:
+    - "0.0.0.5/0.0.0.255"`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +198,7 @@ func TestMasksOfBothFamilies(t *testing.T) {
 // never gets an address.
 func TestMACAddressForms(t *testing.T) {
 	for _, written := range []string{"00:11:22:AA:BB:CC", "00-11-22-aa-bb-cc", "0011.22aa.bbcc"} {
-		cfg, err := loadConfig(t, filterConfig(`mac: {address: "`+written+`"}`))
+		cfg, err := loadConfig(t, filterConfig("mac:\n  address: \""+written+"\""))
 		if err != nil {
 			t.Errorf("%s: %v", written, err)
 			continue
@@ -176,7 +213,7 @@ func TestMACAddressForms(t *testing.T) {
 	}
 
 	for _, wrong := range []string{"00:11:22:33:44", "00:11:22:33:44:5g", "00:11-22:33-44:55", "00:11:22:33:44:55:66:77", "001122334455", ""} {
-		_, err := loadConfig(t, filterConfig(`mac: {address: "`+wrong+`"}`))
+		_, err := loadConfig(t, filterConfig("mac:\n  address: \""+wrong+"\""))
 		if wrong == "" {
 			// No address: no rule.
 			if err != nil {
@@ -190,7 +227,7 @@ func TestMACAddressForms(t *testing.T) {
 	}
 
 	// Unquoted and all digits, as the example writes it: a string, not a base 60 number of YAML 1.1.
-	cfg, err := loadConfig(t, filterConfig("mac: {address: 12:34:56:18:10:12}"))
+	cfg, err := loadConfig(t, filterConfig("mac:\n  address: 12:34:56:18:10:12"))
 	if err != nil || cfg.Tasks["web"].Filters[0].MAC.Address != "12:34:56:18:10:12" {
 		t.Errorf("unquoted: %v, %+v", err, cfg.Tasks["web"].Filters)
 	}

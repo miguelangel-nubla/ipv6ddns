@@ -29,13 +29,19 @@ services:
     image: ghcr.io/miguelangel-nubla/ipv6ddns:v0
     network_mode: host
     restart: unless-stopped
-    command: ["-config_file", "/config.yaml"]
+    command:
+      - "-config_file"
+      - "/config.yaml"
     volumes:
       - ./config.yaml:/config.yaml:ro
     environment:
       CLOUDFLARE_TOKEN: ${CLOUDFLARE_TOKEN}
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8053/healthz"]
+      test:
+        - "CMD"
+        - "curl"
+        - "-fsS"
+        - "http://127.0.0.1:8053/healthz"
 ```
 
 The health check needs the web server reachable at `127.0.0.1:8053`: `webserver.listen` `8053`, `:8053` or `127.0.0.1:8053`. The image has `bash`, `curl`, `jq`, `dig` and `ip` for the scripts of [command sources](sources.md).
@@ -68,7 +74,9 @@ A boolean flag is turned off as `-live=false`, not `-live false`: a word that is
 
 ```yaml
 webserver:
-  listen: [127.0.0.1:8053, 10.2.3.0/24]
+  listen:
+    - 127.0.0.1:8053
+    - 10.2.3.0/24
 ```
 
 | Entry | Listens on |

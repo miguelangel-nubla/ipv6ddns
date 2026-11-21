@@ -8,8 +8,12 @@ Nothing is sent to a provider: an update of the zone is in memory, at once, and 
 resolvers:
   lan:                                    # a name: any number of resolvers
     listen: 192.168.1.0/24                # the machine's address in it, port 53
-    allow: [192.168.1.0/24, fd00::/64]    # whom it answers: by default, the networks it listens on
-    upstream: [192.168.1.1, 1.1.1.1]      # whom it asks the rest, in order
+    allow:                                # whom it answers: by default, the networks it listens on
+      - 192.168.1.0/24
+      - fd00::/64
+    upstream:                             # whom it asks the rest, in order
+      - 192.168.1.1
+      - 1.1.1.1
     cache_size: 10000                     # the answers of theirs it keeps: the default
     records:                              # of names of none of its zones, absolute
       - www.example.com. CNAME nas.home.arpa.
@@ -31,7 +35,8 @@ tasks:
       - mac:
           address: "00:11:22:33:44:55"
     endpoints:
-      home: [nas]                         # nas.home.arpa
+      home:                               # nas.home.arpa
+        - nas
 ```
 
 The keys are in the reference: [`resolvers`](reference/configuration.md#resolvers), and [the provider's settings](reference/providers.md#resolver).
@@ -47,8 +52,11 @@ The keys are in the reference: [`resolvers`](reference/configuration.md#resolver
 resolvers:
   lan:
     listen: 192.168.1.0/24
-    upstream: [dns.example.net, 1.1.1.1]
-    bootstrap: [9.9.9.9]
+    upstream:
+      - dns.example.net
+      - 1.1.1.1
+    bootstrap:
+      - 9.9.9.9
 ```
 - **`records`** are records of names of none of its zones, as a name of a public domain that the LAN reaches at a local address. Each name is absolute, with its trailing dot, its targets too.
 - **`cache_size`** is how many answers of the upstream servers it keeps, in [its cache](#the-cache): `10000` by default, and `0` for none.
@@ -68,7 +76,8 @@ resolvers:
       - https://dns.quad9.net/dns-query   # found by bootstrap
       - tls://1.1.1.1                     # an address: no bootstrap for it
       - 192.168.1.1                       # the router, when neither answers
-    bootstrap: [9.9.9.9]
+    bootstrap:
+      - 9.9.9.9
 ```
 
 The host is a host name, which `bootstrap` finds as it does that of a plain upstream, and never the system's resolver; or an address. The server's certificate is verified, against the certificate authorities of the system, for the host as given: for the host name, which is also the name the connection asks the server for, its SNI; and with an address, the certificate must hold that address, as that of `1.1.1.1` does, and few others do. No option turns the verification off: a server whose certificate doesn't verify is passed over, as one that is down, and counts in `ipv6ddns_resolver_upstream_failures_total`.
@@ -167,8 +176,8 @@ They are checked at the start: a mistake stops it, saying where it is.
 |---|---|
 | A resolver without `listen` | `resolvers.lan.listen: where the resolver answers is to be given: the network of its clients, as 192.168.1.0/24, for the machine's address in it, or that address; without a port, 53` |
 | A resolver without `upstream` | `resolvers.lan.upstream: the servers the resolver asks what isn't its own are to be given, one or more, as 192.168.1.1 or 1.1.1.1:53: without them, it would answer no other name` |
-| An upstream by host name, without `bootstrap` | `resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one` |
-| An encrypted upstream at a host name, without `bootstrap` | `resolvers.lan.upstream: "tls://dns.example.net" is at a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one` |
+| An upstream by host name, without `bootstrap` | `resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one` |
+| An encrypted upstream at a host name, without `bootstrap` | `resolvers.lan.upstream: "tls://dns.example.net" is at a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one` |
 | A scheme that isn't `tls` or `https` | `resolvers.lan.upstream: "quic://dns.example.net": the scheme quic: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query` |
 | DNS over HTTPS without a path | `resolvers.lan.upstream: "https://dns.example.net": DNS over HTTPS is asked at a path, which is to be given, as https://dns.example.net/dns-query` |
 | DNS over HTTPS with a query, a fragment or a user | `resolvers.lan.upstream: "https://dns.example.net/dns-query?dns=x": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment` |

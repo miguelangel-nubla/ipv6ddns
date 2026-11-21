@@ -254,7 +254,7 @@ func Configuration() (string, error) {
 
 	protocols := discovery.Properties["protocols"]
 	b.WriteString("## Discovery protocols\n\n`discovery.protocols`\n\n" + protocols.Description + "\n\n")
-	b.WriteString("```yaml\ndiscovery:\n  protocols:\n    mdns:\n      enabled: true\n      ask: false\n    arp-sweep: {enabled: false}\n```\n\n")
+	b.WriteString("```yaml\ndiscovery:\n  protocols:\n    mdns:\n      enabled: true\n      ask: false\n    arp-sweep:\n      enabled: false\n```\n\n")
 	for _, name := range order(raw, "properties", "discovery", "properties", "protocols", "properties") {
 		n := protocols.Properties[name]
 		fmt.Fprintf(&b, "### %s\n\n`discovery.protocols.%s`\n\n%s\n\n", name, name, n.Description)

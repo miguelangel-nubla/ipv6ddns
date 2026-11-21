@@ -272,7 +272,8 @@ func TestLiveResolver(t *testing.T) {
 
 	config := fmt.Sprintf(`
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 discovery:
   lifetime: 9s
   rediscover: 3s
@@ -280,10 +281,16 @@ discovery:
     ipv6: true
 resolvers:
   lan:
-    listen: [198.18.15.0/24, "fd00:c612:15::/64"]
+    listen:
+      - 198.18.15.0/24
+      - "fd00:c612:15::/64"
     # Hosts 1 to 63: the outsider, 70, isn't.
-    allow: [198.18.15.0/26, "fd00:c612:15::/122"]
-    upstream: [%s, %s]
+    allow:
+      - 198.18.15.0/26
+      - "fd00:c612:15::/122"
+    upstream:
+      - %s
+      - %s
     records:
       - www.example.com. CNAME peer.home.arpa.
       - ext.example.com. CNAME far.upstream.test.
@@ -307,14 +314,18 @@ credentials:
     settings:
       resolver: lab
       zone: home.arpa
-      records: [printer A 10.77.0.50]
+      records:
+        - printer A 10.77.0.50
 tasks:
   peer:
     filter:
-      - mac: {address: "%[3]s"}
-        ip: {prefix: "%[4]s"}
+      - mac:
+          address: "%[3]s"
+        ip:
+          prefix: "%[4]s"
     endpoints:
-      home: [peer]
+      home:
+        - peer
 `, up.IPv4, up2.IPv4, peer.MAC, lan.Prefix())
 	one := configure(t, srv, router, "srv", 8053, config).start().serving()
 	two := configure(t, srv2, router, "srv2", 8053, config).start().serving()
@@ -513,7 +524,8 @@ func TestLiveResolverUpstreamByName(t *testing.T) {
 
 	config := fmt.Sprintf(`
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 resolvers:
   lan:
     listen: 198.18.16.0/24

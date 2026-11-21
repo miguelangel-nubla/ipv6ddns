@@ -32,16 +32,23 @@ sources:
     type: dns
   both:
     type: http
-    family: [4, 6]
+    family:
+      - 4
+      - 6
     interval: 1m
   fixed:
     type: static
-    addresses: [2001:db8::1, 192.0.2.1]
+    addresses:
+      - 2001:db8::1
+      - 192.0.2.1
 tasks:
   web:
-    sources: [wan, fixed]
+    sources:
+      - wan
+      - fixed
     endpoints:
-      duck: [www]
+      duck:
+        - www
 `+duckCredential)
 	if err != nil {
 		t.Fatal(err)
@@ -73,9 +80,13 @@ tasks:
       interval: 3m
       lifetime: 10m
       command: curl
-      args: [-s, --ipv4, ifconfig.me]
+      args:
+        - -s
+        - --ipv4
+        - ifconfig.me
     endpoints:
-      duck: [www]
+      duck:
+        - www
 `+duckCredential)
 	if err != nil {
 		t.Fatal(err)
@@ -96,18 +107,18 @@ tasks:
 func TestInvalidSources(t *testing.T) {
 	for name, tt := range map[string]struct{ config, want string }{
 		"unknown type":             {"sources:\n  s:\n    type: ftp\n", "type"},
-		"invalid family":           {"sources:\n  s:\n    type: dns\n    family: [5]\n", "family"},
-		"family of a command":      {"sources:\n  s:\n    type: command\n    command: x\n    family: [4]\n", "family"},
-		"urls of a dns source":     {"sources:\n  s:\n    type: dns\n    urls: [https://example.com]\n", "urls"},
+		"invalid family":           {"sources:\n  s:\n    type: dns\n    family:\n      - 5\n", "family"},
+		"family of a command":      {"sources:\n  s:\n    type: command\n    command: x\n    family:\n      - 4\n", "family"},
+		"urls of a dns source":     {"sources:\n  s:\n    type: dns\n    urls:\n      - https://example.com\n", "urls"},
 		"command without command":  {"sources:\n  s:\n    type: command\n", "command"},
 		"static without addresses": {"sources:\n  s:\n    type: static\n", "addresses"},
-		"static invalid address":   {"sources:\n  s:\n    type: static\n    addresses: [nope]\n", "nope"},
+		"static invalid address":   {"sources:\n  s:\n    type: static\n    addresses:\n      - nope\n", "nope"},
 		"lifetime under interval":  {"sources:\n  s:\n    type: dns\n    interval: 10m\n    lifetime: 1m\n", "lifetime"},
 		"unknown setting":          {"sources:\n  s:\n    type: dns\n    intreval: 1m\n", "intreval"},
-		"no such source":           {"tasks:\n  web:\n    sources: [nope]\n    endpoints:\n      duck: [www]\n", "no source nope"},
+		"no such source":           {"tasks:\n  web:\n    sources:\n      - nope\n    endpoints:\n      duck:\n        - www\n", "no source nope"},
 		// The ipv4 block is a source as any other, with its checks.
-		"ipv4 block, lifetime under interval": {"tasks:\n  web:\n    ipv4:\n      interval: 5m\n      lifetime: 1m\n      command: x\n    endpoints:\n      duck: [www]\n", "source web.ipv4: invalid lifetime 1m0s: at least the interval"},
-		"ipv4 block clashes":                  {"sources:\n  web.ipv4:\n    type: dns\ntasks:\n  web:\n    ipv4:\n      interval: 1m\n      lifetime: 3m\n      command: x\n    endpoints:\n      duck: [www]\n", "web.ipv4"},
+		"ipv4 block, lifetime under interval": {"tasks:\n  web:\n    ipv4:\n      interval: 5m\n      lifetime: 1m\n      command: x\n    endpoints:\n      duck:\n        - www\n", "source web.ipv4: invalid lifetime 1m0s: at least the interval"},
+		"ipv4 block clashes":                  {"sources:\n  web.ipv4:\n    type: dns\ntasks:\n  web:\n    ipv4:\n      interval: 1m\n      lifetime: 3m\n      command: x\n    endpoints:\n      duck:\n        - www\n", "web.ipv4"},
 	} {
 		content := tt.config
 		if !strings.Contains(content, "tasks:") {
@@ -126,10 +137,13 @@ tasks:
   lan:
     filter:
       - ip:
-          family: [4]
-          type: [private]
+          family:
+            - 4
+          type:
+            - private
     endpoints:
-      duck: [nas]
+      duck:
+        - nas
 `+duckCredential)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +151,7 @@ tasks:
 	if got := cfg.Tasks["lan"].Filters[0].IP.Family; !slices.Equal(got, []int{4}) {
 		t.Errorf("family: %v", got)
 	}
-	if _, err := loadConfig(t, "tasks:\n  lan:\n    filter:\n      - ip:\n          family: [5]\n    endpoints:\n      duck: [nas]\n"+duckCredential); err == nil {
+	if _, err := loadConfig(t, "tasks:\n  lan:\n    filter:\n      - ip:\n          family:\n            - 5\n    endpoints:\n      duck:\n        - nas\n"+duckCredential); err == nil {
 		t.Error("family 5: want an error")
 	}
 }

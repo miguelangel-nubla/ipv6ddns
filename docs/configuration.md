@@ -10,9 +10,11 @@ tasks:          # the names to keep, and which addresses they get
     filter:     # the addresses discovery finds that are the task's
       - mac:
           address: "00:11:22:33:44:55"
-    sources: [wan]          # and those of these sources
+    sources:                # and those of these sources
+      - wan
     endpoints:
-      home-dns: [nas]       # the names: nas, at the home-dns credential
+      home-dns:             # the names: nas, at the home-dns credential
+        - nas
 
 credentials:    # the DNS providers, and their settings
   home-dns:
@@ -78,8 +80,8 @@ The discovery is configured as [ipv6disc](https://github.com/miguelangel-nubla/i
 | `-lifetime` | `discovery.lifetime`, in the file |
 | `-log_level` | `log_level`, in the file |
 | `-webserver_listen`, and `webserver_listen` at the top | [`webserver.listen`](installation.md#the-web-report), in the file |
-| `discovery.ipv4: true`, `discovery.ipv6: false` | The family's switches: [`discovery.ipv4: {enabled: true}`](discovery.md#families-and-ways), `discovery.ipv6: {enabled: false}` |
-| `discovery.ipv4: {...}` without `enabled`, which turned IPv4 on | `enabled: true` in it: IPv4 is off unless it says so |
+| `discovery.ipv4: true`, `discovery.ipv6: false` | The family's switches: [`discovery.ipv4.enabled: true`](discovery.md#families-and-ways), `discovery.ipv6.enabled: false` |
+| A `discovery.ipv4` block without `enabled`, which turned IPv4 on | `enabled: true` in it: IPv4 is off unless it says so |
 | `discovery.ipv6.solicit`, `discovery.ipv4.solicit` | [`discovery.solicit.ipv6`, `discovery.solicit.ipv4`](discovery.md#solicitation) |
 | `discovery.solicit_eui64` | `discovery.solicit.ipv6` |
 | `discovery.listen`, `discovery.active` | `discovery.ipv6.listen`, `discovery.ipv6.active`, and the same of `ipv4` |
@@ -88,7 +90,8 @@ The discovery is configured as [ipv6disc](https://github.com/miguelangel-nubla/i
 ```yaml
 log_level: info
 webserver:
-  listen: [8053]
+  listen:
+    - 8053
 discovery:
   lifetime: 1h
   ipv4:
@@ -97,7 +100,7 @@ discovery:
     ipv6: true
 ```
 
-One of these is no error, and wants a look: a `discovery.ipv4` block that only had its ways, as `ipv4: {active: false}`, loads, and discovers no IPv4 until `enabled: true` is added. The log warns of it at start: that the block has no `enabled`, and IPv4 is off.
+One of these is no error, and wants a look: a `discovery.ipv4` block that only had its ways, as `active: false` under `ipv4`, loads, and discovers no IPv4 until `enabled: true` is added. The log warns of it at start: that the block has no `enabled`, and IPv4 is off.
 
 The same release has new keys, all off unless asked for: the [protocols](discovery.md#protocols), each with its switch, and the [names](discovery.md#names) of the hosts.
 

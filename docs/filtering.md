@@ -65,7 +65,7 @@ filter:
 #### `filter.ip`
 
 *   **`family`** (List of Integers): The address families, `4` and `6`. **Default: `[6]`**, so a filter that names a device's MAC doesn't also take its private IPv4 addresses to a public DNS once IPv4 discovery finds them. Give `[4]` or `[4, 6]` for IPv4.
-    *   Example: `family: [4]` with `type: [private]` for the `192.168.x.x` address of a device, to a local DNS.
+    *   Example: a `family` of `4` with a `type` of `private` for the `192.168.x.x` address of a device, to a local DNS.
 *   **`prefix`** (Single String): CIDR subnet. The address must be contained within this subnet.
     *   Example: `2001:db8::/32`
 *   **`suffix`** (Single String): The host part (suffix) of the address.
@@ -82,11 +82,11 @@ filter:
         *   `random`: IPv6, an interface ID not from the MAC: a privacy address, or a stable one of another scheme, as most systems' now.
         *   `temporary`: an IPv6 privacy address of this machine's, which its kernel says is temporary: it changes every day or so. Known on Linux, and for the [`self`](#filterself) addresses only.
     *   `!type`: not of the type, as `!temporary`.
-    *   **Common Use Case**: `type: ["global"]` (Public IPs only).
+    *   **Common Use Case**: a `type` of `global` (Public IPs only).
 *   **`mask`** (List of Strings): generic bitwise mask match: the address must equal `VALUE` in the bits `MASK` sets. All provided masks must match.
     *   Format: `VALUE/MASK`, both whole addresses of one family. `MASK` is an address, not a prefix length: `::1/64` is a configuration error, as any entry that isn't two addresses. For a subnet, use `prefix`.
     *   Example: `::1/::ffff:ffff:ffff:ffff` (the IPv6 addresses whose interface ID is `::1`, whatever the prefix), or `0.0.0.5/0.0.0.255` (the IPv4 addresses ending in `.5`).
-    *   A mask matches the addresses of its own family only: with `family: [4, 6]`, an IPv6 mask leaves the IPv4 addresses out.
+    *   A mask matches the addresses of its own family only: with a `family` of `4` and `6`, an IPv6 mask leaves the IPv4 addresses out.
 
 #### `filter.source`
 
@@ -170,10 +170,15 @@ tasks:
     filter:
       - self: true
         ip:
-          type: [global, "!temporary"]
-    sources: [wan]
+          type:
+            - global
+            - "!temporary"
+    sources:
+      - wan
     endpoints:
-      cloudflare: [server, "*.server"]
+      cloudflare:
+        - server
+        - "*.server"
 credentials:
   cloudflare:
     provider: cloudflare
@@ -183,7 +188,11 @@ credentials:
       ttl: 1h
       proxied: false
 discovery:
-  exclude_interfaces: [docker*, br-*, veth*, hassio]
+  exclude_interfaces:
+    - docker*
+    - br-*
+    - veth*
+    - hassio
 ```
 
-For a local DNS, its address on the LAN: `self: true` with `ip: {family: [4], type: [private]}`, and `discovery.ipv4.enabled: true`.
+For a local DNS, its address on the LAN: `self: true` with an `ip` of `family` `4` and `type` `private`, and `discovery.ipv4.enabled: true`.

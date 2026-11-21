@@ -237,7 +237,8 @@ discovery:
     mdns:
       enabled: true
       ask: false
-    arp-sweep: {enabled: false}
+    arp-sweep:
+      enabled: false
 ```
 
 ### ndp

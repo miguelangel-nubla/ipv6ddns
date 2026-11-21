@@ -138,7 +138,7 @@ func (s *Solicit) read(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &block); err != nil {
 		var on bool
 		if json.Unmarshal(raw, &on) == nil {
-			return fmt.Errorf("discovery.solicit: %s is not its settings: it is written solicit: {ipv6: %t}, and ipv4 beside it for IPv4", raw, on)
+			return fmt.Errorf("discovery.solicit: %s is not its settings: it is written as solicit, with ipv6: %t under it, and ipv4 beside that for IPv4", raw, on)
 		}
 		return fmt.Errorf("discovery.solicit: %s is not a mapping of its keys", raw)
 	}
@@ -262,7 +262,7 @@ func checkDiscovery(configData []byte) error {
 		errs = append(errs, errors.New("lifetime is discovery.lifetime now: move it under discovery, beside the families"))
 	}
 	if _, ok := top["webserver_listen"]; ok {
-		errs = append(errs, errors.New("webserver_listen is webserver.listen now: write it as webserver: {listen: ...}"))
+		errs = append(errs, errors.New("webserver_listen is webserver.listen now: listen, under webserver"))
 	}
 	if block, ok := top["discovery"]; ok {
 		d := DefaultDiscovery()

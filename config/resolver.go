@@ -144,7 +144,7 @@ func (c *Config) setUpResolvers() error {
 			if strings.Contains(named, "://") {
 				is = "is at a host name"
 			}
-			return fmt.Errorf("%s.upstream: %q %s: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one", path, named, is)
+			return fmt.Errorf("%s.upstream: %q %s: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one", path, named, is)
 		case named == "" && len(spec.Bootstrap) > 0:
 			return fmt.Errorf("%s.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out", path)
 		}

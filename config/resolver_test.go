@@ -27,19 +27,30 @@ const (
 	lanResolver = `
   lan:
     listen: 192.168.1.0/24
-    upstream: [192.168.1.1, "1.1.1.1:5353", "[2606:4700:4700::1111]"]
-    records: [www.example.com. CNAME nas.home.arpa.]`
+    upstream:
+      - 192.168.1.1
+      - "1.1.1.1:5353"
+      - "[2606:4700:4700::1111]"
+    records:
+      - www.example.com. CNAME nas.home.arpa.`
 	homeCredential = `
   home:
     provider: resolver
     settings:
       zone: home.arpa
-      records: [printer A 192.168.1.20, files CNAME nas, "_ipp._tcp SRV 0 0 631 printer"]`
+      records:
+        - printer A 192.168.1.20
+        - files CNAME nas
+        - "_ipp._tcp SRV 0 0 631 printer"`
 	nasTask = `
   nas:
-    filter: [{mac: {address: "00:11:22:33:44:55"}}]
+    filter:
+      - mac:
+          address: "00:11:22:33:44:55"
     endpoints:
-      home: [nas, "*.dev"]`
+      home:
+        - nas
+        - "*.dev"`
 )
 
 func TestResolverConfig(t *testing.T) {
@@ -80,7 +91,10 @@ func TestResolverConfig(t *testing.T) {
 
 	// Two resolvers, and an allow, a TTL and a debounce given.
 	cfg, err = resolverConfig(t, lanResolver+`
-    allow: [192.168.1.0/24, "fd00::/64", 10.0.0.7]
+    allow:
+      - 192.168.1.0/24
+      - "fd00::/64"
+      - 10.0.0.7
   lab:
     listen: 10.0.0.2
     upstream: 10.0.0.1`, homeCredential+`
@@ -89,7 +103,9 @@ func TestResolverConfig(t *testing.T) {
     debounce: 2s
   labs:
     provider: resolver
-    settings: {resolver: lab, zone: home.arpa}`, nasTask)
+    settings:
+      resolver: lab
+      zone: home.arpa`, nasTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,8 +152,10 @@ func TestResolverConfigErrors(t *testing.T) {
 		{"a host name upstream without bootstrap", `
   lan:
     listen: 192.168.1.0/24
-    upstream: [1.1.1.1, dns.google]`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one`},
+    upstream:
+      - 1.1.1.1
+      - dns.google`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one`},
 		{"a bootstrap with no host name to find", `
   lan:
     listen: 192.168.1.0/24
@@ -165,12 +183,16 @@ func TestResolverConfigErrors(t *testing.T) {
 		{"an encrypted upstream by host name without bootstrap", `
   lan:
     listen: 192.168.1.0/24
-    upstream: [1.1.1.1, "tls://dns.example.net"]`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "tls://dns.example.net" is at a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: [9.9.9.9]; not the system's resolver, which can be this one`},
+    upstream:
+      - 1.1.1.1
+      - "tls://dns.example.net"`, homeCredential, nasTask,
+			`resolvers.lan.upstream: "tls://dns.example.net" is at a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one`},
 		{"a bootstrap with encrypted upstreams at addresses", `
   lan:
     listen: 192.168.1.0/24
-    upstream: ["tls://1.1.1.1", "https://[2606:4700:4700::1111]/dns-query"]
+    upstream:
+      - "tls://1.1.1.1"
+      - "https://[2606:4700:4700::1111]/dns-query"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
 			"resolvers.lan.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out"},
 		{"an unknown scheme", `
@@ -255,7 +277,8 @@ func TestResolverConfigErrors(t *testing.T) {
     cache_size: big`, homeCredential, nasTask,
 			"<schema>"},
 		{"a bad allow", lanResolver + `
-    allow: [lan]`, homeCredential, nasTask,
+    allow:
+      - lan`, homeCredential, nasTask,
 			`resolvers.lan.allow: "lan": a network, as 192.168.1.0/24 or fd00::/64, or an address`},
 		{"a resolver naming none", lanResolver, homeCredential + `
       resolver: wan`, nasTask,
@@ -275,75 +298,108 @@ func TestResolverConfigErrors(t *testing.T) {
 		{"one zone twice", lanResolver, homeCredential + `
   office:
     provider: resolver
-    settings: {zone: Home.Arpa.}`, nasTask,
+    settings:
+      zone: Home.Arpa.`, nasTask,
 			"credentials home and office: both are the zone home.arpa of resolver lan: a zone is one credential's"},
 		{"one address twice", lanResolver + `
   lab:
-    listen: [10.0.0.2, 192.168.1.0/24]
+    listen:
+      - 10.0.0.2
+      - 192.168.1.0/24
     upstream: 10.0.0.1`, homeCredential + `
       resolver: lan`, nasTask,
 			"resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port is one resolver's"},
 		{"a zone record outside", lanResolver, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: [printer.example.com. A 192.168.1.20]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - printer.example.com. A 192.168.1.20`, nasTask,
 			`credentials.home.settings.records: "printer.example.com. A 192.168.1.20": printer.example.com. is not of the zone home.arpa: a zone's records are of its names, relative to it, or absolute within it`},
 		{"a resolver record without its dot", `
   lan:
     listen: 192.168.1.0/24
     upstream: 192.168.1.1
-    records: [www.example.com CNAME nas.home.arpa.]`, homeCredential, nasTask,
+    records:
+      - www.example.com CNAME nas.home.arpa.`, homeCredential, nasTask,
 			`resolvers.lan.records: "www.example.com CNAME nas.home.arpa.": the name www.example.com is to be absolute, with its trailing dot, as www.example.com.: these records are of no zone`},
 		{"a resolver record's target without its dot", `
   lan:
     listen: 192.168.1.0/24
     upstream: 192.168.1.1
-    records: [www.example.com. CNAME nas]`, homeCredential, nasTask,
+    records:
+      - www.example.com. CNAME nas`, homeCredential, nasTask,
 			`resolvers.lan.records: "www.example.com. CNAME nas": bad CNAME Target: "nas": every name in these records is absolute, with its trailing dot`},
 		{"a resolver record in a zone", `
   lan:
     listen: 192.168.1.0/24
     upstream: 192.168.1.1
-    records: [tv.home.arpa. A 192.168.1.30]`, homeCredential, nasTask,
+    records:
+      - tv.home.arpa. A 192.168.1.30`, homeCredential, nasTask,
 			`resolvers.lan.records: "tv.home.arpa. A 192.168.1.30": tv.home.arpa. is of the zone home.arpa, of credential home: give it there, in its records`},
 		{"a record that doesn't parse", lanResolver, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: [printer A 192.168.1.300]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - printer A 192.168.1.300`, nasTask,
 			`credentials.home.settings.records: "printer A 192.168.1.300": bad A A: "192.168.1.300"`},
 		{"a record with no data", lanResolver, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: [printer A]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - printer A`, nasTask,
 			`credentials.home.settings.records: "printer A": a A record with no data`},
 		{"a CNAME beside other data", lanResolver, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: [files CNAME nas, files TXT "x"]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - files CNAME nas
+        - files TXT "x"`, nasTask,
 			"credentials.home.settings.records: files.home.arpa. has a CNAME and other records: a CNAME is alone at its name, the other data is its target's"},
 		{"a record of a task's name", lanResolver, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: [NAS TXT "x"]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - NAS TXT "x"`, nasTask,
 			`credentials.home.settings.records: "NAS TXT \"x\"": nas.home.arpa. is a name task nas publishes, which has its addresses: a record is of another name`},
 		{"a CNAME loop", lanResolver, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: [a CNAME b, b CNAME A]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - a CNAME b
+        - b CNAME A`, nasTask,
 			"resolvers.lan: the CNAMEs a.home.arpa. -> b.home.arpa. -> a.home.arpa. are a loop"},
 		{"a CNAME loop through a zone and the resolver", `
   lan:
     listen: 192.168.1.0/24
     upstream: 192.168.1.1
-    records: [www.example.com. CNAME a.home.arpa.]`, `
+    records:
+      - www.example.com. CNAME a.home.arpa.`, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: [a CNAME www.example.com.]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - a CNAME www.example.com.`, nasTask,
 			"resolvers.lan: the CNAMEs www.example.com. -> a.home.arpa. -> www.example.com. are a loop"},
 		{"a CNAME loop through a wildcard", lanResolver, `
   home:
     provider: resolver
-    settings: {zone: home.arpa, records: ["*.lab CNAME x.lab"]}`, nasTask,
+    settings:
+      zone: home.arpa
+      records:
+        - "*.lab CNAME x.lab"`, nasTask,
 			"resolvers.lan: the CNAMEs *.lab.home.arpa. -> x.lab.home.arpa. -> x.lab.home.arpa. are a loop"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -368,7 +424,14 @@ func TestResolverConfigEncrypted(t *testing.T) {
 	cfg, err := resolverConfig(t, `
   lan:
     listen: 192.168.1.0/24
-    upstream: ["tls://1.1.1.1", "TLS://Dns.Example.NET:8853", "tls://[2606:4700:4700::1111]", "https://dns.example.net/dns-query", "https://9.9.9.9:5053/a/b", "https://[2620:fe::fe]:443/dns-query", 192.168.1.1]
+    upstream:
+      - "tls://1.1.1.1"
+      - "TLS://Dns.Example.NET:8853"
+      - "tls://[2606:4700:4700::1111]"
+      - "https://dns.example.net/dns-query"
+      - "https://9.9.9.9:5053/a/b"
+      - "https://[2620:fe::fe]:443/dns-query"
+      - 192.168.1.1
     bootstrap: 9.9.9.9`, homeCredential, nasTask)
 	if err != nil {
 		t.Fatal(err)
@@ -382,7 +445,9 @@ func TestResolverConfigEncrypted(t *testing.T) {
 	if _, err := resolverConfig(t, `
   lan:
     listen: 192.168.1.0/24
-    upstream: ["tls://1.1.1.1:853", "https://1.1.1.1/dns-query"]`, homeCredential, nasTask); err != nil {
+    upstream:
+      - "tls://1.1.1.1:853"
+      - "https://1.1.1.1/dns-query"`, homeCredential, nasTask); err != nil {
 		t.Error(err)
 	}
 }
@@ -393,7 +458,12 @@ func TestResolverConfigCache(t *testing.T) {
 	for text, want := range map[string]int{"": 10000, "\n    cache_size: 0": 0, "\n    cache_size: 250": 250} {
 		cfg, err := resolverConfig(t, `
   lan:
-    listen: [192.168.1.0/24, " 192.168.1.2:5353", "192.168.1.0/24", "[fd00::2]", 192.168.1.2]
+    listen:
+      - 192.168.1.0/24
+      - " 192.168.1.2:5353"
+      - "192.168.1.0/24"
+      - "[fd00::2]"
+      - 192.168.1.2
     upstream: 192.168.1.1`+text, homeCredential, nasTask)
 		if err != nil {
 			t.Fatal(err)
@@ -413,8 +483,13 @@ func TestResolverConfigHostNames(t *testing.T) {
 	cfg, err := resolverConfig(t, `
   lan:
     listen: 192.168.1.0/24
-    upstream: [DNS.Example.NET., "dns.example.org:5353", 1.1.1.1]
-    bootstrap: [9.9.9.9, "[2620:fe::fe]:53"]`, homeCredential, nasTask)
+    upstream:
+      - DNS.Example.NET.
+      - "dns.example.org:5353"
+      - 1.1.1.1
+    bootstrap:
+      - 9.9.9.9
+      - "[2620:fe::fe]:53"`, homeCredential, nasTask)
 	if err != nil {
 		t.Fatal(err)
 	}

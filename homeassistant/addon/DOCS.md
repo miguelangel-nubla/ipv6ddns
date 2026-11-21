@@ -51,10 +51,14 @@ tasks:
     filter:
       - self: true
         ip:
-          type: [global, "!temporary"]
-    sources: [wan]
+          type:
+            - global
+            - "!temporary"
+    sources:
+      - wan
     endpoints:
-      cloudflare: [ha]        # ha.example.com
+      cloudflare:             # ha.example.com
+        - ha
 credentials:
   cloudflare:
     provider: cloudflare
@@ -64,7 +68,10 @@ credentials:
       ttl: 1h
       proxied: false
 discovery:
-  exclude_interfaces: [hassio, docker0, "veth*"]
+  exclude_interfaces:
+    - hassio
+    - docker0
+    - "veth*"
 ```
 
 Home Assistant, and the add-ons on the host's network, have the host's
@@ -74,8 +81,8 @@ the host's addresses, on the ports they publish. So the names of all of them
 are endpoints of this one task: `[ha, mqtt, nodered]`.
 
 For
-a local DNS, its LAN address: `self: true` with `ip: {family: [4], type:
-[private]}`, and `discovery: {ipv4: {enabled: true}}`. The other filters and options:
+a local DNS, its LAN address: `self: true` with an `ip` of `family` `4` and `type` `private`, and
+`discovery.ipv4.enabled: true`. The other filters and options:
 [filtering](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/filtering.md).
 
 ## In Home Assistant
