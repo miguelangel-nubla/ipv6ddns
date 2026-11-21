@@ -166,3 +166,86 @@ credentials:
 	waitFor(t, 60*time.Second, "the printer's name, back in the zone", is("printer.home.arpa", printer), one.tells, tells("printer.home.arpa"))
 	waitFor(t, 30*time.Second, "the printer's name, back at the provider", func() bool { return dns.has("printer.lan.example", printer.IPv6) }, one.tells, dns.tells)
 }
+
+// Two hosts that say the same name, each in its own way: one by mDNS, with a real avahi-daemon,
+// and the other in the DHCP requests it broadcasts, with a real udhcpc, which mDNS on the link
+// would have renamed otherwise. The name has the addresses of both; and each has its own
+// numbered name, in the order of their MACs.
+func TestLiveSharedHostname(t *testing.T) {
+	if _, err := exec.LookPath("udhcpc"); err != nil {
+		t.Fatal("the test asks for an address with udhcpc, as a host does that names itself so: not found")
+	}
+	lan := livetest.NewLAN(t, 25)
+	srv := lan.Machine(t, "srv", 10)
+	client := lan.Machine(t, "client", 30)
+	up := lan.Machine(t, "up", 40)
+	// By MAC, b before a: the order of the numbers isn't the order they came in.
+	a, b := lan.Machine(t, "a", 21), lan.Machine(t, "b", 20)
+	a.Avahi(t, "printer")
+	dhcp := b.Command("udhcpc", "-f", "-i", b.Interface, "-x", "hostname:printer", "-s", "/bin/true")
+	if err := dhcp.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		dhcp.Process.Kill()
+		dhcp.Wait()
+	})
+	startUpstream(t, up, "192.0.2.53")
+
+	one := configure(t, srv, lan.Router, "srv", 8053, fmt.Sprintf(`
+webserver:
+  listen:
+    - 8053
+discovery:
+  hostnames:
+    enabled: true
+  protocols:
+    mdns:
+      enabled: true
+    dhcp:
+      enabled: true
+resolvers:
+  lan:
+    listen: 198.18.25.0/24
+    upstream: %s
+credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: home.arpa
+tasks:
+  hosts:
+    filter:
+      - ip:
+          prefix: "%s"
+    endpoints:
+      home:
+        - "{hostname}"
+        - "{n}.{hostname}"
+`, up.IPv4, lan.Prefix())).start().serving()
+	server := srv.IPv4.String()
+	aaaa := func(name string) []string { return dig(t, client, server, name, "AAAA").data("AAAA") }
+	both := []string{a.IPv6.String(), b.IPv6.String()}
+	slices.Sort(both)
+	waitFor(t, 60*time.Second, "printer, with the addresses of both", func() bool { return slices.Equal(aaaa("printer.home.arpa"), both) }, one.tells, func() string {
+		return dig(t, client, server, "printer.home.arpa", "AAAA").String()
+	})
+	if got := aaaa("1.printer.home.arpa"); !slices.Equal(got, []string{b.IPv6.String()}) {
+		t.Errorf("1.printer, the first by MAC: %v, want b's, %s", got, b.IPv6)
+	}
+	if got := aaaa("2.printer.home.arpa"); !slices.Equal(got, []string{a.IPv6.String()}) {
+		t.Errorf("2.printer, the second by MAC: %v, want a's, %s", got, a.IPv6)
+	}
+	// Each by what said its name: a by mDNS, b by DHCP.
+	for _, h := range one.status().Discovered {
+		for _, n := range h.Names {
+			if n.Name != "printer" {
+				continue
+			}
+			want := map[string]string{a.MAC: "mdns", b.MAC: "dhcp"}[h.MAC]
+			if !slices.Contains(n.Sources, want) {
+				t.Errorf("%s is printer by %v, want %s", h.MAC, n.Sources, want)
+			}
+		}
+	}
+}

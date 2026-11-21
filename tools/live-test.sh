@@ -16,7 +16,7 @@ aioesphomeapi=$(grep -o 'aioesphomeapi==[0-9.]*' .github/workflows/ci.yaml)
 inside='
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update -qq >/dev/null
-	apt-get install -yqq --no-install-recommends iproute2 procps python3-venv bind9-dnsutils avahi-daemon >/dev/null
+	apt-get install -yqq --no-install-recommends iproute2 procps python3-venv bind9-dnsutils avahi-daemon udhcpc >/dev/null
 	python3 -m venv /venv
 	/venv/bin/pip install -q --disable-pip-version-check "$AIOESPHOMEAPI"
 	if [ -n "${GOWORK:-}" ]; then

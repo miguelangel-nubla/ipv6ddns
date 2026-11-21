@@ -67,6 +67,26 @@ type provider struct {
 	requests, refused int
 	// The readers of a name's records that wait for each other, if any: see meet.
 	meeting *meeting
+	// A name whose writes are held, if any, until released: see stall. Held, a write is then
+	// dropped, as one whose client is gone.
+	stalled     string
+	stalledSeen chan struct{}
+	release     chan struct{}
+}
+
+// stall holds the writes of a name from now on, and returns a channel closed when the first
+// comes, and a function that lets them go, unapplied.
+func (p *provider) stall(domain string) (seen <-chan struct{}, release func()) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	p.stalled, p.stalledSeen, p.release = domain, make(chan struct{}), make(chan struct{})
+	r := p.release
+	return p.stalledSeen, func() {
+		p.mutex.Lock()
+		p.stalled = ""
+		p.mutex.Unlock()
+		close(r)
+	}
 }
 
 // meeting is of the machines that read a name's records, until there are as many as it takes:
@@ -136,6 +156,18 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	domain, ip := q.Get("domain"), q.Get("ipAddress")
 	action := strings.TrimPrefix(r.URL.Path, "/api/zones/records/")
 	from := netip.MustParseAddrPort(r.RemoteAddr).Addr()
+	if action != "get" && p.stalled != "" && domain == p.stalled {
+		select {
+		case <-p.stalledSeen:
+		default:
+			close(p.stalledSeen)
+		}
+		release := p.release
+		p.mutex.Unlock()
+		<-release
+		p.mutex.Lock()
+		return
+	}
 	switch action {
 	case "get":
 		current := p.records[domain]

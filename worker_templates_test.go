@@ -1,12 +1,18 @@
 package ipv6ddns
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6disc"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -163,6 +169,126 @@ tasks:
 	w.lookForChanges()
 	wait("1.printer", "2001:db8::a")
 	wait("2.printer", "2001:db8::b")
+
+	for _, target := range w.targets {
+		target.hostname.Stop()
+	}
+	w.dynamicMutex.Lock()
+	for _, h := range w.dynamic {
+		h.Stop()
+	}
+	w.dynamicMutex.Unlock()
+}
+
+// rateLimited is a provider that refuses the first updates of every name, as one that limits its
+// requests does when many come at once, and takes those after.
+type rateLimited struct {
+	mutex   sync.Mutex
+	refuse  int
+	refused map[string]int
+	records map[string][]string
+	updates int
+}
+
+func (r *rateLimited) Update(hostname string, addresses *ipv6disc.AddrCollection) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.updates++
+	if r.refused[hostname] < r.refuse {
+		r.refused[hostname]++
+		return errors.New("429 Too Many Requests")
+	}
+	r.records[hostname] = slices.Sorted(slices.Values(addresses.Strings()))
+	return nil
+}
+
+func (r *rateLimited) Domain(hostname string) string { return hostname + ".limited" }
+
+// Many hosts at once, each with its names of the templates, at a provider that refuses the first
+// updates of each: every name has its addresses in the end, none is left out or mixed with
+// another's, and none is asked without a pause.
+func TestTemplatesAtAProviderThatLimits(t *testing.T) {
+	limited := &rateLimited{refuse: 2, refused: map[string]int{}, records: map[string][]string{}}
+	ddns.RegisterProvider("limited", func(json.RawMessage) (ddns.Service, error) { return limited, nil })
+	cfg := loadConfig(t, `
+discovery:
+  hostnames:
+    enabled: true
+credentials:
+  limited:
+    provider: limited
+    debounce: 1ms
+    retry: 1s
+    settings: {}
+tasks:
+  lan:
+    filter:
+      - ip:
+          prefix: 2001:db8::/64
+    endpoints:
+      limited:
+        - "{hostname}"
+        - "{n}.{hostname}"
+`)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(w.discWorker.State.Close)
+
+	// Fifty hosts: forty of a name each, and ten that share one.
+	const hosts = 50
+	want := map[string][]string{}
+	for i := range hosts {
+		mac := fmt.Sprintf("00:00:00:00:01:%02x", i)
+		ip := fmt.Sprintf("2001:db8::1:%x", i)
+		register(t, w, mac, ip, time.Hour)
+		name := fmt.Sprintf("host%02d", i)
+		if i >= 40 {
+			name = "shared"
+			want[fmt.Sprintf("%d.shared", i-39)] = []string{ip}
+		} else {
+			want["1."+name] = []string{ip}
+		}
+		want[name] = append(want[name], ip)
+		hw, _ := net.ParseMAC(mac)
+		w.discWorker.RegisterName(hw, name, "test", time.Hour)
+	}
+	for _, addrs := range want {
+		slices.Sort(addrs)
+	}
+	began := time.Now()
+	w.lookForChanges()
+
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		limited.mutex.Lock()
+		done := len(limited.records) == len(want)
+		limited.mutex.Unlock()
+		if done {
+			break
+		}
+		if time.Now().After(deadline) {
+			limited.mutex.Lock()
+			t.Fatalf("%d of %d names updated after 15s", len(limited.records), len(want))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	limited.mutex.Lock()
+	defer limited.mutex.Unlock()
+	for name, addrs := range want {
+		if !slices.Equal(limited.records[name], addrs) {
+			t.Errorf("%s has %v, want %v", name, limited.records[name], addrs)
+		}
+	}
+	// Each name: refused twice, taken the third time, and no more; with the retry's pause
+	// between, so not all at once.
+	if got, most := limited.updates, len(want)*(limited.refuse+1); got != most {
+		t.Errorf("%d updates for %d names refused %d times each: want %d", got, len(want), limited.refuse, most)
+	}
+	if took := time.Since(began); took < 2*time.Second {
+		t.Errorf("all taken in %s: the refused ones were asked again without the retry's pause of 1s, twice", took)
+	}
 
 	for _, target := range w.targets {
 		target.hostname.Stop()

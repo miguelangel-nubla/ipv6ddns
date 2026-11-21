@@ -82,7 +82,7 @@ jobs:
         run: |
           # dig asks the resolver, as its clients do; avahi-daemon tells a host's name by mDNS,
           # run by the tests on a machine of theirs: not the runner's own, which the package starts.
-          sudo apt-get update -qq && sudo apt-get install -yqq --no-install-recommends bind9-dnsutils avahi-daemon
+          sudo apt-get update -qq && sudo apt-get install -yqq --no-install-recommends bind9-dnsutils avahi-daemon udhcpc
           sudo systemctl disable --now avahi-daemon.socket avahi-daemon.service || true
           go vet -tags integration ./...
           go build -race -o "$RUNNER_TEMP/ipv6ddns" ./cmd/ipv6ddns
@@ -130,6 +130,26 @@ jobs:
         run: tools/live-providers.sh
 
   # 64-bit atomic operations need an alignment 32-bit platforms don't give by themselves.
+  # macOS, with its own sockets, its own mDNS responder beside the program's, and no netlink: the
+  # tests that need Linux skip there. The BSDs are built and vetted only.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: Test
+        run: go test -race ./...
+
   test-32-bit:
     runs-on: ubuntu-latest
     steps:
