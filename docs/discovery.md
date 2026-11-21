@@ -157,6 +157,16 @@ This machine's own addresses, those of [`self`](filtering.md), are the exception
 
 Nothing is updated before a name's first address is found: after a start, its records stay as they are until then. Once it had addresses and the last one goes, its records are removed.
 
+### After a start
+
+A start knows nothing of what was found before it: what it publishes is what it has found since. A host answers the multicast ping from one address, its preferred, and sends nothing from the others, so an address it keeps beside the one it uses, as a stable address beside temporary ones, is found only when the host speaks from it. Until then, its record is taken off: the name has the addresses found so far.
+
+Probing more, or sooner, doesn't find it: every ping is answered from the same address. What does:
+
+- A router's [plugin](#plugins): the router's neighbor table has every address in use on the link, the quiet ones too, at its next read.
+- The [solicitation](#solicitation) of an EUI-64 address: a filter that names the host's `mac.address` and the `eui64` type has it asked, at once.
+- A name written for a host that has to keep its address through restarts, with the filter that finds it in one of these ways.
+
 Before an IPv6 address the local discovery found expires, it is pinged, so a host still there keeps it. The active discovery probes every host again every `rediscover`, by default a third of the shortest lifetime of the families that probe.
 
 ## Plugins

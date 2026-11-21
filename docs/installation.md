@@ -131,7 +131,7 @@ With a `homeassistant` block, each needs its own [name](home-assistant-integrati
 
 Two instances can keep the same name at the same provider, as a second machine standing in for the first when it is down, when both give it the same addresses: the same filters, of the same hosts, on a network both discover. An update makes a name's records exactly what its instance has, and runs only when that changes, never to check: so two that find the same end with the same records, each writing only what is missing, and then leave them alone.
 
-- An instance that starts writes what it has found so far, and takes off what it hasn't yet, for the seconds it needs to find it: as one alone does when it restarts.
+- An instance that starts writes what it has found so far, and takes off what it hasn't yet, until it finds it: as one alone does when it restarts. That is seconds for an address its host uses, and longer for one it keeps quiet: see [after a start](discovery.md#after-a-start).
 - A host that leaves goes from the name when the first of them lets it go: after the shorter lifetime.
 - Two updates at once can collide at the provider. The one refused logs it, tries again after its `retry`, and finds the records there.
 
