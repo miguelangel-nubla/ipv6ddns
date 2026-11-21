@@ -393,19 +393,27 @@ tasks:
 		{server, "198.18.15.50", "printer.home.arpa.", true},
 		{server, "198.18.15.51", reverseName, false},
 		{server, "198.18.15.77", reverseName, false},
-		{server, "fd00:c612:15::77", reverseName, false},
 		{lab, "10.77.0.50", "printer.home.arpa.", true},
 		{lab, "198.18.15.50", reverseName, false},
-		{lab, peer.IPv6.String(), reverseName, false},
 	} {
 		d := dig(t, client, c.server, "-x", c.address)
 		if d.status != "NOERROR" || !slices.Equal(d.data("PTR"), []string{c.want}) || d.has("aa") != c.aa {
 			t.Errorf("the reverse of %s at %s: %s, want %s, aa %t", c.address, c.server, d, c.want, c.aa)
 		}
 	}
-	// The peer's was asked of the upstream server by the lab alone.
-	if got := upstream.times(peerReverse); got != 1 {
-		t.Errorf("the reverse of the peer's address was asked upstream %d times, want 1, by the lab", got)
+	// The reverse of an address of a private network that a resolver has no name of, a unique
+	// local one, or of 10.77.0.0/24: no such name, its own, as RFC 6303 has it; the peer's too, at
+	// the lab, which doesn't name it. None is asked of the upstream servers, which are of no
+	// private network.
+	for _, c := range []struct{ server, address string }{
+		{server, "fd00:c612:15::77"}, {server, "10.77.0.99"}, {lab, peer.IPv6.String()}, {lab, "10.77.0.99"},
+	} {
+		if d := dig(t, client, c.server, "-x", c.address); d.status != "NXDOMAIN" || !d.has("aa") || len(d.authority) != 1 {
+			t.Errorf("the reverse of %s at %s: %s, want no such name, of the resolver's own", c.address, c.server, d)
+		}
+	}
+	if got := upstream.times(peerReverse); got != 0 {
+		t.Errorf("the reverse of the peer's address was asked upstream %d times, want none", got)
 	}
 
 	// A local answer too big for UDP: TC, and whole over TCP, which dig retries with.
@@ -475,11 +483,11 @@ tasks:
 		return slices.Equal(dig(t, client, server, "peer.home.arpa", "AAAA").data("AAAA"), []string{moved.String()})
 	}, one.tells, tells(server, "peer.home.arpa", "AAAA"))
 	// And its reverse: the new address is the peer's, and the one it had is no more, though it
-	// was a moment ago: the upstream server's answer.
+	// was a moment ago: no such name, the resolver's own, of a unique local address.
 	if d := dig(t, client, server, "-x", moved.String()); !slices.Equal(d.data("PTR"), []string{"peer.home.arpa."}) || !d.has("aa") {
 		t.Errorf("the reverse of the peer's new address: %s", d)
 	}
-	if d := dig(t, client, server, "-x", peer.IPv6.String()); !slices.Equal(d.data("PTR"), []string{reverseName}) || d.has("aa") {
+	if d := dig(t, client, server, "-x", peer.IPv6.String()); d.status != "NXDOMAIN" || !d.has("aa") {
 		t.Errorf("the reverse of the address the peer had: %s", d)
 	}
 	// It leaves: no data, until it is back.
