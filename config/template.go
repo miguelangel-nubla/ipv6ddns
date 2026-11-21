@@ -13,7 +13,7 @@ import (
 // The placeholders of a task's host name that is a template: one name for each host the task's
 // filters match, by what the host is called.
 const (
-	// A name of the host, as discovery.hostnames learns them: alone in the template, the name is
+	// A name of the host, as discovery learns them: alone in the template, the name is
 	// of every host called so, with the addresses of all of them.
 	PlaceholderHostname = "{hostname}"
 	// The place of the host among those of its name, by MAC, from 1: with {hostname}, a name for
@@ -92,11 +92,19 @@ func (c *Config) checkTemplates() error {
 				if err != nil {
 					return fmt.Errorf("task %s: endpoint %s: the name %q: %w", taskName, endpoint, name, err)
 				}
-				if t.Hostname && !c.Discovery.Hostnames.Enabled {
-					return fmt.Errorf("task %s: endpoint %s: the name %q is of the hosts' names, which aren't learned: it needs enabled: true under discovery.hostnames, and a protocol that learns them, as mdns", taskName, endpoint, name)
+				if t.Hostname && !c.Discovery.learnsNames() {
+					return fmt.Errorf("task %s: endpoint %s: the name %q is of the hosts' names, which nothing learns: it needs a protocol of discovery.protocols that does, as mdns, or a plugin", taskName, endpoint, name)
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// learnsNames tells whether anything of the discovery learns the hosts' names: a plugin, of its
+// router's leases, or a protocol that runs for them.
+func (d Discovery) learnsNames() bool {
+	p := d.Protocols
+	return len(d.Plugins) > 0 || p.MDNS.Enabled || p.DHCP.Enabled || p.LLDP.Enabled || p.NetBIOS.Enabled || p.LLMNR.Enabled ||
+		p.DNS.Enabled && len(p.DNS.Servers) > 0 || p.SSDP.Enabled && p.SSDP.Names || p.WSD.Enabled && p.WSD.Names
 }

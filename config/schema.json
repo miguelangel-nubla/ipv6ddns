@@ -344,13 +344,8 @@
                 "hostnames": {
                     "type": "object",
                     "additionalProperties": false,
-                    "description": "The names of the hosts: whether they are kept. What learns them is each protocol's to say, under protocols, and the plugins'.",
+                    "description": "The names of the hosts: always kept, of what learns them, each protocol under protocols that does, and the plugins, of their routers' DHCP leases. To learn none, disable those protocols, and the names of ssdp and wsd.",
                     "properties": {
-                        "enabled": {
-                            "type": "boolean",
-                            "description": "Whether names are kept, and the plugins read those of their routers' DHCP leases. Without it a protocol that also finds hosts, as mdns, dhcp and lldp, still finds them, and takes no name; one that only learns names, netbios, llmnr, dns, and the names of wsd and ssdp, is then an error to enable.",
-                            "default": false
-                        },
                         "lifetime": {
                             "$ref": "#/$defs/discoveryDuration",
                             "description": "How long a name stays after it was last said, whatever said it, the plugins too. Default: lifetime."
@@ -397,8 +392,8 @@
                                 },
                                 "names": {
                                     "type": "boolean",
-                                    "description": "Whether a device that answers the search is asked its description, over HTTP, for its friendly name. It needs hostnames.",
-                                    "default": false
+                                    "description": "Whether a device that answers the search is asked its description, over HTTP, for its friendly name.",
+                                    "default": true
                                 }
                             },
                             "additionalProperties": false
@@ -414,24 +409,24 @@
                                 },
                                 "names": {
                                     "type": "boolean",
-                                    "description": "Whether a computer that answers the probe is asked its metadata, over HTTP, for its name. It needs hostnames.",
-                                    "default": false
+                                    "description": "Whether a computer that answers the probe is asked its metadata, over HTTP, for its name.",
+                                    "default": true
                                 }
                             },
                             "additionalProperties": false
                         },
                         "mdns": {
                             "type": "object",
-                            "description": "Either family, listening. mDNS: its groups are joined, on port 5353, and whatever sends there is a host of the link, whose address is found as any other, and with hostnames what it announces is its name. Active, a query for the services goes to the group.",
+                            "description": "Either family, listening. mDNS: its groups are joined, on port 5353, and whatever sends there is a host of the link, whose address is found as any other, and what it announces is its name. Active, a query for the services goes to the group.",
                             "properties": {
                                 "enabled": {
                                     "type": "boolean",
                                     "description": "Whether the protocol runs.",
-                                    "default": false
+                                    "default": true
                                 },
                                 "ask": {
                                     "type": "boolean",
-                                    "description": "Whether questions are sent: the query to the group, at every rediscover, and with hostnames to each host for its name. Without it mDNS only listens.",
+                                    "description": "Whether questions are sent: the query to the group, at every rediscover, and to each host for its name. Without it mDNS only listens.",
                                     "default": true
                                 }
                             },
@@ -481,82 +476,65 @@
                         },
                         "dhcp": {
                             "type": "object",
-                            "description": "Either family, listening. What the DHCP clients say to all as they ask for an address, heard by packet sockets that only listen: the address a client asks for is found as any other, and with hostnames the name it gives its server is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs. Elsewhere it is an error to enable.",
+                            "description": "Either family, listening. What the DHCP clients say to all as they ask for an address, heard by packet sockets that only listen: the address a client asks for is found as any other, and the name it gives its server is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs.",
                             "properties": {
                                 "enabled": {
                                     "type": "boolean",
-                                    "description": "Whether the protocol runs.",
-                                    "default": false
+                                    "description": "Whether the protocol runs. Default: true on Linux, where alone it can; elsewhere false, and true is an error."
                                 }
                             },
                             "additionalProperties": false
                         },
                         "lldp": {
                             "type": "object",
-                            "description": "Either family, listening. What the LLDP neighbor of an interface says of itself, heard by a packet socket that only listens: the addresses it is managed at are found as any other, and with hostnames its system name is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs. Elsewhere it is an error to enable.",
+                            "description": "Either family, listening. What the LLDP neighbor of an interface says of itself, heard by a packet socket that only listens: the addresses it is managed at are found as any other, and its system name is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs.",
                             "properties": {
                                 "enabled": {
                                     "type": "boolean",
-                                    "description": "Whether the protocol runs.",
-                                    "default": false
+                                    "description": "Whether the protocol runs. Default: true on Linux, where alone it can; elsewhere false, and true is an error."
                                 }
                             },
                             "additionalProperties": false
                         },
                         "netbios": {
                             "type": "object",
-                            "description": "IPv4, listening. A host is asked its node status, by a question sent to it alone: Windows answers, and Samba, with the machine's name. Names only: it needs hostnames.",
+                            "description": "IPv4, listening. A host is asked its node status, by a question sent to it alone: Windows answers, and Samba, with the machine's name. Names only.",
                             "properties": {
                                 "enabled": {
                                     "type": "boolean",
                                     "description": "Whether the protocol runs.",
-                                    "default": false
+                                    "default": true
                                 }
                             },
                             "additionalProperties": false
                         },
                         "llmnr": {
                             "type": "object",
-                            "description": "Either family, listening. A host is asked the name of one of its addresses, by a question to the group of LLMNR, which every host of the link hears: Windows answers, and systemd-resolved. Names only: it needs hostnames.",
+                            "description": "Either family, listening. A host is asked the name of one of its addresses, by a question to the group of LLMNR, which every host of the link hears: Windows answers, and systemd-resolved. Names only.",
                             "properties": {
                                 "enabled": {
                                     "type": "boolean",
                                     "description": "Whether the protocol runs.",
-                                    "default": false
+                                    "default": true
                                 }
                             },
                             "additionalProperties": false
                         },
                         "dns": {
                             "type": "object",
-                            "description": "Of no family: DNS servers are asked the name of each address, its PTR record, of the hosts the plugins found too. Names only: it needs hostnames.",
+                            "description": "Of no family: DNS servers are asked the name of each address, its PTR record, of the hosts the plugins found too. Names only.",
                             "properties": {
                                 "enabled": {
                                     "type": "boolean",
-                                    "description": "Whether the protocol runs.",
-                                    "default": false
+                                    "description": "Whether the protocol runs: once it has servers, which it asks alone.",
+                                    "default": true
                                 },
                                 "servers": {
                                     "$ref": "#/$defs/discoveryStringList",
-                                    "description": "The servers asked, needed when dns is enabled: each an address, alone or with its port, as 192.168.1.1, 192.168.1.1:5353 or [fd00::1]:53. Only these are asked, never the system's resolver."
+                                    "description": "The servers asked: without, dns asks nobody. each an address, alone or with its port, as 192.168.1.1, 192.168.1.1:5353 or [fd00::1]:53. Only these are asked, never the system's resolver."
                                 }
                             },
-                            "additionalProperties": false,
-                            "if": {
-                                "properties": {
-                                    "enabled": {
-                                        "const": true
-                                    }
-                                },
-                                "required": [
-                                    "enabled"
-                                ]
-                            },
-                            "then": {
-                                "required": [
-                                    "servers"
-                                ]
-                            }
+                            "additionalProperties": false
                         }
                     }
                 },
@@ -565,7 +543,7 @@
                     "additionalProperties": {
                         "$ref": "#/$defs/discoveryPlugin"
                     },
-                    "description": "The plugins, by name: each reads the neighbor tables of a router or another host, and with hostnames the names of its DHCP leases. The name is the source of what it finds."
+                    "description": "The plugins, by name: each reads the neighbor tables of a router or another host, and its DHCP leases: their names, and that an address found otherwise is leased. The name is the source of what it finds."
                 },
                 "solicit": {
                     "type": "object",

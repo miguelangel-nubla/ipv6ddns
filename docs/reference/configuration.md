@@ -173,9 +173,9 @@ How hosts are discovered: on the local links, by the protocols enabled, and by p
 | `exclude_interfaces` | list, or comma separated | - | The interfaces the local discovery doesn't run on: names, or patterns as docker*, veth*. |
 | `ipv6` | object | - | IPv6: the switches of all its protocols at once. A protocol runs only when it is enabled, under protocols, and its family, and the way it works, are on here. |
 | `ipv4` | object | - | IPv4: the switches of all its protocols at once. A protocol runs only when it is enabled, under protocols, and its family, and the way it works, are on here. |
-| `hostnames` | object | - | The names of the hosts: whether they are kept. What learns them is each protocol's to say, under protocols, and the plugins'. |
+| `hostnames` | object | - | The names of the hosts: always kept, of what learns them, each protocol under protocols that does, and the plugins, of their routers' DHCP leases. To learn none, disable those protocols, and the names of ssdp and wsd. |
 | `protocols` | object | - | The protocols of the local discovery, each with its switch, enabled, and its options: always a mapping, never true or false alone. One runs when it is enabled, its family is, and the family listens, or for what probes is active. |
-| `plugins` | object | - | The plugins, by name: each reads the neighbor tables of a router or another host, and with hostnames the names of its DHCP leases. The name is the source of what it finds. |
+| `plugins` | object | - | The plugins, by name: each reads the neighbor tables of a router or another host, and its DHCP leases: their names, and that an address found otherwise is leased. The name is the source of what it finds. |
 | `solicit` | object | - | Asking the hosts the filters want, which aren't otherwise found, once a minute. Of ipv6ddns, not of ipv6disc: the hosts are those the filters name by their MAC. |
 
 ## Discovery IPv6
@@ -208,12 +208,11 @@ IPv4: the switches of all its protocols at once. A protocol runs only when it is
 
 `discovery.hostnames`
 
-The names of the hosts: whether they are kept. What learns them is each protocol's to say, under protocols, and the plugins'.
+The names of the hosts: always kept, of what learns them, each protocol under protocols that does, and the plugins, of their routers' DHCP leases. To learn none, disable those protocols, and the names of ssdp and wsd.
 
-| Key | Takes | Default | |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Whether names are kept, and the plugins read those of their routers' DHCP leases. Without it a protocol that also finds hosts, as mdns, dhcp and lldp, still finds them, and takes no name; one that only learns names, netbios, llmnr, dns, and the names of wsd and ssdp, is then an error to enable. |
-| `lifetime` | duration | - | How long a name stays after it was last said, whatever said it, the plugins too. Default: lifetime. |
+| Key | Takes | |
+|---|---|---|
+| `lifetime` | duration | How long a name stays after it was last said, whatever said it, the plugins too. Default: lifetime. |
 
 ## Discovery solicit
 
@@ -271,7 +270,7 @@ IPv6. SSDP, of the UPnP devices: active, a search goes to its group, and listeni
 | Key | Takes | Default | |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Whether the protocol runs. |
-| `names` | boolean | `false` | Whether a device that answers the search is asked its description, over HTTP, for its friendly name. It needs hostnames. |
+| `names` | boolean | `true` | Whether a device that answers the search is asked its description, over HTTP, for its friendly name. |
 
 ### wsd
 
@@ -282,18 +281,18 @@ IPv6. WS-Discovery, of Windows and Samba: active, a probe goes to its group, and
 | Key | Takes | Default | |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Whether the protocol runs. |
-| `names` | boolean | `false` | Whether a computer that answers the probe is asked its metadata, over HTTP, for its name. It needs hostnames. |
+| `names` | boolean | `true` | Whether a computer that answers the probe is asked its metadata, over HTTP, for its name. |
 
 ### mdns
 
 `discovery.protocols.mdns`
 
-Either family, listening. mDNS: its groups are joined, on port 5353, and whatever sends there is a host of the link, whose address is found as any other, and with hostnames what it announces is its name. Active, a query for the services goes to the group.
+Either family, listening. mDNS: its groups are joined, on port 5353, and whatever sends there is a host of the link, whose address is found as any other, and what it announces is its name. Active, a query for the services goes to the group.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Whether the protocol runs. |
-| `ask` | boolean | `true` | Whether questions are sent: the query to the group, at every rediscover, and with hostnames to each host for its name. Without it mDNS only listens. |
+| `enabled` | boolean | `true` | Whether the protocol runs. |
+| `ask` | boolean | `true` | Whether questions are sent: the query to the group, at every rediscover, and to each host for its name. Without it mDNS only listens. |
 
 ### arp
 
@@ -330,58 +329,58 @@ IPv4, listening. The ARP the hosts send, heard by a packet socket that only list
 
 `discovery.protocols.dhcp`
 
-Either family, listening. What the DHCP clients say to all as they ask for an address, heard by packet sockets that only listen: the address a client asks for is found as any other, and with hostnames the name it gives its server is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs. Elsewhere it is an error to enable.
+Either family, listening. What the DHCP clients say to all as they ask for an address, heard by packet sockets that only listen: the address a client asks for is found as any other, and the name it gives its server is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs.
 
-| Key | Takes | Default | |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Whether the protocol runs. |
+| Key | Takes | |
+|---|---|---|
+| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, where alone it can; elsewhere false, and true is an error. |
 
 ### lldp
 
 `discovery.protocols.lldp`
 
-Either family, listening. What the LLDP neighbor of an interface says of itself, heard by a packet socket that only listens: the addresses it is managed at are found as any other, and with hostnames its system name is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs. Elsewhere it is an error to enable.
+Either family, listening. What the LLDP neighbor of an interface says of itself, heard by a packet socket that only listens: the addresses it is managed at are found as any other, and its system name is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs.
 
-| Key | Takes | Default | |
-|---|---|---|---|
-| `enabled` | boolean | `false` | Whether the protocol runs. |
+| Key | Takes | |
+|---|---|---|
+| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, where alone it can; elsewhere false, and true is an error. |
 
 ### netbios
 
 `discovery.protocols.netbios`
 
-IPv4, listening. A host is asked its node status, by a question sent to it alone: Windows answers, and Samba, with the machine's name. Names only: it needs hostnames.
+IPv4, listening. A host is asked its node status, by a question sent to it alone: Windows answers, and Samba, with the machine's name. Names only.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Whether the protocol runs. |
+| `enabled` | boolean | `true` | Whether the protocol runs. |
 
 ### llmnr
 
 `discovery.protocols.llmnr`
 
-Either family, listening. A host is asked the name of one of its addresses, by a question to the group of LLMNR, which every host of the link hears: Windows answers, and systemd-resolved. Names only: it needs hostnames.
+Either family, listening. A host is asked the name of one of its addresses, by a question to the group of LLMNR, which every host of the link hears: Windows answers, and systemd-resolved. Names only.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Whether the protocol runs. |
+| `enabled` | boolean | `true` | Whether the protocol runs. |
 
 ### dns
 
 `discovery.protocols.dns`
 
-Of no family: DNS servers are asked the name of each address, its PTR record, of the hosts the plugins found too. Names only: it needs hostnames.
+Of no family: DNS servers are asked the name of each address, its PTR record, of the hosts the plugins found too. Names only.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Whether the protocol runs. |
-| `servers` | list, or comma separated | - | The servers asked, needed when dns is enabled: each an address, alone or with its port, as 192.168.1.1, 192.168.1.1:5353 or [fd00::1]:53. Only these are asked, never the system's resolver. |
+| `enabled` | boolean | `true` | Whether the protocol runs: once it has servers, which it asks alone. |
+| `servers` | list, or comma separated | - | The servers asked: without, dns asks nobody. each an address, alone or with its port, as 192.168.1.1, 192.168.1.1:5353 or [fd00::1]:53. Only these are asked, never the system's resolver. |
 
 ## Discovery plugins
 
 `discovery.plugins.<name>`
 
-The plugins, by name: each reads the neighbor tables of a router or another host, and with hostnames the names of its DHCP leases. The name is the source of what it finds. Each type takes its own keys only.
+The plugins, by name: each reads the neighbor tables of a router or another host, and its DHCP leases: their names, and that an address found otherwise is leased. The name is the source of what it finds. Each type takes its own keys only.
 
 ### `linux`, `freebsd`
 

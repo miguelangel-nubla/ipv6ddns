@@ -43,8 +43,6 @@ webserver:
 discovery:
   lifetime: 9s
   rediscover: 3s
-  hostnames:
-    enabled: true
   protocols:
     mdns:
       enabled: true
@@ -200,8 +198,6 @@ webserver:
   listen:
     - 8053
 discovery:
-  hostnames:
-    enabled: true
   protocols:
     mdns:
       enabled: true

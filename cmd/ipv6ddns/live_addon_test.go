@@ -54,7 +54,7 @@ func TestLiveAddonStartingConfiguration(t *testing.T) {
 		t.Fatalf("the loopback's port 8053: %v", err)
 	}
 
-	if got, want := addon.status().Protocols, []string{"ndp", "ping", "ssdp", "wsd"}; !slices.Equal(got, want) {
+	if got, want := addon.status().Protocols, []string{"ndp", "ping", "ssdp", "wsd", "mdns", "dhcp", "lldp", "llmnr"}; !slices.Equal(got, want) {
 		t.Errorf("the add-on says it runs %v, want %v", got, want)
 	}
 	waitFor(t, 30*time.Second, "peer's address at the add-on", func() bool { return addon.knows(peer.MAC, peer.IPv6) }, addon.tells)

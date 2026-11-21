@@ -192,12 +192,8 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 	if len(solicited) > 0 {
 		fmt.Fprintf(&result, "%s        Solicit: %s\n", prefix, strings.Join(solicited, ", "))
 	}
-	if d.Hostnames.Enabled {
-		result.WriteString(prefix + "        Hostnames: kept")
-		if d.Hostnames.Lifetime > 0 {
-			fmt.Fprintf(&result, ", lifetime %s", d.Hostnames.Lifetime)
-		}
-		result.WriteString("\n")
+	if d.Hostnames.Lifetime > 0 {
+		fmt.Fprintf(&result, "%s        Hostnames: lifetime %s\n", prefix, d.Hostnames.Lifetime)
 	}
 	if len(d.Interfaces) > 0 {
 		fmt.Fprintf(&result, "%s        Interfaces: %s\n", prefix, strings.Join(d.Interfaces, ", "))
@@ -351,7 +347,7 @@ func NewConfig(filename string) (config Config, err error) {
 	for _, name := range slices.Sorted(maps.Keys(config.Tasks)) {
 		task := config.Tasks[name]
 		task.Name = name
-		if err := task.checkFilters(slices.Sorted(maps.Keys(config.Discovery.Plugins))); err != nil {
+		if err := task.checkFilters(config.Discovery); err != nil {
 			return config, fmt.Errorf("task %s: %w", name, err)
 		}
 		config.Tasks[name] = task

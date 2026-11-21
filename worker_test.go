@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -48,19 +48,31 @@ func loadConfig(t *testing.T, content string) config.Config {
 // names none runs those ipv6disc has by default, not none, which is what a discovery made
 // without them runs; and one that names them, those it says.
 func TestWorkerRunsTheProtocolsOfTheConfiguration(t *testing.T) {
+	// Those of the names, in the order of the protocols: with those that hear frames, on Linux,
+	// where alone they are on by default.
+	running := func(names ...string) []string {
+		var out []string
+		for _, name := range ipv6disc.ProtocolNames() {
+			if slices.Contains(names, name) && (runtime.GOOS == "linux" || name != ipv6disc.ProtocolDHCP && name != ipv6disc.ProtocolLLDP && name != ipv6disc.ProtocolARPListen) {
+				out = append(out, name)
+			}
+		}
+		return out
+	}
+	ipv6 := []string{"ndp", "ping", "ssdp", "wsd", "mdns", "dhcp", "lldp", "llmnr"}
 	for name, tt := range map[string]struct {
 		config string
 		want   []string
 	}{
-		"no discovery block": {"", []string{"ndp", "ping", "ssdp", "wsd"}},
-		"no protocols key":   {"discovery:\n  exclude_interfaces:\n    - docker0\n", []string{"ndp", "ping", "ssdp", "wsd"}},
-		"some of them": {"discovery:\n  protocols:\n    ssdp:\n      enabled: false\n    wsd:\n      enabled: false\n    mdns:\n      enabled: true\n",
-			[]string{"ndp", "ping", "mdns"}},
+		"no discovery block": {"", running(ipv6...)},
+		"no protocols key":   {"discovery:\n  exclude_interfaces:\n    - docker0\n", running(ipv6...)},
+		"some of them": {"discovery:\n  protocols:\n    ssdp:\n      enabled: false\n    wsd:\n      enabled: false\n    llmnr:\n      enabled: false\n",
+			running("ndp", "ping", "mdns", "dhcp", "lldp")},
 		"IPv4, without its sweep": {"discovery:\n  ipv4:\n    enabled: true\n  protocols:\n    arp-sweep:\n      enabled: false\n    arp-listen:\n      enabled: false\n",
-			[]string{"ndp", "ping", "ssdp", "wsd", "arp"}},
+			running(append(ipv6, "arp", "netbios")...)},
 		"a family that doesn't listen": {"discovery:\n  ipv6:\n    listen: false\n", []string{}},
-		"the names' own": {"discovery:\n  hostnames:\n    enabled: true\n  protocols:\n    llmnr:\n      enabled: true\n    dns:\n      enabled: true\n      servers: 192.0.2.53\n",
-			[]string{"ndp", "ping", "ssdp", "wsd", "llmnr", "dns"}},
+		"the reverse DNS, with servers": {"discovery:\n  protocols:\n    dns:\n      servers: 192.0.2.53\n",
+			running(append(ipv6, "dns")...)},
 	} {
 		w, err := NewWorker(zap.NewNop().Sugar(), loadConfig(t, tt.config+"tasks: {}\ncredentials: {}\n"))
 		if err != nil {
@@ -88,12 +100,11 @@ func TestWorkerRunsTheProtocolsOfTheConfiguration(t *testing.T) {
 	}
 }
 
-// A host's names are where the hosts are: the status, and the page, which -live shows too. With
-// discovery.hostnames, and not without.
+// A host's names are where the hosts are: the status, and the page, which -live shows too.
 func TestStatusHasTheNamesOfTheHosts(t *testing.T) {
 	hw, _ := net.ParseMAC(macA)
-	for _, kept := range []bool{true, false} {
-		cfg := loadConfig(t, fmt.Sprintf("discovery:\n  hostnames:\n    enabled: %t\ntasks: {}\ncredentials: {}\n", kept))
+	for _, kept := range []bool{true} {
+		cfg := loadConfig(t, "tasks: {}\ncredentials: {}\n")
 		w, err := NewWorker(zap.NewNop().Sugar(), cfg)
 		if err != nil {
 			t.Fatal(err)

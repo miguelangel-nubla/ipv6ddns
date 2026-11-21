@@ -23,9 +23,6 @@ import (
 // a host that leaves, or is renamed, has its names emptied.
 func TestTemplates(t *testing.T) {
 	cfg := loadConfig(t, `
-discovery:
-  hostnames:
-    enabled: true
 credentials:
   fake:
     provider: fake
@@ -211,9 +208,6 @@ func TestTemplatesAtAProviderThatLimits(t *testing.T) {
 	limited := &rateLimited{refuse: 2, refused: map[string]int{}, records: map[string][]string{}}
 	ddns.RegisterProvider("limited", func(json.RawMessage) (ddns.Service, error) { return limited, nil })
 	cfg := loadConfig(t, `
-discovery:
-  hostnames:
-    enabled: true
 credentials:
   limited:
     provider: limited

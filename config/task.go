@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
+	"slices"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/filter"
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -95,17 +97,28 @@ func (f IPFilters) checkSeen(addr *ipv6disc.Addr) bool {
 // checkFilters checks what the schema can't of the task's filters, and writes their MAC in its
 // canonical form, 00:11:22:33:44:55, which is what matches and what the report shows. A rule
 // that doesn't parse is an error: skipped, the filter would take every host.
-func (t *Task) checkFilters(plugins []string) error {
+func (t *Task) checkFilters(d Discovery) error {
+	plugins := slices.Sorted(maps.Keys(d.Plugins))
 	for i := range t.Filters {
 		f := &t.Filters[i]
 		for j, s := range f.IP.Seen {
-			if err := s.check(fmt.Sprintf("filter %d: ip.seen[%d]", i+1, j), plugins); err != nil {
+			path := fmt.Sprintf("filter %d: ip.seen[%d]", i+1, j)
+			if err := s.check(path, plugins); err != nil {
 				return err
+			}
+			if s.Protocol != "" && !d.records(s.Protocol) {
+				return fmt.Errorf("%s.protocol: %s is disabled, under discovery.protocols: no address has a record of it", path, s.Protocol)
 			}
 		}
 		for j, s := range f.IP.NotSeen {
-			if err := s.check(fmt.Sprintf("filter %d: ip.not_seen[%d]", i+1, j), plugins); err != nil {
+			path := fmt.Sprintf("filter %d: ip.not_seen[%d]", i+1, j)
+			if err := s.check(path, plugins); err != nil {
 				return err
+			}
+			for k, wanted := range f.IP.Seen {
+				if s.covers(wanted, d) {
+					return fmt.Errorf("%s: every record ip.seen[%d] wants, %s, is one this rule wants none of: the filter takes no address", path, k, wanted.describe())
+				}
 			}
 		}
 		if f.MAC.Address != "" {

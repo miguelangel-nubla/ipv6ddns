@@ -18,14 +18,14 @@ import (
 //
 // Three instances, each on its machine, with the discovery each asks for:
 //
-//   - names: mDNS and the names, and no SSDP;
-//   - plain: a discovery block that names no protocol, so ipv6disc's defaults: SSDP, and no mDNS;
-//   - quiet: mDNS, and no names kept.
+//   - names: no SSDP;
+//   - plain: a discovery block that names no protocol, so ipv6disc's defaults: every protocol;
+//   - quiet: none of the protocols that learn names.
 //
 // A protocol that is disabled sends nothing on the wire, and one that is enabled does, counted
 // of each machine's MAC as its frames come in to the bridge. And the host's name is in
-// /status.json, and on the page, of the instance that keeps names, and of no other: all three
-// find the host itself.
+// /status.json, and on the page, of the instances that learn names, and not of the quiet one: all
+// three find the host itself.
 func TestLiveProtocolsAndNames(t *testing.T) {
 	lan := livetest.NewLAN(t, 20)
 	router := lan.Router
@@ -47,27 +47,33 @@ tasks: {}
 credentials: {}
 `, discovery)
 	}
-	withNames := configure(t, names, router, "names", 8053, config(`  hostnames:
-    enabled: true
-  protocols:
-    mdns:
-      enabled: true
+	withNames := configure(t, names, router, "names", 8053, config(`  protocols:
     ssdp:
       enabled: false`)).start().serving()
 	// No protocol named: the defaults, which the worker has to run, not none.
 	withDefaults := configure(t, plain, router, "plain", 8053, config("")).start().serving()
 	withoutNames := configure(t, quiet, router, "quiet", 8053, config(`  protocols:
     mdns:
-      enabled: true`)).start().serving()
+      enabled: false
+    dhcp:
+      enabled: false
+    lldp:
+      enabled: false
+    llmnr:
+      enabled: false
+    ssdp:
+      names: false
+    wsd:
+      names: false`)).start().serving()
 
-	// The protocols each says it runs, as its configuration has them.
+	// The protocols each says it runs, as its configuration has them: of IPv6, on Linux.
 	for _, c := range []struct {
 		i    *instance
 		want []string
 	}{
-		{withNames, []string{"ndp", "ping", "wsd", "mdns"}},
-		{withDefaults, []string{"ndp", "ping", "ssdp", "wsd"}},
-		{withoutNames, []string{"ndp", "ping", "ssdp", "wsd", "mdns"}},
+		{withNames, []string{"ndp", "ping", "wsd", "mdns", "dhcp", "lldp", "llmnr"}},
+		{withDefaults, []string{"ndp", "ping", "ssdp", "wsd", "mdns", "dhcp", "lldp", "llmnr"}},
+		{withoutNames, []string{"ndp", "ping", "ssdp", "wsd"}},
 	} {
 		if got := c.i.status().Protocols; !slices.Equal(got, c.want) {
 			t.Errorf("%s says it runs %v, want %v", c.i.name, got, c.want)
@@ -90,7 +96,7 @@ credentials: {}
 		waitFor(t, 30*time.Second, "peer's address at "+i.name, func() bool { return i.knows(peer.MAC, peer.IPv6) }, i.tells)
 	}
 
-	// Its name, learned by mDNS, where names are kept.
+	// Its name, learned by mDNS, where mDNS runs.
 	named := func(i *instance) []string {
 		var said []string
 		if h := host(i); h != nil {
@@ -100,10 +106,12 @@ credentials: {}
 		}
 		return said
 	}
-	waitFor(t, 30*time.Second, "peer's name at names, by mDNS", func() bool { return slices.Equal(named(withNames), []string{"printer by mdns"}) }, withNames.tells,
-		func() string { return fmt.Sprintf("names has the names %v", named(withNames)) })
-	if page, line := withNames.page("/"), peer.MAC+" printer (mdns)\n"; !strings.Contains(page, line) {
-		t.Errorf("the page of names has no %q:\n%s", line, page)
+	for _, i := range []*instance{withNames, withDefaults} {
+		waitFor(t, 30*time.Second, "peer's name at "+i.name+", by mDNS", func() bool { return slices.Equal(named(i), []string{"printer by mdns"}) }, i.tells,
+			func() string { return fmt.Sprintf("%s has the names %v", i.name, named(i)) })
+		if page, line := i.page("/"), peer.MAC+" printer (mdns)\n"; !strings.Contains(page, line) {
+			t.Errorf("the page of %s has no %q:\n%s", i.name, line, page)
+		}
 	}
 
 	// What each sends in a while, of several rounds of the active discovery: the search of SSDP,
@@ -117,8 +125,8 @@ credentials: {}
 		mdns, ssdp bool
 	}{
 		{withNames, names, true, false},
-		{withDefaults, plain, false, true},
-		{withoutNames, quiet, true, true},
+		{withDefaults, plain, true, true},
+		{withoutNames, quiet, false, true},
 	} {
 		of := sent.From(c.m.MAC)
 		t.Logf("%s sent in %s: %v", c.i.name, while, of)
@@ -136,17 +144,19 @@ credentials: {}
 		}
 	}
 
-	// And after all that time the name is still at the one that keeps names, and at no other:
-	// not at the one that hears mDNS and keeps none, nor at the one that doesn't hear it.
-	if got := named(withNames); !slices.Equal(got, []string{"printer by mdns"}) {
-		t.Errorf("names has the names %v of the peer", got)
+	// And after all that time the name is still at those that learn names, and not at the quiet
+	// one, which doesn't hear mDNS.
+	for _, i := range []*instance{withNames, withDefaults} {
+		if got := named(i); !slices.Equal(got, []string{"printer by mdns"}) {
+			t.Errorf("%s has the names %v of the peer", i.name, got)
+		}
 	}
-	for _, i := range []*instance{withDefaults, withoutNames} {
+	for _, i := range []*instance{withoutNames} {
 		if !i.knows(peer.MAC, peer.IPv6) {
 			t.Errorf("%s lost the peer", i.name)
 		}
 		if got := named(i); len(got) != 0 {
-			t.Errorf("%s keeps no names, and has %v of the peer", i.name, got)
+			t.Errorf("%s learns no names, and has %v of the peer", i.name, got)
 		}
 		if page := i.page("/"); !strings.Contains(page, peer.MAC+"\n") || strings.Contains(page, "printer") {
 			t.Errorf("the page of %s has the peer's name, or not the peer:\n%s", i.name, page)

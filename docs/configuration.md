@@ -103,13 +103,33 @@ discovery:
 
 One of these is no error, and wants a look: a `discovery.ipv4` block that only had its ways, as `active: false` under `ipv4`, loads, and discovers no IPv4 until `enabled: true` is added. The log warns of it at start: that the block has no `enabled`, and IPv4 is off.
 
-The same release has new keys, all off unless asked for: the [protocols](discovery.md#protocols), each with its switch, and the [names](discovery.md#names) of the hosts.
+The same release has new [protocols](discovery.md#protocols), each with its switch, all on by default: mDNS, NetBIOS and LLMNR over the link, the DHCP and LLDP heard on Linux, and the names SSDP and WS-Discovery fetch. They find more hosts, and the [names](discovery.md#names) of the hosts, which are kept, of the protocols that learn them. A configuration that wants what ran up to v0.22.3, and nothing more sent, turns them off:
+
+```yaml
+discovery:
+  protocols:
+    mdns:
+      enabled: false
+    dhcp:
+      enabled: false
+    lldp:
+      enabled: false
+    netbios:
+      enabled: false
+    llmnr:
+      enabled: false
+    ssdp:
+      names: false
+    wsd:
+      names: false
+```
 
 In the Home Assistant add-on, the log level was an option of the add-on, and the address of its page a flag the add-on gave: both are in its `config.yaml` now, and one from before needs [two lines added](../homeassistant/addon/DOCS.md#the-add-ons-page).
 
 Two things from before still work, each with a warning in the log that says what to write instead, and go in v1.0: a task's `ipv4` block, a command, which is a [command source](sources.md) named `<task>.ipv4` until it is moved to `sources`; and a credential's `debounce_time` and `retry_time`, which are `debounce` and `retry`.
 
-And two changed before this, in the same release:
+And three changed before this, in the same release:
 
 - A `homeassistant` block from up to v0.22.3, which had no `listen` it needed, and, without a `key`, as `homeassistant: {}`, or with `state_file`, nothing that said Home Assistant gives the key. It is an error at start, which says what to add: [`listen`, and `key_provisioning: true`](home-assistant-integration.md#a-configuration-from-before-v0230), and the device stays as it was.
+- `discovery.hostnames.enabled`, of v0.23.0-rc.1: the names are kept, of the protocols that learn them. It is an error at start that says so; `hostnames` keeps its `lifetime`.
 - An entry of `webserver.listen` without a port, as `192.0.2.1` or `10.2.3.0/24`, was at port 80 up to v0.22.3, and is at 8053 now, as every example and the health check have it. Give `:80` to keep it.

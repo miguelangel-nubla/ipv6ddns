@@ -61,6 +61,59 @@ tasks:
 	}
 }
 
+// A filter that takes no address is an error at start: a rule of seen of a protocol that is
+// disabled, or one of not_seen that leaves out every record a rule of seen wants. One that leaves
+// out only some of them is no error.
+func TestSeenThatTakesNothing(t *testing.T) {
+	config := func(protocols, rules string) string {
+		return "discovery:\n  protocols:\n" + protocols + `  plugins:
+    router:
+      type: mikrotik
+      interval: 60s
+      address: 192.168.88.1
+      username: admin
+      password: x
+tasks:
+  web:
+    filter:
+      - ip:
+` + rules + `
+    endpoints:
+      duck:
+        - www
+` + duckCredential
+	}
+	const mdnsOn, mdnsOff = "    mdns:\n      enabled: true\n", "    mdns:\n      enabled: false\n"
+	for name, c := range map[string]struct{ protocols, rules, want string }{
+		"a protocol disabled": {mdnsOff, "          seen:\n            - protocol: mdns\n",
+			"task web: filter 1: ip.seen[0].protocol: mdns is disabled, under discovery.protocols: no address has a record of it"},
+		"the same way left out": {mdnsOn, "          seen:\n            - protocol: mdns\n              way: announced\n          not_seen:\n            - protocol: mdns\n",
+			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, mdns:announced, is one this rule wants none of: the filter takes no address"},
+		"the one way of a protocol": {mdnsOn, "          seen:\n            - protocol: ping\n          not_seen:\n            - protocol: ping\n              way: answered\n",
+			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, ping, is one this rule wants none of: the filter takes no address"},
+		"a plugin, left out by its type": {mdnsOn, "          seen:\n            - reported:\n                by:\n                  - router\n          not_seen:\n            - reported:\n                by:\n                  - mikrotik\n",
+			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, reported by router, is one this rule wants none of: the filter takes no address"},
+		"any report, left out": {mdnsOn, "          seen:\n            - reported:\n                from:\n                  - leases\n          not_seen:\n            - reported: {}\n",
+			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, reported from leases, is one this rule wants none of: the filter takes no address"},
+	} {
+		if _, err := loadConfig(t, config(c.protocols, c.rules)); err == nil || err.Error() != c.want {
+			t.Errorf("%s: got %v, want %q", name, err, c.want)
+		}
+	}
+	for name, rules := range map[string]string{
+		"some ways left out":      "          seen:\n            - protocol: mdns\n          not_seen:\n            - protocol: mdns\n              way: announced\n",
+		"another protocol":        "          seen:\n            - protocol: mdns\n          not_seen:\n            - protocol: ndp\n",
+		"one interface left out":  "          seen:\n            - protocol: ndp\n          not_seen:\n            - protocol: ndp\n              interfaces:\n                - eth1\n",
+		"another table":           "          seen:\n            - reported:\n                from:\n                  - neighbors\n          not_seen:\n            - reported:\n                from:\n                  - leases\n",
+		"a report and a protocol": "          seen:\n            - protocol: ndp\n          not_seen:\n            - reported: {}\n",
+		"of a disabled one, none": "          not_seen:\n            - protocol: lldp\n",
+	} {
+		if _, err := loadConfig(t, config(mdnsOn+"    lldp:\n      enabled: false\n", rules)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 // Each error the schema doesn't give is the check's own, and reads as it should.
 func TestSeenCheckMessages(t *testing.T) {
 	for name, c := range map[string]struct {

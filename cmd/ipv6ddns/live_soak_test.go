@@ -51,8 +51,6 @@ webserver:
 discovery:
   lifetime: 6s
   rediscover: 2s
-  hostnames:
-    enabled: true
   protocols:
     mdns:
       enabled: true

@@ -58,13 +58,16 @@ func TestTemplate(t *testing.T) {
 	}
 }
 
+// noNames turns off, under discovery.protocols, every protocol that learns names.
+const noNames = "    mdns:\n      enabled: false\n    dhcp:\n      enabled: false\n    lldp:\n      enabled: false\n    netbios:\n      enabled: false\n    llmnr:\n      enabled: false\n    ssdp:\n      names: false\n    wsd:\n      names: false\n"
+
 // A task's name that is a template is checked as the configuration loads: its placeholders, and
 // that the hosts' names are learned when it takes them.
 func TestTemplatesOfTheConfiguration(t *testing.T) {
 	task := func(names ...string) string {
 		return "tasks:\n  lan:\n    filter:\n      - ip:\n          type:\n            - ula\n    endpoints:\n      duck:\n        - " + strings.Join(names, "\n        - ") + "\n" + duckCredential
 	}
-	const named = "discovery:\n  hostnames:\n    enabled: true\n"
+	const named = ""
 	cfg, err := loadConfig(t, named+task(`"{hostname}"`, `"{n}.{hostname}"`, `"{mac}"`, "nas"))
 	if err != nil {
 		t.Fatal(err)
@@ -77,8 +80,8 @@ func TestTemplatesOfTheConfiguration(t *testing.T) {
 		t.Errorf("{mac} alone, without the names: %v", err)
 	}
 	for name, c := range map[string]struct{ config, want string }{
-		"the names not learned":    {task(`"{hostname}"`), `task lan: endpoint duck: the name "{hostname}" is of the hosts' names, which aren't learned: it needs enabled: true under discovery.hostnames, and a protocol that learns them, as mdns`},
-		"the names switched off":   {"discovery:\n  hostnames:\n    enabled: false\n" + task(`"{n}.{hostname}"`), "which aren't learned"},
+		"the names not learned": {"discovery:\n  protocols:\n" + noNames + task(`"{hostname}"`),
+			`task lan: endpoint duck: the name "{hostname}" is of the hosts' names, which nothing learns: it needs a protocol of discovery.protocols that does, as mdns, or a plugin`},
 		"no placeholder":           {named + task(`"{host}"`), `task lan: endpoint duck: the name "{host}": {host} is no placeholder: they are {hostname}, {n} and {mac}`},
 		"a place without the name": {named + task(`"{n}.lan"`), `the name "{n}.lan": {n} is the place of a host among those of one name`},
 		"a brace alone":            {named + task(`"nas}"`), `the name "nas}": a brace that is of no placeholder`},
@@ -93,9 +96,6 @@ func TestTemplatesOfTheConfiguration(t *testing.T) {
 // given as the hosts are.
 func TestTemplateIsNoNameOfAZone(t *testing.T) {
 	cfg, err := loadConfig(t, `
-discovery:
-  hostnames:
-    enabled: true
 resolvers:
   lan:
     listen: 192.168.1.0/24

@@ -211,16 +211,14 @@ discovery:
   solicit:
     ipv6: true        # the EUI-64 addresses eui64 filters want
     ipv4: true        # ARP to the MACs IPv4 filters name, alone, on the subnets of their ip.prefix
-  # The names of the hosts, which the status page shows beside their MAC. Off by default.
-  hostnames:
-    enabled: true
-  # Each protocol has its switch, and its options: those that find hosts are on by default,
-  # those that tell names off. Every one is in docs/reference/configuration.md.
+  # Each protocol has its switch, and its options: all are on by default, those that hear frames
+  # on Linux. Every one is in docs/reference/configuration.md. The names of the hosts, which the
+  # status page shows beside their MAC, are those the protocols learn.
   protocols:
     ssdp:                     # no search for UPnP devices
       enabled: false
-    mdns:                     # the hosts that announce themselves, and their names
-      enabled: true
+    llmnr:                    # no question of LLMNR, which every host of the link hears
+      enabled: false
   # Not on the bridges of containers: their hosts aren't the network's.
   exclude_interfaces:
     - docker*

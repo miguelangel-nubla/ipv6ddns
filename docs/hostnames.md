@@ -3,13 +3,6 @@
 A task's host name can be a template: a name for each host its filters match, by what the host is called. With it, every host of the LAN that says its name has one in DNS, with no task of its own: `printer.home.arpa`, `laptop.home.arpa`, as they come and go.
 
 ```yaml
-discovery:
-  hostnames:
-    enabled: true
-  protocols:
-    mdns:
-      enabled: true
-
 resolvers:
   lan:
     listen: 192.168.1.0/24
@@ -34,7 +27,7 @@ tasks:
         - "{n}.{hostname}"
 ```
 
-The hosts' names are those [discovery learns](discovery.md#names), with `discovery.hostnames` and a protocol that learns them, or a plugin that reads its router's leases. The filter says which hosts, and which of their addresses, as for any task. The endpoint is any credential: a [resolver](resolver.md)'s zone, a DNS provider, or both.
+The hosts' names are those [discovery learns](discovery.md#names), by a protocol that learns them, as mDNS, on by default, or a plugin that reads its router's leases. The filter says which hosts, and which of their addresses, as for any task. The endpoint is any credential: a [resolver](resolver.md)'s zone, a DNS provider, or both.
 
 ## The placeholders
 
@@ -48,7 +41,7 @@ A template is written in quotes, as YAML takes a `{` for something of its own. I
 
 - **`{hostname}`**, alone, is one name for all the hosts called so: two that both say `printer` are both under `printer`, with the addresses of each. A host with several names, as one by mDNS and another in the router's leases, has each of them.
 - **`{n}.{hostname}`** tells them apart: `1.printer`, `2.printer`, in the order of their MACs. It is the place among those there now, and nothing more: when the first leaves, the second is `1.printer`. A host alone of its name is its `1.`, so that the name is there whether another comes or not.
-- **`{mac}`** is the host's own, whatever comes and goes, and whatever it is called. It needs no name: `"{mac}.hosts"` alone works without `discovery.hostnames`.
+- **`{mac}`** is the host's own, whatever comes and goes, and whatever it is called. It needs no name: `"{mac}.hosts"` alone works with every protocol of names off.
 
 ## A name written wins
 
@@ -78,4 +71,4 @@ What ipv6ddns doesn't know is the names it made before it was started. A host th
 | A placeholder there is none of | `task lan: endpoint home: the name "{host}": {host} is no placeholder: they are {hostname}, {n} and {mac}` |
 | `{n}` without `{hostname}` | `task lan: endpoint home: the name "{n}.lan": {n} is the place of a host among those of one name: it needs {hostname} beside it, as {n}.{hostname}` |
 | A brace alone | `task lan: endpoint home: the name "nas}": a brace that is of no placeholder: they are {hostname}, {n} and {mac}` |
-| `{hostname}` without the names learned | `task lan: endpoint home: the name "{hostname}" is of the hosts' names, which aren't learned: it needs enabled: true under discovery.hostnames, and a protocol that learns them, as mdns` |
+| `{hostname}` with nothing that learns names | `task lan: endpoint home: the name "{hostname}" is of the hosts' names, which nothing learns: it needs a protocol of discovery.protocols that does, as mdns, or a plugin` |

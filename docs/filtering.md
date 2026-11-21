@@ -102,7 +102,7 @@ A rule is one of two kinds:
         *   `heard`: it used the address, unprompted by the discovery.
 *   **`reported`**: something else than the host reported it, from one of its tables.
     *   `by`: plugins, by name or by type, as `mikrotik`; or `kernel`, this machine's own. Without, anyone.
-    *   `from`: `neighbors`, a neighbor or ARP table; `leases`, DHCP leases; `interfaces`, the addresses of this machine's interfaces. Without, any.
+    *   `from`: `neighbors`, a neighbor or ARP table; `leases`, DHCP leases; `interfaces`, the addresses of this machine's interfaces. Without, any. A lease finds no address: it is added to one something else found, at the lease's MAC, while the plugin reads the lease, and keeps it no longer than what found it, as a server keeps the lease of a host that left until it ends.
     *   `reported: {}` is by anyone, from any table.
 
 Either kind takes `interfaces`, a list of local interfaces: the record was made on one of them. A plugin's reports are on none.
@@ -124,24 +124,40 @@ Either kind takes `interfaces`, a list of local interfaces: the record was made 
 | `lldp` | `announced` | Its LLDP gives the address as its management address |
 | `netbios`, `llmnr` | `answered` | It answers the question of its name |
 
-A way a protocol never sees an address is a configuration error, as `ping` with `announced`; so are a protocol, a table or a reporter there is none of.
+What can't match is an error at start, that says why:
+
+*   A way a protocol never sees an address, as `ping` with `announced`; a protocol, a table or a reporter there is none of: `by` names a plugin of `discovery.plugins`, a type of plugin, or `kernel`.
+*   A rule of `seen` of a protocol that is disabled, under `discovery.protocols`: no address has its records.
+*   A rule of `not_seen` that wants none of every record a rule of `seen` wants, as `seen` with `mdns` `announced` and `not_seen` with `mdns`: the filter takes no address.
+
+Two things to know of them:
+
+*   **A rule is of its filter.** The filters of a task are alternatives: an address that one leaves out with its `not_seen` is the task's all the same when another filter takes it. To leave something out of a task, give the `not_seen` to each of its filters.
+*   **`not_seen` judges the records there are.** A host that announces its address a moment after another protocol found it matches `not_seen` with `mdns` until the announcement comes, and its address is the task's for that moment. `seen` waits for what it wants: an address is the task's only once it has it.
+
+None of these tells a stable address from a temporary one: the host knows, and says it to nobody. See [after a start](discovery.md#after-a-start) for what a restart can't find at once.
+
+##### What the host itself showed
+
+A router keeps the neighbor entry of a host that left, and reports it until it ages out. An address the host itself answered for, or announced, is there now:
 
 ```yaml
 filter:
-  # What the router's neighbor table has, and the host itself showed, by any protocol: not an
-  # entry of the router's alone, as one of a host that left.
   - mac:
       address: 00:11:22:33:44:55
     ip:
       seen:
-        - reported:
-            by:
-              - mikrotik
-            from:
-              - neighbors
         - protocol: ndp
-  # What the host announced over mDNS. Apple's responder announces its stable addresses only;
-  # avahi, on Linux, its temporary ones too.
+```
+
+`ndp` sees every IPv6 address on the links the local discovery runs on, by any way; it is on by default. Of a host on another network, which only a plugin reaches, there is nothing but the plugin's report: this leaves it out.
+
+##### What the host announced over mDNS
+
+A host's mDNS responder announces the addresses it means to be reached at, in the address records of its name:
+
+```yaml
+filter:
   - mac:
       address: 00:11:22:33:44:66
     ip:
@@ -150,7 +166,45 @@ filter:
           way: announced
 ```
 
-None of these tells a stable address from a temporary one: the host knows, and says it to nobody. See [after a start](discovery.md#after-a-start) for what a restart can't find at once.
+`mdns` is on by default. What it announces is the responder's choice: Apple's announces its stable addresses only, not its temporary ones; avahi, on Linux, its temporary ones too. An address of another host in an announcement is no announcement of that host's: only the sender's own count.
+
+##### What the router leased
+
+The addresses a router's DHCP server gave, as one a device keeps for its lease, and not one it took itself, as a temporary IPv6 address:
+
+```yaml
+filter:
+  - mac:
+      address: 00:11:22:33:44:77
+    ip:
+      seen:
+        - reported:
+            by:
+              - mikrotik
+            from:
+              - leases
+```
+
+It needs a [plugin](discovery.md#plugins) that reads the leases, of the router that gives them: a `mikrotik`, `linux` or `freebsd` plugin reads them as it polls. A DHCPv6 lease of `linux` or `freebsd` has its address at the MAC the neighbor table has it at; the DHCPv6 bindings of a Mikrotik router have none to read.
+
+##### Not what a server leased
+
+The addresses a host took itself, as those of SLAAC, and not one a DHCPv6 server gave it:
+
+```yaml
+filter:
+  - mac:
+      address: 00:11:22:33:44:88
+    ip:
+      type:
+        - global
+      not_seen:
+        - reported:
+            from:
+              - leases
+```
+
+The lease is known once the plugin has read it, at its next poll after the address was found: until then the leased address is the task's too.
 
 Addresses without a MAC, as the network's public IPv4, don't go through filters: a task gets them from the [sources](sources.md) it names, in its `sources`.
 

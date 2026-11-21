@@ -39,11 +39,11 @@ The switches of a family are those of all its protocols at once. Under `protocol
 | `arp` | on | IPv4 | The kernel's neighbor table, read every minute |
 | `arp-sweep` | on | IPv4 | The sweep, with `active`, of the subnets no larger than its `max_prefix` |
 | `arp-listen` | on, on Linux | IPv4 | The ARP the hosts send, heard. Linux only |
-| `mdns` | off | Either | Whatever sends to the groups of mDNS is a host, and what it announces its [name](#names) |
-| `dhcp`, `lldp` | off | Either | What DHCP clients and LLDP neighbors say, heard. Linux only |
-| `netbios`, `llmnr`, `dns` | off | | A host is asked its name, or the `servers` of `dns` are: [names](#names) only |
+| `mdns` | on | Either | Whatever sends to the groups of mDNS is a host, and what it announces its [name](#names) |
+| `dhcp`, `lldp` | on, on Linux | Either | What DHCP clients and LLDP neighbors say, heard. Linux only |
+| `netbios`, `llmnr`, `dns` | on | | A host is asked its name, or the `servers` of `dns` are, once it has some: [names](#names) only |
 
-By default those that find hosts are on, and those that tell names off. One that is off sends nothing, joins no group and opens no socket:
+By default every protocol is on, with its options: `ssdp` and `wsd` fetch names, `mdns` asks. Those that hear frames are on where they can run, on Linux; without the privilege they need, `CAP_NET_RAW`, the log says so once, and the rest runs. One that is off sends nothing, joins no group and opens no socket:
 
 ```yaml
 discovery:
@@ -52,23 +52,35 @@ discovery:
       enabled: false
     wsd:
       enabled: false
-    mdns:
-      enabled: true
+    llmnr:                    # its questions go to every host of the link
+      enabled: false
 ```
 
-What can't run is an error at start, not a protocol left out without a word: one there is none of, `ping`, `ssdp` or `wsd` without `ndp`, which tells them the MAC of what they hear, `arp-listen`, `dhcp` or `lldp` anywhere but on Linux, `dns` without `servers`, and one that only learns names without `hostnames`. The log says at start which run, the web report and `-live` show them under `Protocols`, and `/status.json` has them as `protocols`. Each, with its options and defaults, is in the [reference](reference/configuration.md#discovery-protocols).
+What can't run is an error at start, not a protocol left out without a word: one there is none of, `ping`, `ssdp` or `wsd` without `ndp`, which tells them the MAC of what they hear, `arp-listen`, `dhcp` or `lldp` anywhere but on Linux, and `enabled` under `hostnames`, as there was. The log says at start which run, the web report and `-live` show them under `Protocols`, and `/status.json` has them as `protocols`. Each, with its options and defaults, is in the [reference](reference/configuration.md#discovery-protocols).
 
 ## Names
 
-With `hostnames.enabled`, discovery keeps the names the hosts go by: what a protocol enabled learns, as mDNS, and what the plugins read in their routers' DHCP leases. A name is whatever the device claims, cleaned to one DNS label: nothing proves it, and two hosts can claim the same.
+Discovery keeps the names the hosts go by: what a protocol learns, as mDNS, and what the plugins read in their routers' DHCP leases. A name is whatever the device claims, cleaned to one DNS label: nothing proves it, and two hosts can claim the same. To learn none, turn off the protocols that learn them; `hostnames` has only their `lifetime`:
 
 ```yaml
 discovery:
   hostnames:
-    enabled: true
+    lifetime: 4h
   protocols:
     mdns:
-      enabled: true
+      enabled: false
+    dhcp:
+      enabled: false
+    lldp:
+      enabled: false
+    netbios:
+      enabled: false
+    llmnr:
+      enabled: false
+    ssdp:
+      names: false
+    wsd:
+      names: false
 ```
 
 The web report and `-live` show a host's names after its MAC, each with what said it, and `/status.json` has them as the host's `names`. They tell which host a MAC is, when writing a filter; and a task can name its hosts by them, with a [template](hostnames.md) among its `endpoints`, as `{hostname}`.

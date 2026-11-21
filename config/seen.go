@@ -168,3 +168,63 @@ func (s Seen) describe() string {
 	}
 	return b.String()
 }
+
+// covers tells whether every record s matches would match n too: as a rule of not_seen, n then
+// leaves out every address s, of seen, takes. A plugin named in s is of the type n names.
+func (n Seen) covers(s Seen, d Discovery) bool {
+	within := func(some, all []string) bool {
+		return len(all) == 0 || len(some) > 0 && !slices.ContainsFunc(some, func(x string) bool { return !slices.Contains(all, x) })
+	}
+	if !within(s.On, n.On) || (n.Reported == nil) != (s.Reported == nil) {
+		return false
+	}
+	if n.Reported != nil {
+		if !within(s.Reported.From, n.Reported.From) {
+			return false
+		}
+		if len(n.Reported.By) == 0 {
+			return true
+		}
+		return len(s.Reported.By) > 0 && !slices.ContainsFunc(s.Reported.By, func(by string) bool {
+			p, plugin := d.Plugins[by]
+			return !slices.Contains(n.Reported.By, by) && !(plugin && slices.Contains(n.Reported.By, p.Type))
+		})
+	}
+	if n.Protocol != s.Protocol {
+		return false
+	}
+	ways := protocolWays[s.Protocol]
+	if s.Way != "" {
+		ways = []ipv6disc.Way{ipv6disc.Way(s.Way)}
+	}
+	return n.Way == "" || !slices.ContainsFunc(ways, func(w ipv6disc.Way) bool { return w != ipv6disc.Way(n.Way) })
+}
+
+// records tells whether the discovery runs what makes the protocol's records: its switch, of
+// discovery.protocols; of arp, the ARP heard, or a sweep's or a solicitation's answers.
+func (d Discovery) records(protocol string) bool {
+	p := d.Protocols
+	switch protocol {
+	case ipv6disc.ProtocolNDP:
+		return p.NDP.Enabled
+	case ipv6disc.ProtocolPing:
+		return p.Ping.Enabled
+	case ipv6disc.ProtocolSSDP:
+		return p.SSDP.Enabled
+	case ipv6disc.ProtocolWSD:
+		return p.WSD.Enabled
+	case ipv6disc.ProtocolMDNS:
+		return p.MDNS.Enabled
+	case ipv6disc.ProtocolARP:
+		return p.ARP.Enabled || p.ARPSweep.Enabled || p.ARPListen.Enabled || d.Solicit.IPv4
+	case ipv6disc.ProtocolDHCP:
+		return p.DHCP.Enabled
+	case ipv6disc.ProtocolLLDP:
+		return p.LLDP.Enabled
+	case ipv6disc.ProtocolNetBIOS:
+		return p.NetBIOS.Enabled
+	case ipv6disc.ProtocolLLMNR:
+		return p.LLMNR.Enabled
+	}
+	return false
+}

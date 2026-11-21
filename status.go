@@ -46,7 +46,7 @@ type HostnameStatus struct {
 
 type DiscoveredHost struct {
 	MAC string `json:"mac"`
-	// The names of the host, with discovery.hostnames: what it, or its router, says it is called.
+	// The names of the host: what it, or its router, says it is called, as discovery learns them.
 	Names     []DiscoveredName    `json:"names,omitempty"`
 	Addresses []DiscoveredAddress `json:"addresses"`
 }

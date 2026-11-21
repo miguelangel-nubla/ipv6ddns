@@ -57,7 +57,7 @@ func TestDiscovery(t *testing.T) {
 			t.Errorf("%s: warnings %q, want %q", name, cfg.Warnings, tt.warnings)
 		}
 		// What the block doesn't say is ipv6disc's default, but the lifetime: an hour.
-		if d.Lifetime != disc.Duration(DefaultLifetime) || d.Hostnames.Enabled || !reflect.DeepEqual(d.Protocols, disc.DefaultDiscovery().Protocols) {
+		if d.Lifetime != disc.Duration(DefaultLifetime) || !reflect.DeepEqual(d.Protocols, disc.DefaultDiscovery().Protocols) {
 			t.Errorf("%s: lifetime %s, hostnames %+v, protocols %+v", name, d.Lifetime, d.Hostnames, d.Protocols)
 		}
 	}
@@ -76,7 +76,6 @@ discovery:
   ipv4:
     enabled: true
   hostnames:
-    enabled: true
     lifetime: 2h
   protocols:
     ssdp:
@@ -103,7 +102,7 @@ tasks: {}
 	if !slices.Equal(d.Interfaces, []string{"eth0", "br-*"}) || !slices.Equal(d.ExcludeInterfaces, []string{"docker*", "veth*"}) {
 		t.Errorf("interfaces: %v, excluding %v", d.Interfaces, d.ExcludeInterfaces)
 	}
-	if !d.Hostnames.Enabled || d.Hostnames.Lifetime != disc.Duration(2*time.Hour) {
+	if d.Hostnames.Lifetime != disc.Duration(2*time.Hour) {
 		t.Errorf("hostnames: %+v", d.Hostnames)
 	}
 	want := disc.DefaultDiscovery().Protocols
@@ -115,7 +114,7 @@ tasks: {}
 		t.Errorf("protocols:\n%+v, want\n%+v", d.Protocols, want)
 	}
 	// And as the library's worker takes them.
-	if c := d.Config(); c.Lifetime != 30*time.Minute || !c.Hostnames.Enabled || !c.Protocols.MDNS.Enabled || c.Protocols.SSDP.Enabled || !c.Protocols.NDP.Enabled {
+	if c := d.Config(); c.Lifetime != 30*time.Minute || !c.Protocols.MDNS.Enabled || c.Protocols.SSDP.Enabled || !c.Protocols.NDP.Enabled {
 		t.Errorf("the library's configuration: %+v", c)
 	}
 }
@@ -150,8 +149,7 @@ func TestDiscoveryErrors(t *testing.T) {
 		"a family's lifetime":   {"discovery:\n  ipv4:\n    lifetime: -3\n", "discovery: invalid family lifetime: IPv6 1h0m0s, IPv4 -3s"},
 		"an interface":          {"discovery:\n  exclude_interfaces:\n    - 'docker['\n", `discovery: invalid interface pattern "docker[": syntax error in pattern`},
 		"ping without ndp":      {"discovery:\n  protocols:\n    ndp:\n      enabled: false\n    ssdp:\n      enabled: false\n    wsd:\n      enabled: false\n", "discovery: the ping protocol is enabled without ndp, which tells the MAC of the hosts it hears: it would find none"},
-		"names not kept":        {"discovery:\n  protocols:\n    llmnr:\n      enabled: true\n", "discovery: the llmnr protocol is enabled, and it only learns names, which hostnames, off, doesn't keep: enable hostnames, or disable llmnr"},
-		"dns without servers":   {"discovery:\n  hostnames:\n    enabled: true\n  protocols:\n    dns:\n      enabled: true\n", "discovery: the dns protocol is enabled without servers: it asks only those it is given"},
+		"the names' switch":     {"discovery:\n  hostnames:\n    enabled: true\n", "discovery.hostnames.enabled: the names are no longer switched: they are kept, of the protocols that learn them; to learn none, disable those under protocols, as mdns, netbios, llmnr and dhcp, and the names of ssdp and wsd"},
 		"a sweep too large":     {"discovery:\n  protocols:\n    arp-sweep:\n      max_prefix: 8\n", "discovery: invalid max_prefix of the arp-sweep protocol, 8: it is from 16 to 30"},
 		"a block that is none":  {"discovery: all\n", `discovery: "all" is not a mapping of its keys`},
 		"a plugin of no type":   {"discovery:\n  plugins:\n    router:\n      interval: 60s\n", "discovery.plugins.router: a plugin has a type: one of freebsd, linux, mikrotik"},
@@ -501,8 +499,11 @@ ipv6:
 hostnames: {}`: valid,
 		`
 hostnames:
-  enabled: true
   lifetime: 2h`: valid,
+		`
+hostnames:
+  enabled: true
+  lifetime: 2h`: invalid,
 		`
 hostnames: true`: invalid,
 		`
@@ -524,8 +525,6 @@ protocols:
   wsd:
     enabled: false`: valid,
 		`
-hostnames:
-  enabled: true
 protocols:
   mdns:
     enabled: true
@@ -539,15 +538,11 @@ protocols:
   netbios:
     enabled: true`: valid,
 		`
-hostnames:
-  enabled: true
 protocols:
   dns:
     enabled: true
     servers: 192.168.1.1`: valid,
 		`
-hostnames:
-  enabled: true
 protocols:
   dns:
     enabled: true
@@ -638,20 +633,16 @@ protocols:
 		`
 protocols:
   llmnr:
-    enabled: true`: cannotRun,
+    enabled: true`: valid,
 		`
 protocols:
   ssdp:
-    names: true`: cannotRun,
+    names: true`: valid,
 		`
-hostnames:
-  enabled: true
 protocols:
   dns:
-    enabled: true`: invalid,
+    enabled: true`: valid,
 		`
-hostnames:
-  enabled: true
 protocols:
   dns:
     enabled: true
