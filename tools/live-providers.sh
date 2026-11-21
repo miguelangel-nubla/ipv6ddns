@@ -72,8 +72,10 @@ kvm=
 if [ -w /dev/kvm ]; then
 	kvm='--device /dev/kvm'
 fi
+# QEMU of Alpine 3.22, 10.0: the 11.0 of later ones forwards no UDP to the machine, so its DNS,
+# port 53, never answers.
 docker run -d --name "$prefix-routeros" $kvm $publish -p 127.0.0.1::80/tcp -p 127.0.0.1::8728/tcp -p 127.0.0.1::8729/tcp \
-	-v ipv6ddns-live-routeros:/cache -e VERSION="$ROUTEROS_VERSION" alpine:3 sh -euc '
+	-v ipv6ddns-live-routeros:/cache -e VERSION="$ROUTEROS_VERSION" alpine:3.22 sh -euc '
 		apk add -q qemu-system-x86_64
 		if [ ! -f "/cache/chr-$VERSION.img" ]; then
 			wget -q -O /tmp/chr.zip "https://download.mikrotik.com/routeros/$VERSION/chr-$VERSION.img.zip"
