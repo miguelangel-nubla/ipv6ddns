@@ -37,10 +37,10 @@ type Resolver struct {
 	// The answers forwarded that it keeps, for their TTL: entries. Default: DefaultCacheSize; 0,
 	// none.
 	CacheSize *int `json:"cache_size,omitempty"`
-	// Whether it answers itself the reverse of the private networks' addresses that it has no name
-	// of, with no such name, as RFC 6303 asks: but of a network an upstream server is in. Default:
-	// true.
-	PrivateReverse *bool `json:"private_reverse,omitempty"`
+	// Whether the reverse of the private networks' addresses that it has no name of is asked of the
+	// upstream servers, out of RFC 6303, as of a local server that knows more of their names.
+	// Default: false, no such name, its own.
+	ForwardUnknownPrivateReverseQueries bool `json:"forward_unknown_private_reverse_queries,omitempty"`
 
 	// The resolver, checked, with its zones.
 	Spec resolver.Config `json:"-"`
@@ -114,7 +114,7 @@ func (c *Config) setUpResolvers() error {
 		if r.CacheSize != nil {
 			spec.CacheSize = *r.CacheSize
 		}
-		spec.PrivateReverse = r.PrivateReverse == nil || *r.PrivateReverse
+		spec.ForwardUnknownPrivateReverse = r.ForwardUnknownPrivateReverseQueries
 		for _, a := range r.Allow {
 			p, err := parseNetwork(a)
 			if err != nil {

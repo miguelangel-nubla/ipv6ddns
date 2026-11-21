@@ -167,16 +167,18 @@ The reverse of an address of a private network that the resolver has no name of 
 
 Each is a zone of its own, as `168.192.in-addr.arpa`, whose apex has the SOA and NS records RFC 6303 gives it; a name of it the resolver has an address of, asked another type than `PTR`, has no data.
 
-The network an upstream server is in, given by its address, is asked of that server all the same: a router knows the names of its DHCP clients, and keeps answering them. With `upstream: 192.168.1.1`, the reverse of `192.168.1.30` is the router's to answer, and that of `10.0.0.5` the resolver's. A router that names the hosts of other private networks too, as its other VLANs, wants every reverse asked of it: `private_reverse: false`, which forwards them all, as any other name.
+This holds whatever the upstream servers are, a router of the network too. A local server that knows more of these names than the resolver does, as a router does of its DHCP clients, or one that answers the reverse of another VLAN's, can be asked anyway, out of RFC 6303: with `forward_unknown_private_reverse_queries`, every private reverse the resolver has no name of goes to the upstream servers, as any other name it doesn't know. What it names is answered as its own all the same: only what it can't answer is asked.
 
 ```yaml
 resolvers:
   lan:
     listen: 192.168.1.0/24
     upstream:
-      - 192.168.1.1   # its DHCP server gives 10.20.0.0/16 too, to the cameras' VLAN
-    private_reverse: false
+      - 192.168.1.1   # the router, which names its DHCP clients
+    forward_unknown_private_reverse_queries: true
 ```
+
+Turn it on only for upstream servers of the network: a public one knows none of these names, and the questions would leave the network for nothing.
 
 ### Other addresses
 

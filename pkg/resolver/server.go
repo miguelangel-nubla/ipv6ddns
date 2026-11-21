@@ -112,8 +112,8 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 		}
 		s.upstreams = append(s.upstreams, srv)
 	}
-	if cfg.PrivateReverse {
-		s.private = privateZones(s.upstreams)
+	if !cfg.ForwardUnknownPrivateReverse {
+		s.private = privateZones()
 	}
 	return s, nil
 }

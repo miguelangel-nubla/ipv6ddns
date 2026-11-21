@@ -9,7 +9,7 @@ import (
 
 // The zones of RFC 6303 and RFC 7793, by their names: of whole octets, or whole nibbles.
 func TestPrivateZones(t *testing.T) {
-	zones := privateZones(nil)
+	zones := privateZones()
 	if len(zones) != 17+16+64 {
 		t.Errorf("%d zones", len(zones))
 	}
@@ -31,21 +31,17 @@ func TestPrivateZones(t *testing.T) {
 			t.Errorf("no zone %s", want)
 		}
 	}
-	// An upstream server in a network: its zone is the server's to answer.
-	if zones := privateZones([]*upstreamServer{{host: "192.168.1.1"}, {host: "fd00::1"}, {host: "dns.example"}}); len(zones) != 17+16+64-2 {
-		t.Errorf("with upstream servers in two of them, %d zones", len(zones))
-	}
 }
 
-// With private_reverse, the reverse of a private network's address that the resolver has no name
-// of is no such name, answered as its own, of the zone's SOA, and the upstream server isn't asked;
-// the reverse of an address it has a name of is that name, and of another type no data. The apex
-// has its SOA and NS. The reverse of the network the upstream server is in is asked of it, and of
-// any other address too. Without, all is asked.
+// By default, the reverse of a private network's address that the resolver has no name of is no
+// such name, answered as its own, of the zone's SOA, and the upstream server isn't asked: whatever
+// network the upstream server is in, here the loopback's. The reverse of an address it has a name
+// of is that name, and of another type no data. The apex has its SOA and NS. The reverse of any
+// other address is asked. With forward_unknown_private_reverse_queries, all it has no name of is asked, and
+// what it names is its own all the same.
 func TestPrivateReverse(t *testing.T) {
 	up := newUpstream(t)
 	cfg, addresses := testConfig(t, up.address)
-	cfg.PrivateReverse = true
 	s, _ := startCached(t, cfg, 0)
 	addresses.Set("nas.home.arpa.", []netip.Addr{netip.MustParseAddr("192.168.1.10")})
 
@@ -104,21 +100,29 @@ func TestPrivateReverse(t *testing.T) {
 	}
 	local("168.192.in-addr.arpa.", dns.TypeA, dns.RcodeSuccess, "168.192.in-addr.arpa.")
 
-	// Asked of the upstream server: of the loopback, its network, and of addresses of the
-	// internet, or next to a private network.
-	for _, address := range []string{"127.0.0.1", "8.8.8.8", "100.63.0.1", "172.32.0.1", "2a00::1"} {
+	// The loopback's, though the upstream server is on it.
+	local(reverseName4(t, "127.0.0.1"), dns.TypePTR, dns.RcodeNameError, "127.in-addr.arpa.")
+	// Asked of the upstream server: of addresses of the internet, or next to a private network.
+	for _, address := range []string{"8.8.8.8", "100.63.0.1", "172.32.0.1", "2a00::1"} {
 		if _, asked := ask(reverseName4(t, address), dns.TypePTR); !asked {
 			t.Errorf("%s: not asked of the upstream server", address)
 		}
 	}
 
-	// Without private_reverse: asked.
-	cfg.PrivateReverse = false
-	off, _ := startCached(t, cfg, 0)
+	// With forward_unknown_private_reverse_queries: what it has no name of is asked; what it names, not.
+	cfg.ForwardUnknownPrivateReverse = true
+	forwarding, _ := startCached(t, cfg, 0)
+	for _, address := range []string{"192.168.1.99", "fd00::99", "127.0.0.1"} {
+		before := up.queries.Load()
+		query(t, forwarding, "udp", reverseName4(t, address), dns.TypePTR, nil)
+		if up.queries.Load() == before {
+			t.Errorf("%s, forwarding: the upstream server wasn't asked", address)
+		}
+	}
 	before := up.queries.Load()
-	query(t, off, "udp", reverseName4(t, "192.168.1.99"), dns.TypePTR, nil)
-	if up.queries.Load() == before {
-		t.Error("without private_reverse, the upstream server wasn't asked")
+	resp := query(t, forwarding, "udp", reverseName4(t, "192.168.1.10"), dns.TypePTR, nil)
+	if up.queries.Load() != before || !resp.Authoritative || len(resp.Answer) != 1 || resp.Answer[0].(*dns.PTR).Ptr != "nas.home.arpa." {
+		t.Errorf("the named address, forwarding: %v, asked upstream %t", resp.Answer, up.queries.Load() != before)
 	}
 }
 

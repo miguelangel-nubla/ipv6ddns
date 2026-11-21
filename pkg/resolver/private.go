@@ -53,18 +53,10 @@ func reverseZone(p netip.Prefix) string {
 	return strings.Join(append(labels, "ip6.arpa."), ".")
 }
 
-// privateZones are the reverse zones of privateNetworks the resolver answers: all, but those of a
-// network an upstream server is in, given by its address, which can know the names there, as a
-// router does of its DHCP clients'.
-func privateZones(upstreams []*upstreamServer) []string {
+// privateZones are the reverse zones of privateNetworks, which the resolver answers itself.
+func privateZones() []string {
 	var zones []string
 	for _, p := range privateNetworks {
-		if slices.ContainsFunc(upstreams, func(u *upstreamServer) bool {
-			a, err := netip.ParseAddr(u.host)
-			return err == nil && p.Contains(a.Unmap().WithZone(""))
-		}) {
-			continue
-		}
 		zones = append(zones, reverseZone(p))
 	}
 	return zones

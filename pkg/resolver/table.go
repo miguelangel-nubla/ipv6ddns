@@ -51,9 +51,9 @@ type Config struct {
 	Zones []Zone
 	// How many answers forwarded it keeps: 0, none.
 	CacheSize int
-	// Whether it answers the reverse zones of the private networks itself, as RFC 6303 has it:
-	// but those of a network an upstream server is in.
-	PrivateReverse bool
+	// Whether the reverse of the private networks' addresses that it has no name of is asked of the
+	// upstream servers, out of RFC 6303: by default, it is no such name, its own.
+	ForwardUnknownPrivateReverse bool
 }
 
 // Zone is a credential's zone, which a resolver answers.

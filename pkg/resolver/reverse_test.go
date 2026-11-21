@@ -48,6 +48,9 @@ func TestReverseAddr(t *testing.T) {
 func TestReverse(t *testing.T) {
 	up := newUpstream(t)
 	cfg, addresses := testConfig(t, up.address)
+	// The private networks' reverse it has no name of goes upstream too: what it names is its own
+	// all the same.
+	cfg.ForwardUnknownPrivateReverse = true
 	cfg.Records = append(cfg.Records, mustRecords(t, "",
 		"7.2.0.192.in-addr.arpa. PTR written.example.com.",
 		"seven.example.com. A 192.0.2.7",
