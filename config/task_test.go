@@ -19,7 +19,7 @@ func TestTaskMatch(t *testing.T) {
 	byMAC.MAC.Address = "00:11:22:33:44:55"
 	byPrefix.IP.Prefix = netip.MustParsePrefix("2001:db8::/64")
 	byOtherPrefix.IP.Prefix = netip.MustParsePrefix("fd00::/8")
-	bySource.Source = []string{"eth0"}
+	bySource.IP.Seen = []Seen{{Protocol: ipv6disc.ProtocolNDP, On: []string{"eth0"}}}
 	macAndOtherPrefix := byMAC
 	macAndOtherPrefix.IP.Prefix = byOtherPrefix.IP.Prefix
 	eui64 := byMAC
@@ -36,7 +36,7 @@ func TestTaskMatch(t *testing.T) {
 		{"its MAC and EUI-64 global", []Filters{eui64}, true},
 		{"its MAC, another prefix: every check of a filter must pass", []Filters{macAndOtherPrefix}, false},
 		{"another prefix, or its prefix: any filter can match", []Filters{byOtherPrefix, byPrefix}, true},
-		{"a source that didn't see it", []Filters{bySource}, false},
+		{"a protocol that didn't see it", []Filters{bySource}, false},
 	}
 	for _, tt := range tests {
 		if got := (Task{Filters: tt.filters}).Match(addr); got != tt.want {

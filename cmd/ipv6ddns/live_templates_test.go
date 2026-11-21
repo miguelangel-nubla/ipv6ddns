@@ -151,11 +151,14 @@ credentials:
 		return !d.has("aa") && slices.Equal(d.data("A"), []string{"192.0.2.53"})
 	}, one.tells)
 	t.Logf("the printer's name went %s after it left, with a lifetime of 9s", time.Since(left).Round(100*time.Millisecond))
-	for _, name := range []string{"1.printer.home.arpa", byMAC(printer)} {
-		if got := aaaa(name); len(got) != 0 {
-			t.Errorf("%s, of the printer that left: %v", name, got)
-		}
+	// Its names by its name go with the name; the one of its MAC, with its address, which lasts
+	// its lifetime after the last record of it: within the lifetime of its leaving, both.
+	if got := aaaa("1.printer.home.arpa"); len(got) != 0 {
+		t.Errorf("1.printer.home.arpa, of the printer that left: %v", got)
 	}
+	waitFor(t, time.Until(left.Add(9*time.Second+5*time.Second)), byMAC(printer)+" to go, a lifetime after the printer left", func() bool {
+		return len(aaaa(byMAC(printer))) == 0
+	}, one.tells)
 	waitFor(t, 30*time.Second, "the printer's name to go from the provider", func() bool { return dns.has("printer.lan.example") }, one.tells, dns.tells)
 	if !is("1.laptop.home.arpa", laptop)() || !dns.has("laptop.lan.example", laptop.IPv6) {
 		t.Errorf("the laptop, which stays: %s; at the provider %v", tells("1.laptop.home.arpa")(), dns.addresses("laptop.lan.example"))

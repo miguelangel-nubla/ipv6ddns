@@ -107,17 +107,24 @@
                                                 ]
                                             },
                                             "description": "4, 6 or both. Default: 6."
+                                        },
+                                        "seen": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/$defs/seen"
+                                            },
+                                            "description": "How the address was seen: a record of each rule, all of which it must have, each of its own times, while they count. Rules: a protocol and its way, as protocol: mdns and way: announced; or reported, by a plugin or the kernel, from a table."
+                                        },
+                                        "not_seen": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/$defs/seen"
+                                            },
+                                            "description": "Records the address must have none of, as seen takes them: not_seen with reported {} is an address the host showed itself, never only one a table reports."
                                         }
                                     },
                                     "additionalProperties": false,
                                     "description": "Rules on the address."
-                                },
-                                "source": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "string"
-                                    },
-                                    "description": "Names of what must all have seen the address: discovery plugins, or local interfaces."
                                 }
                             },
                             "additionalProperties": false
@@ -801,6 +808,83 @@
             "type": "string",
             "pattern": "^(0|(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+)$",
             "description": "A duration, as 90s, 1m30s or 1h."
+        },
+        "seen": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "protocol": {
+                    "type": "string",
+                    "enum": [
+                        "arp",
+                        "dhcp",
+                        "lldp",
+                        "llmnr",
+                        "mdns",
+                        "ndp",
+                        "netbios",
+                        "ping",
+                        "ssdp",
+                        "wsd"
+                    ],
+                    "description": "A protocol of the local discovery that saw the address."
+                },
+                "way": {
+                    "type": "string",
+                    "enum": [
+                        "announced",
+                        "answered",
+                        "heard"
+                    ],
+                    "description": "How the protocol saw it: announced, the host said the address is its own; answered, it replied to a probe of the discovery's; heard, it used the address, unprompted. Without, any way."
+                },
+                "reported": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "by": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Who reported it: plugins by name, or by type, as mikrotik; or kernel, this machine's own. Without, anyone."
+                        },
+                        "from": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "neighbors",
+                                    "leases",
+                                    "interfaces"
+                                ]
+                            },
+                            "description": "From which of their tables: neighbors, leases, interfaces. Without, any."
+                        }
+                    },
+                    "description": "Reported by something else than the host: a plugin, or this machine's kernel, from one of its tables. {} is by anyone, from any table."
+                },
+                "interfaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "On these local interfaces only. Without, on any."
+                }
+            },
+            "oneOf": [
+                {
+                    "required": [
+                        "protocol"
+                    ]
+                },
+                {
+                    "required": [
+                        "reported"
+                    ]
+                }
+            ],
+            "description": "A record the address has: of a protocol, and how it saw the address; or a report. One of protocol or reported."
         },
         "discoveryDuration": {
             "description": "A duration, as 90s, 1m30s or 4h, or a number of seconds.",

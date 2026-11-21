@@ -23,10 +23,9 @@ type Task struct {
 type Filters struct {
 	// The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather
 	// than of a MAC: a Home Assistant host, a server.
-	Self   bool       `json:"self"`
-	MAC    MACFilters `json:"mac"`
-	IP     IPFilters  `json:"ip"`
-	Source []string   `json:"source"`
+	Self bool       `json:"self"`
+	MAC  MACFilters `json:"mac"`
+	IP   IPFilters  `json:"ip"`
 }
 
 type MACFilters struct {
@@ -43,6 +42,10 @@ type IPFilters struct {
 	Prefix netip.Prefix `json:"prefix"`
 	Suffix string       `json:"suffix"`
 	Mask   []string     `json:"mask"`
+	// How the address was seen, of its records: every rule of Seen by one of them, and no record
+	// of any rule of NotSeen.
+	Seen    []Seen `json:"seen,omitempty"`
+	NotSeen []Seen `json:"not_seen,omitempty"`
 }
 
 // Match tells whether any of the task's filters matches the address.
@@ -66,15 +69,45 @@ func (f Filters) Match(addr *ipv6disc.Addr) bool {
 		filter.CheckPrefix(addr.Addr, f.IP.Prefix) &&
 		filter.CheckSuffix(addr.Addr, f.IP.Suffix) &&
 		filter.CheckMask(addr.Addr, f.IP.Mask) &&
-		filter.CheckSource(addr, f.Source)
+		f.IP.checkSeen(addr)
+}
+
+// checkSeen tells whether the address's records are as the rules say: one for each of Seen, and
+// none of NotSeen.
+func (f IPFilters) checkSeen(addr *ipv6disc.Addr) bool {
+	if len(f.Seen) == 0 && len(f.NotSeen) == 0 {
+		return true
+	}
+	records := addr.Records()
+	for _, s := range f.Seen {
+		if !s.Match(records) {
+			return false
+		}
+	}
+	for _, s := range f.NotSeen {
+		if s.Match(records) {
+			return false
+		}
+	}
+	return true
 }
 
 // checkFilters checks what the schema can't of the task's filters, and writes their MAC in its
 // canonical form, 00:11:22:33:44:55, which is what matches and what the report shows. A rule
 // that doesn't parse is an error: skipped, the filter would take every host.
-func (t *Task) checkFilters() error {
+func (t *Task) checkFilters(plugins []string) error {
 	for i := range t.Filters {
 		f := &t.Filters[i]
+		for j, s := range f.IP.Seen {
+			if err := s.check(fmt.Sprintf("filter %d: ip.seen[%d]", i+1, j), plugins); err != nil {
+				return err
+			}
+		}
+		for j, s := range f.IP.NotSeen {
+			if err := s.check(fmt.Sprintf("filter %d: ip.not_seen[%d]", i+1, j), plugins); err != nil {
+				return err
+			}
+		}
 		if f.MAC.Address != "" {
 			mac, err := net.ParseMAC(f.MAC.Address)
 			if err != nil || len(mac) != 6 {

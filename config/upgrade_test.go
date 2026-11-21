@@ -50,6 +50,7 @@ func TestUpgradeFromV0223(t *testing.T) {
 			"discovery.ipv6.solicit is discovery.solicit.ipv6 now: the solicitation has its own block, solicit, beside the families, with ipv6: true under it",
 			"discovery.ipv4.solicit is discovery.solicit.ipv4 now: the solicitation has its own block, solicit, beside the families, with ipv4: true under it",
 		}
+		// What the schema's turn would tell once these are done: the filter's source.
 		if got := strings.Split(err.Error(), "\n"); strings.Join(got, "\n") != strings.Join(want, "\n") {
 			t.Errorf("it is told:\n%s\nwant:\n%s", err, strings.Join(want, "\n"))
 		}
@@ -60,6 +61,11 @@ func TestUpgradeFromV0223(t *testing.T) {
 		upgraded = change(upgraded, "    solicit: true     # the EUI-64 addresses eui64 filters want\n", "")
 		upgraded = change(upgraded, "    solicit: true     # ARP to the MACs IPv4 filters name, alone, on the subnets of their ip.prefix\n", "")
 		upgraded = change(upgraded, "discovery:\n", "discovery:\n  lifetime: 1h\n  solicit:\n    ipv6: true\n    ipv4: true\n")
+		_, err = load(upgraded)
+		if want := "task mylocalonlyserver: filter 1: source is ip.seen now, with a rule for each record the address is to have: reported, with by, for a plugin; interfaces, for an interface"; err == nil || err.Error() != want {
+			t.Fatalf("with the discovery's changes: %v, want %q", err, want)
+		}
+		upgraded = change(upgraded, "        source:\n          - mikrotik-lan\n", "          seen:\n            - reported:\n                by:\n                  - mikrotik-lan\n")
 		cfg, err := load(upgraded)
 		if err != nil {
 			t.Fatalf("with what it was told to change: %v", err)

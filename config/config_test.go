@@ -149,8 +149,10 @@ tasks:
           type:
             - "global"
             - "eui64"
-        source:
-          - "mikrotik-lan"
+          seen:
+            - reported:
+                by:
+                  - "mikrotik"
     endpoints:
       creds:
         - "host"
@@ -179,8 +181,8 @@ credentials:
 		if len(f.IP.Type) != 2 {
 			t.Error("Filter IPType mismatch")
 		}
-		if len(f.Source) != 1 || f.Source[0] != "mikrotik-lan" {
-			t.Error("Filter Source mismatch")
+		if len(f.IP.Seen) != 1 || f.IP.Seen[0].Reported == nil || f.IP.Seen[0].Reported.By[0] != "mikrotik" {
+			t.Errorf("Filter Seen mismatch: %+v", f.IP.Seen)
 		}
 	})
 }

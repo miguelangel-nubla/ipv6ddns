@@ -269,17 +269,3 @@ func CheckMask(ip netip.Addr, filters []string) bool {
 	}
 	return true
 }
-
-func CheckSource(addr *ipv6disc.Addr, filters []string) bool {
-	if len(filters) == 0 {
-		return true
-	}
-	// Every source the filter names must have seen the address.
-	sources := addr.Sources()
-	for _, f := range filters {
-		if !slices.Contains(sources, f) {
-			return false
-		}
-	}
-	return true
-}

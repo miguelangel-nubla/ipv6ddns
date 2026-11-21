@@ -58,8 +58,13 @@ tasks:
           prefix: fc00::/7
           type:
             - eui64
-        source:
-          - mikrotik-lan
+          # Only what the router's neighbor table has: an address it reports, of a host there.
+          seen:
+            - reported:
+                by:
+                  - mikrotik-lan
+                from:
+                  - neighbors
   # A device's local IPv4 addresses, once IPv4 discovery finds them: a filter takes IPv6 only
   # unless its family says.
   mynas:

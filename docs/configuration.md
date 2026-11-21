@@ -85,6 +85,7 @@ The discovery is configured as [ipv6disc](https://github.com/miguelangel-nubla/i
 | `discovery.ipv6.solicit`, `discovery.ipv4.solicit` | [`discovery.solicit.ipv6`, `discovery.solicit.ipv4`](discovery.md#solicitation) |
 | `discovery.solicit_eui64` | `discovery.solicit.ipv6` |
 | `discovery.listen`, `discovery.active` | `discovery.ipv6.listen`, `discovery.ipv6.active`, and the same of `ipv4` |
+| A filter's `source` | [`ip.seen`](filtering.md#filteripseen): `reported` with `by` for a plugin, `interfaces` for an interface |
 | A plugin's `params`, one string | Its [fields](reference/configuration.md#discovery-plugins), each a key: `interval`, `address`, `username` and the others of its type, in the order the string had them |
 
 ```yaml

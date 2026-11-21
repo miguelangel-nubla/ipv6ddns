@@ -88,10 +88,69 @@ filter:
     *   Example: `::1/::ffff:ffff:ffff:ffff` (the IPv6 addresses whose interface ID is `::1`, whatever the prefix), or `0.0.0.5/0.0.0.255` (the IPv4 addresses ending in `.5`).
     *   A mask matches the addresses of its own family only: with a `family` of `4` and `6`, an IPv6 mask leaves the IPv4 addresses out.
 
-#### `filter.source`
+#### `filter.ip.seen`
 
-*   **`source`** (List of Strings): Filter by what saw the address: a plugin's name, or a local interface's. All sources must have seen the address.
-    *   Example: `["mikrotik-lan"]`
+How the address was seen. Discovery keeps a record of each way it saw an address, each with its own first and last time and its own lifetime: the address stays while any of them does, and a rule here matches only a record that still counts. `seen` is a list of rules, all of which the address must have a record of; `not_seen` a list of which it must have none.
+
+A rule is one of two kinds:
+
+*   **A protocol, and how it saw the address:**
+    *   `protocol`: one of the local discovery's.
+    *   `way`: how. Without, any way.
+        *   `announced`: the host said the address is its own, unasked, or about itself.
+        *   `answered`: it replied to a probe of the discovery's, from or for the address.
+        *   `heard`: it used the address, unprompted by the discovery.
+*   **`reported`**: something else than the host reported it, from one of its tables.
+    *   `by`: plugins, by name or by type, as `mikrotik`; or `kernel`, this machine's own. Without, anyone.
+    *   `from`: `neighbors`, a neighbor or ARP table; `leases`, DHCP leases; `interfaces`, the addresses of this machine's interfaces. Without, any.
+    *   `reported: {}` is by anyone, from any table.
+
+Either kind takes `interfaces`, a list of local interfaces: the record was made on one of them. A plugin's reports are on none.
+
+| `protocol` | `way` | Recorded when |
+|---|---|---|
+| `ndp` | `announced` | The host advertises an address unasked, as when it takes it |
+| | `answered` | It answers a solicitation of the discovery's |
+| | `heard` | It solicits from the address, or advertises another from it |
+| `ping` | `answered` | It answers the multicast ping |
+| `ssdp`, `wsd` | `answered` | It answers the search |
+| `mdns` | `announced` | It announces the address as its own, in an address record of its name |
+| | `heard` | It sends mDNS from the address |
+| `arp` | `announced` | It sends a gratuitous ARP of the address |
+| | `answered` | It answers an ARP request: the sweep's, or a solicitation's |
+| | `heard` | It asks for another address from it |
+| `dhcp` | `announced` | It asks its DHCP server for the address |
+| | `heard` | It sends DHCPv6 from the address |
+| `lldp` | `announced` | Its LLDP gives the address as its management address |
+| `netbios`, `llmnr` | `answered` | It answers the question of its name |
+
+A way a protocol never sees an address is a configuration error, as `ping` with `announced`; so are a protocol, a table or a reporter there is none of.
+
+```yaml
+filter:
+  # What the router's neighbor table has, and the host itself showed, by any protocol: not an
+  # entry of the router's alone, as one of a host that left.
+  - mac:
+      address: 00:11:22:33:44:55
+    ip:
+      seen:
+        - reported:
+            by:
+              - mikrotik
+            from:
+              - neighbors
+        - protocol: ndp
+  # What the host announced over mDNS. Apple's responder announces its stable addresses only;
+  # avahi, on Linux, its temporary ones too.
+  - mac:
+      address: 00:11:22:33:44:66
+    ip:
+      seen:
+        - protocol: mdns
+          way: announced
+```
+
+None of these tells a stable address from a temporary one: the host knows, and says it to nobody. See [after a start](discovery.md#after-a-start) for what a restart can't find at once.
 
 Addresses without a MAC, as the network's public IPv4, don't go through filters: a task gets them from the [sources](sources.md) it names, in its `sources`.
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
+	"github.com/miguelangel-nubla/ipv6disc"
 )
 
 // Status is the state of the worker, to serve as JSON.
@@ -65,6 +66,41 @@ type DiscoveredAddress struct {
 	// temporary IPv6 privacy address.
 	Self      bool `json:"self,omitempty"`
 	Temporary bool `json:"temporary,omitempty"`
+	// How it was seen: a record of each protocol and way, or report, each with its own times, as
+	// a filter's ip.seen reads them.
+	Seen []DiscoveredRecord `json:"seen"`
+}
+
+// DiscoveredRecord is one way an address was seen: by a protocol, and how; or reported by a plugin,
+// or the kernel, from one of its tables.
+type DiscoveredRecord struct {
+	Protocol  string    `json:"protocol,omitempty"`
+	Way       string    `json:"way,omitempty"`
+	Reported  *Reporter `json:"reported,omitempty"`
+	On        string    `json:"interface,omitempty"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	Expires   time.Time `json:"expires"`
+}
+
+// Reporter is what reported an address, and from which of its tables.
+type Reporter struct {
+	By   string `json:"by"`
+	Type string `json:"type,omitempty"`
+	From string `json:"from,omitempty"`
+}
+
+// discoveredRecords are an address's records, for the status.
+func discoveredRecords(addr *ipv6disc.Addr) []DiscoveredRecord {
+	records := []DiscoveredRecord{}
+	for _, r := range addr.Records() {
+		d := DiscoveredRecord{Protocol: r.Protocol, Way: string(r.Way), On: r.On, FirstSeen: r.FirstSeen, LastSeen: r.LastSeen, Expires: r.Expiration()}
+		if r.Reported() {
+			d.Reported = &Reporter{By: r.By, Type: r.Type, From: r.From}
+		}
+		records = append(records, d)
+	}
+	return records
 }
 
 // Status returns the state of the host names and of the discovery. hideSensible hides the errors,
@@ -131,6 +167,7 @@ func (w *Worker) Status(hideSensible bool) Status {
 
 				Self:      addr.Self(),
 				Temporary: addr.Temporary(),
+				Seen:      discoveredRecords(addr),
 			})
 		}
 		if len(host.Addresses) > 0 {

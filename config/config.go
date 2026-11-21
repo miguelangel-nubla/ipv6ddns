@@ -96,8 +96,11 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 				}
 			}
 
-			if len(filter.Source) > 0 {
-				result.WriteString(prefix + "                Source: " + strings.Join(filter.Source, ", ") + "\n")
+			for _, s := range filter.IP.Seen {
+				result.WriteString(prefix + "                Seen: " + s.describe() + "\n")
+			}
+			for _, s := range filter.IP.NotSeen {
+				result.WriteString(prefix + "                Not seen: " + s.describe() + "\n")
 			}
 		}
 
@@ -304,6 +307,9 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := checkDiscovery(byteValue); err != nil {
 		return config, err
 	}
+	if err := checkRemovedFilterKeys(byteValue); err != nil {
+		return config, err
+	}
 	if err := validateConfig(byteValue); err != nil {
 		return config, err
 	}
@@ -345,7 +351,7 @@ func NewConfig(filename string) (config Config, err error) {
 	for _, name := range slices.Sorted(maps.Keys(config.Tasks)) {
 		task := config.Tasks[name]
 		task.Name = name
-		if err := task.checkFilters(); err != nil {
+		if err := task.checkFilters(slices.Sorted(maps.Keys(config.Discovery.Plugins))); err != nil {
 			return config, fmt.Errorf("task %s: %w", name, err)
 		}
 		config.Tasks[name] = task

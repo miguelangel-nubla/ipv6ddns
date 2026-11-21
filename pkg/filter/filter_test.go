@@ -232,26 +232,3 @@ func TestCheckMask(t *testing.T) {
 		})
 	}
 }
-
-func TestCheckSource(t *testing.T) {
-	addr := ipv6disc.NewAddr(nil, parseIP("::1"), "plugin-A", time.Hour, nil)
-	addr.Seen("plugin-B")
-
-	tests := []struct {
-		name   string
-		filter string
-		want   bool
-	}{
-		{"Match A", "plugin-A", true},
-		{"Match B", "plugin-B", true},
-		{"Mismatch", "plugin-C", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := CheckSource(addr, []string{tt.filter}); got != tt.want {
-				t.Errorf("CheckSource() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}

@@ -41,7 +41,6 @@ Each filter set: an address that every rule of one set matches is the task's. Se
 | `self` | boolean | The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen. Not those of an interface without a MAC, as a PPP link or a tunnel: a source gives them. |
 | `mac` | object | Rules on the MAC address of the host. |
 | `ip` | object | Rules on the address. |
-| `source` | list of string | Names of what must all have seen the address: discovery plugins, or local interfaces. |
 
 ## Filter mac
 
@@ -68,6 +67,8 @@ Rules on the address.
 | `suffix` | string | The end of the address, in its canonical lower case form: ::1, dead:beef. |
 | `mask` | list of string | VALUE/MASK pairs of addresses of one family, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff for the IPv6 addresses ending in ::1, 0.0.0.5/0.0.0.255 for the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair matches the addresses of its family only. |
 | `family` | list of `4`, `6` | 4, 6 or both. Default: 6. |
+| `seen` | list of  | How the address was seen: a record of each rule, all of which it must have, each of its own times, while they count. Rules: a protocol and its way, as protocol: mdns and way: announced; or reported, by a plugin or the kernel, from a table. |
+| `not_seen` | list of  | Records the address must have none of, as seen takes them: not_seen with reported {} is an address the host showed itself, never only one a table reports. |
 
 ## Task ipv4, deprecated
 
