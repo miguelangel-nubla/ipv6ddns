@@ -19,6 +19,11 @@ type PfsenseRestapiUnbound struct {
 	Zone           string `json:"zone"`
 	// pfSense's host overrides have no TTL of their own: it is read for the schema, and unused.
 	TTL duration.Duration `json:"ttl"`
+
+	// A change was sent and Unbound is not known to have applied it: the next update applies,
+	// whatever it finds, as the overrides read show it made. Read and set during an update, one
+	// at a time.
+	pending bool
 }
 
 func init() {
@@ -92,16 +97,14 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 		return true
 	}
 
-	changesMade := false
-
 	if existingRecord == nil {
 		// No existing record, add New
 		if len(desiredIPSlice) > 0 {
+			u.pending = true
 			err := u.addOverride(client, hostPart, domainPart, desiredIPSlice)
 			if err != nil {
 				return fmt.Errorf("failed to add override %s: %v", fqdn, err)
 			}
-			changesMade = true
 		}
 	} else {
 		// Record exists, update or delete
@@ -113,28 +116,29 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 			}
 		}
 		if !ipsMatch(currentIPs, desiredIPSlice) {
+			u.pending = true
 			if len(desiredIPSlice) > 0 {
 				err := u.updateOverride(client, idStr, hostPart, domainPart, desiredIPSlice)
 				if err != nil {
 					return fmt.Errorf("failed to update override %s (ID: %s): %v", fqdn, idStr, err)
 				}
-				changesMade = true
 			} else {
 				// No IPs desired anymore, delete
 				err := u.deleteOverride(client, idStr)
 				if err != nil {
 					return fmt.Errorf("failed to delete override %s (ID: %s): %w", fqdn, idStr, err)
 				}
-				changesMade = true
 			}
 		}
 	}
 
-	// 4. Apply Changes if made
-	if changesMade {
+	// 4. Apply, the changes of this update or of one that failed before it: a change sent,
+	// whether or not its answer came, counts as made.
+	if u.pending {
 		if err := u.applyChanges(client); err != nil {
 			return fmt.Errorf("failed to apply Unbound changes: %v", err)
 		}
+		u.pending = false
 	}
 
 	return nil

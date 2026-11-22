@@ -20,6 +20,11 @@ type OpnsenseUnbound struct {
 	Secret         string            `json:"secret"`
 	Zone           string            `json:"zone"`
 	TTL            duration.Duration `json:"ttl"`
+
+	// A change was sent and Unbound is not known to have been reconfigured with it: the next
+	// update reconfigures, whatever it finds, as the overrides read show it made. Read and set
+	// during an update, one at a time.
+	pending bool
 }
 
 func init() {
@@ -75,33 +80,31 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 		}
 	}
 
-	changesMade := false
-
 	// 2. Manage IPs
 	// Add missing IPs and clean up duplicates for existing ones
 	for ip := range desiredIPs {
 		uuids, exists := currentIPs[ip]
 		if !exists {
+			u.pending = true
 			err := u.addOverride(client, hostPart, domainPart, ip)
 			if err != nil {
 				return fmt.Errorf("failed to add override %s -> %s: %v", fqdn, ip, err)
 			}
-			changesMade = true
 		} else {
 			// Duplicate records exist for this IP, remove extra ones
 			for i := 1; i < len(uuids); i++ {
+				u.pending = true
 				err := u.deleteOverride(client, uuids[i])
 				if err != nil {
 					return fmt.Errorf("failed to delete duplicate override %s -> %s (UUID: %s): %w", fqdn, ip, uuids[i], err)
 				}
-				changesMade = true
 			}
 			// And the one kept has the TTL set.
 			if staleTTL[uuids[0]] {
+				u.pending = true
 				if err := u.saveOverride(client, "setHostOverride/"+uuids[0], hostPart, domainPart, ip); err != nil {
 					return fmt.Errorf("failed to set the TTL of override %s -> %s: %v", fqdn, ip, err)
 				}
-				changesMade = true
 			}
 		}
 	}
@@ -110,20 +113,22 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	for ip, uuids := range currentIPs {
 		if _, keep := desiredIPs[ip]; !keep {
 			for _, uuid := range uuids {
+				u.pending = true
 				err := u.deleteOverride(client, uuid)
 				if err != nil {
 					return fmt.Errorf("failed to delete override %s -> %s: %v", fqdn, ip, err)
 				}
-				changesMade = true
 			}
 		}
 	}
 
-	// 4. Trigger Reconfigure if changes made
-	if changesMade {
+	// 4. Reconfigure, after the changes of this update or of one that failed before it: a
+	// change sent, whether or not its answer came, counts as made.
+	if u.pending {
 		if err := u.reconfigure(client); err != nil {
 			return fmt.Errorf("failed to reconfigure Unbound: %v", err)
 		}
+		u.pending = false
 	}
 
 	return nil
