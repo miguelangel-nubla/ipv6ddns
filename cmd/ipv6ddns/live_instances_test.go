@@ -821,7 +821,9 @@ credentials:
 	}
 
 	// The peer leaves: it goes from each after its own lifetime, and from the name of both when
-	// the first of them lets it go, once.
+	// the first of them lets it go. Its two addresses expire each when it was last seen: b, which
+	// keeps them longer, writes what it has when the first of its own goes, and can put back the
+	// other, that a took off a moment before, until it goes from b too.
 	writes = len(dnsPair.changes())
 	peer.Leave(t)
 	left := time.Now()
@@ -842,8 +844,24 @@ credentials:
 		t.Errorf("the peer left, and the name of both has addresses\n%s", dnsPair.tells())
 	}
 	time.Sleep(3 * time.Second)
-	if changes := dnsPair.changes()[writes:]; len(changes) != 2 || changes[0].action != "delete" || changes[1].action != "delete" {
-		t.Errorf("the peer left, and the name of both was written otherwise than its two addresses taken off once\n%s", dnsPair.tells())
+	// Of each address: taken off, and put back by b alone, which still has it, and taken off
+	// again, ending off; a few writes in all.
+	changes := dnsPair.changes()[writes:]
+	byAddress := map[string][]write{}
+	for _, c := range changes {
+		byAddress[c.address] = append(byAddress[c.address], c)
+	}
+	if len(changes) > 6 || len(byAddress) != 2 {
+		t.Errorf("the peer left, and the name of both was written %d times, of %d addresses\n%s", len(changes), len(byAddress), dnsPair.tells())
+	}
+	for address, writes := range byAddress {
+		for i, w := range writes {
+			want := map[bool]string{true: "delete", false: "add"}[i%2 == 0]
+			if w.action != want || w.action == "add" && w.from != b.IPv4 || len(writes)%2 == 0 {
+				t.Errorf("the peer left, and %s was written otherwise than taken off, put back by b alone and taken off again\n%s", address, dnsPair.tells())
+				break
+			}
+		}
 	}
 	if !dnsA.has("mate.a.example", b.IPv6) || !dnsB.has("mate.b.example", a.IPv6) || !dnsA.has("me.a.example", a.IPv6) || !dnsB.has("me.b.example", b.IPv6) {
 		t.Errorf("the peer left, and other names changed\n%s\n%s", dnsA.tells(), dnsB.tells())
