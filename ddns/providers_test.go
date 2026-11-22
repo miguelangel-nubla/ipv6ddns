@@ -261,6 +261,44 @@ func TestTechnitiumUpdate(t *testing.T) {
 	}
 }
 
+// An answer that is none of the API's tells its HTTP status, and one that refuses its status: never
+// the token, which is in the URL.
+func TestTechnitiumErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		want       []string
+	}{
+		{"not the API", "<html>Bad Gateway</html>", http.StatusBadGateway, []string{"HTTP 502 Bad Gateway", "not an answer of Technitium's API"}},
+		{"refused", `{"status":"invalid-token","errorMessage":"Invalid token or session expired."}`, http.StatusOK, []string{`"invalid-token"`, "Invalid token or session expired."}},
+		{"refused without a message", `{"status":"error"}`, http.StatusOK, []string{`API status "error", HTTP 200 OK`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			service := &Technitium{Address: server.URL, Token: "secret-token", Zone: "example.com"}
+			addrs := ipv6disc.NewAddrCollection()
+			addrs.Add(ipv6disc.NewAddr(nil, netip.MustParseAddr(wantedIP), "test", time.Hour, nil))
+			err := service.Update("nas", addrs)
+			if err == nil {
+				t.Fatal("no error")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q, without %q", err, want)
+				}
+			}
+			if strings.Contains(err.Error(), "secret-token") {
+				t.Errorf("error %q has the token", err)
+			}
+		})
+	}
+}
+
 func TestOpnsenseUnboundUpdate(t *testing.T) {
 	fake := newFakeDNS(t, "nas.lan", "other.lan")
 	fake.add("nas.lan", "AAAA", wantedIP, 300) // a duplicate

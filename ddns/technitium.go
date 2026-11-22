@@ -2,7 +2,6 @@ package ddns
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,21 +108,9 @@ func (t *Technitium) getRecords(client *http.Client, domain string) (map[string]
 	q.Set("zone", t.Zone)
 	u.RawQuery = q.Encode()
 
-	resp, err := client.Get(u.String())
+	apiResp, err := technitiumCall(client, u)
 	if err != nil {
-		return nil, withoutURL(err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var apiResp technitiumResponse
-	if err := json.Unmarshal(body, &apiResp); err != nil {
 		return nil, err
-	}
-
-	if apiResp.Status != "ok" {
-		return nil, errors.New(apiResp.ErrorMessage)
 	}
 
 	currentIPs := make(map[string]technitiumRecord)
@@ -163,23 +150,35 @@ func (t *Technitium) request(client *http.Client, action, domain, recordType, ip
 	}
 	u.RawQuery = q.Encode()
 
+	_, err = technitiumCall(client, u)
+	return err
+}
+
+// technitiumCall asks the API at u, whose query has the token, and returns its answer: an error
+// when it is none of the API's, with the HTTP status, as from a wrong address or a proxy between,
+// or one that refuses, with its status and message. No error has the URL, nor so the token.
+func technitiumCall(client *http.Client, u *url.URL) (technitiumResponse, error) {
+	var apiResp technitiumResponse
 	resp, err := client.Get(u.String())
 	if err != nil {
-		return withoutURL(err)
+		return apiResp, withoutURL(err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	var apiResp technitiumResponse
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return apiResp, fmt.Errorf("HTTP %s: reading the answer: %w", resp.Status, err)
+	}
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return err
+		return apiResp, fmt.Errorf("HTTP %s: not an answer of Technitium's API: %w", resp.Status, err)
 	}
-
 	if apiResp.Status != "ok" {
-		return errors.New(apiResp.ErrorMessage)
+		if apiResp.ErrorMessage == "" {
+			return apiResp, fmt.Errorf("API status %q, HTTP %s", apiResp.Status, resp.Status)
+		}
+		return apiResp, fmt.Errorf("API status %q: %s", apiResp.Status, apiResp.ErrorMessage)
 	}
-
-	return nil
+	return apiResp, nil
 }
 
 func (t *Technitium) Domain(hostname string) string {
