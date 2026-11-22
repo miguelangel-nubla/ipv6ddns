@@ -57,7 +57,7 @@ func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	// 1. Get current records
 	currentIPs, err := t.getRecords(client, fqdn)
 	if err != nil {
-		return fmt.Errorf("failed to get records: %v", err)
+		return fmt.Errorf("failed to get records: %w", err)
 	}
 
 	desiredIPs := desiredRecords(addrCollection)
@@ -69,12 +69,12 @@ func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	for ip, record := range currentIPs {
 		if _, needed := desiredIPs[ip]; !needed {
 			if err := t.request(client, "delete", fqdn, record.rrType, ip, 0); err != nil {
-				return fmt.Errorf("failed to delete record %s (%s): %v", fqdn, ip, err)
+				return fmt.Errorf("failed to delete record %s (%s): %w", fqdn, ip, err)
 			}
 		} else if ttl > 0 && record.ttl != ttl {
 			// Kept, with the TTL set.
 			if err := t.request(client, "update", fqdn, record.rrType, ip, ttl); err != nil {
-				return fmt.Errorf("failed to set the TTL of record %s (%s): %v", fqdn, ip, err)
+				return fmt.Errorf("failed to set the TTL of record %s (%s): %w", fqdn, ip, err)
 			}
 		}
 	}
@@ -83,7 +83,7 @@ func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	for ip, recordType := range desiredIPs {
 		if _, exists := currentIPs[ip]; !exists {
 			if err := t.request(client, "add", fqdn, recordType, ip, ttl); err != nil {
-				return fmt.Errorf("failed to add record %s (%s): %v", fqdn, ip, err)
+				return fmt.Errorf("failed to add record %s (%s): %w", fqdn, ip, err)
 			}
 		}
 	}

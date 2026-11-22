@@ -139,7 +139,7 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 	// Fetch existing records for this hostname
 	reply, err := client.RunContext(ctx, "/ip/dns/static/print", "?name="+fqdn)
 	if err != nil {
-		return fmt.Errorf("failed to fetch DNS records: %v", err)
+		return fmt.Errorf("failed to fetch DNS records: %w", err)
 	}
 
 	type dnsRecord struct {
@@ -183,7 +183,7 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 
 	for _, id := range duplicates {
 		if _, err := client.RunContext(ctx, "/ip/dns/static/remove", "=.id="+id); err != nil {
-			return fmt.Errorf("failed to remove duplicate DNS record %s: %v", fqdn, err)
+			return fmt.Errorf("failed to remove duplicate DNS record %s: %w", fqdn, err)
 		}
 	}
 
@@ -192,7 +192,7 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 		if _, keep := desiredIPs[ip]; !keep {
 			_, err := client.RunContext(ctx, "/ip/dns/static/remove", "=.id="+record.id)
 			if err != nil {
-				return fmt.Errorf("failed to remove DNS record %s -> %s: %v", fqdn, ip, err)
+				return fmt.Errorf("failed to remove DNS record %s -> %s: %w", fqdn, ip, err)
 			}
 		} else {
 			// Update TTL if needed
@@ -201,7 +201,7 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 			if !ok || currentTTL != m.TTL.Duration {
 				_, err := client.RunContext(ctx, "/ip/dns/static/set", "=.id="+record.id, "=ttl="+m.TTL.String())
 				if err != nil {
-					return fmt.Errorf("failed to update DNS record TTL %s -> %s: %v", fqdn, ip, err)
+					return fmt.Errorf("failed to update DNS record TTL %s -> %s: %w", fqdn, ip, err)
 				}
 			}
 		}

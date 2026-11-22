@@ -45,7 +45,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	// 1. Fetch existing Host Overrides
 	existingOverrides, err := u.getOverrides(client)
 	if err != nil {
-		return fmt.Errorf("failed to fetch existing Host Overrides: %v", err)
+		return fmt.Errorf("failed to fetch existing Host Overrides: %w", err)
 	}
 
 	fqdn := FQDN(hostname, u.Zone)
@@ -88,7 +88,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 			u.pending = true
 			err := u.addOverride(client, hostPart, domainPart, ip)
 			if err != nil {
-				return fmt.Errorf("failed to add override %s -> %s: %v", fqdn, ip, err)
+				return fmt.Errorf("failed to add override %s -> %s: %w", fqdn, ip, err)
 			}
 		} else {
 			// Duplicate records exist for this IP, remove extra ones
@@ -103,7 +103,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 			if staleTTL[uuids[0]] {
 				u.pending = true
 				if err := u.saveOverride(client, "setHostOverride/"+uuids[0], hostPart, domainPart, ip); err != nil {
-					return fmt.Errorf("failed to set the TTL of override %s -> %s: %v", fqdn, ip, err)
+					return fmt.Errorf("failed to set the TTL of override %s -> %s: %w", fqdn, ip, err)
 				}
 			}
 		}
@@ -116,7 +116,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 				u.pending = true
 				err := u.deleteOverride(client, uuid)
 				if err != nil {
-					return fmt.Errorf("failed to delete override %s -> %s: %v", fqdn, ip, err)
+					return fmt.Errorf("failed to delete override %s -> %s: %w", fqdn, ip, err)
 				}
 			}
 		}
@@ -126,7 +126,7 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	// change sent, whether or not its answer came, counts as made.
 	if u.pending {
 		if err := u.reconfigure(client); err != nil {
-			return fmt.Errorf("failed to reconfigure Unbound: %v", err)
+			return fmt.Errorf("failed to reconfigure Unbound: %w", err)
 		}
 		u.pending = false
 	}

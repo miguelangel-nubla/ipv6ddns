@@ -98,7 +98,7 @@ try {
 
 	output, err := runner.RunPS(psScript)
 	if err != nil {
-		return fmt.Errorf("failed to get records: %v, output: %s", err, string(output))
+		return fmt.Errorf("failed to get records: %w, output: %s", err, string(output))
 	}
 
 	var currentRecords []string
@@ -107,12 +107,12 @@ try {
 		// Can be string or array of strings
 		if strings.HasPrefix(trimmedOutput, "[") {
 			if err := json.Unmarshal([]byte(trimmedOutput), &currentRecords); err != nil {
-				return fmt.Errorf("failed to parse array json: %v, output: %s", err, trimmedOutput)
+				return fmt.Errorf("failed to parse array json: %w, output: %s", err, trimmedOutput)
 			}
 		} else {
 			var record string
 			if err := json.Unmarshal([]byte(trimmedOutput), &record); err != nil {
-				return fmt.Errorf("failed to parse string json: %v, output: %s", err, trimmedOutput)
+				return fmt.Errorf("failed to parse string json: %w, output: %s", err, trimmedOutput)
 			}
 			currentRecords = append(currentRecords, record)
 		}
@@ -160,7 +160,7 @@ try {
 	for _, ip := range toDelete {
 		ipAddr, err := netip.ParseAddr(ip)
 		if err != nil {
-			return fmt.Errorf("failed to parse IP %s for deletion: %v", ip, err)
+			return fmt.Errorf("failed to parse IP %s for deletion: %w", ip, err)
 		}
 
 		var rrType string
@@ -172,14 +172,14 @@ try {
 
 		cmd := fmt.Sprintf("Remove-DnsServerResourceRecord -ZoneName %s -Name %s -RRType %s -RecordData '%s' -Force", zone, name, rrType, ip)
 		if out, err := runner.RunPS(cmd); err != nil {
-			return fmt.Errorf("failed to delete record %s: %v, output: %s", ip, err, string(out))
+			return fmt.Errorf("failed to delete record %s: %w, output: %s", ip, err, string(out))
 		}
 	}
 
 	for _, ip := range toAdd {
 		ipAddr, err := netip.ParseAddr(ip)
 		if err != nil {
-			return fmt.Errorf("failed to parse IP %s for addition: %v", ip, err)
+			return fmt.Errorf("failed to parse IP %s for addition: %w", ip, err)
 		}
 
 		var typeSwitch string
@@ -199,7 +199,7 @@ try {
 			cmd += fmt.Sprintf(" -TimeToLive '%s'", timeSpan(w.TTL.Duration))
 		}
 		if out, err := runner.RunPS(cmd); err != nil {
-			return fmt.Errorf("failed to add record %s: %v, output: %s", ip, err, string(out))
+			return fmt.Errorf("failed to add record %s: %w, output: %s", ip, err, string(out))
 		}
 	}
 
@@ -274,7 +274,7 @@ func newLocalRunner() *LocalRunner {
 func (l *LocalRunner) RunPS(psScript string) ([]byte, error) {
 	encoded, err := preparePowerShellCommand(psScript)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode powershell command: %v", err)
+		return nil, fmt.Errorf("failed to encode powershell command: %w", err)
 	}
 
 	// Try pwsh (Powershell Core) first, then powershell
@@ -304,7 +304,7 @@ func (l *LocalRunner) RunPS(psScript string) ([]byte, error) {
 			err = fmt.Errorf("timed out after %s: %w", updateTimeout, err)
 		}
 		// ExitError often contains no message, so we add stderr
-		return stdout, fmt.Errorf("command failed: %v, stderr: %s", err, stderr.String())
+		return stdout, fmt.Errorf("command failed: %w, stderr: %s", err, stderr.String())
 	}
 	return stdout, nil
 }
@@ -340,7 +340,7 @@ func (s *SSHRunner) RunPS(psScript string) ([]byte, error) {
 
 	encoded, err := preparePowerShellCommand(psScript)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode powershell command: %v", err)
+		return nil, fmt.Errorf("failed to encode powershell command: %w", err)
 	}
 
 	cmd := fmt.Sprintf("powershell -NoProfile -NonInteractive -EncodedCommand %s", encoded)

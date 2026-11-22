@@ -56,7 +56,7 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 	// 1. Fetch existing Host Overrides
 	existingOverrides, err := u.getOverrides(client)
 	if err != nil {
-		return fmt.Errorf("failed to fetch existing Host Overrides: %v", err)
+		return fmt.Errorf("failed to fetch existing Host Overrides: %w", err)
 	}
 
 	// 2. Identify the relevant existing override for this hostname
@@ -103,7 +103,7 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 			u.pending = true
 			err := u.addOverride(client, hostPart, domainPart, desiredIPSlice)
 			if err != nil {
-				return fmt.Errorf("failed to add override %s: %v", fqdn, err)
+				return fmt.Errorf("failed to add override %s: %w", fqdn, err)
 			}
 		}
 	} else {
@@ -120,7 +120,7 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 			if len(desiredIPSlice) > 0 {
 				err := u.updateOverride(client, idStr, hostPart, domainPart, desiredIPSlice)
 				if err != nil {
-					return fmt.Errorf("failed to update override %s (ID: %s): %v", fqdn, idStr, err)
+					return fmt.Errorf("failed to update override %s (ID: %s): %w", fqdn, idStr, err)
 				}
 			} else {
 				// No IPs desired anymore, delete
@@ -136,7 +136,7 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 	// whether or not its answer came, counts as made.
 	if u.pending {
 		if err := u.applyChanges(client); err != nil {
-			return fmt.Errorf("failed to apply Unbound changes: %v", err)
+			return fmt.Errorf("failed to apply Unbound changes: %w", err)
 		}
 		u.pending = false
 	}
