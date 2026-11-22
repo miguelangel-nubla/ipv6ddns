@@ -115,3 +115,21 @@ func TestPfsenseRestapiUnboundAppliesAfterFailure(t *testing.T) {
 		t.Errorf("got %d applies, want 2: none once nothing is left to apply", applies)
 	}
 }
+
+// The ID of an override goes back as the API wrote it: a number read as a float would be 1e+06.
+func TestPfsenseRestapiOverrideID(t *testing.T) {
+	var rows []pfsenseRestapiOverrideRow
+	if err := json.Unmarshal([]byte(`[{"id": 1000000}, {"id": 0}, {"id": "7"}]`), &rows); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{"1000000", "0", "7"} {
+		if got := rows[i].id(); got != want {
+			t.Errorf("id %s: got %q, want %q", rows[i].ID, got, want)
+		}
+	}
+	// An address twice is no override of the address once: it is written again.
+	row := pfsenseRestapiOverrideRow{IP: []string{wantedIP, wantedAsSet}}
+	if got := row.addresses(); len(got) != 2 {
+		t.Errorf("addresses %v, want the address twice", got)
+	}
+}
