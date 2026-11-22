@@ -52,6 +52,10 @@ func NewGravity(settings json.RawMessage) (Service, error) {
 }
 
 func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
+	// The requests have their timeout each, and the update this one, all of them together.
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+
 	requestEditors := []gravity.RequestEditorFn{
 		func(ctx context.Context, req *http.Request) error {
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", g.APIKey))
@@ -73,7 +77,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		Zone:     &g.Zone,
 		Hostname: &name,
 	}
-	currentRecords, err := apiClient.DnsGetRecordsWithResponse(context.Background(), &params, requestEditors...)
+	currentRecords, err := apiClient.DnsGetRecordsWithResponse(ctx, &params, requestEditors...)
 	if err != nil {
 		return fmt.Errorf("failed to call current records: %v", err)
 	}
@@ -97,7 +101,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 
 	put := func(uid string, recordType gravity.TypesDNSRecordType, ip string) error {
 		response, err := apiClient.DnsPutRecordsWithResponse(
-			context.Background(),
+			ctx,
 			&gravity.DnsPutRecordsParams{
 				Zone:     g.Zone,
 				Hostname: name,
@@ -159,7 +163,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 
 		// Delete the DNS record
 		response, err := apiClient.DnsDeleteRecordsWithResponse(
-			context.Background(),
+			ctx,
 			&gravity.DnsDeleteRecordsParams{
 				Zone:     g.Zone,
 				Hostname: name,

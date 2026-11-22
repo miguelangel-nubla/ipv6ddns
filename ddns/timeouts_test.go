@@ -116,3 +116,23 @@ func TestCloudflareUpdateTimeoutEndsTheTriesAgain(t *testing.T) {
 		})
 	}
 }
+
+// Gravity's requests have updateTimeout together, as the other providers': each with its own
+// only, an update of many would hold its endpoint for as many.
+func TestGravityUpdateTimeout(t *testing.T) {
+	timeouts(t, time.Second, time.Second)
+	fake := newFakeDNS(t, "nas", "other")
+	handler := gravityHandler(t, fake, true)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(400 * time.Millisecond)
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	// Four requests and more: the listing, three puts, a delete.
+	service := &Gravity{Server: server.URL, APIKey: "key", Zone: "example.com."}
+	took, err := returnsWithin(t, 1800*time.Millisecond, func() error { return service.Update("nas", desired()) })
+	if err == nil {
+		t.Errorf("the update, after %s: done, want it timed out", took.Round(time.Millisecond))
+	}
+}
