@@ -223,8 +223,6 @@ func Configuration() (string, error) {
 	for _, key := range []string{"mac", "ip"} {
 		section("Filter "+key, "tasks.<name>.filter[]."+key, filter.Properties[key].Description, filter.Properties[key], "properties", "tasks", "additionalProperties", "properties", "filter", "items", "properties", key, "properties")
 	}
-	ipv4 := taskNode.Properties["ipv4"]
-	section("Task ipv4, deprecated", "tasks.<name>.ipv4", ipv4.Description, ipv4, "properties", "tasks", "additionalProperties", "properties", "ipv4", "properties")
 
 	credential := asNode(root.Properties["credentials"].AdditionalProperties)
 	section("Credentials", "credentials.<name>", root.Properties["credentials"].Description+" The settings of each provider are in the [providers reference](providers.md).", credential, "properties", "credentials", "additionalProperties", "properties")

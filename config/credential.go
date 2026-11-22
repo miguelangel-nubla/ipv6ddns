@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
@@ -15,16 +14,13 @@ type Credential struct {
 	// How long to wait after a failed update to try again.
 	Retry       duration.Duration `json:"retry,omitzero"`
 	RawSettings json.RawMessage   `json:"settings"`
-
-	// Deprecated: debounce and retry. UnmarshalJSON moves them there, and NewConfig warns.
-	DebounceTime *duration.Duration `json:"debounce_time,omitempty"`
-	RetryTime    *duration.Duration `json:"retry_time,omitempty"`
-	deprecated   []string
 }
 
 // MinRetry is the least time between a failed update and its retry.
 const MinRetry = time.Second
 
+// UnmarshalJSON reads the credential, with the defaults of what it leaves out: a debounce of 10s,
+// or the resolver's, and a retry of a minute.
 func (c *Credential) UnmarshalJSON(b []byte) error {
 	type plain Credential
 	var credential struct {
@@ -36,31 +32,16 @@ func (c *Credential) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*c = Credential(credential.plain)
-	debounce := 10 * time.Second
+	c.Debounce.Duration = 10 * time.Second
 	if c.Provider == ResolverProvider {
-		debounce = DefaultResolverDebounce
+		c.Debounce.Duration = DefaultResolverDebounce
 	}
-	for _, f := range []struct {
-		name, old string
-		value     *duration.Duration
-		oldValue  **duration.Duration
-		into      *duration.Duration
-		def       time.Duration
-	}{
-		{"debounce", "debounce_time", credential.Debounce, &c.DebounceTime, &c.Debounce, debounce},
-		{"retry", "retry_time", credential.Retry, &c.RetryTime, &c.Retry, time.Minute},
-	} {
-		switch {
-		case f.value != nil && *f.oldValue != nil:
-			return fmt.Errorf("%s is the deprecated form of %s: give one of them", f.old, f.name)
-		case f.value != nil:
-			*f.into = *f.value
-		case *f.oldValue != nil:
-			*f.into, *f.oldValue = **f.oldValue, nil
-			c.deprecated = append(c.deprecated, f.old)
-		default:
-			f.into.Duration = f.def
-		}
+	if credential.Debounce != nil {
+		c.Debounce = *credential.Debounce
+	}
+	c.Retry.Duration = time.Minute
+	if credential.Retry != nil {
+		c.Retry = *credential.Retry
 	}
 	return nil
 }

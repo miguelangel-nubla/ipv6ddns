@@ -44,7 +44,7 @@ func TestNewConfig(t *testing.T) {
   "credentials": {
     "my_credential": {
       "provider": "cloudflare",
-      "debounce_time": "1s",
+      "debounce": "1s",
       "settings": {
         "api_token": "1234567890"
       }
@@ -66,7 +66,7 @@ tasks:
 credentials:
   my_credential:
     provider: cloudflare
-    debounce_time: 1s
+    debounce: 1s
     settings:
       api_token: "1234567890"
 `
@@ -189,7 +189,7 @@ credentials:
 
 func TestDurationPattern(t *testing.T) {
 	config := func(d string) []byte {
-		return []byte(`{"tasks": {}, "credentials": {"c": {"provider": "duckdns", "settings": {}, "debounce_time": "` + d + `"}}}`)
+		return []byte(`{"tasks": {}, "credentials": {"c": {"provider": "duckdns", "settings": {}, "debounce": "` + d + `"}}}`)
 	}
 	for _, d := range []string{"10s", "0", ".5s", "1h30m", "1.5m"} {
 		if err := validateConfig(config(d)); err != nil {
@@ -238,12 +238,12 @@ func TestNewConfigChecks(t *testing.T) {
 	credential := func(times string) string {
 		return `{"tasks": {}, "credentials": {"duck": {"provider": "duckdns", "settings": {}, ` + times + `}}}`
 	}
-	for _, times := range []string{`"retry": 0`, `"retry": "0s"`, `"retry": "500ms"`, `"retry_time": 0`, `"retry": "-1m"`, `"debounce": "-1s"`} {
+	for _, times := range []string{`"retry": 0`, `"retry": "0s"`, `"retry": "500ms"`, `"retry": "-1m"`, `"debounce": "-1s"`} {
 		if _, err := NewConfig(write(credential(times))); err == nil {
 			t.Errorf("%s: want an error", times)
 		}
 	}
-	for _, times := range []string{`"retry": "1s"`, `"debounce": 0`, `"debounce_time": 0, "retry_time": 1`} {
+	for _, times := range []string{`"retry": "1s"`, `"debounce": 0`, `"debounce": 0, "retry": 1`} {
 		if _, err := NewConfig(write(credential(times))); err != nil {
 			t.Errorf("%s: %v", times, err)
 		}

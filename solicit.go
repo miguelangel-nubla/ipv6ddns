@@ -141,7 +141,7 @@ func wanted(f config.Filters, mac net.HardwareAddr, target netip.Addr) bool {
 	// The checks read the address and its MAC only: no timers.
 	addr := &ipv6disc.Addr{Addr: target, Hw: mac}
 	return filter.CheckIPType(addr, f.IP.Type) && filter.CheckPrefix(target, f.IP.Prefix) &&
-		filter.CheckSuffix(target, f.IP.Suffix) && filter.CheckMask(target, f.IP.Mask)
+		filter.CheckMask(target, f.IP.Mask)
 }
 
 // eui64Address builds the address a MAC gets on a /64 (RFC 4291, appendix A).

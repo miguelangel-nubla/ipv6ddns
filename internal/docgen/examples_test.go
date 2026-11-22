@@ -19,7 +19,7 @@ var (
 	envRef    = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 )
 
-// The add-on's starting configuration loads, and says nothing deprecated: its device is one
+// The add-on's starting configuration loads, and warns of nothing: its device is one
 // Home Assistant gives the key, kept in the add-on's folder, which stays. And so does its example,
 // uncommented.
 func TestAddonStarterConfig(t *testing.T) {
@@ -194,7 +194,7 @@ func TestDocExamples(t *testing.T) {
 				}
 			}
 			if len(cfg.Warnings) > 0 {
-				t.Errorf("%s, example %d: a deprecated form: %v", file, i+1, cfg.Warnings)
+				t.Errorf("%s, example %d: warnings: %v", file, i+1, cfg.Warnings)
 			}
 			checked++
 		}

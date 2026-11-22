@@ -12,7 +12,6 @@ import (
 	"time"
 
 	disc "github.com/miguelangel-nubla/ipv6disc/pkg/config"
-	"github.com/miguelangel-nubla/ipv6disc/pkg/plugins"
 )
 
 // DefaultLifetime is how long a discovered address stays after it was last seen, by default:
@@ -117,9 +116,6 @@ func (d *Discovery) UnmarshalJSON(b []byte) error {
 			rest[key] = block[key]
 		}
 	}
-	// What moved, said before ipv6disc says it knows no such key.
-	errs = append(errs, movedDiscoveryKeys(rest))
-
 	library, err := json.Marshal(rest)
 	if err != nil {
 		return err
@@ -157,51 +153,6 @@ func (s *Solicit) read(raw json.RawMessage) error {
 		if value := bytes.TrimSpace(block[key]); string(value) != "null" && json.Unmarshal(value, family) != nil {
 			errs = append(errs, fmt.Errorf("discovery.solicit.%s: %s is not true or false", key, value))
 		}
-	}
-	return errors.Join(errs...)
-}
-
-// movedDiscoveryKeys tells the keys of the discovery block that are elsewhere now, each with
-// where, and takes them off the block: ipv6disc would say only that there is no such key.
-func movedDiscoveryKeys(block map[string]json.RawMessage) error {
-	var errs []error
-	for _, family := range []string{"ipv6", "ipv4"} {
-		var keys map[string]json.RawMessage
-		if json.Unmarshal(block[family], &keys) != nil {
-			continue
-		}
-		if _, ok := keys["solicit"]; ok {
-			errs = append(errs, fmt.Errorf("discovery.%[1]s.solicit is discovery.solicit.%[1]s now: the solicitation has its own block, solicit, beside the families, with %[1]s: true under it", family))
-			delete(keys, "solicit")
-			block[family], _ = json.Marshal(keys)
-		}
-	}
-	var all map[string]json.RawMessage
-	if json.Unmarshal(block["plugins"], &all) == nil {
-		for _, name := range slices.Sorted(maps.Keys(all)) {
-			var keys map[string]json.RawMessage
-			if json.Unmarshal(all[name], &keys) != nil {
-				continue
-			}
-			if _, ok := keys["params"]; !ok {
-				continue
-			}
-			fields := "interval, address, username and the others of its type"
-			var typeName string
-			if json.Unmarshal(keys["type"], &typeName) == nil {
-				if known, err := plugins.Fields(typeName); err == nil {
-					names := make([]string, len(known))
-					for i, field := range known {
-						names[i] = field.Name
-					}
-					fields = strings.Join(names, ", ")
-				}
-			}
-			errs = append(errs, fmt.Errorf("discovery.plugins.%s.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: %s", name, fields))
-			// Without its fields, the plugin would be told to lack each of them too.
-			delete(all, name)
-		}
-		block["plugins"], _ = json.Marshal(all)
 	}
 	return errors.Join(errs...)
 }
@@ -250,33 +201,27 @@ func (d Discovery) validate() (warnings []string, err error) {
 
 // checkDiscovery reads the discovery block of the configuration before the schema does: the
 // errors are ipv6disc's, in words, each with its path, where the schema would tell of its
-// combinations. And the keys that are elsewhere now, each with where.
+// combinations.
 func checkDiscovery(configData []byte) error {
 	var top map[string]json.RawMessage
 	if json.Unmarshal(configData, &top) != nil {
 		// Not a mapping: the schema's to say.
 		return nil
 	}
-	var errs []error
-	if _, ok := top["lifetime"]; ok {
-		errs = append(errs, errors.New("lifetime is discovery.lifetime now: move it under discovery, beside the families"))
+	block, ok := top["discovery"]
+	if !ok {
+		return nil
 	}
-	if _, ok := top["webserver_listen"]; ok {
-		errs = append(errs, errors.New("webserver_listen is webserver.listen now: listen, under webserver"))
+	d := DefaultDiscovery()
+	if err := d.UnmarshalJSON(block); err != nil {
+		return err
 	}
-	if block, ok := top["discovery"]; ok {
-		d := DefaultDiscovery()
-		if err := d.UnmarshalJSON(block); err != nil {
-			errs = append(errs, err)
-		} else if _, err := d.validate(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	_, err := d.validate()
+	return err
 }
 
 // familyWarnings tells the IPv4 block that has settings, and no enabled, which is off by default:
-// it runs, and what it says does nothing. Up to v0.22.3 such a block turned IPv4 on.
+// it runs, and what it says does nothing.
 func familyWarnings(configData []byte) []string {
 	var top struct {
 		Discovery struct {

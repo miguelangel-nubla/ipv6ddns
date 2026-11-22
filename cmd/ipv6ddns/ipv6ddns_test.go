@@ -25,9 +25,9 @@ func TestExampleConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// It is what a configuration starts from: nothing deprecated in it.
+	// It is what a configuration starts from: nothing in it that does nothing.
 	if len(cfg.Warnings) != 0 {
-		t.Errorf("the example has deprecated forms: %v", cfg.Warnings)
+		t.Errorf("the example has warnings: %v", cfg.Warnings)
 	}
 	if _, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), cfg); err != nil {
 		t.Fatal(err)
@@ -156,16 +156,19 @@ tasks:
     filter:
       - mac:
           address: "00:11:22:33:44:55"
+    sources:
+      - wan
     endpoints:
       duck:
         - www
-    ipv4:
-      interval: 1h
-      lifetime: 1h
-      command: curl
-      args:
-        - "https://example.com/ip?key=`+secret+`"
 sources:
+  wan:
+    type: command
+    interval: 1h
+    lifetime: 1h
+    command: curl
+    args:
+      - "https://example.com/ip?key=`+secret+`"
   echo:
     type: http
     urls:

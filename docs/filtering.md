@@ -68,9 +68,6 @@ filter:
     *   Example: a `family` of `4` with a `type` of `private` for the `192.168.x.x` address of a device, to a local DNS.
 *   **`prefix`** (Single String): CIDR subnet. The address must be contained within this subnet.
     *   Example: `2001:db8::/32`
-*   **`suffix`** (Single String): The host part (suffix) of the address.
-    *   Case-insensitive. The filter matches against the lowercase, RFC 5952 canonical representation of the address.
-    *   Example: `::1` (Matches `2001:db8::1`, `fe80::1`, etc.) or `dead:beef` (Matches `...:DEAD:BEEF`)
 *   **`type`** (List of Strings): Match semantic IP types. All types must match.
     *   Values:
         *   `global`: Global Unicast Address (Publicly routable): not private, link-local or carrier-grade NAT.
@@ -85,7 +82,16 @@ filter:
     *   **Common Use Case**: a `type` of `global` (Public IPs only).
 *   **`mask`** (List of Strings): generic bitwise mask match: the address must equal `VALUE` in the bits `MASK` sets. All provided masks must match.
     *   Format: `VALUE/MASK`, both whole addresses of one family. `MASK` is an address, not a prefix length: `::1/64` is a configuration error, as any entry that isn't two addresses. For a subnet, use `prefix`.
-    *   Example: `::1/::ffff:ffff:ffff:ffff` (the IPv6 addresses whose interface ID is `::1`, whatever the prefix), or `0.0.0.5/0.0.0.255` (the IPv4 addresses ending in `.5`).
+    *   It compares bits, not text: however an address is written, `::5/::ffff:ffff:ffff:ffff` takes `2001:db8:1:1::5` and leaves out `2001:db8:1:1:2:0:0:5`, whose interface ID is `2:0:0:5`.
+    *   Examples:
+
+        | Wanted | Mask |
+        |---|---|
+        | The interface ID `::5`, whatever the prefix | `::5/::ffff:ffff:ffff:ffff` |
+        | The last 32 bits `dead:beef` | `::dead:beef/::ffff:ffff` |
+        | The last group `5` | `::5/::ffff` |
+        | Subnet `42` and interface ID `::5`, under any prefix the ISP delegates | `0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff` |
+        | The IPv4 addresses ending in `.5` | `0.0.0.5/0.0.0.255` |
     *   A mask matches the addresses of its own family only: with a `family` of `4` and `6`, an IPv6 mask leaves the IPv4 addresses out.
 
 #### `filter.ip.seen`
@@ -236,7 +242,7 @@ filter:
 ```
 
 ### 3. Common server setup (Public IP)
-Servers often need a stable address. By requiring `global` (public) AND `eui64` (MAC-derived, static suffix), you avoid temporary privacy addresses.
+Servers often need a stable address. By requiring `global` (public) AND `eui64` (MAC-derived, a stable interface ID), you avoid temporary privacy addresses.
 
 ```yaml
 filter:
@@ -261,15 +267,18 @@ filter:
       address: "aa:bb:cc:dd:ee:ff"
 ```
 
-### 5. Advanced: Prefix + Suffix
-Match any address ending in `::5` that is also within your static public prefix.
+### 5. Advanced: Prefix + Mask
+Match the address whose interface ID is `::5`, within your static public prefix.
 
 ```yaml
 filter:
   - ip:
       prefix: "2001:db8::/64"
-      suffix: "::5"
+      mask:
+        - "::5/::ffff:ffff:ffff:ffff"
 ```
+
+With a prefix the ISP changes, the subnet goes in the mask instead: `0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff` is interface ID `::5` of subnet `42`, under any prefix.
 
 ### 6. This machine ipv6ddns runs on
 Its stable public IPv6 addresses, not the temporary ones, which change every day or so; with the network's public IPv4 from a [source](sources.md), for a server behind NAT. Add-ons of a Home Assistant, and containers on the host's network, have this machine's addresses: their names can be endpoints of the same task.

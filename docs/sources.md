@@ -96,4 +96,4 @@ sources:
 
 It prints the addresses, one per line, and exits 0; with none to give, it prints nothing, and the addresses go. When it can't tell, as when what it asks doesn't answer, it exits non-zero, and they stay for their `lifetime`: with `set -euo pipefail`, a failing `curl` does. A line that isn't an address is an error, as `null` from `jq` of a missing field: `jq -e` exits non-zero there instead.
 
-The image has the [tools](installation.md#with-docker-compose) such scripts usually need. A task's `ipv4` block, from before sources, is such a command: it still works, as a source named `<task>.ipv4`, and the log says how to move it.
+The image has the [tools](installation.md#with-docker-compose) such scripts usually need.

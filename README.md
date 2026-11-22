@@ -86,7 +86,7 @@ Run it with Docker as the [installation](docs/installation.md#with-docker-compos
 | | |
 |---|---|
 | [Installation and running](docs/installation.md) | Binaries, Docker, flags, the web report, health and metrics, several instances at once |
-| [Configuration](docs/configuration.md) | The file's structure, secrets, validation, and what changed for a configuration from v0.22.3 |
+| [Configuration](docs/configuration.md) | The file's structure, secrets, validation |
 | [Filtering](docs/filtering.md) | Choosing the addresses of a name |
 | [Discovery](docs/discovery.md) | How hosts are found: IPv6 and IPv4, the protocols, the hosts' names, plugins, interfaces, lifetimes |
 | [Names by the hosts' names](docs/hostnames.md) | A name in DNS for every host of the LAN, by what it is called: `{hostname}`, `{n}`, `{mac}` |

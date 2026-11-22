@@ -214,13 +214,6 @@ func CheckPrefix(ip netip.Addr, prefix netip.Prefix) bool {
 	return prefix.Contains(ip.WithZone(""))
 }
 
-func CheckSuffix(ip netip.Addr, suffix string) bool {
-	if suffix == "" {
-		return true
-	}
-	return strings.HasSuffix(ip.WithZone("").String(), strings.ToLower(suffix))
-}
-
 // ParseIPMask reads a VALUE/MASK pair of addresses of one family, as ::1/::ffff:ffff:ffff:ffff or
 // 0.0.0.5/0.0.0.255. The mask is an address, not a prefix length.
 func ParseIPMask(s string) (value, mask netip.Addr, err error) {

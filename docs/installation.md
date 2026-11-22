@@ -64,7 +64,7 @@ Nothing is written then: the configuration stays mounted read-only, and the cont
 | `-live` | Show the report in the terminal, updating, instead of the log: nothing is logged but what stops the start, so the configuration's warnings and the errors of the plugins don't show. It needs a terminal, and `q`, Esc, Ctrl-C or a signal ends it |
 | `-version` | Print the version |
 
-Everything else is in the [configuration file](reference/configuration.md): the level of the log, `log_level`, where the web report is served, `webserver.listen`, and the lifetime of the addresses, `discovery.lifetime`, which were flags [up to v0.22.3](configuration.md#upgrading-from-v0223). A flag there is none of is an error, which shows the flags there are, as `-h` does.
+Everything else is in the [configuration file](reference/configuration.md): the level of the log, `log_level`, where the web report is served, `webserver.listen`, and the lifetime of the addresses, `discovery.lifetime`. A flag there is none of is an error, which shows the flags there are, as `-h` does.
 
 A boolean flag is turned off as `-live=false`, not `-live false`: a word that is no flag, nor a flag's value, is an error.
 

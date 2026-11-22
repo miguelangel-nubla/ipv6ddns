@@ -39,7 +39,7 @@ type Config struct {
 	LogLevel  string    `json:"log_level,omitempty"`
 	Webserver Webserver `json:"webserver,omitzero"`
 
-	// What in the configuration to change, as a deprecated setting: NewConfig sets them, to log.
+	// What in the configuration runs but does nothing: NewConfig sets them, to log.
 	Warnings []string `json:"-"`
 }
 
@@ -80,13 +80,10 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 				}
 			}
 
-			if filter.IP.Prefix.IsValid() || filter.IP.Suffix != "" || len(filter.IP.Mask) > 0 || len(filter.IP.Type) > 0 {
+			if filter.IP.Prefix.IsValid() || len(filter.IP.Mask) > 0 || len(filter.IP.Type) > 0 {
 				result.WriteString(prefix + "                IP:\n")
 				if filter.IP.Prefix.IsValid() {
 					result.WriteString(prefix + "                    Prefix: " + filter.IP.Prefix.String() + "\n")
-				}
-				if filter.IP.Suffix != "" {
-					result.WriteString(prefix + "                    Suffix: " + filter.IP.Suffix + "\n")
 				}
 				if len(filter.IP.Mask) > 0 {
 					result.WriteString(prefix + "                    Mask: " + strings.Join(filter.IP.Mask, ", ") + "\n")
@@ -303,9 +300,6 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := checkDiscovery(byteValue); err != nil {
 		return config, err
 	}
-	if err := checkRemovedFilterKeys(byteValue); err != nil {
-		return config, err
-	}
 	if err := validateConfig(byteValue); err != nil {
 		return config, err
 	}
@@ -319,11 +313,10 @@ func NewConfig(filename string) (config Config, err error) {
 
 	// Read, and valid, by checkDiscovery: its warnings.
 	discoveryWarnings, _ := config.Discovery.validate()
-	config.Warnings, err = config.setUpSources()
-	if err != nil {
+	config.Warnings = slices.Concat(familyWarnings(byteValue), discoveryWarnings)
+	if err := config.setUpSources(); err != nil {
 		return config, err
 	}
-	config.Warnings = slices.Concat(familyWarnings(byteValue), discoveryWarnings, config.Warnings)
 	if err := config.setUpHomeAssistant(); err != nil {
 		return config, err
 	}
@@ -337,10 +330,6 @@ func NewConfig(filename string) (config Config, err error) {
 		}
 		if debounce := config.Credentials[name].Debounce; debounce.Duration < 0 {
 			return config, fmt.Errorf("credentials.%s: invalid debounce %s: not negative", name, debounce.Duration)
-		}
-		for _, old := range config.Credentials[name].deprecated {
-			newName := map[string]string{"debounce_time": "debounce", "retry_time": "retry"}[old]
-			config.Warnings = append(config.Warnings, fmt.Sprintf("credentials.%s.%s is deprecated, and goes in v1.0: it is %s", name, old, newName))
 		}
 	}
 

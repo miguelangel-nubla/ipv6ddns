@@ -69,19 +69,6 @@ homeassistant: the device needs its encryption key, one way or the other: key, y
 
 Without the block there is no device, and no error.
 
-#### A configuration from before v0.23.0
-
-Up to v0.22.3, the device listened on every address unless `listen` said otherwise, and a block without a `key`, as `homeassistant: {}`, was a device Home Assistant gave the key, with `state_file` naming its file. Now both are said, and a block that doesn't say them doesn't start:
-
-| Before | Now |
-|---|---|
-| Any block without `listen` | Add `listen`: the network Home Assistant is on, or `6053` for every address, as before |
-| `homeassistant: {}`, or a block with no `key` | Add `key_provisioning: true` |
-| `state_file: guests.state` | `key_provisioning: true`, and `key_provisioning_state_file: guests.state` |
-| A block with a `key` | As it is, with `listen` |
-
-With `key_provisioning: true` the state file there is, `homeassistant.state` or the one named, is read as before: the device, its key and its entities stay as they were, with nothing to do in Home Assistant.
-
 ### Several devices
 
 Each instance with a `homeassistant` block is a device of its own: two on one machine, or on several machines of one network, are two devices to Home Assistant, each with its entities and its key. They need each:

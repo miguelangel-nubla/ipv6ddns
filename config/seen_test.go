@@ -51,8 +51,6 @@ tasks:
 		"a table there is none of": {"          not_seen:\n            - reported:\n                from:\n                  - arp\n", ""},
 		"both kinds in one rule":   {"          seen:\n            - protocol: ndp\n              reported: {}\n", ""},
 		"a report with a way":      {"          seen:\n            - reported: {}\n              way: heard\n", ""},
-		"source, of before": {"          type:\n            - global\n      - source:\n          - router\n",
-			"task web: filter 2: source is ip.seen now, with a rule for each record the address is to have: reported, with by, for a plugin; interfaces, for an interface"},
 	} {
 		_, err := loadConfig(t, filter(c.rules))
 		if err == nil || c.want != "" && err.Error() != c.want {

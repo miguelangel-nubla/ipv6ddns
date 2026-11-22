@@ -71,39 +71,6 @@ tasks:
 	}
 }
 
-// The ipv4 block of a task, from before sources, becomes a command source.
-func TestIPv4BlockBecomesASource(t *testing.T) {
-	cfg, err := loadConfig(t, `
-tasks:
-  web:
-    ipv4:
-      interval: 3m
-      lifetime: 10m
-      command: curl
-      args:
-        - -s
-        - --ipv4
-        - ifconfig.me
-    endpoints:
-      duck:
-        - www
-`+duckCredential)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source, ok := cfg.Sources["web.ipv4"]
-	if !ok || source.Type != SourceCommand || source.Command != "curl" || source.Interval.Duration != 3*time.Minute || source.Lifetime.Duration != 10*time.Minute || len(source.Args) != 3 {
-		t.Errorf("source: %+v", source)
-	}
-	task := cfg.Tasks["web"]
-	if task.IPv4 != nil || !slices.Equal(task.Sources, []string{"web.ipv4"}) {
-		t.Errorf("task: %+v", task)
-	}
-	if len(cfg.Warnings) != 1 || !strings.Contains(cfg.Warnings[0], "deprecated") {
-		t.Errorf("warnings: %v", cfg.Warnings)
-	}
-}
-
 func TestInvalidSources(t *testing.T) {
 	for name, tt := range map[string]struct{ config, want string }{
 		"unknown type":             {"sources:\n  s:\n    type: ftp\n", "type"},
@@ -116,9 +83,6 @@ func TestInvalidSources(t *testing.T) {
 		"lifetime under interval":  {"sources:\n  s:\n    type: dns\n    interval: 10m\n    lifetime: 1m\n", "lifetime"},
 		"unknown setting":          {"sources:\n  s:\n    type: dns\n    intreval: 1m\n", "intreval"},
 		"no such source":           {"tasks:\n  web:\n    sources:\n      - nope\n    endpoints:\n      duck:\n        - www\n", "no source nope"},
-		// The ipv4 block is a source as any other, with its checks.
-		"ipv4 block, lifetime under interval": {"tasks:\n  web:\n    ipv4:\n      interval: 5m\n      lifetime: 1m\n      command: x\n    endpoints:\n      duck:\n        - www\n", "source web.ipv4: invalid lifetime 1m0s: at least the interval"},
-		"ipv4 block clashes":                  {"sources:\n  web.ipv4:\n    type: dns\ntasks:\n  web:\n    ipv4:\n      interval: 1m\n      lifetime: 3m\n      command: x\n    endpoints:\n      duck:\n        - www\n", "web.ipv4"},
 	} {
 		content := tt.config
 		if !strings.Contains(content, "tasks:") {

@@ -85,10 +85,6 @@
                                             "type": "string",
                                             "description": "A prefix the address must be in: 2001:db8::/32, 192.168.1.0/24."
                                         },
-                                        "suffix": {
-                                            "type": "string",
-                                            "description": "The end of the address, in its canonical lower case form: ::1, dead:beef."
-                                        },
                                         "mask": {
                                             "type": "array",
                                             "items": {
@@ -141,37 +137,6 @@
                         },
                         "description": "The host names to update, by credential: a name in the credential's zone, \"\" for the zone itself, \"*.name\" for a wildcard. Or a template, a name for each host the filters match, by what the host is called, which needs discovery.hostnames: \"{hostname}\" is the name of every host called so, with the addresses of them all; \"{n}.{hostname}\" one of each, numbered from 1 by MAC among those there now; \"{mac}\" the host's MAC, its twelve digits. A name written as it is wins over a template's."
                     },
-                    "ipv4": {
-                        "type": "object",
-                        "properties": {
-                            "interval": {
-                                "$ref": "#/$defs/duration",
-                                "description": "How often the command runs."
-                            },
-                            "command": {
-                                "type": "string",
-                                "description": "The command, printing the addresses one per line."
-                            },
-                            "args": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "description": "Its arguments."
-                            },
-                            "lifetime": {
-                                "$ref": "#/$defs/duration",
-                                "description": "How long an address stays after the last run that gave it."
-                            }
-                        },
-                        "required": [
-                            "interval",
-                            "command",
-                            "lifetime"
-                        ],
-                        "additionalProperties": false,
-                        "description": "Deprecated, and goes in v1.0: a command source, in sources, does the same."
-                    },
                     "sources": {
                         "type": "array",
                         "items": {
@@ -207,14 +172,6 @@
                     "retry": {
                         "$ref": "#/$defs/duration",
                         "description": "How long to wait before retrying a failed update: addresses that change meanwhile wait for it too. At least 1s. Default: 1m."
-                    },
-                    "debounce_time": {
-                        "$ref": "#/$defs/duration",
-                        "description": "Deprecated, and goes in v1.0: debounce."
-                    },
-                    "retry_time": {
-                        "$ref": "#/$defs/duration",
-                        "description": "Deprecated, and goes in v1.0: retry."
                     }
                 },
                 "required": [

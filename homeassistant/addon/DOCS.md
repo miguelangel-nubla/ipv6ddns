@@ -98,40 +98,12 @@ update now; and `homeassistant` sources read your entities, as a router's WAN
 address. See the
 [integration](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/home-assistant-integration.md).
 
-A `config.yaml` from before `key_provisioning`, up to v0.22.3, has
-`homeassistant: {}`, and the add-on doesn't start with it: its log says the
-device needs its key, and then that it needs `listen`. The add-on leaves your `config.yaml` as it is: change
-those lines yourself, to
-
-```yaml
-homeassistant:
-  listen: 6053
-  key_provisioning: true
-```
-
-and restart the add-on. It reads the `homeassistant.state` it has: the device,
-its key and its entities stay as they were in Home Assistant.
-
 ## The add-on's page
 
 It shows the report of ipv6ddns: the names and their records, and the hosts
 discovered. It is served to Home Assistant only, not to the network: at
 `172.30.32.1:8053`, the address Home Assistant's Supervisor reaches the add-on
 at, which `webserver.listen` in the starting `config.yaml` says.
-
-A `config.yaml` from up to v0.22.3 doesn't have those lines: the add-on gave
-the address itself then, and took the level of the log from an option of its
-own, which is gone. With such a file the add-on still runs, and updates your
-names, but its page in Home Assistant shows an error, as nothing serves it. The add-on leaves your `config.yaml` as it is: add these
-lines to it yourself, at the top level, as `tasks` is,
-
-```yaml
-webserver:
-  listen: 172.30.32.1:8053
-```
-
-and restart the add-on. If the log level option was not `info`, add
-`log_level: debug`, or the level it had, the same way.
 
 ## Network
 

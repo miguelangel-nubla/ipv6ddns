@@ -36,7 +36,7 @@ func TestDiscovery(t *testing.T) {
 		// What is asked for and does nothing is said.
 		"solicit, no listen": {"discovery:\n  ipv6:\n    listen: false\n  solicit:\n    ipv6: true\n", disc.Family{Enabled: true, Active: true}, off, Solicit{IPv6: true},
 			[]string{"discovery.solicit.ipv6 does nothing without discovery.ipv6.listen, which reads the answers"}},
-		// And so is an IPv4 block that doesn't say enabled, which turned IPv4 on up to v0.22.3.
+		// And so is an IPv4 block that doesn't say enabled: IPv4 is off by default.
 		"ipv4, its ways alone": {"discovery:\n  ipv4:\n    active: false\n    lifetime: 10m\n", on, disc.Family{Listen: true, Lifetime: disc.Duration(10 * time.Minute)}, Solicit{},
 			[]string{"discovery.ipv4 has active, lifetime, and no enabled: IPv4 is off, and they do nothing, until it has enabled: true"}},
 		"ipv4, off and said so": {"discovery:\n  ipv4:\n    enabled: false\n    active: false\n", on, disc.Family{Listen: true}, Solicit{}, nil},
@@ -125,13 +125,6 @@ func TestDiscoveryErrors(t *testing.T) {
 	keys := "lifetime, rediscover, interfaces, exclude_interfaces, ipv6, ipv4, hostnames, protocols, plugins, solicit"
 	for name, tt := range map[string]struct{ config, want string }{
 		// The keys that moved.
-		"the lifetime of before":   {"lifetime: 30m\n", "lifetime is discovery.lifetime now: move it under discovery, beside the families"},
-		"the web server of before": {"webserver_listen: 8053\n", "webserver_listen is webserver.listen now: listen, under webserver"},
-		"ipv6.solicit":             {"discovery:\n  ipv6:\n    solicit: true\n", "discovery.ipv6.solicit is discovery.solicit.ipv6 now: the solicitation has its own block, solicit, beside the families, with ipv6: true under it"},
-		"ipv4.solicit":             {"discovery:\n  ipv4:\n    enabled: true\n    solicit: true\n", "discovery.ipv4.solicit is discovery.solicit.ipv4 now: the solicitation has its own block, solicit, beside the families, with ipv4: true under it"},
-		"a plugin's params":        {"discovery:\n  plugins:\n    router:\n      type: linux\n      params: '60s,a,b,c'\n", "discovery.plugins.router.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: interval, address, username, password, identity_file, host_key"},
-		"a mikrotik's params":      {"discovery:\n  plugins:\n    router:\n      type: mikrotik\n      params: '60s,a,b,c'\n", "discovery.plugins.router.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: interval, address, username, password, use_tls, tls_fingerprint"},
-		"params of no type":        {"discovery:\n  plugins:\n    router:\n      params: '60s,a,b,c'\n", "discovery.plugins.router.params is the plugin's fields now, each a key of its own beside type, in the order the params had them: interval, address, username and the others of its type"},
 		// The keys that are gone: no such key, with those there are.
 		"listen":        {"discovery:\n  listen: false\n", "discovery.listen: no such key: discovery has " + keys},
 		"active":        {"discovery:\n  active: false\n", "discovery.active: no such key: discovery has " + keys},
@@ -169,9 +162,9 @@ func TestDiscoveryErrors(t *testing.T) {
 	}
 
 	// Every error is told, not the first alone.
-	_, err := loadConfig(t, "lifetime: 1h\ndiscovery:\n  listen: true\n  ipv4: true\n  ipv6:\n    solicit: true\n  protocols:\n    mdns: true\ntasks: {}\n"+duckCredential)
-	if err == nil || len(strings.Split(err.Error(), "\n")) != 5 {
-		t.Errorf("five errors: got\n%v", err)
+	_, err := loadConfig(t, "discovery:\n  listen: true\n  ipv4: true\n  ipv6:\n    solicit: true\n  protocols:\n    mdns: true\ntasks: {}\n"+duckCredential)
+	if err == nil || len(strings.Split(err.Error(), "\n")) != 4 {
+		t.Errorf("four errors: got\n%v", err)
 	}
 }
 
@@ -283,9 +276,6 @@ func TestHomeAssistantConfig(t *testing.T) {
 		"a state file alone":                  {"homeassistant:\n  listen: 6053\n  key_provisioning_state_file: x.state\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept: it needs key_provisioning: true"},
 		"a state file and a key":              {"homeassistant:\n  listen: 6053\n  key: " + key + "\n  key_provisioning_state_file: x.state\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept, with key_provisioning: true: with a key of your own nothing is kept, so leave it out"},
 		"a state file, key provisioning off":  {"homeassistant:\n  listen: 6053\n  key_provisioning: false\n  key_provisioning_state_file: x.state\n", "it needs key_provisioning: true"},
-		"the state file's key from before":    {"homeassistant:\n  listen: 6053\n  state_file: x.state\n", "homeassistant.state_file is key_provisioning_state_file now, and needs key_provisioning: true beside it: with both, the device and its key stay as they were"},
-		"it, with a key":                      {"homeassistant:\n  listen: 6053\n  key: " + key + "\n  state_file: x.state\n", "homeassistant.state_file is key_provisioning_state_file now"},
-		"it, with key provisioning":           {"homeassistant:\n  listen: 6053\n  key_provisioning: true\n  state_file: x.state\n", "homeassistant.state_file is key_provisioning_state_file now"},
 		"key provisioning that is no boolean": {"homeassistant:\n  listen: 6053\n  key_provisioning: 'yes'\n", "homeassistant.key_provisioning: Invalid type. Expected: boolean"},
 		// Where it listens: never by default, which would be every address, the internet's too on a router.
 		"no listen":            {"homeassistant:\n  key: " + key + "\n", "homeassistant.listen: where the device listens, for Home Assistant to connect, is to be given: the network Home Assistant is on, as 192.168.1.0/24"},
@@ -315,7 +305,6 @@ func TestHomeAssistantSchema(t *testing.T) {
 		`{` + listen + `"key_provisioning_state_file": "x.state"}`:                            false,
 		`{` + listen + key + `, "key_provisioning_state_file": "x.state"}`:                    false,
 		`{` + listen + `"key_provisioning": false, "key_provisioning_state_file": "x.state"}`: false,
-		`{` + listen + `"key_provisioning": true, "state_file": "x.state"}`:                   false,
 		// Without listen.
 		`{` + key + `}`:              false,
 		`{"key_provisioning": true}`: false,
@@ -330,41 +319,20 @@ func TestHomeAssistantSchema(t *testing.T) {
 	}
 }
 
-// The deprecated names: they work, and warn of their new ones.
-func TestDeprecatedSettings(t *testing.T) {
-	cfg, err := loadConfig(t, `
-tasks: {}
-credentials:
-  duck:
-    provider: duckdns
-    settings: {}
-    debounce_time: 3s
-    retry_time: 4m
-`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := cfg.Credentials["duck"]
-	if c.Debounce.Duration != 3*time.Second || c.Retry.Duration != 4*time.Minute {
-		t.Errorf("moved: %s, %s", c.Debounce, c.Retry)
-	}
-	want := []string{
-		"credentials.duck.debounce_time is deprecated, and goes in v1.0: it is debounce",
-		"credentials.duck.retry_time is deprecated, and goes in v1.0: it is retry",
-	}
-	if !slices.Equal(cfg.Warnings, want) {
-		t.Errorf("warnings: %q, want %q", cfg.Warnings, want)
-	}
-
-	for _, both := range []string{"debounce: 5s\n    debounce_time: 5s", "retry: 5s\n    retry_time: 5s"} {
-		if _, err := loadConfig(t, "tasks: {}\ncredentials:\n  duck:\n    provider: duckdns\n    settings: {}\n    "+both+"\n"); err == nil || !strings.Contains(err.Error(), "give one of them") {
-			t.Errorf("%q: %v, want an error", both, err)
-		}
-	}
-
+// A credential's times, given or by default; the names they had before are none.
+func TestCredentialTimes(t *testing.T) {
 	given, err := loadConfig(t, "tasks: {}\ncredentials:\n  duck:\n    provider: duckdns\n    settings: {}\n    debounce: 2s\n    retry: 3m\n")
 	if err != nil || given.Credentials["duck"].Debounce.Duration != 2*time.Second || given.Credentials["duck"].Retry.Duration != 3*time.Minute || len(given.Warnings) != 0 {
-		t.Errorf("the new names: %v, %+v, %q", err, given.Credentials["duck"], given.Warnings)
+		t.Errorf("given: %v, %+v, %q", err, given.Credentials["duck"], given.Warnings)
+	}
+	defaults, err := loadConfig(t, "tasks: {}\ncredentials:\n  duck:\n    provider: duckdns\n    settings: {}\n")
+	if err != nil || defaults.Credentials["duck"].Debounce.Duration != 10*time.Second || defaults.Credentials["duck"].Retry.Duration != time.Minute {
+		t.Errorf("defaults: %v, %+v", err, defaults.Credentials["duck"])
+	}
+	for _, old := range []string{"debounce_time: 3s", "retry_time: 4m"} {
+		if _, err := loadConfig(t, "tasks: {}\ncredentials:\n  duck:\n    provider: duckdns\n    settings: {}\n    "+old+"\n"); err == nil {
+			t.Errorf("%s: want an error", old)
+		}
 	}
 }
 

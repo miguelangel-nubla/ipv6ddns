@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -120,28 +119,6 @@ func (s Seen) check(path string, plugins []string) error {
 			return fmt.Errorf("%s.way: %q is no way: they are %s", path, s.Way, wayNames(ipv6disc.Ways))
 		}
 		return fmt.Errorf("%s.way: %s never sees an address %s: it sees it %s", path, s.Protocol, s.Way, wayNames(ways))
-	}
-	return nil
-}
-
-// checkRemovedFilterKeys tells, of a configuration not yet checked by the schema, where a key that
-// filters no longer have is, and what it is now: in words, where the schema would only say that
-// it is not allowed.
-func checkRemovedFilterKeys(configData []byte) error {
-	var c struct {
-		Tasks map[string]struct {
-			Filter []map[string]json.RawMessage `json:"filter"`
-		} `json:"tasks"`
-	}
-	if json.Unmarshal(configData, &c) != nil {
-		return nil
-	}
-	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {
-		for i, f := range c.Tasks[name].Filter {
-			if _, ok := f["source"]; ok {
-				return fmt.Errorf("task %s: filter %d: source is ip.seen now, with a rule for each record the address is to have: reported, with by, for a plugin; interfaces, for an interface", name, i+1)
-			}
-		}
 	}
 	return nil
 }

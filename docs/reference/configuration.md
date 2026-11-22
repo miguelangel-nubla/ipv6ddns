@@ -27,7 +27,6 @@ The host names to keep, by task name: the addresses its filters match, and those
 |---|---|---|
 | `filter` | list of object | Filter sets: an address any of them matches is the task's. Within a set, every rule must match. |
 | `endpoints` | object | **Required.** The host names to update, by credential: a name in the credential's zone, "" for the zone itself, "*.name" for a wildcard. Or a template, a name for each host the filters match, by what the host is called, which needs discovery.hostnames: "{hostname}" is the name of every host called so, with the addresses of them all; "{n}.{hostname}" one of each, numbered from 1 by MAC among those there now; "{mac}" the host's MAC, its twelve digits. A name written as it is wins over a template's. |
-| `ipv4` | object | Deprecated, and goes in v1.0: a command source, in sources, does the same. |
 | `sources` | list of string | The sources whose addresses the task's names get too. |
 
 ## Task filters
@@ -64,24 +63,10 @@ Rules on the address.
 |---|---|---|
 | `type` | list of `global`, `private`, `ula`, `cgnat`, `link_local`, `eui64`, `random`, `temporary`, `!global`, `!private`, `!ula`, `!cgnat`, `!link_local`, `!eui64`, `!random`, `!temporary` | Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6, not from the MAC), temporary (an IPv6 privacy address of this machine's, which changes every day or so). "!type": not of the type, as "!temporary". |
 | `prefix` | string | A prefix the address must be in: 2001:db8::/32, 192.168.1.0/24. |
-| `suffix` | string | The end of the address, in its canonical lower case form: ::1, dead:beef. |
 | `mask` | list of string | VALUE/MASK pairs of addresses of one family, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff for the IPv6 addresses ending in ::1, 0.0.0.5/0.0.0.255 for the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair matches the addresses of its family only. |
 | `family` | list of `4`, `6` | 4, 6 or both. Default: 6. |
 | `seen` | list of  | How the address was seen: a record of each rule, all of which it must have, each of its own times, while they count. Rules: a protocol and its way, as protocol: mdns and way: announced; or reported, by a plugin or the kernel, from a table. |
 | `not_seen` | list of  | Records the address must have none of, as seen takes them: not_seen with reported {} is an address the host showed itself, never only one a table reports. |
-
-## Task ipv4, deprecated
-
-`tasks.<name>.ipv4`
-
-Deprecated, and goes in v1.0: a command source, in sources, does the same.
-
-| Key | Takes | |
-|---|---|---|
-| `interval` | duration | **Required.** How often the command runs. |
-| `command` | string | **Required.** The command, printing the addresses one per line. |
-| `args` | list of string | Its arguments. |
-| `lifetime` | duration | **Required.** How long an address stays after the last run that gave it. |
 
 ## Credentials
 
@@ -95,8 +80,6 @@ The DNS providers to update, by credential name, which tasks' endpoints name. Th
 | `settings` | object | **Required.** The provider's settings: see the providers reference. An unknown one is an error. |
 | `debounce` | duration | How long to wait for more changes before updating. Default: 10s. A resolver credential's: none, as its updates are kept in memory, at once. |
 | `retry` | duration | How long to wait before retrying a failed update: addresses that change meanwhile wait for it too. At least 1s. Default: 1m. |
-| `debounce_time` | duration | Deprecated, and goes in v1.0: debounce. |
-| `retry_time` | duration | Deprecated, and goes in v1.0: retry. |
 
 ## Resolvers
 

@@ -160,51 +160,25 @@ func hideURL(raw string) string {
 	return u.Scheme + "://" + u.Host
 }
 
-// IPv4Command is the ipv4 block of a task, from before sources: a command source, which it
-// becomes.
-type IPv4Command struct {
-	Interval duration.Duration `json:"interval"`
-	Command  string            `json:"command"`
-	Args     []string          `json:"args"`
-	Lifetime duration.Duration `json:"lifetime"`
-}
-
-// setUpSources checks the sources, and turns the ipv4 block of a task into a source of its own,
-// named <task>.ipv4. It returns warnings for the configuration to change.
-func (c *Config) setUpSources() ([]string, error) {
-	var warnings []string
+// setUpSources checks the sources, and gives them their defaults; and that the tasks name ones
+// there are.
+func (c *Config) setUpSources() error {
 	if c.Sources == nil {
 		c.Sources = make(map[string]Source)
 	}
-	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {
-		task := c.Tasks[name]
-		if task.IPv4 == nil {
-			continue
-		}
-		sourceName := name + ".ipv4"
-		if _, exists := c.Sources[sourceName]; exists {
-			return nil, fmt.Errorf("task %s: its ipv4 block becomes the source %s, which exists", name, sourceName)
-		}
-		c.Sources[sourceName] = Source{Type: SourceCommand, Interval: task.IPv4.Interval, Lifetime: task.IPv4.Lifetime, Command: task.IPv4.Command, Args: task.IPv4.Args}
-		task.Sources = append(task.Sources, sourceName)
-		task.IPv4 = nil
-		c.Tasks[name] = task
-		warnings = append(warnings, fmt.Sprintf("task %s: the ipv4 block is deprecated, and goes in v1.0: move it to sources, as a command source, and name it in the task's sources", name))
-	}
-
-	for name, source := range c.Sources {
-		source, err := source.withDefaults()
+	for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
+		source, err := c.Sources[name].withDefaults()
 		if err != nil {
-			return nil, fmt.Errorf("source %s: %w", name, err)
+			return fmt.Errorf("source %s: %w", name, err)
 		}
 		c.Sources[name] = source
 	}
-	for name, task := range c.Tasks {
-		for _, source := range task.Sources {
+	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {
+		for _, source := range c.Tasks[name].Sources {
 			if _, ok := c.Sources[source]; !ok {
-				return nil, fmt.Errorf("task %s: no source %s", name, source)
+				return fmt.Errorf("task %s: no source %s", name, source)
 			}
 		}
 	}
-	return warnings, nil
+	return nil
 }

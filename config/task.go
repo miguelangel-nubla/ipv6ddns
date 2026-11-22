@@ -18,8 +18,6 @@ type Task struct {
 	// The names of the sources whose addresses the task's names get too.
 	Sources   []string            `json:"sources,omitempty"`
 	Endpoints map[string][]string `json:"endpoints"`
-	// Deprecated: a command source, in Sources. NewConfig turns it into one.
-	IPv4 *IPv4Command `json:"ipv4,omitempty"`
 }
 
 type Filters struct {
@@ -42,8 +40,8 @@ type IPFilters struct {
 	Family []int        `json:"family"`
 	Type   []string     `json:"type"`
 	Prefix netip.Prefix `json:"prefix"`
-	Suffix string       `json:"suffix"`
-	Mask   []string     `json:"mask"`
+	// VALUE/MASK pairs, both whole addresses: the bits the mask has are the value's.
+	Mask []string `json:"mask"`
 	// How the address was seen, of its records: every rule of Seen by one of them, and no record
 	// of any rule of NotSeen.
 	Seen    []Seen `json:"seen,omitempty"`
@@ -69,7 +67,6 @@ func (f Filters) Match(addr *ipv6disc.Addr) bool {
 		filter.CheckMACType(addr.Hw, f.MAC.Type) &&
 		filter.CheckIPType(addr, f.IP.Type) &&
 		filter.CheckPrefix(addr.Addr, f.IP.Prefix) &&
-		filter.CheckSuffix(addr.Addr, f.IP.Suffix) &&
 		filter.CheckMask(addr.Addr, f.IP.Mask) &&
 		f.IP.checkSeen(addr)
 }

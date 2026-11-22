@@ -70,8 +70,6 @@ func checkHomeAssistant(configData []byte) error {
 		return nil
 	}
 	switch {
-	case has("state_file"):
-		return errors.New("homeassistant.state_file is key_provisioning_state_file now, and needs key_provisioning: true beside it: with both, the device and its key stay as they were")
 	case has("key") && provisioning:
 		return errors.New("homeassistant: a key, or key_provisioning: true for Home Assistant to give it: one or the other")
 	case has("key_provisioning_state_file") && has("key"):

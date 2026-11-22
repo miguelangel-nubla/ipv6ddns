@@ -68,27 +68,6 @@ func TestCheckPrefix(t *testing.T) {
 	}
 }
 
-func TestCheckSuffix(t *testing.T) {
-	tests := []struct {
-		name   string
-		ip     string
-		suffix string
-		want   bool
-	}{
-		{"Empty suffix", "2001:db8::1", "", true},
-		{"Match", "2001:db8::1", "::1", true},
-		{"Mismatch", "2001:db8::2", "::1", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := CheckSuffix(parseIP(tt.ip), tt.suffix); got != tt.want {
-				t.Errorf("CheckSuffix() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestCheckMACMask(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -203,6 +182,12 @@ func TestCheckMask(t *testing.T) {
 	}{
 		{"Suffix ::1 match", "2001:db8::1", "::1/::ffff:ffff:ffff:ffff", true},
 		{"Suffix ::1 mismatch", "2001:db8::2", "::1/::ffff:ffff:ffff:ffff", false},
+		// The bits, whatever the text: a host part 2:0:0:5 is no ::5, though its text ends so.
+		{"Host part ::5, written short", "2001:db8:1:1::5", "::5/::ffff:ffff:ffff:ffff", true},
+		{"Host part 2:0:0:5 is not ::5", "2001:db8:1:1:2:0:0:5", "::5/::ffff:ffff:ffff:ffff", false},
+		{"Host part ending 0:5", "2001:db8:1:1:2:0:0:5", "::5/::ffff:ffff", true},
+		{"Last group 15 is not 5", "2001:db8:1:1::15", "::5/::ffff", false},
+		{"Subnet and host, any prefix", "2001:db8:aaaa:42::5", "0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff", true},
 		{"Match odd", "2001:db8::1", "::1/::1", true},
 		{"Match odd (fail)", "2001:db8::2", "::1/::1", false},
 		{"Match even", "2001:db8::2", "::0/::1", true},
