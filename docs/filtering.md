@@ -4,10 +4,10 @@ A task's filters choose which of the addresses [discovery](discovery.md) finds g
 
 ## Core concepts
 
-The filtering system is built around two logical levels:
+A task's `filter` is a list of filter sets, and each set holds rules.
 
-1.  **Filter Sets (OR Logic)**: The top-level `filter` configuration is a **List** of sets. If an address matches **ANY** of the sets in the list, it is accepted.
-2.  **Filter Rules (AND Logic)**: Within a single set, you define specific rules (e.g., match this IP type AND this MAC address). An address must match **ALL** rules defined in the set to be accepted by that set.
+1. **Sets are alternatives (OR).** An address that matches any set in the list goes to the task.
+2. **Rules add up (AND).** An address matches a set only if it matches every rule in that set, for example this MAC address and this IP type.
 
 ### Visual logic
 
@@ -19,7 +19,7 @@ Address -> [ Set 2 ] --(Match?)--> ACCEPT
 Address -> [ Set 3 ] --(Match?)--> ACCEPT
 ```
 
-Inside a Set:
+Inside a set:
 
 ```text
 Set 1:
@@ -29,9 +29,9 @@ Set 1:
 
 ## Configuration
 
-The `filter` block is a list of objects. Each object represents a **Filter Set**.
-
 ### Structure
+
+Each item of the `filter` list is one filter set:
 
 ```yaml
 filter:
@@ -48,82 +48,107 @@ filter:
 
 ### Available keys
 
+A set can have rules about the machine itself (`self`), the host's MAC (`mac`), and the address (`ip`).
+
 #### `filter.self`
 
-*   **`self`** (Boolean): the addresses of the machine ipv6ddns runs on, instead of a MAC's, as a server's or a Home Assistant host's. There's no MAC to look up, and nothing changes when its network card does.
-    *   They're the addresses of the interfaces discovery runs on, while the family listens. An interface without a MAC, as a PPP link or a tunnel, isn't included (see [interfaces](discovery.md#interfaces)): take its addresses from a [source](sources.md) instead, as a `command` source that reads the interface.
-    *   An address the interface no longer has goes within a minute, not a lifetime later.
-    *   Container bridges have this machine's addresses too: leave them out with `discovery.exclude_interfaces`.
-    *   See the example [this machine](#6-this-machine-ipv6ddns-runs-on).
+`self` is a boolean. With `self: true`, the set takes the addresses of the machine ipv6ddns runs on, instead of a MAC's. Use it for a server or a Home Assistant host. There's no MAC to look up, and nothing changes when the machine's network card does.
+
+- The addresses are those of the interfaces discovery runs on, while the family listens.
+- An interface without a MAC, such as a PPP link or a tunnel, isn't included (see [interfaces](discovery.md#interfaces)). Take its addresses from a [source](sources.md) instead, for example a `command` source that reads the interface.
+- An address the interface no longer has goes within a minute, not a lifetime later.
+- Container bridges have this machine's addresses too. Leave them out with `discovery.exclude_interfaces`.
+
+See the example [this machine](#6-this-machine-ipv6ddns-runs-on).
 
 #### `filter.mac`
 
-*   **`address`** (Single String): Exact match of the MAC address.
-    *   Example: `00:11:22:33:44:55`. `00-11-22-33-44-55` and `0011.2233.4455` are the same MAC. Anything that isn't a MAC is a configuration error.
-*   **`mask`** (List of Strings): Match against a mask. Useful for matching OUI (Vendor) or ranges. All provided masks must match.
-    *   Format: `VALUE/MASK`, both whole MACs. An entry that isn't is a configuration error.
-    *   Example: `00:11:22:00:00:00/ff:ff:ff:00:00:00` (Matches any device with 00:11:22 OUI)
-*   **`type`** (List of Strings): Match protocol-defined MAC types. All types must match.
-    *   Values: `global`, `local`, `unicast`, `multicast`. Write `!type` for "not of this type".
+| Key | Takes | Matches |
+|---|---|---|
+| `address` | One string | Exactly this MAC address |
+| `mask` | A list of strings | A MAC that matches every mask in the list |
+| `type` | A list of strings | A MAC that is of every type in the list |
+
+- **`address`**: for example `00:11:22:33:44:55`. `00-11-22-33-44-55` and `0011.2233.4455` are the same MAC. Anything that isn't a MAC is a configuration error.
+- **`mask`**: useful for matching a vendor's OUI, or a range. Each entry is `VALUE/MASK`, and both parts are whole MACs. An entry in any other form is a configuration error. For example, `00:11:22:00:00:00/ff:ff:ff:00:00:00` matches any device whose OUI is 00:11:22.
+- **`type`**: the MAC types the protocol defines: `global`, `local`, `unicast`, `multicast`. Write `!type` for "not of this type".
 
 #### `filter.ip`
 
-*   **`family`** (List of Integers): the address families, `4` and `6`. **Default: `[6]`.** That way, a filter that names a device's MAC doesn't also send its private IPv4 addresses to a public DNS once IPv4 discovery finds them. Give `[4]` or `[4, 6]` for IPv4.
-    *   Example: `family` `4` with `type` `private`, for a device's `192.168.x.x` address in a local DNS.
-*   **`prefix`** (Single String): CIDR subnet. The address must be contained within this subnet.
-    *   Example: `2001:db8::/32`
-*   **`type`** (List of Strings): Match semantic IP types. All types must match.
-    *   Values:
-        *   `global`: Global Unicast Address (Publicly routable): not private, link-local or carrier-grade NAT.
-        *   `private`: RFC 1918 IPv4 (`10/8`, `172.16/12`, `192.168/16`), or IPv6 unique local.
-        *   `ula`: Unique Local Address (`fc00::/7`).
-        *   `cgnat`: Carrier-grade NAT IPv4 (`100.64.0.0/10`).
-        *   `link_local`: Link-Local Address (`fe80::/10`, or `169.254.0.0/16`).
-        *   `eui64`: IPv6, derived from MAC address (stable).
-        *   `random`: IPv6, with an interface ID not derived from the MAC. That's a privacy address, or a stable address made another way, as most systems do now.
-        *   `temporary`: an IPv6 privacy address of this machine, which its kernel marks as temporary. It changes every day or so. Only known on Linux, and only for the [`self`](#filterself) addresses.
-    *   `!type` means "not of this type", as `!temporary`.
-    *   **Common Use Case**: a `type` of `global` (Public IPs only).
-*   **`mask`** (List of Strings): a bitwise match. In the bits that `MASK` sets, the address must equal `VALUE`. All masks given must match.
-    *   Format: `VALUE/MASK`, both full addresses of the same family. `MASK` is an address, not a prefix length: `::1/64` is a configuration error, as is any entry that isn't two addresses. For a subnet, use `prefix`.
-    *   It compares bits, not text, so how an address is written doesn't matter. `::5/::ffff:ffff:ffff:ffff` takes `2001:db8:1:1::5`, and leaves out `2001:db8:1:1:2:0:0:5`, whose interface ID is `2:0:0:5`.
-    *   Examples:
+| Key | Takes | Matches |
+|---|---|---|
+| `family` | A list of integers | An address of one of these families, `4` and `6`. Default: `[6]` |
+| `prefix` | One string | An address inside this subnet |
+| `type` | A list of strings | An address that is of every type in the list |
+| `mask` | A list of strings | An address that matches every mask in the list |
+| `seen`, `not_seen` | Lists of rules | An address by how it was seen: see [`filter.ip.seen`](#filteripseen) |
 
-        | Wanted | Mask |
-        |---|---|
-        | The interface ID `::5`, whatever the prefix | `::5/::ffff:ffff:ffff:ffff` |
-        | The last 32 bits `dead:beef` | `::dead:beef/::ffff:ffff` |
-        | The last group `5` | `::5/::ffff` |
-        | Subnet `42` and interface ID `::5`, under any prefix the ISP delegates | `0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff` |
-        | The IPv4 addresses ending in `.5` | `0.0.0.5/0.0.0.255` |
-    *   A mask only matches addresses of its own family. With `family` `4` and `6`, an IPv6 mask leaves the IPv4 addresses out, so use one filter per family.
+**`family`** defaults to `[6]`. That way, a filter that names a device's MAC doesn't also send the device's private IPv4 addresses to a public DNS once IPv4 discovery finds them. Give `[4]` or `[4, 6]` for IPv4. For example, `family` `4` with `type` `private` takes a device's `192.168.x.x` address, for a local DNS.
+
+**`prefix`** is a subnet in CIDR form, for example `2001:db8::/32`. The address must be inside it.
+
+**`type`** takes these values. Write `!type` for "not of this type", for example `!temporary`. The most common use is a `type` of `global`, for public addresses only.
+
+| Type | Means |
+|---|---|
+| `global` | A global unicast address, publicly routable: not private, link-local or carrier-grade NAT |
+| `private` | An RFC 1918 IPv4 address (`10/8`, `172.16/12`, `192.168/16`), or an IPv6 unique local address |
+| `ula` | A unique local address (`fc00::/7`) |
+| `cgnat` | A carrier-grade NAT IPv4 address (`100.64.0.0/10`) |
+| `link_local` | A link-local address (`fe80::/10`, or `169.254.0.0/16`) |
+| `eui64` | An IPv6 address derived from the MAC address, which is stable |
+| `random` | An IPv6 address whose interface ID is not derived from the MAC. It's a privacy address, or a stable address made another way, as most systems make them now |
+| `temporary` | An IPv6 privacy address of this machine, which its kernel marks as temporary. It changes every day or so. Only known on Linux, and only for the [`self`](#filterself) addresses |
+
+**`mask`** is a bitwise match. In the bits that `MASK` sets, the address must equal `VALUE`.
+
+- Each entry is `VALUE/MASK`, and both parts are full addresses of the same family.
+- `MASK` is an address, not a prefix length. `::1/64` is a configuration error, and so is any entry that isn't two addresses. For a subnet, use `prefix`.
+- A mask compares bits, not text, so how an address is written doesn't matter. `::5/::ffff:ffff:ffff:ffff` takes `2001:db8:1:1::5`. It leaves out `2001:db8:1:1:2:0:0:5`, whose interface ID is `2:0:0:5`.
+- A mask only matches addresses of its own family. With `family` `4` and `6`, an IPv6 mask leaves the IPv4 addresses out, so use one filter per family.
+
+| Wanted | Mask |
+|---|---|
+| The interface ID `::5`, whatever the prefix | `::5/::ffff:ffff:ffff:ffff` |
+| The last 32 bits `dead:beef` | `::dead:beef/::ffff:ffff` |
+| The last group `5` | `::5/::ffff` |
+| Subnet `42` and interface ID `::5`, under any prefix the ISP delegates | `0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff` |
+| The IPv4 addresses ending in `.5` | `0.0.0.5/0.0.0.255` |
 
 #### `filter.ip.seen`
 
-Rules on how the address was seen. Discovery keeps a record of each way it saw an address, each with its own first and last time and its own lifetime. The address stays as long as any of its records does, and a rule only matches a record that is still current.
+`seen` and `not_seen` match an address by how it was seen.
 
-- **`seen`** is a list of rules, and the address must have a record matching each of them.
-- **`not_seen`** is a list of rules, and the address must have no record matching any of them.
+Discovery keeps a record of each way it saw an address. Each record has its own first time, last time and lifetime. The address stays as long as any of its records does. A rule matches only a record that is still current.
 
-A rule is one of two kinds:
+- **`seen`** is a list of rules. The address must have a record that matches each of them.
+- **`not_seen`** is a list of rules. The address must have no record that matches any of them.
 
-*   **A protocol, and how it saw the address:**
-    *   `protocol`: one of the local discovery's protocols.
-    *   `way`: how it saw it. Leave it out for any way.
-        *   `announced`: the host said, unprompted, that the address is its own, or said something about itself from it.
-        *   `answered`: the host replied to one of discovery's probes, from the address or for it.
-        *   `heard`: the host used the address without discovery asking.
-*   **`reported`**: something other than the host reported the address, from one of its tables.
-    *   `by`: plugins, by name or by type, as `mikrotik`, or `kernel`, this machine's own. Leave it out for anyone.
-    *   `from`: `neighbors`, a neighbor or ARP table; `leases`, DHCP leases; or `interfaces`, the addresses of this machine's interfaces. Leave it out for any table.
-    *   A lease never finds an address on its own. It's attached to an address something else found at the lease's MAC, while the plugin reads the lease, and it keeps the address no longer than what found it. That's because a server keeps the lease of a host that left until the lease ends.
-    *   `reported: {}` means by anyone, from any table.
+There are two kinds of rule.
 
-Both kinds take `interfaces`, a list of local interfaces: the record must have been made on one of them. A plugin's reports aren't on any interface.
+**A protocol rule** matches what a protocol saw:
+
+- `protocol`: one of the local discovery's protocols.
+- `way`: how the protocol saw the address. Leave it out for any way.
+  - `announced`: the host said, unprompted, that the address is its own, or said something about itself from that address.
+  - `answered`: the host replied to one of discovery's probes, from the address or for it.
+  - `heard`: the host used the address without discovery asking.
+
+**A `reported` rule** matches an address that something other than the host reported, from one of its tables:
+
+- `by`: who reported it. Give plugins, by name or by type, such as `mikrotik`, or `kernel` for this machine's own kernel. Leave it out for anyone.
+- `from`: the table it came from. `neighbors` is a neighbor or ARP table, `leases` is the DHCP leases, and `interfaces` is the addresses of this machine's interfaces. Leave it out for any table.
+- `reported: {}` means by anyone, from any table.
+
+A lease never finds an address on its own. A lease is attached to an address that something else found at the lease's MAC, for as long as the plugin reads the lease. The lease keeps the address no longer than whatever found it does. The reason is that a server keeps the lease of a host that left until the lease ends.
+
+Both kinds of rule take `interfaces`, a list of local interfaces. The record must have been made on one of them. A plugin's reports aren't on any interface.
+
+This table lists when each protocol records each way:
 
 | `protocol` | `way` | Recorded when |
 |---|---|---|
-| `ndp` | `announced` | The host advertises an address unasked, as when it takes it |
+| `ndp` | `announced` | The host advertises an address unasked, for example when it takes the address |
 | | `answered` | It answers a solicitation of the discovery's |
 | | `heard` | It solicits from the address, or advertises another from it |
 | `ping` | `answered` | It answers the multicast ping |
@@ -138,22 +163,23 @@ Both kinds take `interfaces`, a list of local interfaces: the record must have b
 | `lldp` | `announced` | Its LLDP gives the address as its management address |
 | `netbios`, `llmnr` | `answered` | It answers the question of its name |
 
-A rule that can never match is an error at start, which says why:
+A rule that can never match is an error at start, and the error says why:
 
-*   A way a protocol never sees an address, as `ping` with `announced`. Or a protocol, table or reporter that doesn't exist: `by` must name a plugin of `discovery.plugins`, a plugin type, or `kernel`.
-*   A `seen` rule for a protocol that is disabled under `discovery.protocols`: no address can have its records.
-*   A `not_seen` rule that excludes every record a `seen` rule needs, as `seen` with `mdns` `announced` and `not_seen` with `mdns`: the filter could take no address.
+- A way in which a protocol never sees an address, such as `ping` with `announced`.
+- A protocol, table or reporter that doesn't exist. `by` must name a plugin of `discovery.plugins`, a plugin type, or `kernel`.
+- A `seen` rule for a protocol that is disabled under `discovery.protocols`. No address can have that protocol's records.
+- A `not_seen` rule that excludes every record a `seen` rule needs, such as `seen` with `mdns` `announced` and `not_seen` with `mdns`. The filter could take no address.
 
-Two things to keep in mind:
+Keep two things in mind:
 
-*   **A rule belongs to its filter.** A task's filters are alternatives, so an address one filter leaves out with its `not_seen` still goes to the task if another filter takes it. To keep something out of a task, give the `not_seen` to each of its filters.
-*   **`not_seen` judges the records that exist now.** Say a host announces its address over mDNS a moment after another protocol found it. Until the announcement arrives, it matches `not_seen` with `mdns`, and its address goes to the task for that moment. `seen` is the other way round: an address only goes to the task once it has the record wanted.
+- **A rule belongs to its filter.** A task's filters are alternatives. So an address that one filter leaves out with its `not_seen` still goes to the task if another filter takes it. To keep something out of a task, give the `not_seen` to each of the task's filters.
+- **`not_seen` judges the records that exist now.** Say a host announces its address over mDNS a moment after another protocol found it. Until the announcement arrives, the address passes a `not_seen` rule for `mdns`, so it goes to the task for that moment. `seen` works the other way round: an address goes to the task only once it has the record the rule wants.
 
-None of these rules tells a stable address from a temporary one: only the host knows, and it tells nobody. See [after a start](discovery.md#after-a-start) for what a restart can't find straight away.
+None of these rules tells a stable address from a temporary one. Only the host knows which is which, and it tells nobody. See [after a start](discovery.md#after-a-start) for what a restart can't find straight away.
 
 ##### What the host itself showed
 
-A router keeps a departed host's neighbor entry, and reports it until it ages out. An address the host itself answered for, or announced, is really there now:
+A router keeps the neighbor entry of a host that left, and reports it until the entry ages out. An address the host itself answered for, or announced, is really there now. This filter takes only such addresses:
 
 ```yaml
 filter:
@@ -164,11 +190,11 @@ filter:
         - protocol: ndp
 ```
 
-`ndp` sees every IPv6 address on the links local discovery runs on, in any way, and is on by default. A host on another network, which only a plugin reaches, has nothing but the plugin's report, so this filter leaves it out.
+`ndp` is on by default. It sees every IPv6 address on the links local discovery runs on, in one way or another. A host on another network, which only a plugin reaches, has nothing but the plugin's report, so this filter leaves it out.
 
 ##### What the host announced over mDNS
 
-A host's mDNS responder announces the addresses it means to be reached at, in the address records of its name:
+A host's mDNS responder announces the addresses the host means to be reached at, in the address records of its name. This filter takes only those:
 
 ```yaml
 filter:
@@ -180,11 +206,13 @@ filter:
           way: announced
 ```
 
-`mdns` is on by default. What gets announced is up to the host's responder: Apple's announces only its stable addresses, not its temporary ones, while avahi, on Linux, announces its temporary ones too. Only the sender's own addresses count: another host's address in an announcement isn't an announcement by that host.
+`mdns` is on by default. What gets announced is up to the host's responder. Apple's announces only its stable addresses, not its temporary ones. Avahi, on Linux, announces its temporary ones too.
+
+Only the sender's own addresses count. Another host's address in an announcement isn't an announcement by that other host.
 
 ##### What the router leased
 
-The addresses a router's DHCP server handed out, which a device keeps for its lease, and not ones it chose itself, as a temporary IPv6 address:
+This filter takes the addresses a router's DHCP server handed out, which a device keeps for its lease. It leaves out the addresses the device chose itself, such as a temporary IPv6 address:
 
 ```yaml
 filter:
@@ -199,11 +227,13 @@ filter:
               - leases
 ```
 
-It needs a [plugin](discovery.md#plugins) that reads the leases of the router handing them out: a `mikrotik`, `linux` or `freebsd` plugin reads them each time it polls. A DHCPv6 lease on `linux` or `freebsd` is matched to the MAC the neighbor table has its address at. A MikroTik router's DHCPv6 bindings have no MAC to read.
+It needs a [plugin](discovery.md#plugins) that reads the leases of the router that hands them out. A `mikrotik`, `linux` or `freebsd` plugin reads the leases each time it polls.
+
+For DHCPv6, a lease on `linux` or `freebsd` is matched to the MAC that the neighbor table has the leased address at. A MikroTik router's DHCPv6 bindings have no MAC to read.
 
 ##### Not what a server leased
 
-The addresses a host chose itself, as with SLAAC, and not one a DHCPv6 server gave it:
+This filter takes the addresses a host chose itself, for example with SLAAC, and leaves out an address a DHCPv6 server gave it:
 
 ```yaml
 filter:
@@ -218,18 +248,18 @@ filter:
               - leases
 ```
 
-The lease is only known once the plugin has read it, at its next poll after the address was found. Until then, the leased address goes to the task too.
+A lease is known only once the plugin has read it, at its next poll after the address was found. Until then, the leased address goes to the task too.
 
-Addresses without a MAC, such as the network's public IPv4, don't go through filters: a task gets them from the [sources](sources.md) it names in its `sources`.
+Addresses without a MAC, such as the network's public IPv4, don't go through filters. A task gets them from the [sources](sources.md) it names in its `sources`.
 
 ### Addresses that stay quiet
 
-A host's stable IPv6 address, or the IPv4 address of a host that sends nothing, may never be seen. With `discovery.solicit`, ipv6ddns asks the hosts the filters name for them. See [solicitation](discovery.md#solicitation).
+A host's stable IPv6 address may never be seen, and neither may the IPv4 address of a host that sends nothing. With `discovery.solicit`, ipv6ddns asks the hosts the filters name for those addresses. See [solicitation](discovery.md#solicitation).
 
 ## Examples
 
 ### 1. Simple: Track a specific device by MAC
-Most common use case. Updates DNS with any address found for this device.
+The most common case. The name gets every address found for this device.
 
 ```yaml
 filter:
@@ -238,7 +268,7 @@ filter:
 ```
 
 ### 2. Specific: Track only Global Public IP of a device
-Ignore Link-Local or ULA addresses.
+The name gets the device's global addresses only. Link-local and ULA addresses are left out.
 
 ```yaml
 filter:
@@ -250,7 +280,7 @@ filter:
 ```
 
 ### 3. Common server setup (Public IP)
-Servers often need a stable address. By requiring `global` (public) AND `eui64` (MAC-derived, a stable interface ID), you avoid temporary privacy addresses.
+A server usually needs a stable address. Requiring both `global` (public) and `eui64` (derived from the MAC, so a stable interface ID) leaves out the temporary privacy addresses.
 
 ```yaml
 filter:
@@ -263,7 +293,7 @@ filter:
 ```
 
 ### 4. Multiple devices (OR logic)
-Update the same DNS record if EITHER Device A OR Device B is found.
+The same name gets the addresses of device A and of device B, whichever of them is found.
 
 ```yaml
 filter:
@@ -276,7 +306,7 @@ filter:
 ```
 
 ### 5. Advanced: Prefix + Mask
-Match the address whose interface ID is `::5`, within your static public prefix.
+The address whose interface ID is `::5`, within your static public prefix.
 
 ```yaml
 filter:
@@ -286,10 +316,15 @@ filter:
         - "::5/::ffff:ffff:ffff:ffff"
 ```
 
-With a prefix the ISP changes, the subnet goes in the mask instead: `0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff` is interface ID `::5` of subnet `42`, under any prefix.
+If your ISP changes the prefix, put the subnet in the mask instead. `0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff` is interface ID `::5` of subnet `42`, under any prefix.
 
 ### 6. This machine ipv6ddns runs on
-This machine's stable public IPv6 addresses, without the temporary ones, which change every day or so, plus the network's public IPv4 from a [source](sources.md), for a server behind NAT. Home Assistant add-ons, and containers on the host's network, have this machine's addresses, so their names can be endpoints of the same task.
+This task takes two things:
+
+- This machine's stable public IPv6 addresses. The temporary ones, which change every day or so, are left out.
+- The network's public IPv4, from a [source](sources.md), for a server behind NAT.
+
+Home Assistant add-ons, and containers on the host's network, have this machine's addresses. So their names can be endpoints of the same task.
 
 ```yaml
 sources:
@@ -325,4 +360,4 @@ discovery:
     - hassio
 ```
 
-For a local DNS, use its LAN address instead: `self: true` with `ip` `family` `4` and `type` `private`, and `discovery.ipv4.enabled: true`.
+For a local DNS, use the machine's LAN address instead: `self: true` with `ip` `family` `4` and `type` `private`, and `discovery.ipv4.enabled: true`.

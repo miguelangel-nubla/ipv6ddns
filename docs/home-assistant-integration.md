@@ -1,13 +1,15 @@
 # Home Assistant integration
 
-With a `homeassistant` block, ipv6ddns becomes a device of Home Assistant's ESPHome integration, which every Home Assistant already has: there's no custom integration to install. It works wherever ipv6ddns runs on the network: the [add-on](../homeassistant/addon/DOCS.md), Docker, or a plain binary.
+A `homeassistant` block makes ipv6ddns a device in Home Assistant. It uses the ESPHome integration, which every Home Assistant already has, so there's no custom integration to install. It works wherever ipv6ddns runs on the network: as the [add-on](../homeassistant/addon/DOCS.md), in Docker, or as a plain binary.
 
-- **To Home Assistant** it sends each name's addresses, its last update and whether the update has a problem, the number of hosts discovered, and a button to update every name now.
-- **From Home Assistant** it reads the state of any entity, for a [`homeassistant` source](sources.md#types). For example, a router's WAN address sensor can give a name its A record, and follow it as it changes.
+- **Home Assistant gets** each name's addresses, when the name was last updated, and whether that update has a problem. It also gets the number of hosts discovered, and a button that updates every name now.
+- **ipv6ddns gets** the state of any entity, through a [`homeassistant` source](sources.md#types). For example, a router's WAN address sensor can give a name its A record, and the record follows the sensor as it changes.
 
 ## Setting it up
 
-The block must say two things, or ipv6ddns doesn't start: where the device listens, and how it gets its encryption key.
+The block must say two things: where the device listens, and how it gets its encryption key. Without either one, ipv6ddns doesn't start.
+
+With a key of your own:
 
 ```yaml
 homeassistant:
@@ -15,20 +17,24 @@ homeassistant:
   key: ${file:homeassistant.key}    # your own: openssl rand -base64 32 > homeassistant.key
 ```
 
+Or with a key that Home Assistant gives the device:
+
 ```yaml
 homeassistant:
   listen: 192.168.1.0/24
-  key_provisioning: true            # Home Assistant gives it: kept in homeassistant.state
+  key_provisioning: true            # Home Assistant provides the key, kept in homeassistant.state
 ```
 
-- **`listen`** is where Home Assistant connects. Give the network Home Assistant is on, as above, or the machine's address on it. The device then listens only on the machine's addresses there, at port 6053, and announces itself only on those interfaces. A port alone, `listen: 6053`, means every address of the machine, including a public one if the machine is a router or has one. There's no default, because no address suits everyone: see [where it listens](#where-it-listens).
-- **The key** is either your own, or one Home Assistant gives it: see [the key](#the-key).
+- **`listen`** is where Home Assistant connects. Give the network Home Assistant is on, as in the examples, or the machine's address on that network. The device then listens only on the machine's addresses in that network, at port 6053, and announces itself only on those interfaces. A port alone, `listen: 6053`, means every address of the machine. That includes a public address, if the machine is a router or has one. There's no default, because no address suits everyone: see [where it listens](#where-it-listens).
+- **The key** is either your own, or one that Home Assistant gives the device: see [the key](#the-key).
 
-Home Assistant finds the device by mDNS, as `ipv6ddns`, under *Settings → Devices & services → Discovered*. When you add it, Home Assistant asks for your key, or, with `key_provisioning`, makes one and gives it, as it does for ESPHome devices.
+Home Assistant finds the device by mDNS. It appears as `ipv6ddns` under *Settings → Devices & services → Discovered*. When you add it, Home Assistant asks for your key. With `key_provisioning`, Home Assistant makes a key and gives it to the device instead, as it does for ESPHome devices.
 
-Where mDNS doesn't reach, as across VLANs, or with `announce: false`, add the ESPHome integration by hand with ipv6ddns' address and port, 6053 by default. The device announces itself on the interfaces that are up and have an address when ipv6ddns starts. If ipv6ddns starts before the network is up, the device isn't discovered: add it by hand, or restart ipv6ddns.
+Add the device by hand where mDNS doesn't reach, for example across VLANs, or when the block has `announce: false`. To do that, add the ESPHome integration with the address of ipv6ddns and its port, 6053 by default.
 
-The keys of the block are in the [reference](reference/configuration.md#home-assistant).
+The device announces itself on the interfaces that are up and have an address when ipv6ddns starts. If ipv6ddns starts before the network is up, the device isn't discovered. Add it by hand, or restart ipv6ddns.
+
+Every key of the block is in the [reference](reference/configuration.md#home-assistant).
 
 ### The key
 
@@ -40,12 +46,12 @@ homeassistant:
   key: ${file:homeassistant.key}
 ```
 
-Make one with `openssl rand -base64 32`, and put it in the configuration: written there, read from a file as above, or from the environment as `key: ${HOMEASSISTANT_KEY}`, like [any secret](configuration.md#secrets).
+Make a key with `openssl rand -base64 32`, and put it in the configuration like [any secret](configuration.md#secrets). You can write it there, read it from a file as above, or read it from the environment with `key: ${HOMEASSISTANT_KEY}`.
 
-- **When you add the device**, Home Assistant asks for the key: paste it.
-- **The key is fixed.** The device only accepts connections with it, from the start, and Home Assistant can't change it.
-- **Nothing is written to disk**: no state file, no lock file. That makes it the right choice in a container, which then needs no data volume, and for a configuration on a read-only file system.
-- **The device's MAC comes from the key**, and Home Assistant knows the device by that MAC for good. A different key in the configuration is a different device to Home Assistant.
+- **When you add the device**, Home Assistant asks for the key. Paste it.
+- **The key is fixed.** From the start, the device only accepts connections that use it, and Home Assistant can't change it.
+- **Nothing is written to disk**: no state file, and no lock file. That makes `key` the right choice in a container, which then needs no data volume, and for a configuration on a read-only file system.
+- **The device's MAC comes from the key.** Home Assistant knows the device by that MAC for good, so a different key in the configuration is a different device to Home Assistant.
 
 #### Given by Home Assistant: `key_provisioning: true`
 
@@ -56,16 +62,30 @@ homeassistant:
   # key_provisioning_state_file: homeassistant.state
 ```
 
-- **When you add the device**, Home Assistant makes a key and gives it to the device, which keeps it and from then on only accepts connections with it. Only a client that has the key can change it. Home Assistant does that when you delete the device there: the device is left without a key, ready to be added again.
-- **What's written to disk** is `key_provisioning_state_file`: `homeassistant.state` by default, beside the configuration, and relative to the configuration's folder if you give another. It holds the device's identity, made at the first start, which its MAC comes from, and the key once it's given. It's written when they change, and only its owner can read it.
+**When you add the device**, Home Assistant makes a key and gives it to the device. The device keeps the key, and from then on only accepts connections that use it. Only a client that has the key can change it. Home Assistant does so when you delete the device there: the device is left without a key, ready to be added again.
 
-  Beside it is an empty lock file, `homeassistant.state.lock`, which the instance holds while it runs: [one state file per instance](#several-devices). ipv6ddns must be able to write the state file; if it can't create it, it doesn't start, and says why. In a container, the file disappears with the container unless its folder is a volume, and the device is a new one every time: give it a `key` instead.
-- **Before it has its key**, the device accepts connections without one, so that Home Assistant can give it one. Those connections see its entities, but their button presses and the states they send are ignored. So nobody can give a `homeassistant` source an address that way, and these connections don't count as Home Assistant being connected, which the sources wait for. If someone else gives it a key first, Home Assistant asks you for the key when adding it: delete the state file, restart, and add it again.
-- **Deleting the state file**, with ipv6ddns stopped, makes the device a new one at the next start, with another MAC and no key. Home Assistant discovers it as new, and the old device stays there, unavailable, until you delete it.
+**The state file** is what's written to disk. It is `key_provisioning_state_file`:
+
+- By default it's `homeassistant.state`, beside the configuration. A relative path you give is relative to the configuration's folder.
+- It holds the device's identity, which is made at the first start and which the device's MAC comes from. It also holds the key, once Home Assistant has given it.
+- It's written when the identity or the key changes, and only its owner can read it.
+- Beside it is an empty lock file, `homeassistant.state.lock`. The instance holds the lock while it runs, because each instance needs [a state file of its own](#several-devices).
+- ipv6ddns must be able to write the state file. If it can't create the file, it doesn't start, and says why.
+- In a container, the file disappears with the container unless its folder is a volume. The device is then a new one every time. Give the device a `key` instead.
+
+**Before it has its key**, the device accepts connections without one, so that Home Assistant can give it one. Those connections see the device's entities, but the device ignores their button presses and the states they send. So nobody can give a `homeassistant` source an address that way. These connections also don't count as Home Assistant being connected, which is what the sources wait for.
+
+If someone else gives the device a key first, Home Assistant asks you for the key when you add the device. Delete the state file, restart ipv6ddns, and add the device again.
+
+**Deleting the state file**, with ipv6ddns stopped, makes the device a new one at the next start, with another MAC and no key. Home Assistant discovers it as a new device. The old device stays in Home Assistant, unavailable, until you delete it.
 
 #### Neither
 
-It's an error at start to give neither `key` nor `key_provisioning: true`, to give both, or to give a `key_provisioning_state_file` without `key_provisioning: true`:
+Give exactly one of `key` and `key_provisioning: true`. Each of these is an error at start:
+
+- neither `key` nor `key_provisioning: true`;
+- both of them;
+- a `key_provisioning_state_file` without `key_provisioning: true`.
 
 ```
 homeassistant: the device needs an encryption key, in one of two ways. key: your own, made with "openssl rand -base64 32", written there or read from a file or the environment, as ${file:homeassistant.key}. Or key_provisioning: true: Home Assistant gives the key when it adds the device, and it's stored in key_provisioning_state_file
@@ -75,28 +95,38 @@ Without the `homeassistant` block there's no device, and no error.
 
 ### Several devices
 
-Each instance with a `homeassistant` block is a device of its own. Two instances, on one machine or on two machines of the same network, are two devices to Home Assistant, each with its own entities and key. Each one needs:
+Each instance with a `homeassistant` block is a device of its own. Two instances are two devices to Home Assistant, each with its own entities and key, whether they run on one machine or on two machines of the same network. Each instance needs settings of its own:
 
 ```yaml
 homeassistant:
   listen: 192.168.1.0/24
   name: ipv6ddns-guests                        # its own name on the network
-  port: 6054                                   # on one machine: its own port
+  port: 6054                                   # its own port, when both run on one machine
   key_provisioning: true
-  key_provisioning_state_file: guests.state    # in one folder: its own state file; or its own key
+  key_provisioning_state_file: guests.state    # its own state file, when both are in one folder (or its own key)
 ```
 
-- **Its own name.** Every instance is called `ipv6ddns` by default, and Home Assistant knows a device on the network by its name. Two that announce the same name would look like one device, at the port of whichever answered last, and vanish when either stops. So before announcing itself, ipv6ddns looks for a second and a half for a device already announced with its name, or with its MAC under another name. If it finds one, it logs an error and doesn't announce itself, and the first one is left as it was. It still runs, updates names, and accepts Home Assistant's connections if you add it by address.
-- **Its own port**, on one machine. Of two with the same port, the one started second doesn't start.
-- **Its own identity**: its own `key`, or, with `key_provisioning: true`, its own state file, since the device's MAC, by which Home Assistant knows it for good, comes from them. The state file is `homeassistant.state` beside the configuration by default, so two configurations in one folder need `key_provisioning_state_file` to name their own. While it runs, an instance holds its state file, with a lock file beside it, `<state file>.lock`. Another instance with the same file doesn't start, and says which file. This lock doesn't exist on Windows or Solaris.
+**Its own name.** Every instance is called `ipv6ddns` by default, and Home Assistant knows a device on the network by its name. Two instances that announce the same name would look like one device, at the port of whichever answered last, and that device would vanish when either instance stops.
 
-Each instance announces itself separately, under its own name, and one that stops only withdraws its own announcement.
+So before it announces itself, ipv6ddns looks for a second and a half for a device that is already announced with its name, or with its MAC under another name. If it finds one, it logs an error and doesn't announce itself, and the first device is left as it was. The instance still runs and updates names. It also accepts Home Assistant's connections, if you add it by address.
 
-The check for another device happens at start, on the interfaces the device announces itself on. So two instances started at the same moment don't see each other, and neither do two that mDNS doesn't reach between. A configuration copied whole to a second machine, with its `key` or state file, has the same name, MAC and port there: nothing tells the two apart, and Home Assistant sees one device at two addresses. Give the copy its own name and key.
+**Its own port**, on one machine. When two instances have the same port, the one started second doesn't start.
+
+**Its own identity.** The device's MAC, by which Home Assistant knows it for good, comes from the `key`, or from the state file with `key_provisioning: true`. So each instance needs its own `key`, or its own state file.
+
+- The state file is `homeassistant.state` beside the configuration by default. Two configurations in one folder must each name their own with `key_provisioning_state_file`.
+- While it runs, an instance holds its state file, with a lock file beside it, `<state file>.lock`. Another instance with the same file doesn't start, and says which file.
+- This lock doesn't exist on Windows or Solaris.
+
+Each instance announces itself separately, under its own name. An instance that stops only withdraws its own announcement.
+
+The check for another device has limits. It happens at start, on the interfaces the device announces itself on. So two instances started at the same moment don't see each other. Neither do two instances that mDNS doesn't reach between.
+
+A configuration copied whole to a second machine, with its `key` or its state file, has the same name, MAC and port there. Nothing tells the two apart, and Home Assistant sees one device at two addresses. Give the copy its own name and key.
 
 ### Where it listens
 
-`listen` is required. The device only listens where it says, and announces itself on the interfaces that have those addresses, so Home Assistant connects to an address it can reach.
+`listen` is required. The device listens only where `listen` says, and announces itself on the interfaces that have those addresses. That way Home Assistant connects to an address it can reach.
 
 ```yaml
 homeassistant:
@@ -104,37 +134,47 @@ homeassistant:
   listen: 10.2.3.0/24
 ```
 
-- **A network**, as above: the machine's addresses in it, as they are when ipv6ddns starts. Use this on a router, or on any machine that has a public address or is on networks Home Assistant isn't on, such as a container attached to several networks.
-- **An address**, `10.2.3.4`, or a host name: just that one.
-- **A port alone**, `6053`: every address of the machine, announced on each interface discovery runs on. Fine for a machine on a single network, as the add-on's, which is Home Assistant's own. On a router, though, it includes the internet side: with `key_provisioning: true`, anyone who reaches the port before Home Assistant adds the device could give it a key first.
+An entry of `listen` is one of these:
 
-Without it, ipv6ddns doesn't start:
+- **A network**, as above. The device listens on the machine's addresses in that network, as they are when ipv6ddns starts. Use a network on a router, and on any machine that has a public address or is on networks Home Assistant isn't on, such as a container attached to several networks.
+- **An address**, such as `10.2.3.4`, or a host name. The device listens on just that one.
+- **A port alone**, such as `6053`. The device listens on every address of the machine, and announces itself on each interface discovery runs on. That's fine for a machine on a single network, like the add-on's, whose machine is Home Assistant's own. On a router, though, every address includes the internet side. With `key_provisioning: true`, anyone who reaches the port before Home Assistant adds the device could give it a key first.
+
+Without `listen`, ipv6ddns doesn't start:
 
 ```
 homeassistant.listen is missing: give where Home Assistant can connect to the device. That's the network Home Assistant is on, as 192.168.1.0/24, or this machine's address on it. A port alone, as 6053, means every address of the machine, including the internet-facing one on a router
 ```
 
-It takes the same entries as [`webserver.listen`](installation.md#the-web-report): a port, an address, a network of the machine's addresses, or a host name, each with or without `:port`. Without a port, it's `port`, 6053 by default.
+`listen` takes the same entries as [`webserver.listen`](installation.md#the-web-report): a port, an address, a network of the machine's addresses, or a host name, each with or without `:port`. An entry without a port uses `port`, which is 6053 by default.
 
-The device announces the port it listens on, so with `listen: 10.2.3.4:7000` it's found at 7000. It can announce only one port, so entries with different ports need `announce: false`. If two networks share one wire, as two macvlan networks on one bridge, both reach Home Assistant's mDNS: list only the one Home Assistant can connect to.
+The device announces the port it listens on. With `listen: 10.2.3.4:7000`, Home Assistant finds it at 7000. The device can announce only one port, so entries with different ports need `announce: false`.
+
+If two networks share one wire, such as two macvlan networks on one bridge, an announcement on either reaches Home Assistant's mDNS. List only the network Home Assistant can connect to.
 
 ## The entities
 
 | Entity | |
 |---|---|
-| *name* addresses | The name's current addresses, comma separated. A Home Assistant state holds 255 characters, about six full IPv6 addresses; beyond that, the first ones and `+3 more` for the rest |
-| *name* last update | When its records were last updated |
-| *name* update | A problem when its last update failed |
+| *name* addresses | The name's current addresses, separated by commas |
+| *name* last update | When the name's records were last updated |
+| *name* update | A problem, when the name's last update failed |
 | Discovered hosts | How many hosts discovery knows |
-| Update now | Updates every name now, as after a change |
+| Update now | A button that updates every name now, for example after a change |
 
-*name* is the name's domain, as `www.example.com`. Home Assistant builds an entity's id from the device's name and the entity's: `sensor.ipv6ddns_www_example_com_addresses`, `binary_sensor.ipv6ddns_www_example_com_update`.
+A Home Assistant state holds 255 characters, about six full IPv6 addresses. When a name has more addresses than fit, the state has the first ones, and then a count of the rest, such as `+3 more`.
 
-So if a name's domain changes, because its host name or zone changed in the configuration, Home Assistant sees new entities, and the old ones stay unavailable until you delete them. Route 53 learns its zone at the first update, after the entities are made, so its entities are named by the host name alone, as `www addresses`.
+*name* is the name's domain, such as `www.example.com`. Home Assistant builds an entity's id from the device's name and the entity's name: `sensor.ipv6ddns_www_example_com_addresses`, `binary_sensor.ipv6ddns_www_example_com_update`.
 
-Internally, the device identifies an entity by the name's endpoint and host name in the configuration, as `cloudflare_www_addresses`. If two names give the same id, as the host names `a-b` and `a.b` of one endpoint, each gets a hash added, as `cloudflare_a_b_1f0c2a9e_addresses`, the log warns about it, and they stay two entities.
+So when a name's domain changes, because you changed its host name or its zone in the configuration, Home Assistant sees new entities. The old ones stay unavailable until you delete them.
+
+Route 53 is an exception. ipv6ddns learns a Route 53 zone at the first update, after the entities are made. So the entities of a Route 53 name are named by the host name alone, such as `www addresses`.
+
+Internally, the device identifies an entity by the endpoint and the host name the configuration gives the name, such as `cloudflare_www_addresses`. Two names can give the same id, like the host names `a-b` and `a.b` of one endpoint. Each then gets a hash added, such as `cloudflare_a_b_1f0c2a9e_addresses`, and the log warns about it. They stay two entities.
 
 ## An entity's addresses
+
+A `homeassistant` source takes its addresses from the state of an entity, or from one of the entity's attributes. A task that lists the source gives those addresses to its names:
 
 ```yaml
 homeassistant:
@@ -161,22 +201,29 @@ credentials:
       proxied: false
 ```
 
-The state is one or more addresses, separated by commas or spaces. A change runs the source at once. An empty state means no addresses, and they go at once, like a [command](sources.md#runs-and-lifetimes) that prints nothing.
+The state is one or more addresses, separated by commas or spaces. When the state changes, the source runs at once. An empty state means the source has no addresses, and the old ones go at once, as they do for a [command](sources.md#runs-and-lifetimes) that prints nothing.
 
-While Home Assistant restarts, the source waits. That covers Home Assistant not being connected, and the entity being `unknown` or `unavailable`, or its attribute `None`, as entities are until their integration is up. Waiting isn't a failure:
+While Home Assistant restarts, the source waits. The source waits in each of these cases:
 
-- The addresses stay for the source's `lifetime`. Make the lifetime longer than a Home Assistant restart.
-- The log says, at info level, when the wait starts and ends, and warns if it lasts longer than the lifetime, when the addresses go.
+- Home Assistant isn't connected.
+- The entity is `unknown` or `unavailable`, or its attribute is `None`. Entities are in that state until their integration is up.
 
-If Home Assistant is connected for 30 seconds without sending the entity's state, that's an error: it has no entity with that id, or the entity has no such attribute. Home Assistant sends every state again each time it connects, and only those count. So an entity deleted or renamed while Home Assistant restarted shows up as that error, rather than keeping its last address.
+Waiting isn't a failure:
+
+- The addresses stay for the source's `lifetime`. Make the lifetime longer than a restart of Home Assistant takes.
+- The log says when the wait starts and when it ends, at info level. It warns if the wait lasts longer than the lifetime, which is when the addresses go.
+
+It is an error when Home Assistant has been connected for 30 seconds and hasn't sent the entity's state. Home Assistant then has no entity with that id, or the entity has no such attribute.
+
+Home Assistant sends every state again each time it connects, and only those states count. So an entity that was deleted or renamed while Home Assistant restarted shows up as that error. It doesn't keep its last address.
 
 ## Recipes
 
-The blocks headed `# Home Assistant` go in Home Assistant's configuration, as `configuration.yaml` or a package. You can also create the helpers in its UI, under *Settings → Devices & services → Helpers*. The other blocks are ipv6ddns'.
+The blocks headed `# Home Assistant` go in Home Assistant's configuration: `configuration.yaml`, or a package. You can also create the helpers in Home Assistant's UI, under *Settings → Devices & services → Helpers*. The other blocks go in the configuration of ipv6ddns.
 
 ### A record you set by hand
 
-A text helper holds the address, and a name follows it. Set it from a dashboard, from an automation with `input_text.set_value`, or with Assist. When you clear it, the record goes at once; while Home Assistant restarts, it stays.
+A text helper holds the address, and a name follows it. Set the helper from a dashboard, from an automation with `input_text.set_value`, or with Assist. When you clear the helper, the record goes at once. While Home Assistant restarts, the record stays.
 
 ```yaml
 # Home Assistant: a text helper
@@ -211,11 +258,11 @@ credentials:
       proxied: false
 ```
 
-It takes one or more addresses, separated by commas or spaces: `203.0.113.7, 2001:db8::7`.
+The helper takes one or more addresses, separated by commas or spaces: `203.0.113.7, 2001:db8::7`.
 
 ### Switching a name between servers
 
-A select helper picks the server, and a template sensor gives its address. The name moves to the standby by hand, for maintenance, or by an automation when the primary stops answering.
+A select helper picks the server, and a template sensor gives that server's address. You can move the name to the standby by hand, for maintenance. An automation can also move it when the primary stops answering.
 
 ```yaml
 # Home Assistant: a select helper, and a template sensor of its address
@@ -278,7 +325,7 @@ credentials:
 
 ### Devices discovery doesn't reach
 
-Home Assistant may know a device on a network ipv6ddns can't discover, such as a VLAN it isn't on: a router's integration gives each device tracker its address in the `ip` attribute. Since that's a private address, its record goes in the local network's DNS, here a zone on a Technitium server.
+Home Assistant may know a device on a network that ipv6ddns can't discover, such as a VLAN ipv6ddns isn't on. A router's integration gives each device tracker its address in the `ip` attribute, and a source can read it. That address is private, so its record goes in the local network's DNS. Here that's a zone on a Technitium server.
 
 ```yaml
 homeassistant:
@@ -310,12 +357,12 @@ credentials:
 
 What happens when the device leaves depends on the integration:
 
-- **If it removes the attribute**, Home Assistant sends nothing, so ipv6ddns keeps the last address until Home Assistant reconnects. Then the missing state is an error.
-- **If it sets the attribute to none**, Home Assistant sends `None`, which is a wait, and the record stays for the source's `lifetime`.
+- **If the integration removes the attribute**, Home Assistant sends nothing, so ipv6ddns keeps the last address until Home Assistant reconnects. After that, the missing state is an error.
+- **If the integration sets the attribute to none**, Home Assistant sends `None`. That is a wait, and the record stays for the source's `lifetime`.
 
 ### Two WANs in one record
 
-A template sensor joins the public addresses of two internet connections, leaving out one that's down, so the name only has addresses that answer.
+A template sensor joins the public addresses of two internet connections, and leaves out a connection that is down. The name then only has addresses that answer.
 
 ```yaml
 # Home Assistant: the addresses of both WANs, without one that has none
@@ -356,7 +403,12 @@ credentials:
 
 ### Alerts, and updating now
 
-The device's entities can drive automations: a notification when a name's update keeps failing, and an update of every name when the router comes back, rather than waiting for the next change discovery sees. The entity ids come from the [names' domains](#the-entities), `home.example.com` here. Home Assistant lists them under *Settings → Devices & services → ESPHome → ipv6ddns*.
+The device's entities can drive automations. This example has two:
+
+- A notification when a name's update keeps failing.
+- An update of every name when the router comes back, instead of waiting for the next change that discovery sees.
+
+The entity ids come from the [names' domains](#the-entities), `home.example.com` here. Home Assistant lists them under *Settings → Devices & services → ESPHome → ipv6ddns*.
 
 ```yaml
 # Home Assistant: automations
@@ -385,10 +437,10 @@ automation:
 
 ## How it works
 
-ipv6ddns speaks the ESPHome native API, as ESPHome 2026.11 does. The connection is encrypted with the key, using Noise_NNpsk0_25519_ChaChaPoly_SHA256, and the device announces itself as `_esphomelib._tcp`.
+ipv6ddns speaks the ESPHome native API, the way ESPHome 2026.11 does. The connection is encrypted with the key, using Noise_NNpsk0_25519_ChaChaPoly_SHA256. The device announces itself as `_esphomelib._tcp`.
 
-Its MAC, by which Home Assistant knows it, comes from the identity in the state file, or from a fixed key: keep them, and Home Assistant keeps the device.
+Home Assistant knows the device by its MAC. The MAC comes from the identity in the state file, or from a fixed key. Keep the state file or the key, and Home Assistant keeps the device.
 
-Like ESPHome devices, it drops a connection that sends nothing for 150 seconds (Home Assistant pings every 20, which prevents that), or that reads nothing for 10. Home Assistant then connects again.
+Like ESPHome devices, the device drops a connection that sends nothing for 150 seconds, or that reads nothing for 10 seconds. Home Assistant pings every 20 seconds, which prevents the first. After a drop, Home Assistant connects again.
 
-CI tests it with `aioesphomeapi`, the library Home Assistant's integration uses, at the version Home Assistant ships.
+CI tests the device with `aioesphomeapi`, the library Home Assistant's integration uses, at the version Home Assistant ships.

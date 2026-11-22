@@ -4,30 +4,37 @@
 
 Pointing `my-web.example.com` at your application is both simpler and harder with IPv6 than with IPv4.
 
-With IPv4, the traffic goes to the one public address, your router's, and NAT forwards it. With IPv6, that is neither a good idea nor needed: addresses are globally routable. But each machine, each container, even each application, has its own public address, a GUA, and you need the exact one: DNS names become almost mandatory, as nobody types `https://[2001:db8:85a3::8a2e:370:7334]`.
+With IPv4, all traffic goes to one public address, your router's, and NAT forwards it to the right machine. With IPv6, NAT is neither needed nor a good idea, because every address is globally routable. Instead, each machine, each container, and even each application has its own public address (a GUA), and a client must connect to exactly that one. DNS names become almost mandatory, since nobody types `https://[2001:db8:85a3::8a2e:370:7334]`.
 
-Those addresses change. IPv6 hosts rotate temporary addresses, and many ISPs change the network's prefix when the router restarts, or periodically, so every address of the network changes at once.
+And those addresses change. IPv6 hosts rotate their temporary addresses. Many ISPs also change the network's prefix when the router restarts, or periodically, and then every address on the network changes at once.
 
 ## Why not a DDNS client on each host
 
-A DDNS client on the server only knows the server's addresses, and which of them the name should get is not obvious. Each container or application may have its own: the client would have to run in each, which means custom images. Many devices can't run one at all, as an appliance, a printer, or an IP camera.
+A DDNS client on a server has three problems:
+
+- It only knows that server's addresses, and it isn't obvious which of them the name should get.
+- Each container or application may have an address of its own. The client would have to run inside each one, which means custom images.
+- Many devices can't run a client at all: an appliance, a printer, an IP camera.
 
 ## The design
 
-`ipv6ddns` runs once, anywhere on the network, and watches it:
+`ipv6ddns` runs once, anywhere on the network, and watches the whole network:
 
-1. [Discovery](discovery.md) finds every address on the network with the MAC that has it: by listening, by probing, and by reading the neighbor tables of the routers. A MAC address doesn't change when the addresses do, so it identifies the device.
-2. Each task's [filters](filtering.md) choose the addresses of its names: of this MAC, global, stable. A task's name can also be a [template](hostnames.md), `{hostname}`, for a name for every host it matches.
-3. When the addresses change, the names' records at the [DNS providers](reference/providers.md) are updated, after a short debounce that gathers a prefix change into one update. Or ipv6ddns answers the names itself, as the network's [resolver](resolver.md).
+1. [Discovery](discovery.md) finds every address on the network, together with the MAC that holds it. It listens, it probes, and it reads the routers' neighbor tables. A MAC address doesn't change when the IP addresses do, so it identifies the device.
+2. Each task's [filters](filtering.md) choose which addresses its names get: those of this MAC, only global ones, only the stable one. A task's name can also be a [template](hostnames.md), such as `{hostname}`, which makes a name for every host the task matches.
+3. When the addresses change, ipv6ddns updates the names' records at the [DNS providers](reference/providers.md). It waits a short debounce first, so that a prefix change becomes a single update. Alternatively, ipv6ddns answers the names itself, as the network's [resolver](resolver.md).
 
-The configuration and the credentials are in one place, for the whole network, and nothing is installed on the devices.
+The configuration and the credentials for the whole network are in one place, and nothing is installed on the devices.
 
 ## Other uses
 
 ### Several ISPs at once
 
-You can have the addresses of several ISPs at once, as a fiber connection, a backup LTE one and Starlink: the AAAA records hold the addresses of every connection that is up, so inbound connections fail over by themselves.
+A network can have addresses from several ISPs at once, for example a fiber connection, a backup LTE connection and Starlink. The AAAA records hold the addresses of every connection that is up, so inbound connections fail over by themselves.
 
 ### IPv4 too
 
-The same names can get A records: the network's public IPv4 from a [source](sources.md), for a server behind NAT, and the devices' local IPv4 addresses from [discovery](discovery.md#local-ipv4-addresses), for a local DNS.
+The same names can get A records too:
+
+- the network's public IPv4, from a [source](sources.md), for a server behind NAT;
+- the devices' local IPv4 addresses, from [discovery](discovery.md#local-ipv4-addresses), for a local DNS.

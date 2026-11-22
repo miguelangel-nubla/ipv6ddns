@@ -1,17 +1,16 @@
-# Mikrotik Integration
+# MikroTik integration
 
-`ipv6ddns` offers deep integration with Mikrotik RouterOS. It can be used as:
+ipv6ddns works with MikroTik RouterOS in three ways, which you can use separately or together:
 
-1.  **DNS Provider**: Automatically creates static DNS records (`/ip/dns/static`) for discovered hosts (e.g., `nas.lan` -> `fd00::1`).
-2.  **Discovery Plugin**: Uses the router's neighbor tables to find the hosts of the network, IPv6, and IPv4 with `discovery.ipv4`.
-3.  **Container Host**: Runs directly on the router, removing the need for a separate server.
+1. **[DNS provider](#dns-provider):** it keeps static DNS records (`/ip/dns/static`) on the router for the hosts it discovers, for example `nas.lan` -> `fd00::1`.
+2. **[Discovery plugin](#discovery-plugin):** it reads the router's neighbor tables to find the hosts of the network. It finds IPv6 hosts, and IPv4 hosts too with `discovery.ipv4`.
+3. **[Container host](#running-as-a-container-on-routeros):** it runs on the router itself, so you need no separate server.
 
-**Example Scenario:**
-You run `ipv6ddns` in a container on your Mikrotik router. It detects your NAS and IoT devices coming online and instantly assigns them local DNS names (`nas.lan`, `cam.lan`) in the router's DNS, making them accessible by name to all your wifi clients.
+For example, you run ipv6ddns in a container on your MikroTik router. When your NAS and your IoT devices come online, it finds them and at once gives them local names in the router's DNS, such as `nas.lan` and `cam.lan`. All your Wi-Fi clients can then reach them by name.
 
-## Discovery Plugin
+## Discovery plugin
 
-The Mikrotik discovery plugin allows `ipv6ddns` to query the router's neighbor list and IPv6 neighbor table to find active hosts. This is useful when `ipv6ddns` is running on a device that doesn't see all network traffic (e.g., in a container or a different segment). Or just for convenience when running `ipv6ddns` directly as a container on RouterOS.
+The MikroTik discovery plugin reads the router's neighbor tables to find the active hosts. Use it when ipv6ddns runs somewhere that doesn't see all the network's traffic, for example in a container or on a different segment. It is also the convenient choice when ipv6ddns runs as a container on RouterOS itself.
 
 ### Configuration
 
@@ -29,30 +28,34 @@ discovery:
       tls_fingerprint: "0B:30:55:7A:9F:C4:E9:0E:33:58:7D:A2:C7:EC:11:36:5B:80:A5:CA:EF:14:39:5E:83:A8:CD:F2:17:3C:61:86"
 ```
 
-Its keys are in the [reference](reference/configuration.md#mikrotik).
+The plugin's keys are in the [reference](reference/configuration.md#mikrotik).
 
-With `use_tls: true` alone, the router's certificate is verified against the system's certificate authorities, for the name or address in `address`. That fails for the self-signed certificate RouterOS makes itself. In that case give its `tls_fingerprint`, 64 hex digits, colons allowed, and only the fingerprint is checked. Unlike the DNS provider's below, the plugin's error doesn't show the fingerprint, so get it with:
+How the connection is secured depends on two keys:
+
+- **`use_tls: true` alone:** the router's certificate is verified against the system's certificate authorities, for the name or address in `address`. That fails for the self-signed certificate RouterOS makes itself.
+- **`use_tls: true` with `tls_fingerprint`:** only the certificate's fingerprint is checked. Use this for a self-signed certificate. The fingerprint is 64 hex digits, and colons are allowed.
+- **Without `use_tls`:** the plugin uses the plain `api` service on port 8728, and the password crosses the network unencrypted.
+- **`tls_fingerprint` without `use_tls: true`** is an error.
+
+Unlike the error of the DNS provider below, the plugin's error doesn't show the router's fingerprint. Get it with:
 
 ```bash
 openssl s_client -connect 192.168.88.1:8729 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
 ```
 
-`tls_fingerprint` without `use_tls: true` is an error. Without `use_tls`, the plugin uses the plain `api` service on port 8728, and the password crosses the network unencrypted.
-
 ### Requirements
-- **API User**: The plugin only reads the neighbor tables (`/ipv6/neighbor/print`, and `/ip/arp/print` for IPv4), so give it a dedicated read-only user, and optionally limit it to the address `ipv6ddns` connects from:
+
+- **An API user.** The plugin only reads the neighbor tables: `/ipv6/neighbor/print`, and `/ip/arp/print` for IPv4. Give it a dedicated read-only user, and optionally limit that user to the address ipv6ddns connects from:
   ```
   /user group add name=ipv6ddns-discovery policy=read,api
   /user add name=ipv6ddns-discovery group=ipv6ddns-discovery address=192.168.88.10/32 password=...
   ```
-  If the same router is also the DNS provider, use a separate user for that (see below), so the discovery credentials can't change the router.
-- **API Service**: Ensure `api` (port 8728) or `api-ssl` (port 8729) service is enabled under `/ip/service`.
+  If the same router is also the DNS provider, use a separate user for the provider (see below). The discovery credentials then can't change the router.
+- **The API service.** Make sure the `api` service (port 8728) or the `api-ssl` service (port 8729) is enabled under `/ip/service`.
 
----
+## DNS provider
 
-## DNS Provider
-
-The Mikrotik provider allows `ipv6ddns` to update static DNS entries (`/ip/dns/static`) on your router. This is useful for local DNS resolution of your IPv6 hosts.
+The MikroTik provider updates static DNS entries (`/ip/dns/static`) on your router. Use it to resolve your hosts' names locally, through the router's DNS.
 
 ### Configuration
 
@@ -78,40 +81,44 @@ credentials:
 ```
 
 ### Requirements
-- **API User**: Create a user on the router with `read`, `write` and `api` permissions (`write` is needed to manage `/ip/dns/static`).
-- **API Service**: as for the [discovery plugin](#requirements).
 
----
+- **An API user.** Create a user on the router with the `read`, `write` and `api` permissions. `write` is needed to manage `/ip/dns/static`.
+- **The API service.** The same as for the [discovery plugin](#requirements).
 
 ### Limitations
 
-- **A hostname's capitals are part of it.** RouterOS answers a query whatever its capitals, but finds the records to change by the exact letters of the name. A hostname whose capitals change in the configuration, `NAS` to `nas`, is another name to it: the records written before stay, and are still answered. Remove them by hand: `/ip dns static remove [find name="NAS.lan"]`.
+- **Upper and lower case are part of a hostname.** RouterOS answers a query whatever its case, but it finds the records to change by the exact letters of the name. If you change the case of a hostname in the configuration, say from `NAS` to `nas`, RouterOS treats it as a different name. The records written before stay, and are still answered. Remove them by hand: `/ip dns static remove [find name="NAS.lan"]`.
 
-## Running as a Container on RouterOS
+## Running as a container on RouterOS
 
-You can run `ipv6ddns` directly on your Mikrotik router using the Container feature (available in RouterOS v7.4+).
+You can run ipv6ddns on the MikroTik router itself, with the Container feature of RouterOS v7.4 and later.
 
-### 1. Enable Container Support
-Check out the [Mikrotik Container Documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container) for instructions on how to enable and configure the container feature.
+### 1. Enable container support
 
-### 2. Configure Network
-Create a VETH interface and bridge it to your LAN so the container can see network traffic (essential for NDP discovery if not using plugins).
+Follow the [MikroTik Container documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container) to enable and configure the container feature.
+
+### 2. Configure network
+
+Create a VETH interface and bridge it to your LAN, so the container can see the network's traffic. Without plugins, NDP discovery depends on this.
 
 > [!NOTE]
-> If you plan on using an external DNS provider (e.g. Cloudflare, Route53), you must ensure the container has internet access via this VETH interface (e.g., via NAT masquerade or proper routing).
+> If you use an external DNS provider, such as Cloudflare or Route53, the container needs internet access through this VETH interface, for example with NAT masquerade or proper routing.
 
 > [!TIP]
-> When running as a container on the router itself, it is recommended to use the [Mikrotik Discovery Plugin](#discovery-plugin) instead of relying on active discovery. While active discovery works if the VETH is bridged correctly, the plugin is more efficient and reliable in this environment, as it uses the router's internal tables.
+> On the router itself, prefer the [MikroTik discovery plugin](#discovery-plugin) to active discovery. Active discovery works if the VETH is bridged correctly, but the plugin is more efficient and reliable here, because it reads the router's internal tables.
 
-### 3. Mount Configuration
-Upload your `config.yaml` to the router (e.g., via SFTP or Drag & Drop on WinBox->Files).
+### 3. Mount configuration
 
-### 4. Create and start the Container
+Upload your `config.yaml` to the router, for example over SFTP, or by dragging it into Files in WinBox.
 
-The container image is available at:
+### 4. Create and start the container
+
+Create a container with this image, and mount the configuration file at `/config.yaml`:
+
 `ghcr.io/miguelangel-nubla/ipv6ddns:v0`
 
-You just need to create a container with this image and mount the config file at `/config.yaml`.
-
 ### Notes
-- **Storage**: `ipv6ddns` runs in memory and does not write to disk, so it is safe to run on internal flash without wear concerns. The one exception is a `homeassistant` block with `key_provisioning: true`: the device's identity and the key Home Assistant gives are kept in `key_provisioning_state_file`, `homeassistant.state` beside the configuration, written only when they change, with an empty lock file beside it, made once. In a container, give the block a `key` instead, set by hand, and nothing is written: see [the Home Assistant integration](home-assistant-integration.md#the-key). However, external storage (USB/SD) is widely recommended because the container image size may exceed the available internal flash space on many devices.
+
+- **Writes to disk:** ipv6ddns runs in memory and doesn't write to disk, so it causes no wear on internal flash.
+- **The one exception** is a `homeassistant` block with `key_provisioning: true`. The device's identity and the key Home Assistant gives are then kept in `key_provisioning_state_file`, which is `homeassistant.state` beside the configuration. That file is written only when they change. An empty lock file is made beside it, once. In a container, give the block a `key` that you set by hand instead, and nothing is written: see [the Home Assistant integration](home-assistant-integration.md#the-key).
+- **Where to store the image:** external storage (USB or SD) is still recommended, because the container image may be larger than the free internal flash of many devices.

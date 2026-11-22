@@ -1,19 +1,20 @@
 # Home Assistant add-on: ipv6ddns
 
 [ipv6ddns](https://github.com/miguelangel-nubla/ipv6ddns) gives every device
-on your network a DNS name, wherever its addresses move: your ISP's new IPv6
-prefix, a device's new address, the network's public IPv4. It finds the hosts,
-and keeps their names at your DNS provider or your router, or answers them
-itself as the LAN's DNS server.
+on your network a DNS name, and keeps the name right when the device's
+addresses change: a new IPv6 prefix from your ISP, a new address on a device,
+a new public IPv4 for the network. It finds the hosts on the network. It then
+keeps their names at your DNS provider or your router, or answers them itself
+as the LAN's DNS server.
 
 ## Installation
 
 1. Add the repository of these add-ons to Home Assistant, as its
    [README](https://github.com/miguelangel-nubla/hassio-repository) says, and
    install ipv6ddns.
-2. Start it. It writes a starting `config.yaml` in its folder,
+2. Start the add-on. It writes a starting `config.yaml` in its folder,
    `addon_configs/<id>_ipv6ddns` (`app_configs` in recent versions of Home
-   Assistant), and starts discovering: its page lists the hosts on your
+   Assistant), and starts discovering. Its page lists the hosts on your
    network, with their MAC addresses.
 3. Edit that `config.yaml` with the File editor or Studio Code Server add-on,
    and restart the add-on.
@@ -23,15 +24,18 @@ For common setups, such as every machine on the network by name, see the
 
 ## Configuration
 
-`config.yaml` is the configuration of ipv6ddns, as its
+Every setting is in `config.yaml`, as in any other install of ipv6ddns. The
+add-on has no options of its own. The
 [documentation](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/configuration.md)
-describes. To the add-on, a file next to it is `/config/<file>`, so you can
-keep a token out of `config.yaml` with `${file:/config/cloudflare_token}`.
+of ipv6ddns describes the file.
 
-Every setting is in `config.yaml`, as in any other install of ipv6ddns: the
-add-on has no options of its own. The log level is `log_level` there, one of
-`debug`, `info`, `warn` or `error`, and the starting configuration has it at
-`info`. Keep these lines of it, which serve the report on
+- **Secrets.** To the add-on, a file next to `config.yaml` is
+  `/config/<file>`. So you can keep a token out of `config.yaml`: put it in a
+  file, and write `${file:/config/cloudflare_token}`.
+- **The log level** is `log_level`, one of `debug`, `info`, `warn` or `error`.
+  The starting configuration has it at `info`.
+
+Keep these lines of the starting configuration. They serve the report on
 [the add-on's page](#the-add-ons-page):
 
 ```yaml
@@ -41,10 +45,12 @@ webserver:
 
 ## Publishing Home Assistant itself
 
-`self: true` in a filter takes the addresses of the machine the add-on runs on,
-which are Home Assistant's and its add-ons', with no MAC to look up. Here, its
-stable public IPv6 addresses, plus the network's public IPv4, for a router that
-forwards a port to it:
+To publish Home Assistant, use `self: true` in a filter. It takes the addresses
+of the machine the add-on runs on, which are the addresses of Home Assistant
+and its add-ons, so there's no MAC to look up.
+
+This example takes the machine's stable public IPv6 addresses. It adds the
+network's public IPv4, for a router that forwards a port to the machine:
 
 ```yaml
 sources:
@@ -78,44 +84,52 @@ discovery:
     - "veth*"
 ```
 
-Home Assistant, and the add-ons on the host's network, have the host's
-addresses. The other add-ons have addresses of their own, but on `hassio`, a
-network inside the host that nothing outside reaches: they're reached at the
-host's addresses, on the ports they publish. So all their names can be
-endpoints of this one task, as `ha`, `mqtt` and `nodered`.
+The names of all your add-ons can be endpoints of this one task, such as `ha`,
+`mqtt` and `nodered`:
 
-For a local DNS, use its LAN address instead: `self: true` with `ip` `family`
-`4` and `type` `private`, and `discovery.ipv4.enabled: true`. The other filters
-and options are in
+- Home Assistant, and the add-ons on the host's network, have the host's
+  addresses.
+- The other add-ons have addresses of their own, but on `hassio`, a network
+  inside the host that nothing outside reaches. From outside, they're reached
+  at the host's addresses, on the ports they publish.
+
+For a local DNS, use the machine's LAN address instead: `self: true` with `ip`
+`family` `4` and `type` `private`, and `discovery.ipv4.enabled: true`. The
+other filters and options are in
 [filtering](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/filtering.md).
 
 ## In Home Assistant
 
 The starting configuration makes ipv6ddns a device of Home Assistant's ESPHome
-integration, with `key_provisioning: true`. Home Assistant finds it under
-*Settings → Devices & services → Discovered*. When you add it, Home Assistant
-makes its encryption key and gives it to the device, as it does for ESPHome
-devices. The add-on keeps the key in `homeassistant.state` in its folder, which
-survives restarts and updates.
+integration, with `key_provisioning: true`. Home Assistant finds the device
+under *Settings → Devices & services → Discovered*. When you add it, Home
+Assistant makes its encryption key and gives the key to the device, as it does
+for ESPHome devices. The add-on keeps the key in `homeassistant.state` in its
+folder, where it survives restarts and updates.
 
-The device shows each name's addresses, last update and update problems, and
-the number of hosts discovered, with a button to update now. And
-`homeassistant` sources can read your entities, such as a router's WAN address.
-See the
+The device shows each name's addresses, its last update and any problem with
+the update. It also shows the number of hosts discovered, and has a button to
+update now. In the other direction, `homeassistant` sources can read your
+entities, such as a router's WAN address. See the
 [integration](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/home-assistant-integration.md).
 
 ## The add-on's page
 
-It shows the ipv6ddns report: the names and their records, and the hosts
-discovered. It's served to Home Assistant only, not to your network: at
-`172.30.32.1:8053`, the address Home Assistant's Supervisor reaches the add-on
-at, as `webserver.listen` in the starting `config.yaml` says.
+The add-on's page shows the ipv6ddns report: the names and their records, and
+the hosts discovered.
+
+The report is served to Home Assistant only, not to your network. It's served
+at `172.30.32.1:8053`, the address where Home Assistant's Supervisor reaches
+the add-on. `webserver.listen` in the starting `config.yaml` sets that address.
 
 ## Network
 
-The add-on runs on the host's network, with the `NET_RAW` capability, so
-discovery hears and probes the network as ipv6ddns would on the host. The
+The add-on runs on the host's network, with the `NET_RAW` capability. So
+discovery hears and probes the network just as ipv6ddns would when run on the
+host. The
 [plugins](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/discovery.md#plugins)
-can read your routers' tables as well. The starting configuration leaves out
-the bridges of Home Assistant's own containers, `hassio`, `docker0` and
-`veth*`, with `discovery.exclude_interfaces`: keep that.
+can read your routers' tables as well.
+
+The starting configuration leaves out the bridges of Home Assistant's own
+containers, `hassio`, `docker0` and `veth*`, with
+`discovery.exclude_interfaces`. Keep that setting.
