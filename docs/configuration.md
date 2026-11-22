@@ -26,7 +26,7 @@ credentials:    # the DNS providers, and their settings
     settings:
       address: http://127.0.0.1:5380
       token: ${TECHNITIUM_TOKEN}
-      zone: home.example.com
+      zone: lan.example.com
       ttl: 5m
 
 sources:        # addresses without a MAC
@@ -54,13 +54,13 @@ discovery:      # how hosts are found: IPv6 by default
 
 An endpoint's name is relative to the credential's zone:
 
-- `nas` is `nas.home.example.com`;
+- `nas` is `nas.lan.example.com`;
 - `""` is the zone itself;
 - `"*.nas"` is a wildcard.
 
-You can also write the name in full, `nas.home.example.com`, or in another letter case. It is still the same name, and all the tasks that use it, however they write it, give it their addresses together.
+You can also write the name in full, `nas.lan.example.com`, or in another letter case. It is still the same name, and all the tasks that use it, however they write it, give it their addresses together.
 
-The exception is a `route53` endpoint, because its zone is only learned from AWS at the first update. There, `nas` and `nas.home.example.com` count as two names. Each one writes the records with only its own addresses, and ipv6ddns warns about them at start. For `route53`, write each name one way only.
+The exception is a `route53` endpoint, because its zone is only learned from AWS at the first update. There, `nas` and `nas.lan.example.com` count as two names. Each one writes the records with only its own addresses, and ipv6ddns warns about them at start. For `route53`, write each name one way only.
 
 Write names in lower case, both in the configuration and in the records at the provider. Some providers match a record's name exactly as written, so a record you created by hand in another case, such as `NAS`, may not be found. It is then neither updated nor removed, and the provider answers it alongside the name's own records.
 

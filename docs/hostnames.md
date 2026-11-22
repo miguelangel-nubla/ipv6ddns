@@ -1,6 +1,6 @@
 # Names by the hosts' names
 
-A task's name can be a template. Instead of one fixed name, a template makes a name for every host the task matches, from what the host calls itself. Every device on the LAN that announces a name gets one in DNS, such as `printer.home.arpa` or `laptop.home.arpa`, with no task of its own. Names appear as hosts arrive, and go when they leave.
+A task's name can be a template. Instead of one fixed name, a template makes a name for every host the task matches, from what the host calls itself. Every device on the LAN that announces a name gets one in DNS, such as `printer.lan.example.com` or `laptop.lan.example.com`, with no task of its own. Names appear as hosts arrive, and go when they leave.
 
 ```yaml
 resolvers:
@@ -13,7 +13,7 @@ credentials:
   home:
     provider: resolver
     settings:
-      zone: home.arpa
+      zone: lan.example.com
 
 tasks:
   lan:
@@ -32,6 +32,8 @@ How the parts fit together:
 - **The hosts' names** come from [discovery](discovery.md#names): mDNS, which is on by default, other protocols that carry names, or a plugin that reads your router's DHCP leases.
 - **The task's filter** decides which hosts get a name, and which of each host's addresses the name has, as it does for any task.
 - **The endpoint** can be any credential: a [resolver](resolver.md) zone, a DNS provider, or both.
+
+The zone here is a subdomain of a domain you own. Without one, use `home.arpa`: see [choosing a domain](resolver.md#choosing-a-domain).
 
 For a complete setup, see the guide [every machine on the network by name](guides/network-wide-names.md).
 

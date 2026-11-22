@@ -210,7 +210,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "description": "Records of names outside its zones, one per entry, in zone file syntax, with every name absolute and ending in a dot: www.example.com. CNAME nas.home.arpa. A record without a TTL gets 1m."
+                        "description": "Records of names outside its zones, one per entry, in zone file syntax, with every name absolute and ending in a dot: www.example.com. CNAME nas.lan.example.com. A record without a TTL gets 1m."
                     },
                     "cache_size": {
                         "type": "integer",

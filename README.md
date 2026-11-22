@@ -8,7 +8,7 @@
 ipv6ddns finds every host on your LAN, over IPv6 and IPv4, and keeps a DNS name pointing at each one. The names can live at your DNS provider, at your router, or in ipv6ddns itself, acting as the LAN's DNS server. You install nothing on the devices and need no static addresses.
 
 - **Dynamic DNS for any device.** A server, a camera or a container is found by its MAC address, and its name is kept up to date at Cloudflare, Route 53, DuckDNS and others. The name can carry the network's public IPv4 next to the device's IPv6. When your ISP changes the IPv6 prefix, or a laptop picks a new address, `myserver.example.com` keeps working.
-- **Every machine by name, with nothing to set per host.** Each host gets the name it calls itself, such as `printer.home.arpa` or `laptop.home.arpa`. Names appear and disappear as hosts come and go.
+- **Every machine by name, with nothing to set per host.** Each host gets the name it calls itself, such as `printer.lan.example.com` or `laptop.lan.example.com`. Names appear and disappear as hosts come and go.
 - **The LAN's DNS server, if you want one.** ipv6ddns can answer those names itself, along with records you write and the reverse names. It forwards every other query, over TLS or HTTPS if you like, and caches the answers.
 
 It runs on one machine on the network. It can also run as a [Home Assistant app](homeassistant/addon/DOCS.md) (formerly called an add-on), which makes it a device in Home Assistant too.
@@ -39,7 +39,7 @@ DNS: 3 names, 3 with addresses, 0 without; 0 failing
                 203.0.113.99                               27m 2s       9h14m     source wan
     Provider: technitium
         Endpoint: home-dns
-            nas.home.example.com: (next update: 7s, waiting for the 10s debounce)
+            nas.lan.example.com: (next update: 7s, waiting for the 10s debounce)
                 192.168.1.50                                2m51s   12d           00:11:22:33:44:55  eth0
                 [fd12:3456:789a::50]                       41m37s   12d           00:11:22:33:44:55  eth0
 Discovery: 2 hosts, 1 named, 3 addresses

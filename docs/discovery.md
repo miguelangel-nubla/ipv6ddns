@@ -159,7 +159,7 @@ credentials:
     settings:
       address: http://127.0.0.1:5380
       token: ${TECHNITIUM_TOKEN}
-      zone: home.example.com
+      zone: lan.example.com
       ttl: 5m
 ```
 

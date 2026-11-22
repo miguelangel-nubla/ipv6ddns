@@ -1,6 +1,6 @@
 # Every machine on the network by name, from Home Assistant
 
-The Home Assistant machine is always on, and already on the network, so it makes a good DNS server for the network. The app answers `nas.home.arpa`, `printer.home.arpa`, and Home Assistant's own name, for every device on the network.
+The Home Assistant machine is always on, and already on the network, so it makes a good DNS server for the network. The app answers `nas.lan.example.com`, `printer.lan.example.com`, and Home Assistant's own name, for every device on the network.
 
 This page is the app's side of the guide [every machine on the network by name](../network-wide-names.md). It has the configuration as it goes in the app's file, and how to check the result from Home Assistant. Pointing the network at the DNS server is the same as on any install, so that step sends you to the plain guide. The steps that every app guide shares are in [the app's side, for every guide](README.md#the-apps-side-for-every-guide).
 
@@ -21,7 +21,7 @@ credentials:
   home:
     provider: resolver
     settings:
-      zone: home.arpa
+      zone: lan.example.com
 
 tasks:
   lan:
@@ -34,8 +34,8 @@ tasks:
             - "!link_local"
     endpoints:
       home:
-        - "{hostname}"     # printer.home.arpa
-        - "{n}.{hostname}" # 1.printer.home.arpa, 2.printer.home.arpa when two say printer
+        - "{hostname}"     # printer.lan.example.com
+        - "{n}.{hostname}" # 1.printer.lan.example.com, 2.printer.lan.example.com when two say printer
   homeassistant:
     filter:
       - self: true         # this machine: Home Assistant, and the apps on its network
@@ -47,7 +47,7 @@ tasks:
             - "!link_local"
     endpoints:
       home:
-        - homeassistant    # homeassistant.home.arpa
+        - homeassistant    # homeassistant.lan.example.com
 
 # From the starting file: keep these.
 webserver:
@@ -83,7 +83,7 @@ The Supervisor's own DNS is at `172.30.32.3`, so the two don't get in each other
 
 Restart the app. Its *Log* says `resolver lan listening on 192.168.1.2:53, 172.30.32.1:53`.
 
-Home Assistant also announces itself as `homeassistant` over mDNS, so the `lan` task may find a host with that name. The name written in the `homeassistant` task wins, and the log says so once: `homeassistant.home.arpa is written in the configuration, so it keeps its own addresses`. That is expected.
+Home Assistant also announces itself as `homeassistant` over mDNS, so the `lan` task may find a host with that name. The name written in the `homeassistant` task wins, and the log says so once: `homeassistant.lan.example.com is written in the configuration, so it keeps its own addresses`. That is expected.
 
 ## Point the network at it
 
@@ -93,7 +93,7 @@ In the router's DHCP settings, give the devices the Home Assistant machine's add
 
 Home Assistant and its apps look names up through the Supervisor's DNS, on the internal network. The Supervisor's DNS asks the machine's DNS servers, unless you've given it servers of its own.
 
-Point it at the app. An integration that you set up by host name, such as `printer.home.arpa`, then works as it does on the rest of the network. There are two ways:
+Point it at the app. An integration that you set up by host name, such as `printer.lan.example.com`, then works as it does on the rest of the network. There are two ways:
 
 - **Set the machine's DNS server** to `192.168.1.2`, in *Settings → System → Network*. Home Assistant, the apps and the machine itself then use the app. If the machine gets its address from the router's DHCP, the step above already gave it the app as its DNS server, and there's nothing to do.
 - **Set it for Home Assistant and the apps only.** In the *Terminal & SSH* app, run `ha dns options --servers dns://172.30.32.1`. The machine keeps its own DNS servers. `ha dns reset` undoes the change.
@@ -106,9 +106,9 @@ While the app is stopped, the local names don't resolve. If you set the machine'
 
 Open the app's page, *Open Web UI*. Under `Resolvers`, it lists the zone and how many names the zone has. Under `DNS`, it lists each name with its addresses.
 
-From any device on the network, run the plain guide's [checks](../network-wide-names.md#check-that-it-works): `dig printer.home.arpa`, `dig homeassistant.home.arpa`.
+From any device on the network, run the plain guide's [checks](../network-wide-names.md#check-that-it-works): `dig printer.lan.example.com`, `dig homeassistant.lan.example.com`.
 
-To check from Home Assistant's side, use the *Terminal & SSH* app, which looks names up the way Home Assistant does. `nslookup printer.home.arpa` answers with the printer's addresses.
+To check from Home Assistant's side, use the *Terminal & SSH* app, which looks names up the way Home Assistant does. `nslookup printer.lan.example.com` answers with the printer's addresses.
 
 The ipv6ddns device in Home Assistant has an entity for each name written in the configuration, such as `homeassistant`, with the name's addresses and its last update. The names made for the hosts, from `{hostname}`, have no entities, because they come and go.
 

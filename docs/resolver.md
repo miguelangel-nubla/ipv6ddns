@@ -6,7 +6,7 @@ ipv6ddns can be the DNS server of your network. A resolver answers three kinds o
 - **Records you write** yourself.
 - **Everything else**, which it forwards to its upstream servers, such as your router or a public resolver.
 
-Give the devices the resolver's address as their DNS server, by DHCP or in the router's advertisements. A name on the LAN, such as `nas.home.arpa`, then follows its host wherever its addresses move, and there is no other DNS server to update.
+Give the devices the resolver's address as their DNS server, by DHCP or in the router's advertisements. A name on the LAN, such as `nas.lan.example.com`, then follows its host wherever its addresses move, and there is no other DNS server to update.
 
 Nothing is sent to a provider. An update of a zone happens in memory, takes effect at once, and never fails.
 
@@ -22,14 +22,14 @@ resolvers:
       - 1.1.1.1
     cache_size: 10000                     # how many upstream answers it caches (the default)
     records:                              # records for names outside its zones, written in full
-      - www.example.com. CNAME nas.home.arpa.
+      - www.example.com. CNAME nas.lan.example.com.
 
 credentials:
   home:
     provider: resolver                    # a zone the resolver answers
     settings:
       resolver: lan                       # needed only with more than one resolver
-      zone: home.arpa
+      zone: lan.example.com
       records:                            # relative to the zone, or absolute within it
         - printer A 192.168.1.20
         - files CNAME nas
@@ -41,7 +41,7 @@ tasks:
       - mac:
           address: "00:11:22:33:44:55"
     endpoints:
-      home:                               # nas.home.arpa
+      home:                               # nas.lan.example.com
         - nas
 ```
 
@@ -160,16 +160,39 @@ A credential with the provider `resolver` is a zone that a resolver answers. Its
 
 - **`zone`** is the zone's name.
 - **`resolver`** is the name of the resolver that answers it. You can leave it out when there's only one resolver.
-- **`records`** are records for the zone's other names, the ones no task publishes. Write each name relative to the zone, or in full within it, such as `printer.home.arpa.`.
+- **`records`** are records for the zone's other names, the ones no task publishes. Write each name relative to the zone, or in full within it, such as `printer.lan.example.com.`.
 - **`ttl`** is the TTL of a name's addresses, and of the zone's records that don't give their own. It is `1m` by default.
 
-The names in the zone come from the tasks' endpoints, as for any provider: `nas` is `nas.home.arpa`, `""` is `home.arpa` itself, and `"*.nas"` is a wildcard.
+The names in the zone come from the tasks' endpoints, as for any provider: `nas` is `nas.lan.example.com`, `""` is `lan.example.com` itself, and `"*.nas"` is a wildcard.
 
 The credential's [`debounce`](configuration.md#its-parts) is zero by default for this provider, so a change is answered at once.
 
 A zone with no task still serves its records.
 
-Two resolvers can each have a zone with the same name, through two credentials. The same name then has a different answer on each network, which is called a split horizon. For example, `nas.home.arpa` can have the LAN's addresses on one resolver and the VPN's on the other.
+Two resolvers can each have a zone with the same name, through two credentials. The same name then has a different answer on each network, which is called a split horizon. For example, `nas.lan.example.com` can have the LAN's addresses on one resolver and the VPN's on the other.
+
+## Choosing a domain
+
+A zone needs a name. Pick one of these:
+
+| Zone | Use it when | Why |
+|---|---|---|
+| A subdomain of a domain you own, such as `lan.example.com` | You own a domain | The name is yours alone, so it never clashes with anything on the internet. You can get real TLS certificates for your local services, with a DNS challenge. The same name can also be published outside, since ipv6ddns keeps records at DNS providers too |
+| `home.arpa` | You don't own a domain | It is reserved for home networks by [RFC 8375](https://www.rfc-editor.org/rfc/rfc8375), and will never exist on the internet. No certificate authority issues certificates for it |
+| `internal` | You don't own a domain, and want something shorter | ICANN reserved it for private use in 2024. The same limits as `home.arpa` |
+
+The examples in this documentation use `lan.example.com`. Replace `example.com` with your own domain, or write `home.arpa` wherever you see it.
+
+Don't use these:
+
+- **`.local`** is reserved for mDNS by [RFC 6762](https://www.rfc-editor.org/rfc/rfc6762). macOS, Linux and Windows send `.local` lookups to the multicast group, not to a DNS server. A `.local` zone gives slow or failing lookups, and clashes with the names devices announce by mDNS.
+- **Endings nobody reserved**, such as `.lan`, `.home` or `.corp`. Lookups for them can leak to the internet's root servers, clients that validate DNSSEC reject them, and nothing guarantees they stay unused.
+- **A domain that belongs to someone else.** Your names would hide theirs on your network.
+
+Two things to know with a domain of your own:
+
+- **DNSSEC.** If your public domain is signed, a client that validates DNSSEC itself rejects the local answers under it: see [security](#security). Most devices don't validate; they trust their DNS server. If yours do, use `home.arpa`.
+- **Certificates and privacy.** Every certificate is listed in public logs, with its names. A wildcard certificate, `*.lan.example.com`, keeps the names of your machines out of them.
 
 ## Records
 
@@ -184,13 +207,13 @@ credentials:
   home:
     provider: resolver
     settings:
-      zone: home.arpa
+      zone: lan.example.com
       records:
         - printer A 192.168.1.20
         - printer AAAA fd00::20
         - printer 300 TXT "color"
-        - files CNAME nas              # nas.home.arpa
-        - "*.dev CNAME nas"            # anything under dev.home.arpa without records of its own
+        - files CNAME nas              # nas.lan.example.com
+        - "*.dev CNAME nas"            # anything under dev.lan.example.com without records of its own
         - _ipp._tcp SRV 0 0 631 printer
         - "@ MX 10 mail.example.com."  # the zone itself
 ```
@@ -211,10 +234,10 @@ The resolver goes through these steps in order, and the first one that applies g
 
 ### Names in a zone
 
-- **Which zone:** a name belongs to the deepest zone that holds it. `printer.lab.home.arpa` belongs to `lab.home.arpa` rather than `home.arpa`, while `printer.home.arpa` belongs to `home.arpa`.
+- **Which zone:** a name belongs to the deepest zone that holds it. `printer.lab.lan.example.com` belongs to `lab.lan.example.com` rather than `lan.example.com`, while `printer.lan.example.com` belongs to `lan.example.com`.
 - **No data:** the answer is "no data" when the name has nothing of the type asked, or when it is a task's name that has no address yet, or no longer has one. "No data" is `NOERROR` with an empty answer and an SOA of the zone, which the resolver makes. The SOA tells the client to remember that answer for 10 seconds, so a host that shows up has its name a moment later.
 - **Wildcards:** a wildcard such as `*.dev` answers any name under `dev` that has nothing of its own, provided no name in between has something. It answers `a.dev` and `a.b.dev`, but it doesn't answer `a.b.dev` when `b.dev`, or a name under `b.dev`, has records. The answer carries the name the client asked.
-- **A name the zone doesn't have** isn't answered `NXDOMAIN`. It gets whatever the upstream servers answer, because a zone can be part of a domain that exists elsewhere, such as `home.example.com` inside a public `example.com`.
+- **A name the zone doesn't have** isn't answered `NXDOMAIN`. It gets whatever the upstream servers answer, because a zone can be part of a domain that exists elsewhere, such as `lan.example.com` inside a public `example.com`.
 
 ### Forwarded queries
 
@@ -419,6 +442,6 @@ The instances can differ in two cases, and a client may ask either one meanwhile
 ## Security
 
 - **Allow:** a resolver only answers the clients in `allow`, which by default is the networks it listens on. A resolver that answers anyone, on an address the internet reaches, is an open resolver. It relays any query upstream. Its answers are also larger than the queries, so an attacker can fake a victim's address in the queries and aim the answers at the victim: an amplification attack. Don't widen `allow` to everyone, and don't listen on a public address. On a router, a port alone does listen on one.
-- **DNSSEC:** local answers aren't signed. If you give a different answer here to a name in a publicly signed zone, such as `www.example.com` in a signed `example.com`, the name fails on a client that validates DNSSEC itself. Put such names in a zone that isn't signed, such as `home.arpa`, or in one of your own that you don't sign. Forwarded answers are relayed as they are. They include their signatures when the client's DO bit asks for them, and are cached separately from the answers asked without it.
+- **DNSSEC:** local answers aren't signed. If you give a different answer here to a name in a publicly signed zone, such as `www.example.com` in a signed `example.com`, the name fails on a client that validates DNSSEC itself. That includes every name of a zone such as `lan.example.com`, when `example.com` is signed. Put such names in a zone that isn't signed, such as `home.arpa`, or in a domain of your own that you don't sign. Forwarded answers are relayed as they are. They include their signatures when the client's DO bit asks for them, and are cached separately from the answers asked without it.
 - **Upstream:** over plain DNS, the names asked and the answers cross the network unencrypted. Anyone on the path can read the questions and change the answers. An [encrypted upstream](#encrypted-upstream-servers) protects that path up to the server, which still sees every name. The clients' own queries to the resolver are plain DNS, on the LAN.
 - **Cache:** an upstream answer is served to every client for its TTL, including a wrong answer, as with any caching resolver. Nothing is kept for more than a day, or across a restart. With `cache_size: 0`, the resolver asks every time.

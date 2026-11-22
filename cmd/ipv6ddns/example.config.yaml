@@ -79,7 +79,7 @@ tasks:
     endpoints:
       mylocaldns:
       - nas
-      # And in the zone ipv6ddns answers itself, as nas.home.arpa.
+      # And in the zone ipv6ddns answers itself, as nas.lan.example.com.
       home:
       - nas
 # A DNS server of ipv6ddns's own, for the clients of the LAN: it answers the zones of its resolver
@@ -91,12 +91,12 @@ resolvers:
       - 192.168.1.1
       - 1.1.1.1
     records:
-      - www.mydomain.tld. CNAME nas.home.arpa.
+      - www.example.com. CNAME nas.lan.example.com.
 credentials:
   home:
     provider: resolver
     settings:
-      zone: home.arpa
+      zone: lan.example.com
       records:
         - printer A 192.168.1.20
         - files CNAME nas

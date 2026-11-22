@@ -6,4 +6,4 @@ Running ipv6ddns as the Home Assistant app? Start at the [guides for the app](ho
 
 | You want | Guide |
 |---|---|
-| Every machine on the network by name, `nas.home.arpa`, from every device, with nothing set per host | [Every machine on the network by name](network-wide-names.md) |
+| Every machine on the network by name, `nas.lan.example.com`, from every device, with nothing set per host | [Every machine on the network by name](network-wide-names.md) |

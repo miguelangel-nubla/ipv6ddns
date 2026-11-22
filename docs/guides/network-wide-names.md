@@ -1,6 +1,6 @@
 # Every machine on the network by name
 
-Reach every device on your network by its own name, such as `nas.home.arpa`, `printer.home.arpa` or `laptop.home.arpa`, from every other device. You don't give anything a static address, and you don't add or maintain a record for each host.
+Reach every device on your network by its own name, such as `nas.lan.example.com`, `printer.lan.example.com` or `laptop.lan.example.com`, from every other device. You don't give anything a static address, and you don't add or maintain a record for each host.
 
 ipv6ddns finds the hosts on the network, learns what each one is called, and answers DNS for them itself. A new device has its name as soon as it shows up. A name follows its device when the device's addresses change: a new IPv6 prefix from the ISP, a new DHCP lease, a laptop moving from Wi-Fi to cable.
 
@@ -30,7 +30,7 @@ credentials:
   home:
     provider: resolver     # a zone ipv6ddns answers itself
     settings:
-      zone: home.arpa
+      zone: lan.example.com
 
 tasks:
   lan:
@@ -43,8 +43,8 @@ tasks:
             - "!link_local"
     endpoints:
       home:
-        - "{hostname}"     # printer.home.arpa
-        - "{n}.{hostname}" # 1.printer.home.arpa, 2.printer.home.arpa when two say printer
+        - "{hostname}"     # printer.lan.example.com
+        - "{n}.{hostname}" # 1.printer.lan.example.com, 2.printer.lan.example.com when two say printer
 
 webserver:
   listen:
@@ -55,7 +55,7 @@ What each part does:
 
 - **`discovery`** finds the hosts. IPv6 is on by default. `ipv4: enabled: true` adds the IPv4 addresses, so that a name also works for devices and clients without IPv6.
 - **`resolvers.lan`** makes ipv6ddns a DNS server, which answers on the machine's LAN address. When it's asked a name it doesn't have itself, such as `github.com`, it asks `upstream`, and keeps the answer in a cache.
-- **`credentials.home`** is the zone the resolver answers: `home.arpa`. That zone is [set aside for home networks](https://www.rfc-editor.org/rfc/rfc8375), and no one on the internet answers for it.
+- **`credentials.home`** is the zone the resolver answers: `lan.example.com`. Write a subdomain of a domain you own there. No domain of your own? Use `home.arpa`, which is [set aside for home networks](https://www.rfc-editor.org/rfc/rfc8375). Don't use `.local`. See [choosing a domain](../resolver.md#choosing-a-domain).
 - **`tasks.lan`** gives every host a name. Its filter takes every address of every host, except link-local addresses, which only work on one link. `{hostname}` is the name the host says it has.
 - **`webserver`** serves the [web report](../installation.md#the-web-report): the hosts found, their names, and what the resolver answers. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
 
@@ -69,7 +69,7 @@ A host is named by what it says it is called:
 
 Give the devices `192.168.1.2` as their DNS server, in your router's DHCP settings. The setting is the DNS server option, DHCP option 6. Leave the router's own address out of that list: a client that is given both servers uses either, and the router knows none of these names.
 
-To make a bare `nas` work too, and not only `nas.home.arpa`, set the router's local domain, or DHCP's domain search option, to `home.arpa`.
+To make a bare `nas` work too, and not only `nas.lan.example.com`, set the router's local domain, or DHCP's domain search option, to `lan.example.com`.
 
 Devices can also get a DNS server over IPv6, from the router's advertisements (RDNSS) or from DHCPv6. They then ask the router at its IPv6 address, which doesn't know these names. Choose one of these:
 
@@ -85,14 +85,14 @@ Open the web report, at `http://192.168.1.2:8053`. Under `Resolvers`, it lists t
 Then ask from any device on the network:
 
 ```
-dig printer.home.arpa
-dig printer.home.arpa AAAA
+dig printer.lan.example.com
+dig printer.lan.example.com AAAA
 dig -x 192.168.1.20
 ```
 
 The first two commands give the printer's addresses. The third gives the printer's name back.
 
-Before the devices use the new DNS server, ask it directly: `dig @192.168.1.2 printer.home.arpa`. On Windows, use `nslookup printer.home.arpa 192.168.1.2`.
+Before the devices use the new DNS server, ask it directly: `dig @192.168.1.2 printer.lan.example.com`. On Windows, use `nslookup printer.lan.example.com 192.168.1.2`.
 
 ## A name that matters
 
@@ -144,7 +144,7 @@ credentials:
       address: 192.168.1.1
       username: ipv6ddns
       password: ${file:mikrotik_password}
-      zone: home.arpa
+      zone: lan.example.com
       ttl: 5m
 
 tasks:
