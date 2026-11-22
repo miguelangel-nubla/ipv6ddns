@@ -93,7 +93,7 @@ In the router's DHCP settings, give the devices the Home Assistant machine's add
 
 Home Assistant and its apps look names up through the Supervisor's DNS, on the internal network. The Supervisor's DNS asks the machine's DNS servers, unless you've given it servers of its own.
 
-Point it at the app. An integration that you set up by host name, such as `printer.lan.example.com`, then works as it does on the rest of the network. There are two ways:
+Point it at the app, so that Home Assistant can look the names up too. There are two ways:
 
 - **Set the machine's DNS server** to `192.168.1.2`, in *Settings → System → Network*. Home Assistant, the apps and the machine itself then use the app. If the machine gets its address from the router's DHCP, the step above already gave it the app as its DNS server, and there's nothing to do.
 - **Set it for Home Assistant and the apps only.** In the *Terminal & SSH* app, run `ha dns options --servers dns://172.30.32.1`. The machine keeps its own DNS servers. `ha dns reset` undoes the change.
@@ -101,6 +101,12 @@ Point it at the app. An integration that you set up by host name, such as `print
 Give only the app's address. With a second server, such as the router, some lookups go to that server instead, and the local names fail now and then.
 
 While the app is stopped, the local names don't resolve. If you set the machine's DNS server to the app, the machine can't look up any name either until the app is started again, and that includes the names it needs for updates. The second way leaves the machine's own lookups alone.
+
+You can then give an integration a name instead of an address:
+
+- **Write the whole name**, `printer.lan.example.com`. Home Assistant doesn't look up a short name such as `printer`.
+- **An integration that keeps the name you type** has nothing to redo when the device's address changes. That is the case wherever you give a URL or a host, as with an MQTT broker or a camera's stream.
+- **Some integrations look the name up once and keep the address.** Shelly and ESPHome do. Home Assistant finds those devices again by itself when their address changes, so they need no name.
 
 ## Check that it works
 
