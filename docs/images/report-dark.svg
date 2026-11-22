@@ -17,7 +17,7 @@
 <text x="140.8" y="123" textLength="179.4" lengthAdjust="spacingAndGlyphs">[2001:db8:1234:5678::1]</text>
 <text x="476.2" y="123" textLength="62.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">1h12m40s</text>
 <text x="562" y="123" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">31d 1h</text>
-<text x="671.1999999999999" y="123" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12:34:56:78:90:ab</text>
+<text x="671.2" y="123" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12:34:56:78:90:ab</text>
 <text x="819.4" y="123" textLength="31.2" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">eth0</text>
 <text x="109.6" y="142" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#9cc0ff">www.example.com</text>
 <text x="226.6" y="142" textLength="7.8" lengthAdjust="spacingAndGlyphs">:</text>
@@ -25,12 +25,12 @@
 <text x="140.8" y="161" textLength="312" lengthAdjust="spacingAndGlyphs">[2001:db8:1234:5678:abcd:ef01:2345:6789]</text>
 <text x="491.8" y="161" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">35m15s</text>
 <text x="569.8" y="161" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">2d 5h</text>
-<text x="671.1999999999999" y="161" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12:34:56:78:90:cd</text>
+<text x="671.2" y="161" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12:34:56:78:90:cd</text>
 <text x="819.4" y="161" textLength="93.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">eth0, router</text>
 <text x="140.8" y="180" textLength="93.6" lengthAdjust="spacingAndGlyphs">203.0.113.99</text>
 <text x="491.8" y="180" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">27m 2s</text>
-<text x="593.1999999999999" y="180" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">9h14m</text>
-<text x="671.1999999999999" y="180" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">source wan</text>
+<text x="593.2" y="180" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">9h14m</text>
+<text x="671.2" y="180" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">source wan</text>
 <text x="47.2" y="199" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#f1f4f8" font-weight="600">Provider: technitium</text>
 <text x="78.4" y="218" textLength="140.4" lengthAdjust="spacingAndGlyphs" fill="#f1f4f8" font-weight="600">Endpoint: home-dns</text>
 <text x="109.6" y="237" textLength="171.6" lengthAdjust="spacingAndGlyphs" fill="#9cc0ff">laptop.lan.example.com</text>
@@ -39,16 +39,16 @@
 <text x="140.8" y="256" textLength="319.8" lengthAdjust="spacingAndGlyphs" fill="#e7b04f">(no address: the last one went 3h12m ago)</text>
 <text x="109.6" y="275" textLength="148.2" lengthAdjust="spacingAndGlyphs" fill="#9cc0ff">nas.lan.example.com</text>
 <text x="257.8" y="275" textLength="7.8" lengthAdjust="spacingAndGlyphs">:</text>
-<text x="273.4" y="275" textLength="366.59999999999997" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">(next update: 7s, waiting for the 10s debounce)</text>
+<text x="273.4" y="275" textLength="366.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">(next update: 7s, waiting for the 10s debounce)</text>
 <text x="140.8" y="294" textLength="93.6" lengthAdjust="spacingAndGlyphs">192.168.1.50</text>
-<text x="499.59999999999997" y="294" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">2m51s</text>
+<text x="499.6" y="294" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">2m51s</text>
 <text x="562" y="294" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="671.1999999999999" y="294" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">00:11:22:33:44:55</text>
+<text x="671.2" y="294" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">00:11:22:33:44:55</text>
 <text x="819.4" y="294" textLength="31.2" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">eth0</text>
 <text x="140.8" y="313" textLength="156" lengthAdjust="spacingAndGlyphs">[fd12:3456:789a::50]</text>
 <text x="491.8" y="313" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">41m37s</text>
 <text x="562" y="313" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="671.1999999999999" y="313" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">00:11:22:33:44:55</text>
+<text x="671.2" y="313" textLength="132.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">00:11:22:33:44:55</text>
 <text x="819.4" y="313" textLength="31.2" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">eth0</text>
 <text x="16" y="351" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#f1f4f8" font-weight="600">Discovery:</text>
 <text x="101.8" y="351" textLength="226.2" lengthAdjust="spacingAndGlyphs">2 hosts, 1 named, 3 addresses</text>

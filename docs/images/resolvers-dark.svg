@@ -8,13 +8,13 @@
 <text x="70.6" y="47" textLength="7.8" lengthAdjust="spacingAndGlyphs">:</text>
 <text x="86.2" y="47" textLength="54.6" lengthAdjust="spacingAndGlyphs" fill="#5fcf83">serving</text>
 <text x="78.4" y="66" textLength="382.2" lengthAdjust="spacingAndGlyphs">Listening: 192.168.1.2:53, [fd12:3456:789a::2]:53</text>
-<text x="78.4" y="85" textLength="327.59999999999997" lengthAdjust="spacingAndGlyphs">Allow: 192.168.1.0/24, fd12:3456:789a::/64</text>
+<text x="78.4" y="85" textLength="327.6" lengthAdjust="spacingAndGlyphs">Allow: 192.168.1.0/24, fd12:3456:789a::/64</text>
 <text x="78.4" y="104" textLength="257.4" lengthAdjust="spacingAndGlyphs">Zones: lan.example.com (23 names)</text>
-<text x="78.4" y="123" textLength="163.79999999999998" lengthAdjust="spacingAndGlyphs">Upstream: 192.168.1.1</text>
+<text x="78.4" y="123" textLength="163.8" lengthAdjust="spacingAndGlyphs">Upstream: 192.168.1.1</text>
 <text x="250" y="123" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">(0 failed)</text>
 <text x="328" y="123" textLength="117" lengthAdjust="spacingAndGlyphs">, tls://1.1.1.1</text>
 <text x="452.8" y="123" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#e7b04f">(3 failed)</text>
-<text x="78.4" y="142" textLength="655.1999999999999" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
+<text x="78.4" y="142" textLength="655.2" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
 <text x="78.4" y="161" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">Cache: 1274 of 10000</text>
 </g>
 </svg>

@@ -181,14 +181,17 @@ var (
 		pretty.Heading: "#f1f4f8", pretty.Name: "#9cc0ff", pretty.OK: "#5fcf83", pretty.Warn: "#e7b04f", pretty.Error: "#ff7b7b", pretty.Detail: "#8c97a6"}}
 )
 
-// The size of the letters, of a monospaced font: each piece of text is given its width, so the
-// columns line up whatever font the reader has.
+// The size of the letters, of a monospaced font, in tenths of a pixel: each piece of text is
+// given its width, so the columns line up whatever font the reader has. They are whole numbers:
+// a float's last digit differs from one machine to another, and the picture must not.
 const (
-	size    = 13.0
-	advance = 7.8
-	leading = 19.0
-	padX    = 16.0
-	padY    = 14.0
+	size    = 130
+	advance = 78
+	leading = 190
+	padX    = 160
+	padY    = 140
+	// From the top of a line to the foot of its letters.
+	baseline = 140
 )
 
 var gap = regexp.MustCompile(` {2,}`)
@@ -200,13 +203,13 @@ func SVG(page pretty.Page, theme Theme) string {
 	for _, line := range page {
 		cols = max(cols, len([]rune(line.String())))
 	}
-	width, height := float64(cols)*advance+2*padX, float64(len(page))*leading+2*padY
+	width, height := cols*advance+2*padX, len(page)*leading+2*padY
 	var b strings.Builder
 	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s" width="%s" height="%s" role="img" aria-label="The report of ipv6ddns, with its colors">`+"\n", num(width), num(height), num(width), num(height))
-	fmt.Fprintf(&b, `<rect x="0.5" y="0.5" width="%s" height="%s" rx="6" fill="%s" stroke="%s"/>`+"\n", num(width-1), num(height-1), theme.Ground, theme.Border)
+	fmt.Fprintf(&b, `<rect x="0.5" y="0.5" width="%s" height="%s" rx="6" fill="%s" stroke="%s"/>`+"\n", num(width-10), num(height-10), theme.Ground, theme.Border)
 	fmt.Fprintf(&b, `<g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="%s" fill="%s">`+"\n", num(size), theme.Text)
 	for i, line := range page {
-		y := padY + float64(i)*leading + 14
+		y := padY + i*leading + baseline
 		col := 0
 		for _, span := range line {
 			text := []rune(span.Text)
@@ -222,7 +225,7 @@ func SVG(page pretty.Page, theme Theme) string {
 				}
 				n := len([]rune(piece.text))
 				fmt.Fprintf(&b, `<text x="%s" y="%s" textLength="%s" lengthAdjust="spacingAndGlyphs"%s>%s</text>`+"\n",
-					num(padX+float64(col+at)*advance), num(y), num(float64(n)*advance), attrs, html.EscapeString(piece.text))
+					num(padX+(col+at)*advance), num(y), num(n*advance), attrs, html.EscapeString(piece.text))
 			}
 			col += len(text)
 		}
@@ -259,6 +262,10 @@ func gapSplit(s string) []piece {
 	return append(out, piece{len([]rune(s[:last])), s[last:]})
 }
 
-func num(f float64) string {
-	return strconv.FormatFloat(f, 'f', -1, 64)
+// num is tenths as a number of SVG: 1252 is 125.2, and 160 is 16.
+func num(tenths int) string {
+	if tenths%10 == 0 {
+		return strconv.Itoa(tenths / 10)
+	}
+	return strconv.Itoa(tenths/10) + "." + strconv.Itoa(tenths%10)
 }
