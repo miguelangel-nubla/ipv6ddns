@@ -681,7 +681,7 @@ func (w *Worker) resolversPage(prefix string) pretty.Page {
 		plain("        Allow: %s", strings.Join(s.Allow, ", "))
 		var zones []string
 		for _, z := range s.Zones {
-			zones = append(zones, fmt.Sprintf("%s (%d names)", z, s.ZoneNames[z]))
+			zones = append(zones, fmt.Sprintf("%s (%s)", z, countNames(s.ZoneNames[z])))
 		}
 		plain("        Zones: %s", strings.Join(zones, ", "))
 		// An upstream that failed stands out; one that never did steps back.

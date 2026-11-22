@@ -114,7 +114,7 @@ func (s *State) Page(prefix string, hideSensible bool) pretty.Page {
 	}
 	t.Spans(
 		pretty.As(pretty.Heading, "DNS:"),
-		pretty.Span{Text: fmt.Sprintf(" %d names, ", len(all))},
+		pretty.Span{Text: " " + countNames(len(all)) + ", "},
 		count(pretty.OK, with, "with addresses", with > 0 && without == 0 && failing == 0),
 		pretty.Span{Text: ", "},
 		count(pretty.Warn, without, "without", without > 0),
@@ -187,4 +187,12 @@ func writeHostnameStatus(t *pretty.Table, indent, domain string, status hostname
 		}
 		t.Row(indent+"    "+ip, addr.GetExpiration().Sub(now), now.Sub(addr.FirstSeen()), rest)
 	}
+}
+
+// countNames is a count of names in words: "1 name", "2 names".
+func countNames(n int) string {
+	if n == 1 {
+		return "1 name"
+	}
+	return fmt.Sprintf("%d names", n)
 }
