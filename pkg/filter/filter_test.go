@@ -56,6 +56,12 @@ func TestCheckPrefix(t *testing.T) {
 		{"Invalid subnet", "2001:db8::1", "", true},
 		{"Match", "2001:db8::1", "2001:db8::/64", true},
 		{"Mismatch", "2001:db9::1", "2001:db8::/64", false},
+		{"Zone ignored", "fe80::1%eth0", "fe80::/64", true},
+		{"IPv4", "192.168.1.5", "192.168.1.0/24", true},
+		// An IPv4-mapped address is the IPv4 address it holds, as for family and mask.
+		{"IPv4-mapped in an IPv4 prefix", "::ffff:192.168.1.5", "192.168.1.0/24", true},
+		{"IPv4-mapped outside an IPv4 prefix", "::ffff:192.168.2.5", "192.168.1.0/24", false},
+		{"IPv4 in no IPv6 prefix", "192.168.1.5", "2001:db8::/64", false},
 	}
 
 	for _, tt := range tests {

@@ -207,11 +207,17 @@ func isEUI64(addr *ipv6disc.Addr) bool {
 	return bytes.Equal(iid, eui64)
 }
 
+// CheckPrefix tells whether the address is in the prefix. An IPv4-mapped address, ::ffff:a.b.c.d,
+// is the IPv4 address it holds, as for family and mask: an IPv4 prefix takes it.
 func CheckPrefix(ip netip.Addr, prefix netip.Prefix) bool {
 	if !prefix.IsValid() {
 		return true
 	}
-	return prefix.Contains(ip.WithZone(""))
+	ip = ip.WithZone("")
+	if prefix.Addr().Is4() {
+		ip = ip.Unmap()
+	}
+	return prefix.Contains(ip)
 }
 
 // ParseIPMask reads a VALUE/MASK pair of addresses of one family, as ::1/::ffff:ffff:ffff:ffff or
