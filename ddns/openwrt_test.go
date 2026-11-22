@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/internal/sshtest"
 )
@@ -29,6 +30,13 @@ type fakeUCI struct {
 	reloads  int
 	// The commands to fail, each the times given.
 	fail map[string]int
+	// What dnsmasq answers with: the domain sections as they were at its last reload, and, for
+	// the lookups still to come that lag counts, as they were at the one before. It answers
+	// nothing while unreachable.
+	served, before map[string][]string
+	lag            int
+	lookups        int
+	unreachable    bool
 }
 
 func shellUnquote(s string) string {
@@ -97,6 +105,34 @@ func (u *fakeUCI) run(command string) ([]byte, error) {
 		u.staged = 0
 	case command == "/etc/init.d/dnsmasq reload":
 		u.reloads++
+		u.before, u.served = u.served, map[string][]string{}
+		for _, section := range u.sections {
+			if section.sectionType == "domain" {
+				name := strings.ToLower(section.options["name"])
+				u.served[name] = append(u.served[name], section.options["ip"])
+			}
+		}
+	case strings.HasPrefix(command, "nslookup "):
+		// As BusyBox's nslookup writes, on OpenWrt.
+		u.lookups++
+		if u.unreachable {
+			return []byte(";; connection timed out; no servers could be reached\n\n"), nil
+		}
+		name := shellUnquote(strings.Fields(command)[1])
+		served := u.served
+		if u.lag > 0 {
+			u.lag--
+			served = u.before
+		}
+		out := "Server:\t\t127.0.0.1\nAddress:\t127.0.0.1:53\n\n"
+		ips := served[strings.ToLower(name)]
+		if len(ips) == 0 {
+			out += "** server can't find " + name + ": NXDOMAIN\n\n"
+		}
+		for _, ip := range slices.Sorted(slices.Values(ips)) {
+			out += "Name:\t" + name + "\nAddress: " + ip + "\n\n"
+		}
+		return []byte(out), nil
 	default:
 		return nil, fmt.Errorf("unexpected command: %s", command)
 	}
@@ -266,5 +302,101 @@ func TestOpenWrtOverSSH(t *testing.T) {
 	}
 	if len(server.Commands()) != commands {
 		t.Error("a command reached a host with another key")
+	}
+}
+
+// An update ends once dnsmasq answers with its records: the reload is a signal, and returns
+// before dnsmasq has read them.
+func TestOpenWrtWaitsForDnsmasq(t *testing.T) {
+	interval, timeout, reachable := openWrtServedInterval, openWrtServedTimeout, openWrtReachableTimeout
+	t.Cleanup(func() {
+		openWrtServedInterval, openWrtServedTimeout, openWrtReachableTimeout = interval, timeout, reachable
+	})
+	openWrtServedInterval = time.Millisecond
+
+	uci := &fakeUCI{t: t, sections: map[string]*uciSection{}}
+	service := &OpenWrt{Zone: "lan", dial: func() (commandRunner, error) { return uci, nil }}
+
+	// It answers with what it had for three lookups more: the update asks until the fourth.
+	uci.lag = 3
+	if err := service.Update("nas", desired()); err != nil {
+		t.Fatal(err)
+	}
+	if uci.lookups != 4 || uci.lag != 0 {
+		t.Errorf("%d lookups, %d still to lag: want the update to end at the fourth", uci.lookups, uci.lag)
+	}
+
+	// The same for an address taken out, which it still answers with; the others of the name,
+	// which stay, don't count.
+	uci.lookups, uci.lag = 0, 2
+	if err := service.Update("nas", collectionWith("2001:db8::1")); err != nil {
+		t.Fatal(err)
+	}
+	if uci.lookups != 3 {
+		t.Errorf("an address removed: %d lookups, want 3", uci.lookups)
+	}
+
+	// And for the last address taken out: dnsmasq then has no such name.
+	uci.lookups, uci.lag = 0, 1
+	if err := service.Update("nas", collectionWith()); err != nil {
+		t.Fatal(err)
+	}
+	if uci.lookups != 2 {
+		t.Errorf("every address removed: %d lookups, want 2", uci.lookups)
+	}
+
+	// A dnsmasq that never answers with them is an error, and the next update reloads it again,
+	// with nothing to change.
+	openWrtServedTimeout = 20 * time.Millisecond
+	uci.lag = 1 << 30
+	err := service.Update("nas", collectionWith("2001:db8::1"))
+	if err == nil || !strings.Contains(err.Error(), "the records of nas.lan are written, but after 20ms dnsmasq answers at 127.0.0.1 with [], not with [2001:db8::1]") {
+		t.Errorf("never served: %v", err)
+	}
+	uci.lag = 0
+	reloads := uci.reloads
+	if err := service.Update("nas", collectionWith("2001:db8::1")); err != nil || uci.reloads != reloads+1 {
+		t.Errorf("after it: %v, %d reloads more, want 1", err, uci.reloads-reloads)
+	}
+
+	// Where nothing answers at 127.0.0.1 there is nothing to ask: the update ends as the reload
+	// does, once that is sure.
+	openWrtReachableTimeout = 5 * time.Millisecond
+	uci.unreachable = true
+	if err := service.Update("nas", collectionWith("2001:db8::2")); err != nil {
+		t.Errorf("nothing answers: %v", err)
+	}
+	// And where dnsmasq is at another port, or is more than one, nothing is asked.
+	uci.unreachable = false
+	for _, sections := range []map[string]*uciSection{
+		{"cfg01": {sectionType: "dnsmasq", options: map[string]string{"port": "5353"}}},
+		{"cfg01": {sectionType: "dnsmasq", options: map[string]string{}}, "cfg02": {sectionType: "dnsmasq", options: map[string]string{}}},
+	} {
+		moved := &fakeUCI{t: t, sections: sections}
+		other := &OpenWrt{Zone: "lan", dial: func() (commandRunner, error) { return moved, nil }}
+		if err := other.Update("nas", desired()); err != nil || moved.lookups != 0 || moved.reloads != 1 {
+			t.Errorf("dnsmasq moved: %v, %d lookups, %d reloads", err, moved.lookups, moved.reloads)
+		}
+	}
+	one := &fakeUCI{t: t, sections: map[string]*uciSection{"cfg01": {sectionType: "dnsmasq", options: map[string]string{"port": "53"}}, "cfg02": {sectionType: "srvhost", options: map[string]string{"port": "5060"}}}}
+	if err := (&OpenWrt{Zone: "lan", dial: func() (commandRunner, error) { return one, nil }}).Update("nas", desired()); err != nil || one.lookups == 0 {
+		t.Errorf("one dnsmasq at 53: %v, %d lookups", err, one.lookups)
+	}
+}
+
+// What BusyBox's nslookup writes on OpenWrt, read: the addresses of the name, not the server's.
+func TestNslookupAddresses(t *testing.T) {
+	for output, want := range map[string][]string{
+		"Server:\t\t127.0.0.1\nAddress:\t127.0.0.1:53\n\nName:\tnas.lan\nAddress: 192.0.2.1\n\nName:\tnas.lan\nAddress: 2001:DB8::1\n\n": {"192.0.2.1", "2001:db8::1"},
+		"Server:\t\t127.0.0.1\nAddress:\t127.0.0.1:53\n\n** server can't find nope.lan: REFUSED\n\n":                                     {},
+	} {
+		if reached, got := nslookupAddresses(output); !reached || !slices.Equal(got, want) && len(got)+len(want) > 0 {
+			t.Errorf("%q: reached %t, %v, want %v", output, reached, got, want)
+		}
+	}
+	for _, output := range []string{";; connection timed out; no servers could be reached\n\n", "nslookup: write to '127.0.0.1': Connection refused\n", "sh: nslookup: not found\n"} {
+		if reached, got := nslookupAddresses(output); reached || len(got) != 0 {
+			t.Errorf("%q: reached %t, %v", output, reached, got)
+		}
 	}
 }

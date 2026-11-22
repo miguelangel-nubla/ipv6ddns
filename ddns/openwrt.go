@@ -5,7 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -141,8 +144,107 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	if _, err := runner.Run(strings.Join(commands, " && ")); err != nil {
 		return err
 	}
+	// The reload returns before dnsmasq has read the records again: it is a signal, which procd
+	// sends. The update ends once dnsmasq answers with them.
+	var removed []string
+	for ip := range existingIPs {
+		if _, ok := desiredIPs[ip]; !ok {
+			removed = append(removed, ip)
+		}
+	}
+	if err := o.served(runner, string(output), fqdn, slices.Collect(maps.Keys(desiredIPs)), removed); err != nil {
+		return err
+	}
 	o.pending = false
 	return nil
+}
+
+// How long dnsmasq has to answer with the records of an update, after its reload; how long it
+// has to answer at all, as it doesn't while it starts again; and how often it is asked.
+var (
+	openWrtServedTimeout    = 10 * time.Second
+	openWrtReachableTimeout = 3 * time.Second
+	openWrtServedInterval   = 100 * time.Millisecond
+)
+
+// served waits for the router's dnsmasq to answer for fqdn with every address of want and none
+// of removed: an error, once the time is up. It asks on the router, at 127.0.0.1, where dnsmasq
+// answers unless it was moved: with another port, with more than one dnsmasq, or when nothing
+// answers there, there is nothing to ask, and the reload is taken as done, as it was before.
+// Other addresses of the name, as those of a static lease, are not of the update.
+func (o *OpenWrt) served(runner commandRunner, config, fqdn string, want, removed []string) error {
+	if !dnsmasqAtDefault(config) {
+		return nil
+	}
+	var got []string
+	answered := false
+	for begun := time.Now(); ; time.Sleep(openWrtServedInterval) {
+		// It ends with an error for a name without addresses, which is an answer too.
+		output, err := runner.Run("nslookup " + shellQuote(fqdn) + " 127.0.0.1 2>&1 || true")
+		if err != nil {
+			return err
+		}
+		var reached bool
+		reached, got = nslookupAddresses(string(output))
+		answered = answered || reached
+		ok := reached
+		for _, ip := range want {
+			ok = ok && slices.Contains(got, ip)
+		}
+		for _, ip := range removed {
+			ok = ok && !slices.Contains(got, ip)
+		}
+		if ok {
+			return nil
+		}
+		if waited := time.Since(begun); !answered && waited >= openWrtReachableTimeout {
+			return nil
+		} else if waited >= openWrtServedTimeout {
+			break
+		}
+	}
+	slices.Sort(want)
+	return fmt.Errorf("the records of %s are written, but after %s dnsmasq answers at 127.0.0.1 with %v, not with %v: is its reload failing? See logread on the router", fqdn, openWrtServedTimeout, got, want)
+}
+
+// dnsmasqAtDefault is whether the dhcp configuration, as uci -X show dhcp gives it, has one
+// dnsmasq, at port 53.
+func dnsmasqAtDefault(config string) bool {
+	instances := map[string]bool{}
+	for line := range strings.SplitSeq(config, "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), "=")
+		id, option, isOption := strings.Cut(strings.TrimPrefix(key, "dhcp."), ".")
+		switch {
+		case !isOption && value == "dnsmasq":
+			instances[id] = true
+		case option == "port" && instances[id] && strings.Trim(value, "'") != "53":
+			return false
+		}
+	}
+	return len(instances) <= 1
+}
+
+// nslookupAddresses reads what BusyBox's nslookup wrote: whether a server answered, and the
+// addresses of the name, each as canonicalIP writes it.
+func nslookupAddresses(output string) (reached bool, addresses []string) {
+	name := false
+	for line := range strings.SplitSeq(output, "\n") {
+		fields := strings.Fields(line)
+		switch {
+		case len(fields) == 0:
+			name = false
+		case fields[0] == "Server:":
+			reached = true
+		case fields[0] == "Name:":
+			name = true
+		case name && strings.HasPrefix(fields[0], "Address"):
+			if ip, ok := canonicalIP(fields[len(fields)-1]); ok {
+				addresses = append(addresses, ip)
+			}
+		}
+	}
+	slices.Sort(addresses)
+	return reached, addresses
 }
 
 // connect logs in over SSH, to run the commands of an update.
