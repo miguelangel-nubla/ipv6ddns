@@ -147,6 +147,8 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 		ttl string
 	}
 	currentIPs := make(map[string]dnsRecord) // IP -> Record
+	// The other records of an address that has one: removed, as those of an address not wanted.
+	var duplicates []string
 	for _, re := range reply.Re {
 		id := re.Map[".id"]
 		addr := re.Map["address"]
@@ -159,6 +161,10 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 		}
 
 		if ip, ok := canonicalIP(addr); ok {
+			if _, duplicate := currentIPs[ip]; duplicate {
+				duplicates = append(duplicates, id)
+				continue
+			}
 			currentIPs[ip] = dnsRecord{id: id, ttl: ttl}
 		}
 	}
@@ -172,6 +178,12 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 			if err != nil {
 				return fmt.Errorf("failed to add DNS record %s -> %s: %w", fqdn, ip, err)
 			}
+		}
+	}
+
+	for _, id := range duplicates {
+		if _, err := client.RunContext(ctx, "/ip/dns/static/remove", "=.id="+id); err != nil {
+			return fmt.Errorf("failed to remove duplicate DNS record %s: %v", fqdn, err)
 		}
 	}
 

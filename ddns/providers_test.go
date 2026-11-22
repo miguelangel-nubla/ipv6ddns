@@ -502,6 +502,8 @@ func TestGravityUpdate(t *testing.T) {
 	} {
 		fake := newFakeDNS(t, name, "other")
 		fake.add(name, "MX", "mail.example.com.", 300)
+		// A duplicate, of an address wanted: the address has one record, as each other.
+		fake.add(name, "AAAA", wantedIP, 600)
 		fake.writes = 0
 		server := gravityFake(t, fake, true)
 

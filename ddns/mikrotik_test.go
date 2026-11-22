@@ -100,6 +100,9 @@ func mikrotikFake(fake *fakeDNS) func(string, map[string]string, map[string]stri
 
 func TestMikrotikUpdate(t *testing.T) {
 	fake := newFakeDNS(t, "nas.lan", "other.lan")
+	// A duplicate, of an address wanted: the address has one record, as each other.
+	fake.add("nas.lan", "AAAA", wantedIP, 26*3600)
+	fake.writes = 0
 	router := newFakeRouterOS(t, nil, mikrotikFake(fake))
 
 	// A TTL that RouterOS prints with days, 1d2h: it is not set again when it is the one set.

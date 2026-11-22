@@ -141,10 +141,13 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		}
 	}
 
-	// Update or delete records as necessary
+	// Update or delete records as necessary: of an address wanted, the first record is kept, and
+	// its duplicates deleted.
+	kept := make(map[string]bool)
 	for _, record := range records {
 		ip, _ := canonicalIP(record.Data)
-		if _, exists := desiredIPs[ip]; exists {
+		if _, exists := desiredIPs[ip]; exists && !kept[ip] {
+			kept[ip] = true
 			// Put again, a record with another TTL is replaced.
 			if tellsTTL && record.Ttl != ttl {
 				if err := put(record.Uid, record.Type, record.Data); err != nil {
