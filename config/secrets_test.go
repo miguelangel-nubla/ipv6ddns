@@ -39,7 +39,7 @@ func TestExpandString(t *testing.T) {
 	for in, want := range map[string]string{
 		"${IPV6DDNS_TEST_UNSET}": "IPV6DDNS_TEST_UNSET is not set",
 		"${file:missing}":        "reading the file",
-		"${":                     "unterminated",
+		"${":                     "unclosed",
 		"${}":                    "empty",
 	} {
 		if _, err := expandString(in, dir); err == nil || !strings.Contains(err.Error(), want) {

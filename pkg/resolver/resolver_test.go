@@ -44,15 +44,15 @@ func TestParseRecord(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ line, origin, want string }{
-		{"www CNAME nas.home.arpa.", "", "the name www is to be absolute, with its trailing dot, as www.: these records are of no zone"},
-		{"www.example.com. CNAME nas", "", `bad CNAME Target: "nas": every name in these records is absolute, with its trailing dot`},
+		{"www CNAME nas.home.arpa.", "", "the name www must be absolute, ending in a dot, as www.: these records belong to no zone"},
+		{"www.example.com. CNAME nas", "", `bad CNAME Target: "nas": every name in these records must be absolute, ending in a dot`},
 		{"printer A 192.168.1.300", "home.arpa", `bad A A: "192.168.1.300"`},
 		{"printer A", "home.arpa", "a A record with no data"},
-		{"printer CH A 1.2.3.4", "home.arpa", "the class CH: IN only"},
-		{"@ SOA a b 1 2 3 4 5", "home.arpa", "an SOA record: the resolver makes its zones' own"},
-		{"$TTL 5", "home.arpa", "a directive of a zone file, which a record isn't: give the records alone"},
-		{"a A 1.1.1.1\nb A 2.2.2.2", "home.arpa", "more than one line: give each record as an entry of its own"},
-		{"", "home.arpa", "no record: a name, a type and its data, as printer A 192.168.1.20"},
+		{"printer CH A 1.2.3.4", "home.arpa", "class CH isn't supported: only IN"},
+		{"@ SOA a b 1 2 3 4 5", "home.arpa", "SOA records aren't allowed: the resolver makes its zones' own"},
+		{"$TTL 5", "home.arpa", "zone file directives aren't records: give only the records"},
+		{"a A 1.1.1.1\nb A 2.2.2.2", "home.arpa", "more than one line: give each record as its own entry"},
+		{"", "home.arpa", "empty record: give a name, a type and its data, as printer A 192.168.1.20"},
 	} {
 		if _, err := ParseRecord(c.line, c.origin, DefaultTTL); err == nil || err.Error() != c.want {
 			t.Errorf("%q: got %v, want %s", c.line, err, c.want)
@@ -577,22 +577,22 @@ func TestCheck(t *testing.T) {
 	}{
 		{"one zone twice", func(c *Config) {
 			c.Zones = append(c.Zones, Zone{Credential: "office", Name: "HOME.arpa"})
-		}, "credentials home and office: both are the zone home.arpa of resolver lan: a zone is one credential's"},
+		}, "credentials home and office are both the zone home.arpa of resolver lan: a zone can belong to only one credential"},
 		{"a record outside", func(c *Config) {
 			c.Zones[1].Path = "credentials.lab.settings.records"
 			c.Zones[1].Records = mustRecords(t, "", "printer.home.arpa. A 10.0.0.1")
 			c.Zones[1].Lines = []string{"printer.home.arpa. A 10.0.0.1"}
-		}, `credentials.lab.settings.records: "printer.home.arpa. A 10.0.0.1": printer.home.arpa. is not of the zone lab.home.arpa: a zone's records are of its names, relative to it, or absolute within it`},
+		}, `credentials.lab.settings.records: "printer.home.arpa. A 10.0.0.1": printer.home.arpa. isn't in the zone lab.home.arpa: a zone's records must be for its names, relative to it or absolute within it`},
 		{"a resolver record in a zone", func(c *Config) {
 			c.Records = mustRecords(t, "", "x.lab.home.arpa. A 10.0.0.1")
-		}, "resolvers.lan.records: \"x.lab.home.arpa.\\t60\\tIN\\tA\\t10.0.0.1\": x.lab.home.arpa. is of the zone lab.home.arpa, of credential lab: give it there, in its records"},
+		}, "resolvers.lan.records: \"x.lab.home.arpa.\\t60\\tIN\\tA\\t10.0.0.1\": x.lab.home.arpa. is in the zone lab.home.arpa, of credential lab: give it in that credential's records"},
 		{"a wildcard record of a task's wildcard", func(c *Config) {
 			c.Zones[0].Path = "credentials.home.settings.records"
 			c.Zones[0].Records = mustRecords(t, "home.arpa", "*.dev TXT x")
-		}, "credentials.home.settings.records: \"*.dev.home.arpa.\\t60\\tIN\\tTXT\\t\\\"x\\\"\": *.dev.home.arpa. is a name task dev publishes, which has its addresses: a record is of another name"},
+		}, "credentials.home.settings.records: \"*.dev.home.arpa.\\t60\\tIN\\tTXT\\t\\\"x\\\"\": *.dev.home.arpa. is published by task dev, which gives its addresses: records are for other names"},
 		{"a CNAME beside data, of the resolver", func(c *Config) {
 			c.Records = append(c.Records, mustRecords(t, "", "www.example.com. TXT x")...)
-		}, "resolvers.lan.records: www.example.com. has a CNAME and other records: a CNAME is alone at its name, the other data is its target's"},
+		}, "resolvers.lan.records: www.example.com. has a CNAME and other records: a name with a CNAME can't have others, since its data is the target's"},
 		{"a loop of one", func(c *Config) {
 			c.Records = mustRecords(t, "", "me.example.com. CNAME ME.example.com.")
 		}, "resolvers.lan: the CNAMEs me.example.com. -> me.example.com. are a loop"},

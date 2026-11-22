@@ -177,7 +177,7 @@ func (s *Source) run(ctx context.Context, logger *zap.SugaredLogger) {
 
 	switch {
 	case expired:
-		logger.Warnf("source %s: still %s, longer than its lifetime, %s: its addresses expired", s.name, err, s.config.Lifetime.Duration)
+		logger.Warnf("source %s: still %s after its lifetime, %s: its addresses have expired", s.name, err, s.config.Lifetime.Duration)
 	case waiting && !wasWaiting:
 		logger.Infof("source %s: %s; its addresses stay for their lifetime, %s", s.name, err, s.config.Lifetime.Duration)
 	case waiting:

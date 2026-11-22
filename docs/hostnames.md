@@ -74,7 +74,7 @@ What ipv6ddns can't know about is names it created before it was started. If a h
 
 | The mistake | The error |
 |---|---|
-| A placeholder that doesn't exist | `task lan: endpoint home: the name "{host}": {host} is no placeholder: they are {hostname}, {n} and {mac}` |
-| `{n}` without `{hostname}` | `task lan: endpoint home: the name "{n}.lan": {n} is the place of a host among those of one name: it needs {hostname} beside it, as {n}.{hostname}` |
-| A brace on its own | `task lan: endpoint home: the name "nas}": a brace that is of no placeholder: they are {hostname}, {n} and {mac}` |
-| `{hostname}` with nothing that learns names | `task lan: endpoint home: the name "{hostname}" is of the hosts' names, which nothing learns: it needs a protocol of discovery.protocols that does, as mdns, or a plugin` |
+| A placeholder that doesn't exist | `task lan: endpoint home: the name "{host}": {host} isn't a placeholder: use {hostname}, {n} or {mac}` |
+| `{n}` without `{hostname}` | `task lan: endpoint home: the name "{n}.lan": {n} numbers the hosts that share a name, so it needs {hostname} too, as {n}.{hostname}` |
+| A brace on its own | `task lan: endpoint home: the name "nas}": a brace that isn't part of a placeholder: use {hostname}, {n} or {mac}` |
+| `{hostname}` with nothing that learns names | `task lan: endpoint home: the name "{hostname}" uses the hosts' names, but nothing learns them: turn on a protocol under discovery.protocols that does, as mdns, or add a plugin` |

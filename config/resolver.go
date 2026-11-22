@@ -71,10 +71,10 @@ func checkResolvers(configData []byte) error {
 	for _, name := range slices.Sorted(maps.Keys(c.Resolvers)) {
 		r := c.Resolvers[name]
 		if _, ok := r["listen"]; !ok {
-			return fmt.Errorf("resolvers.%s.listen: where the resolver answers is to be given: the network of its clients, as 192.168.1.0/24, for the machine's address in it, or that address; without a port, 53", name)
+			return fmt.Errorf("resolvers.%s.listen is missing: give where the resolver answers. That's the clients' network, as 192.168.1.0/24, for this machine's address in it, or the address itself. Without a port, 53", name)
 		}
 		if _, ok := r["upstream"]; !ok {
-			return fmt.Errorf("resolvers.%s.upstream: the servers the resolver asks what isn't its own are to be given, one or more, as 192.168.1.1 or 1.1.1.1:53: without them, it would answer no other name", name)
+			return fmt.Errorf("resolvers.%s.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own, as 192.168.1.1 or 1.1.1.1:53. Without them, it answers no other name", name)
 		}
 	}
 	return nil
@@ -91,7 +91,7 @@ func (c *Config) setUpResolvers() error {
 		path := "resolvers." + name
 		spec := resolver.Config{Name: name, Path: path}
 		if len(r.Listen) == 0 {
-			return fmt.Errorf("%s.listen: where the resolver answers is to be given", path)
+			return fmt.Errorf("%s.listen is missing: give where the resolver answers", path)
 		}
 		// One by one: each entry with its text, as written, which the errors at start quote.
 		for _, line := range r.Listen {
@@ -106,7 +106,7 @@ func (c *Config) setUpResolvers() error {
 		}
 		for _, e := range spec.Listen {
 			if other, ok := listening[e.String()]; ok {
-				return fmt.Errorf("resolvers %s and %s both listen on %s: an address and port is one resolver's", other, name, e)
+				return fmt.Errorf("resolvers %s and %s both listen on %s: an address and port can belong to only one resolver", other, name, e)
 			}
 			listening[e.String()] = name
 		}
@@ -123,7 +123,7 @@ func (c *Config) setUpResolvers() error {
 			spec.Allow = append(spec.Allow, p)
 		}
 		if len(r.Upstream) == 0 {
-			return fmt.Errorf("%s.upstream: the servers the resolver asks what isn't its own are to be given, one or more", path)
+			return fmt.Errorf("%s.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own", path)
 		}
 		named := ""
 		for _, u := range r.Upstream {
@@ -149,9 +149,9 @@ func (c *Config) setUpResolvers() error {
 			if strings.Contains(named, "://") {
 				is = "is at a host name"
 			}
-			return fmt.Errorf("%s.upstream: %q %s: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one", path, named, is)
+			return fmt.Errorf("%s.upstream: %q %s, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one", path, named, is)
 		case named == "" && len(spec.Bootstrap) > 0:
-			return fmt.Errorf("%s.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out", path)
+			return fmt.Errorf("%s.bootstrap only looks up upstream servers given by host name, and every upstream here is an address: leave it out", path)
 		}
 		for _, line := range r.Records {
 			rr, err := resolver.ParseRecord(line, "", resolver.DefaultTTL)
@@ -178,22 +178,22 @@ func (c *Config) setUpResolvers() error {
 		name := settings.Resolver
 		switch {
 		case name == "" && len(names) == 0:
-			return fmt.Errorf("%s: the provider resolver is a zone that a resolver answers, and there is none: add one to resolvers, with where it listens and the servers it asks", path)
+			return fmt.Errorf("%s: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listen and upstream", path)
 		case name == "" && len(names) > 1:
-			return fmt.Errorf("%s.settings.resolver: which resolver answers the zone is to be said, of %s", path, strings.Join(names, ", "))
+			return fmt.Errorf("%s.settings.resolver is missing: say which of %s answers the zone", path, strings.Join(names, ", "))
 		case name == "":
 			name = names[0]
 		}
 		r, ok := c.Resolvers[name]
 		if !ok {
 			if len(names) == 0 {
-				return fmt.Errorf("%s.settings.resolver: %s is no resolver: resolvers has none", path, name)
+				return fmt.Errorf("%s.settings.resolver: there's no resolver %s: resolvers is empty", path, name)
 			}
-			return fmt.Errorf("%s.settings.resolver: %s is no resolver: they are %s", path, name, strings.Join(names, ", "))
+			return fmt.Errorf("%s.settings.resolver: there's no resolver %s: the resolvers are %s", path, name, strings.Join(names, ", "))
 		}
 		zone := strings.Trim(settings.Zone, ".")
 		if zone == "" {
-			return fmt.Errorf("%s.settings.zone: the zone the resolver answers is to be given, as home.arpa", path)
+			return fmt.Errorf("%s.settings.zone is missing: give the zone the resolver answers, as home.arpa", path)
 		}
 		ttl := settings.TTL.Duration
 		if ttl <= 0 {
@@ -241,7 +241,7 @@ func parseNetwork(s string) (netip.Prefix, error) {
 		a = a.Unmap()
 		return netip.PrefixFrom(a, a.BitLen()), nil
 	}
-	return netip.Prefix{}, fmt.Errorf("%q: a network, as 192.168.1.0/24 or fd00::/64, or an address", s)
+	return netip.Prefix{}, fmt.Errorf("%q is not a network, as 192.168.1.0/24 or fd00::/64, nor an address", s)
 }
 
 // parseUpstream reads an upstream server, as host:port: an address, or a host name, with a port
@@ -254,7 +254,7 @@ func parseUpstream(s string) (string, bool, error) {
 	if address, err := parseServerAddress(s); err == nil {
 		return address, false, nil
 	}
-	invalid := fmt.Errorf("%q: an address or a host name, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net", s)
+	invalid := fmt.Errorf("%q is not an address or a host name, with or without a port, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net", s)
 	host, port := s, resolver.DefaultPort
 	if h, p, err := net.SplitHostPort(s); err == nil {
 		host, port = h, p
@@ -280,28 +280,28 @@ func parseEncrypted(s string) (string, bool, error) {
 	scheme, _, _ := strings.Cut(s, "://")
 	scheme = strings.ToLower(scheme)
 	if scheme != "tls" && scheme != "https" {
-		return "", false, fmt.Errorf("%q: the scheme %s: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query", s, scheme)
+		return "", false, fmt.Errorf("%q: unknown scheme %s: use plain DNS, as 1.1.1.1 or dns.example.net; tls:// for DNS over TLS, as tls://1.1.1.1; or https:// for DNS over HTTPS, as https://dns.example.net/dns-query", s, scheme)
 	}
 	example := "tls://1.1.1.1, tls://[2606:4700:4700::1111]:853 or tls://dns.example.net"
 	if scheme == "https" {
 		example = "https://1.1.1.1/dns-query, https://[2606:4700:4700::1111]/dns-query or https://dns.example.net/dns-query"
 	}
-	invalid := fmt.Errorf("%q: the host is an address or a host name, with a port or not, as %s", s, example)
+	invalid := fmt.Errorf("%q: the host must be an address or a host name, with or without a port, as %s", s, example)
 	u, err := url.Parse(s)
 	if err != nil || u.Opaque != "" {
 		return "", false, invalid
 	}
 	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(s, "#") {
 		if scheme == "tls" {
-			return "", false, fmt.Errorf("%q: DNS over TLS is a host, with a port or not: no user, query or fragment", s)
+			return "", false, fmt.Errorf("%q: DNS over TLS takes a host, with or without a port: no user, query or fragment", s)
 		}
-		return "", false, fmt.Errorf("%q: DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment", s)
+		return "", false, fmt.Errorf("%q: DNS over HTTPS takes a host, with or without a port, and a path: no user, query or fragment", s)
 	}
 	switch {
 	case scheme == "tls" && u.Path != "":
-		return "", false, fmt.Errorf("%q: DNS over TLS is a host, with a port or not: no path, which is of https://", s)
+		return "", false, fmt.Errorf("%q: DNS over TLS takes a host, with or without a port, and no path: paths are for https://", s)
 	case scheme == "https" && (u.Path == "" || u.Path == "/"):
-		return "", false, fmt.Errorf("%q: DNS over HTTPS is asked at a path, which is to be given, as %s/dns-query", s, strings.TrimSuffix(s, "/"))
+		return "", false, fmt.Errorf("%q: DNS over HTTPS needs a path, as %s/dns-query", s, strings.TrimSuffix(s, "/"))
 	}
 	host, port := u.Hostname(), u.Port()
 	if strings.HasSuffix(u.Host, ":") {
@@ -309,7 +309,7 @@ func parseEncrypted(s string) (string, bool, error) {
 	}
 	if port != "" {
 		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
-			return "", false, fmt.Errorf("%q: the port %s: a port is from 1 to 65535", s, port)
+			return "", false, fmt.Errorf("%q: the port %s is out of range: ports go from 1 to 65535", s, port)
 		}
 	}
 	if a, err := netip.ParseAddr(host); err == nil {
@@ -328,7 +328,7 @@ func parseEncrypted(s string) (string, bool, error) {
 
 // parseServerAddress reads a server's address, with a port or not, as host:port.
 func parseServerAddress(s string) (string, error) {
-	invalid := fmt.Errorf("%q: an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53", s)
+	invalid := fmt.Errorf("%q is not an address, with or without a port, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53", s)
 	if a, err := netip.ParseAddr(strings.Trim(s, "[]")); err == nil && a.Zone() == "" {
 		return net.JoinHostPort(a.Unmap().String(), resolver.DefaultPort), nil
 	}

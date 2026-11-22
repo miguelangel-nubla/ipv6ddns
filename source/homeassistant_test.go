@@ -40,7 +40,7 @@ func TestHomeAssistantFetcher(t *testing.T) {
 		// An attribute without a value.
 		{"sensor.router", "gone", "waiting: waiting for sensor.router, attribute gone, \"None\" now"},
 		{"sensor.zoned", "", "[fe80::1%eth0]"},
-		{"sensor.text", "", "error: is no address"},
+		{"sensor.text", "", "error: isn't an address"},
 		{"sensor.missing", "", "waiting: sensor.missing: waiting for Home Assistant to send the state"},
 	} {
 		addrs, err := homeAssistantFetcher(states, c.entity, c.attribute)(context.Background())

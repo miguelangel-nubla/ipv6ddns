@@ -122,7 +122,7 @@ credentials:
 		t.Errorf("laptop, a record's name, has the address of the host called so: %v", got)
 	}
 	if told := one.logged("warn"); !slices.ContainsFunc(told, func(l string) bool {
-		return strings.Contains(l, "nas.home.arpa is a name written in the configuration")
+		return strings.Contains(l, "nas.home.arpa is written in the configuration, so it keeps")
 	}) {
 		t.Errorf("the name written, which a host is called too, isn't told: %v", told)
 	}

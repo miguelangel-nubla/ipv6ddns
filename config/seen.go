@@ -84,15 +84,15 @@ func wayNames(ways []ipv6disc.Way) string {
 func (s Seen) check(path string, plugins []string) error {
 	switch {
 	case s.Protocol == "" && s.Reported == nil:
-		return fmt.Errorf("%s: a protocol, or reported, is to be given: what saw the address", path)
+		return fmt.Errorf("%s: give a protocol or reported: what saw the address", path)
 	case s.Protocol != "" && s.Reported != nil:
-		return fmt.Errorf("%s: a protocol, or reported: one or the other, as each is a record of its own", path)
+		return fmt.Errorf("%s: give a protocol or reported, not both: each is a record of its own", path)
 	case s.Reported != nil && s.Way != "":
-		return fmt.Errorf("%s.way: a report has no way: it is of what something else tells, from its tables", path)
+		return fmt.Errorf("%s.way: a report has no way, as it's what something else tells from its tables: leave way out", path)
 	}
 	for i, on := range s.On {
 		if strings.TrimSpace(on) == "" {
-			return fmt.Errorf("%s.interfaces[%d]: an interface's name", path, i)
+			return fmt.Errorf("%s.interfaces[%d] is empty: give an interface's name", path, i)
 		}
 	}
 	if s.Reported != nil {
@@ -100,25 +100,25 @@ func (s Seen) check(path string, plugins []string) error {
 			if by != ipv6disc.ReportedByKernel && !slices.Contains(pluginTypes, by) && !slices.Contains(plugins, by) {
 				known := append([]string{ipv6disc.ReportedByKernel}, pluginTypes...)
 				known = append(known, plugins...)
-				return fmt.Errorf("%s.reported.by: %q is no plugin of discovery.plugins, nor a type of them, nor kernel: they are %s", path, by, strings.Join(known, ", "))
+				return fmt.Errorf("%s.reported.by: %q isn't a plugin under discovery.plugins, a plugin type, or kernel: use one of %s", path, by, strings.Join(known, ", "))
 			}
 		}
 		for _, from := range s.Reported.From {
 			if !slices.Contains(reportTables, from) {
-				return fmt.Errorf("%s.reported.from: %q is no table: they are %s", path, from, strings.Join(reportTables, ", "))
+				return fmt.Errorf("%s.reported.from: %q isn't a table: use one of %s", path, from, strings.Join(reportTables, ", "))
 			}
 		}
 		return nil
 	}
 	ways, ok := protocolWays[s.Protocol]
 	if !ok {
-		return fmt.Errorf("%s.protocol: %q is no protocol that sees an address: they are %s", path, s.Protocol, strings.Join(slices.Sorted(maps.Keys(protocolWays)), ", "))
+		return fmt.Errorf("%s.protocol: %q isn't a protocol that sees addresses: use one of %s", path, s.Protocol, strings.Join(slices.Sorted(maps.Keys(protocolWays)), ", "))
 	}
 	if s.Way != "" && !slices.Contains(ways, ipv6disc.Way(s.Way)) {
 		if !slices.Contains(ipv6disc.Ways, ipv6disc.Way(s.Way)) {
-			return fmt.Errorf("%s.way: %q is no way: they are %s", path, s.Way, wayNames(ipv6disc.Ways))
+			return fmt.Errorf("%s.way: %q isn't a way: use one of %s", path, s.Way, wayNames(ipv6disc.Ways))
 		}
-		return fmt.Errorf("%s.way: %s never sees an address %s: it sees it %s", path, s.Protocol, s.Way, wayNames(ways))
+		return fmt.Errorf("%s.way: %s never sees an address %s, only %s", path, s.Protocol, s.Way, wayNames(ways))
 	}
 	return nil
 }

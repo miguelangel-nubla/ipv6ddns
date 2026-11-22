@@ -50,14 +50,14 @@ func ParseTemplate(name string) (Template, error) {
 		case PlaceholderMAC:
 			t.MAC = true
 		default:
-			return t, fmt.Errorf("%s is no placeholder: they are {hostname}, {n} and {mac}", p)
+			return t, fmt.Errorf("%s isn't a placeholder: use {hostname}, {n} or {mac}", p)
 		}
 	}
 	if strings.ContainsAny(placeholder.ReplaceAllString(name, ""), "{}") {
-		return t, fmt.Errorf("a brace that is of no placeholder: they are {hostname}, {n} and {mac}")
+		return t, fmt.Errorf("a brace that isn't part of a placeholder: use {hostname}, {n} or {mac}")
 	}
 	if t.N && !t.Hostname {
-		return t, fmt.Errorf("{n} is the place of a host among those of one name: it needs {hostname} beside it, as {n}.{hostname}")
+		return t, fmt.Errorf("{n} numbers the hosts that share a name, so it needs {hostname} too, as {n}.{hostname}")
 	}
 	return t, nil
 }
@@ -93,7 +93,7 @@ func (c *Config) checkTemplates() error {
 					return fmt.Errorf("task %s: endpoint %s: the name %q: %w", taskName, endpoint, name, err)
 				}
 				if t.Hostname && !c.Discovery.learnsNames() {
-					return fmt.Errorf("task %s: endpoint %s: the name %q is of the hosts' names, which nothing learns: it needs a protocol of discovery.protocols that does, as mdns, or a plugin", taskName, endpoint, name)
+					return fmt.Errorf("task %s: endpoint %s: the name %q uses the hosts' names, but nothing learns them: turn on a protocol under discovery.protocols that does, as mdns, or add a plugin", taskName, endpoint, name)
 				}
 			}
 		}

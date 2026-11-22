@@ -298,7 +298,7 @@ func build(cfg Config) (*table, error) {
 		z := &cfg.Zones[i]
 		z.Name = strings.ToLower(dns.Fqdn(z.Name))
 		if other, ok := byName[z.Name]; ok {
-			return nil, fmt.Errorf("credentials %s and %s: both are the zone %s of resolver %s: a zone is one credential's", other.Credential, z.Credential, strings.TrimSuffix(z.Name, "."), cfg.Name)
+			return nil, fmt.Errorf("credentials %s and %s are both the zone %s of resolver %s: a zone can belong to only one credential", other.Credential, z.Credential, strings.TrimSuffix(z.Name, "."), cfg.Name)
 		}
 		byName[z.Name] = *z
 		n := newNames(z.Name, z)
@@ -310,10 +310,10 @@ func build(cfg Config) (*table, error) {
 		for i, rr := range z.Records {
 			name, text := rr.Header().Name, quoted(z.Lines, i, rr)
 			if !dns.IsSubDomain(z.Name, name) {
-				return nil, fmt.Errorf("%s: %s: %s is not of the zone %s: a zone's records are of its names, relative to it, or absolute within it", z.Path, text, name, strings.TrimSuffix(z.Name, "."))
+				return nil, fmt.Errorf("%s: %s: %s isn't in the zone %s: a zone's records must be for its names, relative to it or absolute within it", z.Path, text, name, strings.TrimSuffix(z.Name, "."))
 			}
 			if task, ok := n.tasks[name]; ok {
-				return nil, fmt.Errorf("%s: %s: %s is a name task %s publishes, which has its addresses: a record is of another name", z.Path, text, name, task)
+				return nil, fmt.Errorf("%s: %s: %s is published by task %s, which gives its addresses: records are for other names", z.Path, text, name, task)
 			}
 			n.records[name] = append(n.records[name], rr)
 			n.add(name)
@@ -327,7 +327,7 @@ func build(cfg Config) (*table, error) {
 	for i, rr := range cfg.Records {
 		name, text := rr.Header().Name, quoted(cfg.Lines, i, rr)
 		if z := t.namesOf(name).zone; z != nil {
-			return nil, fmt.Errorf("%s: %s: %s is of the zone %s, of credential %s: give it there, in its records", path, text, name, strings.TrimSuffix(z.Name, "."), z.Credential)
+			return nil, fmt.Errorf("%s: %s: %s is in the zone %s, of credential %s: give it in that credential's records", path, text, name, strings.TrimSuffix(z.Name, "."), z.Credential)
 		}
 		t.own.records[name] = append(t.own.records[name], rr)
 		t.own.add(name)
@@ -362,7 +362,7 @@ func checkCNAMEs(n *names, path string) error {
 			}
 		}
 		if cnames > 0 && len(records) > 1 {
-			return fmt.Errorf("%s: %s has a CNAME and other records: a CNAME is alone at its name, the other data is its target's", path, name)
+			return fmt.Errorf("%s: %s has a CNAME and other records: a name with a CNAME can't have others, since its data is the target's", path, name)
 		}
 	}
 	return nil

@@ -109,8 +109,8 @@ tasks:
 	wait("nas", "2001:db8::c")
 	wait("1.nas", "2001:db8::c")
 	w.lookForChanges()
-	warned := logs.FilterMessageSnippet("is a name written in the configuration").All()
-	if len(warned) != 1 || !strings.Contains(warned[0].Message, `endpoint fake: nas.fake is a name written in the configuration, which has it: the hosts called so, by the template "{hostname}" of task lan, are left out of it`) {
+	warned := logs.FilterMessageSnippet("is written in the configuration, so it keeps").All()
+	if len(warned) != 1 || !strings.Contains(warned[0].Message, `endpoint fake: nas.fake is written in the configuration, so it keeps its own addresses: hosts with that name, from the template "{hostname}" of task lan, are left out of it`) {
 		t.Errorf("the name written, told: %v", warned)
 	}
 	if updates := fake.updatesOf("nas"); len(updates) != 1 {

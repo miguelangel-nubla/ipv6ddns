@@ -98,7 +98,7 @@ func (r resolver) ask(ctx context.Context, family int, server string) (netip.Add
 		// address is that resolver's.
 		for _, record := range records {
 			if strings.HasPrefix(strings.TrimSpace(record), "edns0-client-subnet") {
-				return netip.Addr{}, errors.New("another resolver relayed the query, so the answer is its address, not this network's: is DNS redirected here? An http source isn't")
+				return netip.Addr{}, errors.New("another resolver relayed the query, so the answer is that resolver's address, not this network's. Is DNS being redirected? An http source isn't affected")
 			}
 		}
 		for _, record := range records {

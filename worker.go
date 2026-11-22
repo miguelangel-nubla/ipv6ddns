@@ -299,7 +299,7 @@ func (w *Worker) zoneLaterWarnings() []string {
 			for _, short := range names {
 				for _, long := range names {
 					if strings.HasPrefix(long, short+".") {
-						warnings = append(warnings, fmt.Sprintf("endpoint %s: %s and %s may be one name, written two ways: Route 53 tells its zone at the first update, and until then they are two, each writing the records with its own addresses alone. Write the name one way in every task", endpointKey, short, long))
+						warnings = append(warnings, fmt.Sprintf("endpoint %s: %s and %s may be the same name, written two ways. ipv6ddns learns the zone from Route 53 at the first update, and until then they are two names, each writing the records with only its own addresses. Write the name one way in every task", endpointKey, short, long))
 					}
 				}
 			}
@@ -356,7 +356,7 @@ func (w *Worker) Start(ctx context.Context) error {
 			return err
 		}
 	} else {
-		w.logger.Info("no discovery: no plugins, and no family listens; the names get the addresses of their sources")
+		w.logger.Info("discovery is off: there are no plugins, and no family listens. The names get only their sources' addresses")
 	}
 	if h := w.homeAssistant; h != nil {
 		if err := h.serve(ctx, &w.running, w.config.Discovery.Interfaces, w.config.Discovery.ExcludeInterfaces, w.logger.Errorf); err != nil {
@@ -428,7 +428,7 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 				go func() {
 					defer resolvers.Done()
 					if err := r.Shutdown(ctx); err != nil {
-						w.logger.Warnf("resolver %s: %s: the queries still being answered are cut", r.Status().Name, err)
+						w.logger.Warnf("resolver %s: %s: queries still in progress were cut off", r.Status().Name, err)
 					}
 				}()
 			}
@@ -567,7 +567,7 @@ func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr) {
 			if written {
 				if !w.taken[key] {
 					w.taken[key] = true
-					w.logger.Warnf("endpoint %s: %s is a name written in the configuration, which has it: the hosts called so, by the template %q of task %s, are left out of it", n.target.endpointKey, key.name, n.target.template.Text, n.target.task.Name)
+					w.logger.Warnf("endpoint %s: %s is written in the configuration, so it keeps its own addresses: hosts with that name, from the template %q of task %s, are left out of it", n.target.endpointKey, key.name, n.target.template.Text, n.target.task.Name)
 				}
 				continue
 			}

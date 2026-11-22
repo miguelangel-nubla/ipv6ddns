@@ -40,7 +40,7 @@ func (e Entry) String() string {
 }
 
 // Rules tells the entries a list takes, for errors.
-const Rules = "a port, an address, a network as 10.2.3.0/24, or a host name, each with :port or not"
+const Rules = "use a port, an address, a network as 10.2.3.0/24, or a host name, each with or without :port"
 
 // Parse reads entries, giving those without a port defaultPort; it drops the repeated.
 func Parse(entries []string, defaultPort string) ([]Entry, error) {
@@ -68,7 +68,7 @@ func parseEntry(entry, defaultPort string) (Entry, error) {
 	if strings.Contains(entry, "/") {
 		prefix, err := netip.ParsePrefix(entry)
 		if err != nil {
-			return Entry{}, fmt.Errorf("%q: a network is as 10.2.3.0/24 or fd00::/64, and takes the default port", entry)
+			return Entry{}, fmt.Errorf("%q: write a network as 10.2.3.0/24 or fd00::/64, without a port: it uses the default one", entry)
 		}
 		return checked(Entry{Network: prefix.Masked(), Port: defaultPort}, entry)
 	}
@@ -93,7 +93,7 @@ func checked(e Entry, entry string) (Entry, error) {
 	// No sign, as "+8053", which net would take.
 	n, err := strconv.ParseUint(e.Port, 10, 16)
 	if err != nil || n < 1 {
-		return Entry{}, fmt.Errorf("%q: an invalid port", entry)
+		return Entry{}, fmt.Errorf("%q: not a valid port", entry)
 	}
 	e.Port = strconv.FormatUint(n, 10)
 	if e.Network.IsValid() {
@@ -132,7 +132,7 @@ func Addresses(entries []Entry) ([]string, error) {
 				}
 			}
 			if !found {
-				return nil, fmt.Errorf("%s: no address of the machine in it", e.Network)
+				return nil, fmt.Errorf("%s: none of this machine's addresses is in it", e.Network)
 			}
 		case e.Host == "":
 			add("", e.Port)

@@ -73,7 +73,7 @@ func expandString(s string, baseDir string) (string, error) {
 		}
 		end := strings.IndexByte(s[i:], '}')
 		if end < 0 {
-			return "", fmt.Errorf("an unterminated ${, write $${ for a literal one")
+			return "", fmt.Errorf("an unclosed ${: write $${ for a literal one")
 		}
 		result.WriteString(s[:i])
 		value, err := resolve(s[i+2:i+end], baseDir)

@@ -68,7 +68,7 @@ homeassistant:
 It's an error at start to give neither `key` nor `key_provisioning: true`, to give both, or to give a `key_provisioning_state_file` without `key_provisioning: true`:
 
 ```
-homeassistant: the device needs its encryption key, one way or the other: key, your own, made with "openssl rand -base64 32", written there or read from a file or the environment, as ${file:homeassistant.key}; or key_provisioning: true, for Home Assistant to give it when it adds the device, kept in key_provisioning_state_file
+homeassistant: the device needs an encryption key, in one of two ways. key: your own, made with "openssl rand -base64 32", written there or read from a file or the environment, as ${file:homeassistant.key}. Or key_provisioning: true: Home Assistant gives the key when it adds the device, and it's stored in key_provisioning_state_file
 ```
 
 Without the `homeassistant` block there's no device, and no error.
@@ -111,7 +111,7 @@ homeassistant:
 Without it, ipv6ddns doesn't start:
 
 ```
-homeassistant.listen: where the device listens, for Home Assistant to connect, is to be given: the network Home Assistant is on, as 192.168.1.0/24, an address of the machine on it, or a port alone, 6053, for every address of the machine, the internet's too where the machine is a router's
+homeassistant.listen is missing: give where Home Assistant can connect to the device. That's the network Home Assistant is on, as 192.168.1.0/24, or this machine's address on it. A port alone, as 6053, means every address of the machine, including the internet-facing one on a router
 ```
 
 It takes the same entries as [`webserver.listen`](installation.md#the-web-report): a port, an address, a network of the machine's addresses, or a host name, each with or without `:port`. Without a port, it's `port`, 6053 by default.

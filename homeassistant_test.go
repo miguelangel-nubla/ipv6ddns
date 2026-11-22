@@ -445,7 +445,7 @@ func TestHomeAssistantStateFileCorrupt(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "homeassistant.state")
 		os.WriteFile(path, []byte(content), 0o600)
-		if _, err := newHomeAssistant(config.HomeAssistant{KeyProvisioning: true, KeyProvisioningStateFile: "homeassistant.state"}, dir); err == nil || !strings.Contains(err.Error(), "isn't one") {
+		if _, err := newHomeAssistant(config.HomeAssistant{KeyProvisioning: true, KeyProvisioningStateFile: "homeassistant.state"}, dir); err == nil || !strings.Contains(err.Error(), "isn't a valid state file") {
 			t.Errorf("%s: %v, want an error", name, err)
 		}
 		if after, _ := os.ReadFile(path); string(after) != content {
@@ -512,8 +512,8 @@ func TestHomeAssistantStateFileOfOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = second.serve(context.Background(), &running, nil, nil, t.Errorf)
-	if err == nil || !strings.Contains(err.Error(), filepath.Join(dir, "homeassistant.state")) || !strings.Contains(err.Error(), "another ipv6ddns") {
-		t.Fatalf("a second device of the state file served: %v", err)
+	if err == nil || !strings.Contains(err.Error(), filepath.Join(dir, "homeassistant.state")) || !strings.Contains(err.Error(), "another running ipv6ddns") {
+		t.Fatalf("a second device of served: %v", err)
 	}
 	// It left nothing listening.
 	if conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", second.config.Entries[0].Port)); err == nil {

@@ -105,7 +105,7 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 		}
 		if srv.isName() {
 			if len(cfg.Bootstrap) == 0 {
-				return nil, fmt.Errorf("%s.upstream: %q is a host name, and there is no bootstrap to find it", cfg.Path, u)
+				return nil, fmt.Errorf("%s.upstream: %q is a host name, and there's no bootstrap to look it up", cfg.Path, u)
 			}
 			srv.named = &namedUpstream{host: dns.Fqdn(srv.host), port: srv.port}
 			s.named[u] = srv.named

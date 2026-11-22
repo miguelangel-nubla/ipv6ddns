@@ -104,7 +104,7 @@ func (t *Task) checkFilters(d Discovery) error {
 				return err
 			}
 			if s.Protocol != "" && !d.records(s.Protocol) {
-				return fmt.Errorf("%s.protocol: %s is disabled, under discovery.protocols: no address has a record of it", path, s.Protocol)
+				return fmt.Errorf("%s.protocol: %s is disabled under discovery.protocols, so no address has a record of it", path, s.Protocol)
 			}
 		}
 		for j, s := range f.IP.NotSeen {
@@ -114,14 +114,14 @@ func (t *Task) checkFilters(d Discovery) error {
 			}
 			for k, wanted := range f.IP.Seen {
 				if s.covers(wanted, d) {
-					return fmt.Errorf("%s: every record ip.seen[%d] wants, %s, is one this rule wants none of: the filter takes no address", path, k, wanted.describe())
+					return fmt.Errorf("%s: it excludes every record ip.seen[%d] requires, %s, so the filter matches no address", path, k, wanted.describe())
 				}
 			}
 		}
 		if f.MAC.Address != "" {
 			mac, err := net.ParseMAC(f.MAC.Address)
 			if err != nil || len(mac) != 6 {
-				return fmt.Errorf("filter %d: mac.address %q: not a MAC address, as 00:11:22:33:44:55", i+1, f.MAC.Address)
+				return fmt.Errorf("filter %d: mac.address %q: not a MAC address: write it as 00:11:22:33:44:55", i+1, f.MAC.Address)
 			}
 			f.MAC.Address = mac.String()
 		}

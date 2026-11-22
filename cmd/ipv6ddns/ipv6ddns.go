@@ -61,7 +61,7 @@ func unexpectedArgs(args []string) error {
 	if len(args) == 0 {
 		return nil
 	}
-	return fmt.Errorf("unexpected argument %q: the flags take no separate words, and a boolean one is turned off as -name=false", args[0])
+	return fmt.Errorf("unexpected argument %q: ipv6ddns takes only flags. To turn a boolean flag off, write -name=false", args[0])
 }
 
 func main() {
@@ -177,11 +177,11 @@ func main() {
 	defer cancel()
 	for _, server := range servers {
 		if err := server.Shutdown(shutdown); err != nil {
-			sugar.Errorf("web server: %s: the requests still being answered are cut", err)
+			sugar.Errorf("web server: %s: requests still in progress were cut off", err)
 		}
 	}
 	if err := worker.Shutdown(shutdown); err != nil {
-		sugar.Errorf("%s: the updates still running are cut", err)
+		sugar.Errorf("%s: updates still running were cut off", err)
 	}
 }
 

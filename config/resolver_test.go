@@ -134,59 +134,59 @@ func TestResolverConfigErrors(t *testing.T) {
 		{"no listen", `
   lan:
     upstream: 192.168.1.1`, homeCredential, nasTask,
-			"resolvers.lan.listen: where the resolver answers is to be given: the network of its clients, as 192.168.1.0/24, for the machine's address in it, or that address; without a port, 53"},
+			"resolvers.lan.listen is missing: give where the resolver answers. That's the clients' network, as 192.168.1.0/24, for this machine's address in it, or the address itself. Without a port, 53"},
 		{"no upstream", `
   lan:
     listen: 192.168.1.0/24`, homeCredential, nasTask,
-			"resolvers.lan.upstream: the servers the resolver asks what isn't its own are to be given, one or more, as 192.168.1.1 or 1.1.1.1:53: without them, it would answer no other name"},
+			"resolvers.lan.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own, as 192.168.1.1 or 1.1.1.1:53. Without them, it answers no other name"},
 		{"an empty upstream", `
   lan:
     listen: 192.168.1.0/24
     upstream: []`, homeCredential, nasTask,
-			"resolvers.lan.upstream: the servers the resolver asks what isn't its own are to be given, one or more"},
+			"resolvers.lan.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own"},
 		{"a bad listen", `
   lan:
     listen: "192.168.1.0/33"
     upstream: 192.168.1.1`, homeCredential, nasTask,
-			`resolvers.lan.listen: "192.168.1.0/33": a network is as 10.2.3.0/24 or fd00::/64, and takes the default port`},
+			`resolvers.lan.listen: "192.168.1.0/33": write a network as 10.2.3.0/24 or fd00::/64, without a port: it uses the default one`},
 		{"a host name upstream without bootstrap", `
   lan:
     listen: 192.168.1.0/24
     upstream:
       - 1.1.1.1
       - dns.google`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one`},
+			`resolvers.lan.upstream: "dns.google" is a host name, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one`},
 		{"a bootstrap with no host name to find", `
   lan:
     listen: 192.168.1.0/24
     upstream: 1.1.1.1
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			"resolvers.lan.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out"},
+			"resolvers.lan.bootstrap only looks up upstream servers given by host name, and every upstream here is an address: leave it out"},
 		{"a host name bootstrap", `
   lan:
     listen: 192.168.1.0/24
     upstream: dns.google
     bootstrap: dns.quad9.net`, homeCredential, nasTask,
-			`resolvers.lan.bootstrap: "dns.quad9.net": an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53`},
+			`resolvers.lan.bootstrap: "dns.quad9.net" is not an address, with or without a port, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53`},
 		{"an upstream that is neither", `
   lan:
     listen: 192.168.1.0/24
     upstream: "dns google"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "dns google": an address or a host name, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net`},
+			`resolvers.lan.upstream: "dns google" is not an address or a host name, with or without a port, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net`},
 		{"a host name upstream of port 0", `
   lan:
     listen: 192.168.1.0/24
     upstream: dns.google:0
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "dns.google:0": an address or a host name, with a port or not, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net`},
+			`resolvers.lan.upstream: "dns.google:0" is not an address or a host name, with or without a port, as 192.168.1.1, 1.1.1.1:53, [2001:db8::1]:53 or dns.example.net`},
 		{"an encrypted upstream by host name without bootstrap", `
   lan:
     listen: 192.168.1.0/24
     upstream:
       - 1.1.1.1
       - "tls://dns.example.net"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "tls://dns.example.net" is at a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one`},
+			`resolvers.lan.upstream: "tls://dns.example.net" is at a host name, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one`},
 		{"a bootstrap with encrypted upstreams at addresses", `
   lan:
     listen: 192.168.1.0/24
@@ -194,82 +194,82 @@ func TestResolverConfigErrors(t *testing.T) {
       - "tls://1.1.1.1"
       - "https://[2606:4700:4700::1111]/dns-query"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			"resolvers.lan.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out"},
+			"resolvers.lan.bootstrap only looks up upstream servers given by host name, and every upstream here is an address: leave it out"},
 		{"an unknown scheme", `
   lan:
     listen: 192.168.1.0/24
     upstream: "quic://dns.example.net"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "quic://dns.example.net": the scheme quic: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query`},
+			`resolvers.lan.upstream: "quic://dns.example.net": unknown scheme quic: use plain DNS, as 1.1.1.1 or dns.example.net; tls:// for DNS over TLS, as tls://1.1.1.1; or https:// for DNS over HTTPS, as https://dns.example.net/dns-query`},
 		{"DNS over HTTP, not HTTPS", `
   lan:
     listen: 192.168.1.0/24
     upstream: "http://dns.example.net/dns-query"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "http://dns.example.net/dns-query": the scheme http: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query`},
+			`resolvers.lan.upstream: "http://dns.example.net/dns-query": unknown scheme http: use plain DNS, as 1.1.1.1 or dns.example.net; tls:// for DNS over TLS, as tls://1.1.1.1; or https:// for DNS over HTTPS, as https://dns.example.net/dns-query`},
 		{"DNS over HTTPS without a path", `
   lan:
     listen: 192.168.1.0/24
     upstream: "https://dns.example.net"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "https://dns.example.net": DNS over HTTPS is asked at a path, which is to be given, as https://dns.example.net/dns-query`},
+			`resolvers.lan.upstream: "https://dns.example.net": DNS over HTTPS needs a path, as https://dns.example.net/dns-query`},
 		{"DNS over HTTPS with the root for a path", `
   lan:
     listen: 192.168.1.0/24
     upstream: "https://1.1.1.1:8443/"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "https://1.1.1.1:8443/": DNS over HTTPS is asked at a path, which is to be given, as https://1.1.1.1:8443/dns-query`},
+			`resolvers.lan.upstream: "https://1.1.1.1:8443/": DNS over HTTPS needs a path, as https://1.1.1.1:8443/dns-query`},
 		{"DNS over HTTPS with a query", `
   lan:
     listen: 192.168.1.0/24
     upstream: "https://dns.example.net/dns-query?dns=x"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "https://dns.example.net/dns-query?dns=x": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment`},
+			`resolvers.lan.upstream: "https://dns.example.net/dns-query?dns=x": DNS over HTTPS takes a host, with or without a port, and a path: no user, query or fragment`},
 		{"DNS over HTTPS with a fragment", `
   lan:
     listen: 192.168.1.0/24
     upstream: "https://dns.example.net/dns-query#x"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "https://dns.example.net/dns-query#x": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment`},
+			`resolvers.lan.upstream: "https://dns.example.net/dns-query#x": DNS over HTTPS takes a host, with or without a port, and a path: no user, query or fragment`},
 		{"DNS over HTTPS with a user", `
   lan:
     listen: 192.168.1.0/24
     upstream: "https://me:secret@dns.example.net/dns-query"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "https://me:secret@dns.example.net/dns-query": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment`},
+			`resolvers.lan.upstream: "https://me:secret@dns.example.net/dns-query": DNS over HTTPS takes a host, with or without a port, and a path: no user, query or fragment`},
 		{"DNS over TLS with a path", `
   lan:
     listen: 192.168.1.0/24
     upstream: "tls://1.1.1.1/dns-query"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "tls://1.1.1.1/dns-query": DNS over TLS is a host, with a port or not: no path, which is of https://`},
+			`resolvers.lan.upstream: "tls://1.1.1.1/dns-query": DNS over TLS takes a host, with or without a port, and no path: paths are for https://`},
 		{"DNS over TLS with a query", `
   lan:
     listen: 192.168.1.0/24
     upstream: "tls://1.1.1.1?x=1"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "tls://1.1.1.1?x=1": DNS over TLS is a host, with a port or not: no user, query or fragment`},
+			`resolvers.lan.upstream: "tls://1.1.1.1?x=1": DNS over TLS takes a host, with or without a port: no user, query or fragment`},
 		{"DNS over TLS at port 0", `
   lan:
     listen: 192.168.1.0/24
     upstream: "tls://1.1.1.1:0"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "tls://1.1.1.1:0": the port 0: a port is from 1 to 65535`},
+			`resolvers.lan.upstream: "tls://1.1.1.1:0": the port 0 is out of range: ports go from 1 to 65535`},
 		{"DNS over HTTPS at port 0", `
   lan:
     listen: 192.168.1.0/24
     upstream: "https://dns.example.net:0/dns-query"
     bootstrap: 9.9.9.9`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "https://dns.example.net:0/dns-query": the port 0: a port is from 1 to 65535`},
+			`resolvers.lan.upstream: "https://dns.example.net:0/dns-query": the port 0 is out of range: ports go from 1 to 65535`},
 		{"DNS over TLS at a port too high", `
   lan:
     listen: 192.168.1.0/24
     upstream: "tls://1.1.1.1:65536"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "tls://1.1.1.1:65536": the port 65536: a port is from 1 to 65535`},
+			`resolvers.lan.upstream: "tls://1.1.1.1:65536": the port 65536 is out of range: ports go from 1 to 65535`},
 		{"DNS over TLS with no host", `
   lan:
     listen: 192.168.1.0/24
     upstream: "tls://:853"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "tls://:853": the host is an address or a host name, with a port or not, as tls://1.1.1.1, tls://[2606:4700:4700::1111]:853 or tls://dns.example.net`},
+			`resolvers.lan.upstream: "tls://:853": the host must be an address or a host name, with or without a port, as tls://1.1.1.1, tls://[2606:4700:4700::1111]:853 or tls://dns.example.net`},
 		{"DNS over HTTPS at a name of one label", `
   lan:
     listen: 192.168.1.0/24
     upstream: "https://router/dns-query"`, homeCredential, nasTask,
-			`resolvers.lan.upstream: "https://router/dns-query": the host is an address or a host name, with a port or not, as https://1.1.1.1/dns-query, https://[2606:4700:4700::1111]/dns-query or https://dns.example.net/dns-query`},
+			`resolvers.lan.upstream: "https://router/dns-query": the host must be an address or a host name, with or without a port, as https://1.1.1.1/dns-query, https://[2606:4700:4700::1111]/dns-query or https://dns.example.net/dns-query`},
 		{"a cache of less than none", lanResolver + `
     cache_size: -1`, homeCredential, nasTask,
 			"<schema>"},
@@ -279,28 +279,28 @@ func TestResolverConfigErrors(t *testing.T) {
 		{"a bad allow", lanResolver + `
     allow:
       - lan`, homeCredential, nasTask,
-			`resolvers.lan.allow: "lan": a network, as 192.168.1.0/24 or fd00::/64, or an address`},
+			`resolvers.lan.allow: "lan" is not a network, as 192.168.1.0/24 or fd00::/64, nor an address`},
 		{"a resolver naming none", lanResolver, homeCredential + `
       resolver: wan`, nasTask,
-			"credentials.home.settings.resolver: wan is no resolver: they are lan"},
+			"credentials.home.settings.resolver: there's no resolver wan: the resolvers are lan"},
 		{"no resolver", ` {}`, homeCredential, nasTask,
-			"credentials.home: the provider resolver is a zone that a resolver answers, and there is none: add one to resolvers, with where it listens and the servers it asks"},
+			"credentials.home: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listen and upstream"},
 		{"which of two", lanResolver + `
   lab:
     listen: 10.0.0.2
     upstream: 10.0.0.1`, homeCredential, nasTask,
-			"credentials.home.settings.resolver: which resolver answers the zone is to be said, of lab, lan"},
+			"credentials.home.settings.resolver is missing: say which of lab, lan answers the zone"},
 		{"no zone", lanResolver, `
   home:
     provider: resolver
     settings: {}`, nasTask,
-			"credentials.home.settings.zone: the zone the resolver answers is to be given, as home.arpa"},
+			"credentials.home.settings.zone is missing: give the zone the resolver answers, as home.arpa"},
 		{"one zone twice", lanResolver, homeCredential + `
   office:
     provider: resolver
     settings:
       zone: Home.Arpa.`, nasTask,
-			"credentials home and office: both are the zone home.arpa of resolver lan: a zone is one credential's"},
+			"credentials home and office are both the zone home.arpa of resolver lan: a zone can belong to only one credential"},
 		{"one address twice", lanResolver + `
   lab:
     listen:
@@ -308,7 +308,7 @@ func TestResolverConfigErrors(t *testing.T) {
       - 192.168.1.0/24
     upstream: 10.0.0.1`, homeCredential + `
       resolver: lan`, nasTask,
-			"resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port is one resolver's"},
+			"resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port can belong to only one resolver"},
 		{"a zone record outside", lanResolver, `
   home:
     provider: resolver
@@ -316,28 +316,28 @@ func TestResolverConfigErrors(t *testing.T) {
       zone: home.arpa
       records:
         - printer.example.com. A 192.168.1.20`, nasTask,
-			`credentials.home.settings.records: "printer.example.com. A 192.168.1.20": printer.example.com. is not of the zone home.arpa: a zone's records are of its names, relative to it, or absolute within it`},
+			`credentials.home.settings.records: "printer.example.com. A 192.168.1.20": printer.example.com. isn't in the zone home.arpa: a zone's records must be for its names, relative to it or absolute within it`},
 		{"a resolver record without its dot", `
   lan:
     listen: 192.168.1.0/24
     upstream: 192.168.1.1
     records:
       - www.example.com CNAME nas.home.arpa.`, homeCredential, nasTask,
-			`resolvers.lan.records: "www.example.com CNAME nas.home.arpa.": the name www.example.com is to be absolute, with its trailing dot, as www.example.com.: these records are of no zone`},
+			`resolvers.lan.records: "www.example.com CNAME nas.home.arpa.": the name www.example.com must be absolute, ending in a dot, as www.example.com.: these records belong to no zone`},
 		{"a resolver record's target without its dot", `
   lan:
     listen: 192.168.1.0/24
     upstream: 192.168.1.1
     records:
       - www.example.com. CNAME nas`, homeCredential, nasTask,
-			`resolvers.lan.records: "www.example.com. CNAME nas": bad CNAME Target: "nas": every name in these records is absolute, with its trailing dot`},
+			`resolvers.lan.records: "www.example.com. CNAME nas": bad CNAME Target: "nas": every name in these records must be absolute, ending in a dot`},
 		{"a resolver record in a zone", `
   lan:
     listen: 192.168.1.0/24
     upstream: 192.168.1.1
     records:
       - tv.home.arpa. A 192.168.1.30`, homeCredential, nasTask,
-			`resolvers.lan.records: "tv.home.arpa. A 192.168.1.30": tv.home.arpa. is of the zone home.arpa, of credential home: give it there, in its records`},
+			`resolvers.lan.records: "tv.home.arpa. A 192.168.1.30": tv.home.arpa. is in the zone home.arpa, of credential home: give it in that credential's records`},
 		{"a record that doesn't parse", lanResolver, `
   home:
     provider: resolver
@@ -362,7 +362,7 @@ func TestResolverConfigErrors(t *testing.T) {
       records:
         - files CNAME nas
         - files TXT "x"`, nasTask,
-			"credentials.home.settings.records: files.home.arpa. has a CNAME and other records: a CNAME is alone at its name, the other data is its target's"},
+			"credentials.home.settings.records: files.home.arpa. has a CNAME and other records: a name with a CNAME can't have others, since its data is the target's"},
 		{"a record of a task's name", lanResolver, `
   home:
     provider: resolver
@@ -370,7 +370,7 @@ func TestResolverConfigErrors(t *testing.T) {
       zone: home.arpa
       records:
         - NAS TXT "x"`, nasTask,
-			`credentials.home.settings.records: "NAS TXT \"x\"": nas.home.arpa. is a name task nas publishes, which has its addresses: a record is of another name`},
+			`credentials.home.settings.records: "NAS TXT \"x\"": nas.home.arpa. is published by task nas, which gives its addresses: records are for other names`},
 		{"a CNAME loop", lanResolver, `
   home:
     provider: resolver

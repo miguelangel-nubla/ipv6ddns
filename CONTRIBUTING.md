@@ -53,6 +53,8 @@ A test fails when the pages are behind, when a key has no description, or when a
 
 The [guides](docs/guides/README.md) are linked from posts elsewhere, which nobody updates: a guide's file name and its headings, whose anchors the links have, stay as they are once published. A new guide is a new file, of one setup, named by what it sets up; it goes in the index, and in the [add-on's](docs/guides/home-assistant/README.md) too, with a page of the add-on's side only where the add-on changes something. Its configuration is whole, as a reader copies it, and is tested as every example is.
 
+The pages, the schemas' descriptions and the program's messages are written in plain words, for someone setting it up, not for someone who knows the code. The point comes first, in short sentences. An error starts with where the problem is, as `resolvers.lan.upstream:`, then says what's wrong and what to write instead, with an example: `resolvers.lan.upstream is missing: give one or more servers to ask ..., as 192.168.1.1`. Many messages are quoted in the pages and the tests, so search for the old text when you change one.
+
 ## Adding a DNS provider
 
 1. Copy a provider of [`ddns/`](ddns/), as `cloudflare.go`, and its test.

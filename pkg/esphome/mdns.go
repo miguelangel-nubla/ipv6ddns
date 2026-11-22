@@ -90,7 +90,7 @@ func (d *Device) taken(ctx context.Context, port int, ifaces []net.Interface) er
 		if !sameName {
 			what = fmt.Sprintf("the MAC of %s, as %s", d.Name, entry.Instance)
 		}
-		taken = fmt.Errorf("another device is announced with %s, at %s, port %d: each device needs its own name, and its own key or state file", what, strings.Join(at, ", "), entry.Port)
+		taken = fmt.Errorf("another device already announces %s, at %s, port %d: each device needs its own name, and its own key or state file", what, strings.Join(at, ", "), entry.Port)
 		// Found: no more to look for.
 		cancel()
 	}

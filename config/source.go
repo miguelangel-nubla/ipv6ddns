@@ -65,11 +65,11 @@ func (s Source) withDefaults() (Source, error) {
 		}
 		for _, family := range s.Family {
 			if family != 4 && family != 6 {
-				return s, fmt.Errorf("invalid family %d: 4 or 6", family)
+				return s, fmt.Errorf("family %d: use 4 or 6", family)
 			}
 		}
 		if s.Type == SourceDNS && len(s.URLs) > 0 {
-			return s, fmt.Errorf("urls are for http sources")
+			return s, fmt.Errorf("urls is only for http sources")
 		}
 	case SourceCommand:
 		if s.Command == "" {
@@ -95,7 +95,7 @@ func (s Source) withDefaults() (Source, error) {
 		return s, fmt.Errorf("unknown source type %q", s.Type)
 	}
 	if s.Type != SourceHTTP && s.Type != SourceDNS && len(s.Family) > 0 {
-		return s, fmt.Errorf("family is for http and dns sources: a %s source gives what it has", s.Type)
+		return s, fmt.Errorf("family is only for http and dns sources: a %s source gives whatever addresses it has", s.Type)
 	}
 	if s.Interval.Duration == 0 {
 		s.Interval.Duration = defaultSourceInterval
@@ -104,10 +104,10 @@ func (s Source) withDefaults() (Source, error) {
 		s.Lifetime.Duration = 3 * s.Interval.Duration
 	}
 	if s.Interval.Duration < time.Second {
-		return s, fmt.Errorf("invalid interval %s: at least 1s", s.Interval)
+		return s, fmt.Errorf("interval %s is too short: the least is 1s", s.Interval)
 	}
 	if s.Lifetime.Duration < s.Interval.Duration {
-		return s, fmt.Errorf("invalid lifetime %s: at least the interval, %s, or the addresses expire between runs", s.Lifetime, s.Interval)
+		return s, fmt.Errorf("lifetime %s is shorter than the interval, %s: the addresses would expire between runs", s.Lifetime, s.Interval)
 	}
 	return s, nil
 }
@@ -176,7 +176,7 @@ func (c *Config) setUpSources() error {
 	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {
 		for _, source := range c.Tasks[name].Sources {
 			if _, ok := c.Sources[source]; !ok {
-				return fmt.Errorf("task %s: no source %s", name, source)
+				return fmt.Errorf("task %s: there's no source %s under sources", name, source)
 			}
 		}
 	}

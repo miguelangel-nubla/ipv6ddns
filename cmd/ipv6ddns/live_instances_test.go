@@ -416,7 +416,7 @@ credentials:
 
 	// In the first's folder, with another port and no more: the same state file.
 	wrote := configureIn(t, machine, router, "the second, of the first's state file", folder, "second.yaml", 8054, config("second", 8054, 6054, "")).start().fails()
-	if !strings.Contains(wrote, filepath.Join(folder, "homeassistant.state")) || !strings.Contains(wrote, "another ipv6ddns") {
+	if !strings.Contains(wrote, filepath.Join(folder, "homeassistant.state")) || !strings.Contains(wrote, "another running ipv6ddns") {
 		t.Errorf("with the first's state file, the second ended without saying so:\n%s", wrote)
 	}
 	time.Sleep(3 * time.Second)
@@ -439,7 +439,7 @@ credentials:
 		time.Sleep(3 * time.Second)
 		unchanged("with a second of its name, " + at.what)
 		if !slices.ContainsFunc(second.logged("error"), func(line string) bool {
-			return strings.Contains(line, "another device is announced with the name ipv6ddns") && strings.Contains(line, machine.IPv4.String())
+			return strings.Contains(line, "another device already announces the name ipv6ddns") && strings.Contains(line, machine.IPv4.String())
 		}) {
 			t.Errorf("the second, of the first's name, %s, didn't say so:\n%s", at.what, second.output.String())
 		}
@@ -464,7 +464,7 @@ credentials:
 		t.Errorf("the second, of the first's identity, was announced, a second name of one device to Home Assistant: %+v", s)
 	}
 	if !slices.ContainsFunc(copied.logged("error"), func(line string) bool {
-		return strings.Contains(line, "another device is announced with the MAC of ipv6ddns-second, as ipv6ddns")
+		return strings.Contains(line, "another device already announces the MAC of ipv6ddns-second, as ipv6ddns")
 	}) {
 		t.Errorf("the second, of the first's identity, didn't say so:\n%s", copied.output.String())
 	}

@@ -37,7 +37,7 @@ func TestReverseAddr(t *testing.T) {
 		"g.1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.d.f.ip6.arpa.",
 	} {
 		if got, ok := reverseAddr(name); ok {
-			t.Errorf("%s: %s, and it is no address's", name, got)
+			t.Errorf("%s: %s, and it isn't an address's", name, got)
 		}
 	}
 }

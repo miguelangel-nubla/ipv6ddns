@@ -45,9 +45,9 @@ tasks:
 		"a protocol there is none of": {"          seen:\n            - protocol: bonjour\n", ""},
 		"a way there is none of":      {"          seen:\n            - protocol: ndp\n              way: shouted\n", ""},
 		"a way a protocol never sees": {"          seen:\n            - protocol: ping\n              way: announced\n",
-			"task web: filter 1: ip.seen[0].way: ping never sees an address announced: it sees it answered"},
+			"task web: filter 1: ip.seen[0].way: ping never sees an address announced, only answered"},
 		"a reporter there is none of": {"          seen:\n            - reported:\n                by:\n                  - switch\n",
-			`task web: filter 1: ip.seen[0].reported.by: "switch" is no plugin of discovery.plugins, nor a type of them, nor kernel: they are kernel, freebsd, linux, mikrotik, router`},
+			`task web: filter 1: ip.seen[0].reported.by: "switch" isn't a plugin under discovery.plugins, a plugin type, or kernel: use one of kernel, freebsd, linux, mikrotik, router`},
 		"a table there is none of": {"          not_seen:\n            - reported:\n                from:\n                  - arp\n", ""},
 		"both kinds in one rule":   {"          seen:\n            - protocol: ndp\n              reported: {}\n", ""},
 		"a report with a way":      {"          seen:\n            - reported: {}\n              way: heard\n", ""},
@@ -84,15 +84,15 @@ tasks:
 	const mdnsOn, mdnsOff = "    mdns:\n      enabled: true\n", "    mdns:\n      enabled: false\n"
 	for name, c := range map[string]struct{ protocols, rules, want string }{
 		"a protocol disabled": {mdnsOff, "          seen:\n            - protocol: mdns\n",
-			"task web: filter 1: ip.seen[0].protocol: mdns is disabled, under discovery.protocols: no address has a record of it"},
+			"task web: filter 1: ip.seen[0].protocol: mdns is disabled under discovery.protocols, so no address has a record of it"},
 		"the same way left out": {mdnsOn, "          seen:\n            - protocol: mdns\n              way: announced\n          not_seen:\n            - protocol: mdns\n",
-			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, mdns:announced, is one this rule wants none of: the filter takes no address"},
+			"task web: filter 1: ip.not_seen[0]: it excludes every record ip.seen[0] requires, mdns:announced, so the filter matches no address"},
 		"the one way of a protocol": {mdnsOn, "          seen:\n            - protocol: ping\n          not_seen:\n            - protocol: ping\n              way: answered\n",
-			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, ping, is one this rule wants none of: the filter takes no address"},
+			"task web: filter 1: ip.not_seen[0]: it excludes every record ip.seen[0] requires, ping, so the filter matches no address"},
 		"a plugin, left out by its type": {mdnsOn, "          seen:\n            - reported:\n                by:\n                  - router\n          not_seen:\n            - reported:\n                by:\n                  - mikrotik\n",
-			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, reported by router, is one this rule wants none of: the filter takes no address"},
+			"task web: filter 1: ip.not_seen[0]: it excludes every record ip.seen[0] requires, reported by router, so the filter matches no address"},
 		"any report, left out": {mdnsOn, "          seen:\n            - reported:\n                from:\n                  - leases\n          not_seen:\n            - reported: {}\n",
-			"task web: filter 1: ip.not_seen[0]: every record ip.seen[0] wants, reported from leases, is one this rule wants none of: the filter takes no address"},
+			"task web: filter 1: ip.not_seen[0]: it excludes every record ip.seen[0] requires, reported from leases, so the filter matches no address"},
 	} {
 		if _, err := loadConfig(t, config(c.protocols, c.rules)); err == nil || err.Error() != c.want {
 			t.Errorf("%s: got %v, want %q", name, err, c.want)
@@ -118,13 +118,13 @@ func TestSeenCheckMessages(t *testing.T) {
 		s    Seen
 		want string
 	}{
-		"neither":  {Seen{}, "p: a protocol, or reported, is to be given: what saw the address"},
-		"both":     {Seen{Protocol: "ndp", Reported: &Reported{}}, "p: a protocol, or reported: one or the other, as each is a record of its own"},
-		"a way":    {Seen{Reported: &Reported{}, Way: "heard"}, "p.way: a report has no way: it is of what something else tells, from its tables"},
-		"no such":  {Seen{Protocol: "bonjour"}, `p.protocol: "bonjour" is no protocol that sees an address: they are arp, dhcp, lldp, llmnr, mdns, ndp, netbios, ping, ssdp, wsd`},
-		"no way":   {Seen{Protocol: "ndp", Way: "shouted"}, `p.way: "shouted" is no way: they are announced, answered, heard`},
-		"no table": {Seen{Reported: &Reported{From: []string{"arp"}}}, `p.reported.from: "arp" is no table: they are neighbors, leases, interfaces`},
-		"empty on": {Seen{Protocol: "ndp", On: []string{" "}}, "p.interfaces[0]: an interface's name"},
+		"neither":  {Seen{}, "p: give a protocol or reported: what saw the address"},
+		"both":     {Seen{Protocol: "ndp", Reported: &Reported{}}, "p: give a protocol or reported, not both: each is a record of its own"},
+		"a way":    {Seen{Reported: &Reported{}, Way: "heard"}, "p.way: a report has no way, as it's what something else tells from its tables: leave way out"},
+		"no such":  {Seen{Protocol: "bonjour"}, `p.protocol: "bonjour" isn't a protocol that sees addresses: use one of arp, dhcp, lldp, llmnr, mdns, ndp, netbios, ping, ssdp, wsd`},
+		"no way":   {Seen{Protocol: "ndp", Way: "shouted"}, `p.way: "shouted" isn't a way: use one of announced, answered, heard`},
+		"no table": {Seen{Reported: &Reported{From: []string{"arp"}}}, `p.reported.from: "arp" isn't a table: use one of neighbors, leases, interfaces`},
+		"empty on": {Seen{Protocol: "ndp", On: []string{" "}}, "p.interfaces[0] is empty: give an interface's name"},
 	} {
 		if err := c.s.check("p", nil); err == nil || err.Error() != c.want {
 			t.Errorf("%s: got %v, want %q", name, err, c.want)

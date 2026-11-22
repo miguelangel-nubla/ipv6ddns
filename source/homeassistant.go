@@ -32,7 +32,7 @@ func homeAssistantFetcher(states HomeAssistantStates, entity, attribute string) 
 		for _, field := range strings.FieldsFunc(state, func(r rune) bool { return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t' }) {
 			addr, err := netip.ParseAddr(field)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %q is no address", what, field)
+				return nil, fmt.Errorf("%s: %q isn't an address", what, field)
 			}
 			addrs = append(addrs, addr.Unmap())
 		}

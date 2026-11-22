@@ -80,7 +80,7 @@ func TestPrivateReverse(t *testing.T) {
 	}
 	// The loopback's zone is of its one address: its name is the apex, which has no PTR.
 	local(reverseName4(t, "::1"), dns.TypePTR, dns.RcodeSuccess, "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa.")
-	// A name of the zone that is no address's, deeper or shallower.
+	// A name of the zone that isn't an address's, deeper or shallower.
 	local("1.168.192.in-addr.arpa.", dns.TypePTR, dns.RcodeNameError, "168.192.in-addr.arpa.")
 
 	// The address of a name of the resolver's: its name; of another type, no data.

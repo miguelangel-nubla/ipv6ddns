@@ -71,15 +71,15 @@ func checkHomeAssistant(configData []byte) error {
 	}
 	switch {
 	case has("key") && provisioning:
-		return errors.New("homeassistant: a key, or key_provisioning: true for Home Assistant to give it: one or the other")
+		return errors.New("homeassistant: give a key or key_provisioning: true, not both")
 	case has("key_provisioning_state_file") && has("key"):
-		return errors.New("homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept, with key_provisioning: true: with a key of your own nothing is kept, so leave it out")
+		return errors.New("homeassistant.key_provisioning_state_file stores the key Home Assistant gives, with key_provisioning: true. With your own key nothing is stored, so leave it out")
 	case has("key_provisioning_state_file") && !provisioning:
-		return errors.New("homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept: it needs key_provisioning: true")
+		return errors.New("homeassistant.key_provisioning_state_file stores the key Home Assistant gives: it needs key_provisioning: true")
 	case !has("key") && !provisioning:
-		return errors.New(`homeassistant: the device needs its encryption key, one way or the other: key, your own, made with "openssl rand -base64 32", written there or read from a file or the environment, as ${file:homeassistant.key}; or key_provisioning: true, for Home Assistant to give it when it adds the device, kept in key_provisioning_state_file`)
+		return errors.New(`homeassistant: the device needs an encryption key, in one of two ways. key: your own, made with "openssl rand -base64 32", written there or read from a file or the environment, as ${file:homeassistant.key}. Or key_provisioning: true: Home Assistant gives the key when it adds the device, and it's stored in key_provisioning_state_file`)
 	case !has("listen"):
-		return errors.New(`homeassistant.listen: where the device listens, for Home Assistant to connect, is to be given: the network Home Assistant is on, as 192.168.1.0/24, an address of the machine on it, or a port alone, 6053, for every address of the machine, the internet's too where the machine is a router's`)
+		return errors.New(`homeassistant.listen is missing: give where Home Assistant can connect to the device. That's the network Home Assistant is on, as 192.168.1.0/24, or this machine's address on it. A port alone, as 6053, means every address of the machine, including the internet-facing one on a router`)
 	}
 	return nil
 }
@@ -90,7 +90,7 @@ func (c *Config) setUpHomeAssistant() error {
 	if c.HomeAssistant == nil {
 		for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
 			if c.Sources[name].Type == SourceHomeAssistant {
-				return fmt.Errorf("source %s: a homeassistant source needs the homeassistant block, through which Home Assistant sends it the state", name)
+				return fmt.Errorf("source %s: a homeassistant source needs the homeassistant block: that's how Home Assistant sends it the state", name)
 			}
 		}
 		return nil
@@ -107,7 +107,7 @@ func (c *Config) setUpHomeAssistant() error {
 		h.Name = "ipv6ddns"
 	}
 	if !deviceName.MatchString(h.Name) {
-		return fmt.Errorf("homeassistant.name %q: lower case letters, digits and hyphens, as a host name", h.Name)
+		return fmt.Errorf("homeassistant.name %q: use only lower-case letters, digits and hyphens, as in a host name", h.Name)
 	}
 	if h.FriendlyName == "" {
 		h.FriendlyName = h.Name
@@ -116,7 +116,7 @@ func (c *Config) setUpHomeAssistant() error {
 		h.Port = 6053
 	}
 	if len(h.Listen) == 0 {
-		return errors.New("homeassistant.listen: where the device listens is to be given")
+		return errors.New("homeassistant.listen is missing: give where the device listens")
 	}
 	entries, err := listen.Parse(h.Listen, strconv.Itoa(h.Port))
 	if err != nil {
@@ -126,7 +126,7 @@ func (c *Config) setUpHomeAssistant() error {
 	if h.Announces() {
 		for _, e := range entries {
 			if e.Port != entries[0].Port {
-				return fmt.Errorf("homeassistant.listen: ports %s and %s: the device announces one port; give one, or announce: false", entries[0].Port, e.Port)
+				return fmt.Errorf("homeassistant.listen: ports %s and %s: the device can announce only one port. Use one port, or set announce: false", entries[0].Port, e.Port)
 			}
 		}
 	}

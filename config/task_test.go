@@ -142,7 +142,7 @@ func TestInvalidMasksAreErrors(t *testing.T) {
     - "one/::ffff"`: `the value "one" is not an address`,
 		`ip:
   mask:
-    - "::1/0.0.0.255"`: "not of the same family",
+    - "::1/0.0.0.255"`: "of different families",
 		`ip:
   mask:
     - "fe80::1%eth0/::ffff"`: "is not an address",
@@ -221,7 +221,7 @@ func TestMACAddressForms(t *testing.T) {
 			}
 			continue
 		}
-		if err == nil || !strings.Contains(err.Error(), "not a MAC address, as 00:11:22:33:44:55") || !strings.Contains(err.Error(), "web") {
+		if err == nil || !strings.Contains(err.Error(), "not a MAC address: write it as 00:11:22:33:44:55") || !strings.Contains(err.Error(), "web") {
 			t.Errorf("%s: got %v, want an error naming the task", wrong, err)
 		}
 	}

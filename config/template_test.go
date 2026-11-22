@@ -39,15 +39,15 @@ func TestTemplate(t *testing.T) {
 		}
 	}
 	for name, want := range map[string]string{
-		"{host}":         "{host} is no placeholder: they are {hostname}, {n} and {mac}",
-		"{Hostname}":     "{Hostname} is no placeholder",
-		"{}":             "{} is no placeholder",
-		"{n}":            "{n} is the place of a host among those of one name: it needs {hostname} beside it, as {n}.{hostname}",
-		"{n}.{mac}":      "it needs {hostname} beside it",
-		"{hostname":      "a brace that is of no placeholder",
-		"hostname}":      "a brace that is of no placeholder",
-		"{{hostname}}":   "a brace that is of no placeholder",
-		"{hostname}.{x}": "{x} is no placeholder",
+		"{host}":         "{host} isn't a placeholder: use {hostname}, {n} or {mac}",
+		"{Hostname}":     "{Hostname} isn't a placeholder",
+		"{}":             "{} isn't a placeholder",
+		"{n}":            "{n} numbers the hosts that share a name, so it needs {hostname} too, as {n}.{hostname}",
+		"{n}.{mac}":      "so it needs {hostname} too",
+		"{hostname":      "a brace that isn't part of a placeholder",
+		"hostname}":      "a brace that isn't part of a placeholder",
+		"{{hostname}}":   "a brace that isn't part of a placeholder",
+		"{hostname}.{x}": "{x} isn't a placeholder",
 	} {
 		if !IsTemplate(name) {
 			t.Errorf("%s: not seen as a template, and so not refused", name)
@@ -81,10 +81,10 @@ func TestTemplatesOfTheConfiguration(t *testing.T) {
 	}
 	for name, c := range map[string]struct{ config, want string }{
 		"the names not learned": {"discovery:\n  protocols:\n" + noNames + task(`"{hostname}"`),
-			`task lan: endpoint duck: the name "{hostname}" is of the hosts' names, which nothing learns: it needs a protocol of discovery.protocols that does, as mdns, or a plugin`},
-		"no placeholder":           {named + task(`"{host}"`), `task lan: endpoint duck: the name "{host}": {host} is no placeholder: they are {hostname}, {n} and {mac}`},
-		"a place without the name": {named + task(`"{n}.lan"`), `the name "{n}.lan": {n} is the place of a host among those of one name`},
-		"a brace alone":            {named + task(`"nas}"`), `the name "nas}": a brace that is of no placeholder`},
+			`task lan: endpoint duck: the name "{hostname}" uses the hosts' names, but nothing learns them: turn on a protocol under discovery.protocols that does, as mdns, or add a plugin`},
+		"no placeholder":           {named + task(`"{host}"`), `task lan: endpoint duck: the name "{host}": {host} isn't a placeholder: use {hostname}, {n} or {mac}`},
+		"a place without the name": {named + task(`"{n}.lan"`), `the name "{n}.lan": {n} numbers the hosts that share a name`},
+		"a brace alone":            {named + task(`"nas}"`), `the name "nas}": a brace that isn't part of a placeholder`},
 	} {
 		if _, err := loadConfig(t, c.config); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want an error with %q", name, err, c.want)

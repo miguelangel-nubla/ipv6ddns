@@ -476,11 +476,11 @@ tasks: {}
 	address6 := "[" + srv.IPv6.String() + "]"
 	for i, c := range []struct{ lab, lan, want string }{
 		// A network, and the machine's address in it.
-		{"198.18.19.0/24", srv.IPv4.String(), fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as 198.18.19.0/24, lan as %[1]s: an address and port is one resolver's", srv.IPv4)},
+		{"198.18.19.0/24", srv.IPv4.String(), fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as 198.18.19.0/24, lan as %[1]s: an address and port can belong to only one resolver", srv.IPv4)},
 		// A port alone, every address, and one of them.
-		{`"` + address6 + `"`, "53", fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as %[1]s, lan as 53: an address and port is one resolver's", address6)},
+		{`"` + address6 + `"`, "53", fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as %[1]s, lan as 53: an address and port can belong to only one resolver", address6)},
 		// Every IPv4 address, and one of them, the second of its resolver's entries.
-		{"0.0.0.0:5353", `["127.0.0.1", "` + srv.IPv4.String() + `:5353"]`, fmt.Sprintf("resolvers lab and lan both listen on %[1]s:5353: lab as 0.0.0.0:5353, lan as %[1]s:5353: an address and port is one resolver's", srv.IPv4)},
+		{"0.0.0.0:5353", `["127.0.0.1", "` + srv.IPv4.String() + `:5353"]`, fmt.Sprintf("resolvers lab and lan both listen on %[1]s:5353: lab as 0.0.0.0:5353, lan as %[1]s:5353: an address and port can belong to only one resolver", srv.IPv4)},
 	} {
 		wrote := configure(t, srv, lan.Router, fmt.Sprintf("colliding-%d", i), 8053, config(c.lab, c.lan)).start().fails()
 		if !strings.Contains(wrote, c.want) {

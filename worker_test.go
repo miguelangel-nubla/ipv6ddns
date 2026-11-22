@@ -527,7 +527,7 @@ credentials:
 		want  []string
 	}{
 		"two ways": {task("a", "aws", "nas") + task("b", "aws", "nas.example.com"),
-			[]string{"endpoint aws: nas and nas.example.com may be one name, written two ways: Route 53 tells its zone at the first update, and until then they are two, each writing the records with its own addresses alone. Write the name one way in every task"}},
+			[]string{"endpoint aws: nas and nas.example.com may be the same name, written two ways. ipv6ddns learns the zone from Route 53 at the first update, and until then they are two names, each writing the records with only its own addresses. Write the name one way in every task"}},
 		"one way":           {task("a", "aws", "nas") + task("b", "aws", "nas"), nil},
 		"other names":       {task("a", "aws", "nas", "nasa.example.com", "web"), nil},
 		"a provider's zone": {task("a", "duck", "nas") + task("b", "duck", "nas.duckdns.org"), nil},

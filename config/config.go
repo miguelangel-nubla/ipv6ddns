@@ -231,16 +231,16 @@ func validateConfig(configData []byte) error {
 		for _, desc := range specificErrors(result.Errors()) {
 			// A duration's pattern, in words.
 			if desc.Type() == "pattern" && strings.Contains(desc.Description(), "ns|us") {
-				fmt.Fprintf(&errs, "\n- %s: not a duration, as 90s, 1m30s or 1h", desc.Field())
+				fmt.Fprintf(&errs, "\n- %s: not a duration: write it as 90s, 1m30s or 1h", desc.Field())
 				continue
 			}
 			// A filter's patterns too: the MAC, and the VALUE/MASK pairs.
 			if desc.Type() == "pattern" && strings.HasSuffix(desc.Field(), ".mac.address") {
-				fmt.Fprintf(&errs, "\n- %s: not a MAC address, as 00:11:22:33:44:55", desc.Field())
+				fmt.Fprintf(&errs, "\n- %s: not a MAC address: write it as 00:11:22:33:44:55", desc.Field())
 				continue
 			}
 			if desc.Type() == "pattern" && strings.Contains(desc.Field(), ".mask.") {
-				fmt.Fprintf(&errs, "\n- %s: not VALUE/MASK, both written whole, as ::1/::ffff:ffff:ffff:ffff: the mask is no prefix length", desc.Field())
+				fmt.Fprintf(&errs, "\n- %s: not VALUE/MASK: write both in full, as ::1/::ffff:ffff:ffff:ffff. The mask is an address, not a prefix length", desc.Field())
 				continue
 			}
 			fmt.Fprintf(&errs, "\n- %s", desc)
@@ -326,10 +326,10 @@ func NewConfig(filename string) (config Config, err error) {
 	for _, name := range slices.Sorted(maps.Keys(config.Credentials)) {
 		// A failing provider is tried again at every retry: with none it would be without a pause.
 		if retry := config.Credentials[name].Retry; retry.Duration < MinRetry {
-			return config, fmt.Errorf("credentials.%s: invalid retry %s: at least %s", name, retry.Duration, MinRetry)
+			return config, fmt.Errorf("credentials.%s.retry: %s is too short: the least is %s", name, retry.Duration, MinRetry)
 		}
 		if debounce := config.Credentials[name].Debounce; debounce.Duration < 0 {
-			return config, fmt.Errorf("credentials.%s: invalid debounce %s: not negative", name, debounce.Duration)
+			return config, fmt.Errorf("credentials.%s.debounce: %s is negative: use 0 or more", name, debounce.Duration)
 		}
 	}
 
@@ -342,7 +342,7 @@ func NewConfig(filename string) (config Config, err error) {
 		config.Tasks[name] = task
 		for endpoint := range task.Endpoints {
 			if _, ok := config.Credentials[endpoint]; !ok {
-				return config, fmt.Errorf("task %s: no credential %s for its endpoint", name, endpoint)
+				return config, fmt.Errorf("task %s: the endpoint %s is no credential: add it under credentials, or fix its name", name, endpoint)
 			}
 		}
 	}

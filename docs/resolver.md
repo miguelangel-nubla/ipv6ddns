@@ -226,31 +226,31 @@ The configuration is checked at the start. A mistake stops it, and says where it
 
 | The mistake | The error |
 |---|---|
-| A resolver without `listen` | `resolvers.lan.listen: where the resolver answers is to be given: the network of its clients, as 192.168.1.0/24, for the machine's address in it, or that address; without a port, 53` |
-| A resolver without `upstream` | `resolvers.lan.upstream: the servers the resolver asks what isn't its own are to be given, one or more, as 192.168.1.1 or 1.1.1.1:53: without them, it would answer no other name` |
-| An upstream by host name, without `bootstrap` | `resolvers.lan.upstream: "dns.google" is a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one` |
-| An encrypted upstream at a host name, without `bootstrap` | `resolvers.lan.upstream: "tls://dns.example.net" is at a host name: its addresses are asked of bootstrap, the servers for that alone, which is to be given, as bootstrap: 9.9.9.9; not the system's resolver, which can be this one` |
-| A scheme that isn't `tls` or `https` | `resolvers.lan.upstream: "quic://dns.example.net": the scheme quic: an upstream is plain DNS, as 1.1.1.1 or dns.example.net, tls:// for DNS over TLS, as tls://1.1.1.1, or https:// for DNS over HTTPS, as https://dns.example.net/dns-query` |
-| DNS over HTTPS without a path | `resolvers.lan.upstream: "https://dns.example.net": DNS over HTTPS is asked at a path, which is to be given, as https://dns.example.net/dns-query` |
-| DNS over HTTPS with a query, a fragment or a user | `resolvers.lan.upstream: "https://dns.example.net/dns-query?dns=x": DNS over HTTPS is a host, with a port or not, and a path: no user, query or fragment` |
-| DNS over TLS with a path | `resolvers.lan.upstream: "tls://1.1.1.1/dns-query": DNS over TLS is a host, with a port or not: no path, which is of https://` |
-| DNS over TLS with a query, a fragment or a user | `resolvers.lan.upstream: "tls://1.1.1.1?x=1": DNS over TLS is a host, with a port or not: no user, query or fragment` |
-| An encrypted upstream at port 0, or past 65535 | `resolvers.lan.upstream: "tls://1.1.1.1:0": the port 0: a port is from 1 to 65535` |
-| An encrypted upstream whose host is neither an address nor a host name | `resolvers.lan.upstream: "tls://:853": the host is an address or a host name, with a port or not, as tls://1.1.1.1, tls://[2606:4700:4700::1111]:853 or tls://dns.example.net` |
-| A `bootstrap` with no upstream by host name | `resolvers.lan.bootstrap: the servers that find the upstream servers given by host name, and every upstream is an address: leave it out` |
-| A `bootstrap` server by host name | `resolvers.lan.bootstrap: "dns.quad9.net": an address, with a port or not, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53` |
-| A credential whose `resolver` is no resolver | `credentials.home.settings.resolver: wan is no resolver: they are lan` |
-| A credential without `resolver`, with two resolvers | `credentials.home.settings.resolver: which resolver answers the zone is to be said, of lab, lan` |
-| A credential, with no resolver at all | `credentials.home: the provider resolver is a zone that a resolver answers, and there is none: add one to resolvers, with where it listens and the servers it asks` |
-| Two credentials of one zone on one resolver | `credentials home and office: both are the zone home.arpa of resolver lan: a zone is one credential's` |
-| Two resolvers with one entry | `resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port is one resolver's` |
-| Two resolvers on one address and port, spelled two ways | `resolvers lab and lan both listen on 192.168.1.2:53: lab as 192.168.1.0/24, lan as 192.168.1.2: an address and port is one resolver's` |
-| A zone's record of a name outside it | `credentials.home.settings.records: "printer.example.com. A 192.168.1.20": printer.example.com. is not of the zone home.arpa: a zone's records are of its names, relative to it, or absolute within it` |
-| A resolver's record without its trailing dot | `resolvers.lan.records: "www.example.com CNAME nas.home.arpa.": the name www.example.com is to be absolute, with its trailing dot, as www.example.com.: these records are of no zone` |
-| A resolver's record of a name of its zone | `resolvers.lan.records: "tv.home.arpa. A 192.168.1.30": tv.home.arpa. is of the zone home.arpa, of credential home: give it there, in its records` |
+| A resolver without `listen` | `resolvers.lan.listen is missing: give where the resolver answers. That's the clients' network, as 192.168.1.0/24, for this machine's address in it, or the address itself. Without a port, 53` |
+| A resolver without `upstream` | `resolvers.lan.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own, as 192.168.1.1 or 1.1.1.1:53. Without them, it answers no other name` |
+| An upstream by host name, without `bootstrap` | `resolvers.lan.upstream: "dns.google" is a host name, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one` |
+| An encrypted upstream at a host name, without `bootstrap` | `resolvers.lan.upstream: "tls://dns.example.net" is at a host name, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one` |
+| A scheme that isn't `tls` or `https` | `resolvers.lan.upstream: "quic://dns.example.net": unknown scheme quic: use plain DNS, as 1.1.1.1 or dns.example.net; tls:// for DNS over TLS, as tls://1.1.1.1; or https:// for DNS over HTTPS, as https://dns.example.net/dns-query` |
+| DNS over HTTPS without a path | `resolvers.lan.upstream: "https://dns.example.net": DNS over HTTPS needs a path, as https://dns.example.net/dns-query` |
+| DNS over HTTPS with a query, a fragment or a user | `resolvers.lan.upstream: "https://dns.example.net/dns-query?dns=x": DNS over HTTPS takes a host, with or without a port, and a path: no user, query or fragment` |
+| DNS over TLS with a path | `resolvers.lan.upstream: "tls://1.1.1.1/dns-query": DNS over TLS takes a host, with or without a port, and no path: paths are for https://` |
+| DNS over TLS with a query, a fragment or a user | `resolvers.lan.upstream: "tls://1.1.1.1?x=1": DNS over TLS takes a host, with or without a port: no user, query or fragment` |
+| An encrypted upstream at port 0, or past 65535 | `resolvers.lan.upstream: "tls://1.1.1.1:0": the port 0 is out of range: ports go from 1 to 65535` |
+| An encrypted upstream whose host is neither an address nor a host name | `resolvers.lan.upstream: "tls://:853": the host must be an address or a host name, with or without a port, as tls://1.1.1.1, tls://[2606:4700:4700::1111]:853 or tls://dns.example.net` |
+| A `bootstrap` with no upstream by host name | `resolvers.lan.bootstrap only looks up upstream servers given by host name, and every upstream here is an address: leave it out` |
+| A `bootstrap` server by host name | `resolvers.lan.bootstrap: "dns.quad9.net" is not an address, with or without a port, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53` |
+| A credential whose `resolver` is no resolver | `credentials.home.settings.resolver: there's no resolver wan: the resolvers are lan` |
+| A credential without `resolver`, with two resolvers | `credentials.home.settings.resolver is missing: say which of lab, lan answers the zone` |
+| A credential, with no resolver at all | `credentials.home: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listen and upstream` |
+| Two credentials of one zone on one resolver | `credentials home and office are both the zone home.arpa of resolver lan: a zone can belong to only one credential` |
+| Two resolvers with one entry | `resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port can belong to only one resolver` |
+| Two resolvers on one address and port, spelled two ways | `resolvers lab and lan both listen on 192.168.1.2:53: lab as 192.168.1.0/24, lan as 192.168.1.2: an address and port can belong to only one resolver` |
+| A zone's record of a name outside it | `credentials.home.settings.records: "printer.example.com. A 192.168.1.20": printer.example.com. isn't in the zone home.arpa: a zone's records must be for its names, relative to it or absolute within it` |
+| A resolver's record without its trailing dot | `resolvers.lan.records: "www.example.com CNAME nas.home.arpa.": the name www.example.com must be absolute, ending in a dot, as www.example.com.: these records belong to no zone` |
+| A resolver's record of a name of its zone | `resolvers.lan.records: "tv.home.arpa. A 192.168.1.30": tv.home.arpa. is in the zone home.arpa, of credential home: give it in that credential's records` |
 | A record that doesn't read | `credentials.home.settings.records: "printer A 192.168.1.300": bad A A: "192.168.1.300"`, the line quoted, and what the parser says |
-| A CNAME beside other records of its name | `credentials.home.settings.records: files.home.arpa. has a CNAME and other records: a CNAME is alone at its name, the other data is its target's` |
-| A record of a name a task publishes | `credentials.home.settings.records: "nas TXT \"x\"": nas.home.arpa. is a name task nas publishes, which has its addresses: a record is of another name` |
+| A CNAME beside other records of its name | `credentials.home.settings.records: files.home.arpa. has a CNAME and other records: a name with a CNAME can't have others, since its data is the target's` |
+| A record of a name a task publishes | `credentials.home.settings.records: "nas TXT \"x\"": nas.home.arpa. is published by task nas, which gives its addresses: records are for other names` |
 | CNAMEs in a loop | `resolvers.lan: the CNAMEs a.home.arpa. -> b.home.arpa. -> a.home.arpa. are a loop` |
 
 Two resolvers with two spellings of the same address and port are caught once the entries are resolved as the machine has them, at the start, before either one listens. That covers a network and the machine's address in it, a host name and the address it resolves to, a port alone (every address) and any address at that port, and `0.0.0.0` and any IPv4 address. The error names both resolvers, the address, and each one's entry as written; for two ports alone, `every address, port 53`. An address taken by another program, or another instance, fails when it tries to listen: `address already in use`.

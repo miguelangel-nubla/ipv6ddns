@@ -38,7 +38,7 @@ func TestDiscovery(t *testing.T) {
 			[]string{"discovery.solicit.ipv6 does nothing without discovery.ipv6.listen, which reads the answers"}},
 		// And so is an IPv4 block that doesn't say enabled: IPv4 is off by default.
 		"ipv4, its ways alone": {"discovery:\n  ipv4:\n    active: false\n    lifetime: 10m\n", on, disc.Family{Listen: true, Lifetime: disc.Duration(10 * time.Minute)}, Solicit{},
-			[]string{"discovery.ipv4 has active, lifetime, and no enabled: IPv4 is off, and they do nothing, until it has enabled: true"}},
+			[]string{"discovery.ipv4 sets active, lifetime but not enabled: IPv4 is off, so they do nothing. Add enabled: true"}},
 		"ipv4, off and said so": {"discovery:\n  ipv4:\n    enabled: false\n    active: false\n", on, disc.Family{Listen: true}, Solicit{}, nil},
 		"ipv4, empty":           {"discovery:\n  ipv4: {}\n", on, off, Solicit{}, nil},
 		"solicit, a family off": {"discovery:\n  solicit:\n    ipv4: true\n", on, off, Solicit{IPv4: true},
@@ -126,9 +126,9 @@ func TestDiscoveryErrors(t *testing.T) {
 	for name, tt := range map[string]struct{ config, want string }{
 		// The keys that moved.
 		// The keys that are gone: no such key, with those there are.
-		"listen":        {"discovery:\n  listen: false\n", "discovery.listen: no such key: discovery has " + keys},
-		"active":        {"discovery:\n  active: false\n", "discovery.active: no such key: discovery has " + keys},
-		"solicit_eui64": {"discovery:\n  solicit_eui64: true\n", "discovery.solicit_eui64: no such key: discovery has " + keys},
+		"listen":        {"discovery:\n  listen: false\n", "discovery.listen: unknown key: the keys are " + keys},
+		"active":        {"discovery:\n  active: false\n", "discovery.active: unknown key: the keys are " + keys},
+		"solicit_eui64": {"discovery:\n  solicit_eui64: true\n", "discovery.solicit_eui64: unknown key: the keys are " + keys},
 		"ipv4: true":    {"discovery:\n  ipv4: true\n", "discovery.ipv4: true is not its settings: it is written as ipv4, with enabled: true under it"},
 		"ipv6: false":   {"discovery:\n  ipv6: false\n", "discovery.ipv6: false is not its settings: it is written as ipv6, with enabled: false under it"},
 		// ipv6disc's own.
@@ -144,12 +144,12 @@ func TestDiscoveryErrors(t *testing.T) {
 		"ping without ndp":       {"discovery:\n  protocols:\n    ndp:\n      enabled: false\n    ssdp:\n      enabled: false\n    wsd:\n      enabled: false\n", "discovery: the ping protocol is enabled without ndp, which tells the MAC of the hosts it hears: it would find none"},
 		"a key hostnames hasn't": {"discovery:\n  hostnames:\n    enabled: true\n", "discovery.hostnames.enabled: no such key: hostnames has lifetime"},
 		"a sweep too large":      {"discovery:\n  protocols:\n    arp-sweep:\n      max_prefix: 8\n", "discovery: invalid max_prefix of the arp-sweep protocol, 8: it is from 16 to 30"},
-		"a block that is none":   {"discovery: all\n", `discovery: "all" is not a mapping of its keys`},
+		"a block that is none":   {"discovery: all\n", `discovery: "all" isn't a mapping: write its keys under it`},
 		"a plugin of no type":    {"discovery:\n  plugins:\n    router:\n      interval: 60s\n", "discovery.plugins.router: a plugin has a type: one of freebsd, linux, mikrotik"},
 		"a plugin's field":       {"discovery:\n  plugins:\n    router:\n      type: linux\n      interval: 60s\n      address: a\n      username: b\n      passwrd: c\n", "discovery.plugins.router.passwrd: no such field of a linux plugin: it has interval, address, username, password, identity_file, host_key"},
 		"a plugin that can't":    {"discovery:\n  plugins:\n    router:\n      type: linux\n      interval: 60s\n      address: a\n      username: b\n", "discovery.plugins.router: "},
-		"solicit, a switch":      {"discovery:\n  solicit: true\n", "discovery.solicit: true is not its settings: it is written as solicit, with ipv6: true under it, and ipv4 beside that for IPv4"},
-		"solicit, another key":   {"discovery:\n  solicit:\n    eui64: true\n", "discovery.solicit.eui64: no such key: discovery.solicit has ipv6, ipv4"},
+		"solicit, a switch":      {"discovery:\n  solicit: true\n", "discovery.solicit: true isn't valid here: write solicit as a mapping, with ipv6: true under it, and ipv4 beside it for IPv4"},
+		"solicit, another key":   {"discovery:\n  solicit:\n    eui64: true\n", "discovery.solicit.eui64: unknown key: the keys are ipv6 and ipv4"},
 		"solicit, not a switch":  {"discovery:\n  solicit:\n    ipv6: 1\n", "discovery.solicit.ipv6: 1 is not true or false"},
 	} {
 		_, err := loadConfig(t, tt.config+"tasks: {}\n"+duckCredential)
@@ -263,23 +263,23 @@ func TestHomeAssistantConfig(t *testing.T) {
 
 	for name, c := range map[string]struct{ config, want string }{
 		"a listen entry":             {"homeassistant:\n  key_provisioning: true\n  listen:\n    - 'a:b:c'\n", "homeassistant.listen"},
-		"two ports, announced":       {"homeassistant:\n  key_provisioning: true\n  listen:\n    - 10.2.3.75\n    - '[fd00::1]:7000'\n", "announces one port"},
+		"two ports, announced":       {"homeassistant:\n  key_provisioning: true\n  listen:\n    - 10.2.3.75\n    - '[fd00::1]:7000'\n", "can announce only one port"},
 		"a listen network with port": {"homeassistant:\n  key_provisioning: true\n  listen:\n    - '10.2.3.0/24:6053'\n", "homeassistant.listen"},
 		"a source without the block": {"sources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\n", "needs the homeassistant block"},
 		"a source without an entity": {"homeassistant:\n  listen: 6053\n  key: " + key + "\nsources:\n  wan:\n    type: homeassistant\n", "entity"},
 		"a short key":                {"homeassistant:\n  listen: 6053\n  key: c2hvcnQ=\n", "key"},
 		// How the device has its key: each says what to do.
-		"neither a key nor key provisioning":  {"homeassistant:\n  listen: 6053\n", `needs its encryption key, one way or the other: key, your own, made with "openssl rand -base64 32"`},
-		"neither, the choices":                {"homeassistant:\n  listen: 6053\n  name: guests\n", "${file:homeassistant.key}; or key_provisioning: true, for Home Assistant to give it when it adds the device, kept in key_provisioning_state_file"},
-		"key provisioning off, and no key":    {"homeassistant:\n  listen: 6053\n  key_provisioning: false\n", "needs its encryption key"},
-		"a key and key provisioning":          {"homeassistant:\n  listen: 6053\n  key: " + key + "\n  key_provisioning: true\n", "a key, or key_provisioning: true for Home Assistant to give it: one or the other"},
-		"a state file alone":                  {"homeassistant:\n  listen: 6053\n  key_provisioning_state_file: x.state\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept: it needs key_provisioning: true"},
-		"a state file and a key":              {"homeassistant:\n  listen: 6053\n  key: " + key + "\n  key_provisioning_state_file: x.state\n", "homeassistant.key_provisioning_state_file is where the key Home Assistant gives is kept, with key_provisioning: true: with a key of your own nothing is kept, so leave it out"},
+		"neither a key nor key provisioning":  {"homeassistant:\n  listen: 6053\n", `needs an encryption key, in one of two ways. key: your own, made with "openssl rand -base64 32"`},
+		"neither, the choices":                {"homeassistant:\n  listen: 6053\n  name: guests\n", "${file:homeassistant.key}. Or key_provisioning: true: Home Assistant gives the key when it adds the device, and it's stored in key_provisioning_state_file"},
+		"key provisioning off, and no key":    {"homeassistant:\n  listen: 6053\n  key_provisioning: false\n", "needs an encryption key"},
+		"a key and key provisioning":          {"homeassistant:\n  listen: 6053\n  key: " + key + "\n  key_provisioning: true\n", "give a key or key_provisioning: true, not both"},
+		"a state file alone":                  {"homeassistant:\n  listen: 6053\n  key_provisioning_state_file: x.state\n", "homeassistant.key_provisioning_state_file stores the key Home Assistant gives: it needs key_provisioning: true"},
+		"a state file and a key":              {"homeassistant:\n  listen: 6053\n  key: " + key + "\n  key_provisioning_state_file: x.state\n", "homeassistant.key_provisioning_state_file stores the key Home Assistant gives, with key_provisioning: true. With your own key nothing is stored, so leave it out"},
 		"a state file, key provisioning off":  {"homeassistant:\n  listen: 6053\n  key_provisioning: false\n  key_provisioning_state_file: x.state\n", "it needs key_provisioning: true"},
 		"key provisioning that is no boolean": {"homeassistant:\n  listen: 6053\n  key_provisioning: 'yes'\n", "homeassistant.key_provisioning: Invalid type. Expected: boolean"},
 		// Where it listens: never by default, which would be every address, the internet's too on a router.
-		"no listen":            {"homeassistant:\n  key: " + key + "\n", "homeassistant.listen: where the device listens, for Home Assistant to connect, is to be given: the network Home Assistant is on, as 192.168.1.0/24"},
-		"no listen, the port":  {"homeassistant:\n  key_provisioning: true\n", "or a port alone, 6053, for every address of the machine"},
+		"no listen":            {"homeassistant:\n  key: " + key + "\n", "homeassistant.listen is missing: give where Home Assistant can connect to the device. That's the network Home Assistant is on, as 192.168.1.0/24"},
+		"no listen, the port":  {"homeassistant:\n  key_provisioning: true\n", "A port alone, as 6053, means every address of the machine"},
 		"a name with capitals": {"homeassistant:\n  listen: 6053\n  key: " + key + "\n  name: IPv6DDNS\n", "name"},
 	} {
 		if _, err := loadConfig(t, c.config+"tasks: {}\n"+duckCredential); err == nil || !strings.Contains(err.Error(), c.want) {

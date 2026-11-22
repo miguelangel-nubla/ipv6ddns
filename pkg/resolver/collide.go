@@ -88,7 +88,7 @@ func CheckListen(servers []*Server) error {
 				if host, port, _ := net.SplitHostPort(at); host == "" {
 					shown = "every address, port " + port
 				}
-				return fmt.Errorf("resolvers %s and %s both listen on %s: %s as %s, %s as %s: an address and port is one resolver's", a.resolver, b.resolver, shown, a.resolver, a.entry, b.resolver, b.entry)
+				return fmt.Errorf("resolvers %s and %s both listen on %s: %s as %s, %s as %s: an address and port can belong to only one resolver", a.resolver, b.resolver, shown, a.resolver, a.entry, b.resolver, b.entry)
 			}
 		}
 	}

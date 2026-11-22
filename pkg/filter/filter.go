@@ -38,7 +38,7 @@ func ParseMACMask(s string) (value, mask net.HardwareAddr, err error) {
 		return nil, nil, fmt.Errorf("the mask %q is not a MAC, as ff:ff:ff:00:00:00", m)
 	}
 	if len(value) != len(mask) {
-		return nil, nil, fmt.Errorf("the mask is %d bytes, the value %d", len(mask), len(value))
+		return nil, nil, fmt.Errorf("the mask is %d bytes and the value %d: they must be the same length", len(mask), len(value))
 	}
 	return value, mask, nil
 }
@@ -223,7 +223,7 @@ func CheckPrefix(ip netip.Addr, prefix netip.Prefix) bool {
 // ParseIPMask reads a VALUE/MASK pair of addresses of one family, as ::1/::ffff:ffff:ffff:ffff or
 // 0.0.0.5/0.0.0.255. The mask is an address, not a prefix length.
 func ParseIPMask(s string) (value, mask netip.Addr, err error) {
-	const hint = "the mask is an address, as ::ffff:ffff:ffff:ffff or 0.0.0.255, not a prefix length: ip.prefix takes 2001:db8::/32"
+	const hint = "the mask must be an address, as ::ffff:ffff:ffff:ffff or 0.0.0.255, not a prefix length. For a prefix, use ip.prefix, as 2001:db8::/32"
 	v, m, ok := strings.Cut(s, "/")
 	if !ok || strings.Contains(m, "/") {
 		return value, mask, errors.New("not VALUE/MASK, as ::1/::ffff:ffff:ffff:ffff")
@@ -236,7 +236,7 @@ func ParseIPMask(s string) (value, mask netip.Addr, err error) {
 	}
 	value, mask = value.Unmap(), mask.Unmap()
 	if value.Is4() != mask.Is4() {
-		return netip.Addr{}, netip.Addr{}, errors.New("the value and the mask are not of the same family")
+		return netip.Addr{}, netip.Addr{}, errors.New("the value and the mask are of different families")
 	}
 	return value, mask, nil
 }

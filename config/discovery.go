@@ -100,7 +100,7 @@ func (d *Discovery) UnmarshalJSON(b []byte) error {
 	}
 	var block map[string]json.RawMessage
 	if err := json.Unmarshal(b, &block); err != nil {
-		return fmt.Errorf("discovery: %s is not a mapping of its keys", b)
+		return fmt.Errorf("discovery: %s isn't a mapping: write its keys under it", b)
 	}
 
 	var errs []error
@@ -111,7 +111,7 @@ func (d *Discovery) UnmarshalJSON(b []byte) error {
 		case key == "solicit":
 			errs = append(errs, d.Solicit.read(block[key]))
 		case !slices.Contains(known, key):
-			errs = append(errs, fmt.Errorf("discovery.%s: no such key: discovery has %s", key, strings.Join(known, ", ")))
+			errs = append(errs, fmt.Errorf("discovery.%s: unknown key: the keys are %s", key, strings.Join(known, ", ")))
 		default:
 			rest[key] = block[key]
 		}
@@ -134,9 +134,9 @@ func (s *Solicit) read(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &block); err != nil {
 		var on bool
 		if json.Unmarshal(raw, &on) == nil {
-			return fmt.Errorf("discovery.solicit: %s is not its settings: it is written as solicit, with ipv6: %t under it, and ipv4 beside that for IPv4", raw, on)
+			return fmt.Errorf("discovery.solicit: %s isn't valid here: write solicit as a mapping, with ipv6: %t under it, and ipv4 beside it for IPv4", raw, on)
 		}
-		return fmt.Errorf("discovery.solicit: %s is not a mapping of its keys", raw)
+		return fmt.Errorf("discovery.solicit: %s isn't a mapping: write ipv6 and ipv4 under it", raw)
 	}
 	var errs []error
 	for _, key := range slices.Sorted(maps.Keys(block)) {
@@ -147,7 +147,7 @@ func (s *Solicit) read(raw json.RawMessage) error {
 		case "ipv4":
 			family = &s.IPv4
 		default:
-			errs = append(errs, fmt.Errorf("discovery.solicit.%s: no such key: discovery.solicit has ipv6, ipv4", key))
+			errs = append(errs, fmt.Errorf("discovery.solicit.%s: unknown key: the keys are ipv6 and ipv4", key))
 			continue
 		}
 		if value := bytes.TrimSpace(block[key]); string(value) != "null" && json.Unmarshal(value, family) != nil {
@@ -234,5 +234,5 @@ func familyWarnings(configData []byte) []string {
 	if _, ok := top.Discovery.IPv4["enabled"]; ok {
 		return nil
 	}
-	return []string{fmt.Sprintf("discovery.ipv4 has %s, and no enabled: IPv4 is off, and they do nothing, until it has enabled: true", strings.Join(slices.Sorted(maps.Keys(top.Discovery.IPv4)), ", "))}
+	return []string{fmt.Sprintf("discovery.ipv4 sets %s but not enabled: IPv4 is off, so they do nothing. Add enabled: true", strings.Join(slices.Sorted(maps.Keys(top.Discovery.IPv4)), ", "))}
 }

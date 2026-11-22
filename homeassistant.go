@@ -129,14 +129,14 @@ func loadDeviceState(path string) (*deviceState, error) {
 	switch {
 	case err == nil:
 		if err := json.Unmarshal(content, &state); err != nil || len(state.Identity) != 32 || state.Key != nil && len(state.Key) != 32 {
-			return nil, fmt.Errorf("the state file %s isn't one: delete it, and Home Assistant sees a new device", path)
+			return nil, fmt.Errorf("%s isn't a valid state file: delete it, and Home Assistant will see a new device", path)
 		}
 		return &state, nil
 	case errors.Is(err, fs.ErrNotExist):
 		state.Identity = make([]byte, 32)
 		rand.Read(state.Identity)
 		if err := state.save(path); err != nil {
-			return nil, fmt.Errorf("%w: with key_provisioning, the key Home Assistant gives is kept there; set key_provisioning_state_file to a file ipv6ddns can write, or give a key instead", err)
+			return nil, fmt.Errorf("%w: with key_provisioning, the key Home Assistant gives is stored there. Set key_provisioning_state_file to a file ipv6ddns can write, or give a key instead", err)
 		}
 		return &state, nil
 	default:
@@ -157,7 +157,7 @@ func (h *homeAssistant) lockState() (release func(), err error) {
 	}
 	release, err = lockFile(h.stateFile + ".lock")
 	if errors.Is(err, errLocked) {
-		return nil, fmt.Errorf("homeassistant: the state file %s is that of another ipv6ddns running: each instance is a device of its own, with its own key_provisioning_state_file, and its own name", h.stateFile)
+		return nil, fmt.Errorf("homeassistant: the state file %s is in use by another running ipv6ddns. Each instance is its own device, and needs its own key_provisioning_state_file and name", h.stateFile)
 	}
 	if err != nil {
 		// No lock to take, as beside a state file that is there in a folder that can't be
@@ -284,7 +284,7 @@ func (h *homeAssistant) addEntities(names []haName, updateNow func()) {
 		}
 		base := bases[n.key()]
 		if base != entityBase(n) && h.device.Logger != nil {
-			h.device.Logger.Warnf("homeassistant: %s of %s: its entities' id, %s, is another name's too: they are %s", n.hostname, n.endpoint, entityBase(n), base)
+			h.device.Logger.Warnf("homeassistant: %s of %s: its entity ID, %s, is the same as another name's, so its entities are %s", n.hostname, n.endpoint, entityBase(n), base)
 		}
 		h.names[n.key()] = nameEntities{
 			addresses: h.device.AddTextSensor(esphome.Entity{

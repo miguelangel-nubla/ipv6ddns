@@ -381,7 +381,7 @@ func (u *unverifiedHostKeys) note(address, hostKey string) {
 	}
 	if !u.warned[address] {
 		u.warned[address] = true
-		u.pending = append(u.pending, fmt.Sprintf("the SSH host key of %s is not verified, so anyone between can impersonate it: set host_key to its fingerprint, %s", address, hostKey))
+		u.pending = append(u.pending, fmt.Sprintf("the SSH host key of %s isn't verified, so anyone in between could impersonate it: set host_key to its fingerprint, %s", address, hostKey))
 	}
 }
 

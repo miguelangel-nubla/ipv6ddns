@@ -153,7 +153,7 @@ func GenerateKey() string {
 func ParseKey(s string) ([]byte, error) {
 	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
 	if err != nil || len(key) != 32 {
-		return nil, errors.New("not an encryption key: the base64 of 32 bytes, as ESPHome's")
+		return nil, errors.New("not an encryption key: it must be base64 of 32 bytes, as ESPHome's")
 	}
 	return key, nil
 }

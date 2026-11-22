@@ -211,9 +211,9 @@ func workerOf(t *testing.T, text string) *Worker {
 func TestWorkerResolversCollide(t *testing.T) {
 	port := freeDNSPort(t)
 	for _, c := range []struct{ lab, lan, want string }{
-		{"127.0.0.0/8", "127.0.0.1", "resolvers lab and lan both listen on 127.0.0.1:53: lab as 127.0.0.0/8, lan as 127.0.0.1: an address and port is one resolver's"},
-		{port, "127.0.0.1:" + port, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as " + port + ", lan as 127.0.0.1:" + port + ": an address and port is one resolver's"},
-		{"0.0.0.0:" + port, `["[::1]:` + port + `", "127.0.0.1:` + port + `"]`, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as 0.0.0.0:" + port + ", lan as 127.0.0.1:" + port + ": an address and port is one resolver's"},
+		{"127.0.0.0/8", "127.0.0.1", "resolvers lab and lan both listen on 127.0.0.1:53: lab as 127.0.0.0/8, lan as 127.0.0.1: an address and port can belong to only one resolver"},
+		{port, "127.0.0.1:" + port, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as " + port + ", lan as 127.0.0.1:" + port + ": an address and port can belong to only one resolver"},
+		{"0.0.0.0:" + port, `["[::1]:` + port + `", "127.0.0.1:` + port + `"]`, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as 0.0.0.0:" + port + ", lan as 127.0.0.1:" + port + ": an address and port can belong to only one resolver"},
 	} {
 		w := workerOf(t, fmt.Sprintf(`
 resolvers:

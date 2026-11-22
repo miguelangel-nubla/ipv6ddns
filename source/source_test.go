@@ -596,7 +596,7 @@ func TestSourceWaits(t *testing.T) {
 	if got := s.Addresses().Strings(); len(got) != 0 {
 		t.Errorf("after its lifetime: %v", got)
 	}
-	if got := logged(); len(got) != 1 || !strings.HasPrefix(got[0], "warn: source ha: still waiting for Home Assistant to connect, longer than its lifetime") {
+	if got := logged(); len(got) != 1 || !strings.HasPrefix(got[0], "warn: source ha: still waiting for Home Assistant to connect after its lifetime") {
 		t.Errorf("past its lifetime logged %q, want one warning", got)
 	}
 
