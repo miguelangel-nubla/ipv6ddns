@@ -159,3 +159,36 @@ func TestUpstreamByNameNeedsBootstrap(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 }
+
+// The status doesn't wait for the bootstrap servers: /healthz and the metrics read it while an
+// upstream given by host name is being looked up, and a bootstrap server that doesn't answer
+// would hold them for its timeout, of each type and each server.
+func TestUpstreamByNameStatusDoesNotWait(t *testing.T) {
+	up, b := newUpstream(t), newBootstrap(t)
+	b.down.Store(true)
+	cfg, _ := testConfig(t, named(t, up))
+	cfg.Bootstrap = []string{b.address}
+	s := start(t, cfg)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m := new(dns.Msg)
+		m.SetQuestion("example.org.", dns.TypeA)
+		c := &dns.Client{Net: "udp", Timeout: 3 * time.Second}
+		c.Exchange(m, s.Addresses()[0])
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for b.queries.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the bootstrap server was never asked")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	start := time.Now()
+	s.Status()
+	if took := time.Since(start); took > s.timeout/2 {
+		t.Errorf("the status took %s, while the bootstrap servers were asked: it waited for them", took.Round(time.Millisecond))
+	}
+	<-done
+}

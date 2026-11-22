@@ -132,6 +132,11 @@ const (
 type namedUpstream struct {
 	host, port string
 
+	// One look-up at a time: the queries that find the addresses' time over wait for it, and
+	// take what it found.
+	lookingUp sync.Mutex
+	// Of addresses and refresh, never held while the bootstrap servers are asked: the status
+	// reads them, and /healthz, which would wait for their timeouts.
 	mutex sync.Mutex
 	// host:port of each address, as last found.
 	addresses []string
@@ -147,21 +152,33 @@ func (s *Server) targets(srv *upstreamServer) []string {
 	if n == nil {
 		return []string{net.JoinHostPort(srv.host, srv.port)}
 	}
+	current := func() ([]string, bool) {
+		n.mutex.Lock()
+		defer n.mutex.Unlock()
+		return n.addresses, time.Now().Before(n.refresh)
+	}
+	if addresses, fresh := current(); fresh {
+		return addresses
+	}
+	n.lookingUp.Lock()
+	defer n.lookingUp.Unlock()
+	// Another query looked them up meanwhile.
+	if addresses, fresh := current(); fresh {
+		return addresses
+	}
+	found, ttl := s.lookUp(n.host)
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
-	if time.Now().Before(n.refresh) {
-		return n.addresses
-	}
-	addresses, ttl := s.lookUp(n.host)
-	if len(addresses) == 0 {
+	if len(found) == 0 {
 		// The addresses there were stay, until the bootstrap servers answer again.
 		n.refresh = time.Now().Add(bootstrapRetryWait)
 		return n.addresses
 	}
-	n.addresses = nil
-	for _, a := range addresses {
-		n.addresses = append(n.addresses, net.JoinHostPort(a, n.port))
+	addresses := make([]string, 0, len(found))
+	for _, a := range found {
+		addresses = append(addresses, net.JoinHostPort(a, n.port))
 	}
+	n.addresses = addresses
 	n.refresh = time.Now().Add(min(max(ttl, minUpstreamTTL), maxUpstreamTTL))
 	return n.addresses
 }
