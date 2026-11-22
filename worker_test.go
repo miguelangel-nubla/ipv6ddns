@@ -495,3 +495,49 @@ func TestHostnameRetryHasAFloor(t *testing.T) {
 		t.Errorf("%d updates in 200ms, want the one, and its retry a second after", n)
 	}
 }
+
+// Route 53 learns its zone at the first update: until then a name and the same written whole are
+// two, which the start warns of. The same name in two tasks, or names of no such pair, are no
+// warning, and nor are those of a provider that knows its zone.
+func TestWorkerWarnsOfRoute53Spellings(t *testing.T) {
+	credentials := `
+credentials:
+  aws:
+    provider: route53
+    settings:
+      access_key_id: id
+      secret_access_key: secret
+      region: eu-west-1
+      hosted_zone_id: Z123
+      ttl: 5m
+  duck:
+    provider: duckdns
+    settings:
+      api_token: 01234567-89ab-cdef-0123-456789abcdef
+`
+	task := func(name, endpoint string, hostnames ...string) string {
+		s := "  " + name + ":\n    filter:\n      - mac:\n          address: \"00:11:22:33:44:55\"\n    endpoints:\n      " + endpoint + ":\n"
+		for _, h := range hostnames {
+			s += "        - " + h + "\n"
+		}
+		return s
+	}
+	for name, tt := range map[string]struct {
+		tasks string
+		want  []string
+	}{
+		"two ways": {task("a", "aws", "nas") + task("b", "aws", "nas.example.com"),
+			[]string{"endpoint aws: nas and nas.example.com may be one name, written two ways: Route 53 tells its zone at the first update, and until then they are two, each writing the records with its own addresses alone. Write the name one way in every task"}},
+		"one way":           {task("a", "aws", "nas") + task("b", "aws", "nas"), nil},
+		"other names":       {task("a", "aws", "nas", "nasa.example.com", "web"), nil},
+		"a provider's zone": {task("a", "duck", "nas") + task("b", "duck", "nas.duckdns.org"), nil},
+	} {
+		w, err := NewWorker(zap.NewNop().Sugar(), loadConfig(t, "tasks:\n"+tt.tasks+credentials))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !slices.Equal(w.config.Warnings, tt.want) {
+			t.Errorf("%s: warnings %q, want %q", name, w.config.Warnings, tt.want)
+		}
+	}
+}

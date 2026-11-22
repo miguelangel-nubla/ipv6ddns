@@ -196,6 +196,8 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		w.resolvers = append(w.resolvers, server)
 	}
 
+	w.config.Warnings = append(slices.Clone(cfg.Warnings), w.zoneLaterWarnings()...)
+
 	// The credentials no task names are checked too: a mistake shows at the start.
 	for _, name := range slices.Sorted(maps.Keys(cfg.Credentials)) {
 		credential := cfg.Credentials[name]
@@ -279,6 +281,31 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 // name as written until then: there "nas" and "nas.example.com" stay two.
 func recordName(endpoint *Endpoint, hostnameKey string) string {
 	return strings.ToLower(strings.Trim(endpoint.Domain(hostnameKey), "."))
+}
+
+// zoneLaterWarnings tells, of each Route 53 endpoint, the names that may be one: Route 53 learns
+// its zone at the first update, and until then "nas" and "nas.example.com" are two names, each of
+// which writes the records with its own addresses alone, in place of the other's.
+func (w *Worker) zoneLaterWarnings() []string {
+	var warnings []string
+	for _, providerKey := range slices.Sorted(maps.Keys(w.State.providers)) {
+		provider := w.State.providers[providerKey]
+		for _, endpointKey := range slices.Sorted(maps.Keys(provider.endpoints)) {
+			endpoint := provider.endpoints[endpointKey]
+			if _, ok := endpoint.Service.(*ddns.Route53); !ok {
+				continue
+			}
+			names := slices.Sorted(maps.Keys(endpoint.names))
+			for _, short := range names {
+				for _, long := range names {
+					if strings.HasPrefix(long, short+".") {
+						warnings = append(warnings, fmt.Sprintf("endpoint %s: %s and %s may be one name, written two ways: Route 53 tells its zone at the first update, and until then they are two, each writing the records with its own addresses alone. Write the name one way in every task", endpointKey, short, long))
+					}
+				}
+			}
+		}
+	}
+	return warnings
 }
 
 // Start runs the discovery, the IPv4 commands and the updates, until ctx is done. Shutdown waits

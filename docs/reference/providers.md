@@ -112,7 +112,7 @@ A zone that a resolver of ipv6ddns answers, to the clients of its network, from 
 
 ## route53
 
-AWS Route 53, over its API.
+AWS Route 53, over its API. The zone is the hosted zone's, learned from AWS at the first update: a name written relative, as nas, and the same written whole, are two names until then, each writing the records with its own addresses alone, and the start warns of them. Write a name one way.
 
 | Key | Takes | |
 |---|---|---|

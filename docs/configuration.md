@@ -39,7 +39,7 @@ discovery:      # how hosts are found: IPv6 by default
 - **Sources** and **discovery** find the addresses.
 - A **resolver**, of `resolvers`, is a DNS server of ipv6ddns's own for the network's clients, which answers the zones of the `resolver` credentials: see the [resolver](resolver.md).
 
-An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`, `""` is the zone itself, `"*.nas"` a wildcard. Written whole, as `nas.home.example.com`, or in another case, it is the same name: the tasks that name it either way give it their addresses together.
+An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`, `""` is the zone itself, `"*.nas"` a wildcard. Written whole, as `nas.home.example.com`, or in another case, it is the same name: the tasks that name it either way give it their addresses together. But at a `route53` endpoint, whose zone is learned from AWS at the first update: there `nas` and `nas.home.example.com` are two names, each writing the records with its own addresses alone, and the start warns of them. Write a name one way there.
 
 Names are expected in lower case: in the configuration, and in the records at the provider. Some providers match a record's name as it is written, so a record of the name in another case, as `NAS` made by hand, may not be found: it is neither updated nor removed, and is answered beside the name's own.
 
