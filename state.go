@@ -70,6 +70,13 @@ func (e *Endpoint) list() ([]string, map[string]*Hostname) {
 // updates go, and its addresses, each with how long it has left, how long it has been seen, and
 // what has it, lined up.
 func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
+	return s.Page(prefix, hideSensible).String()
+}
+
+// Page is PrettyPrint with the roles: what fails as an error, what waits or has no address as a
+// warning, and the times and what has each address as details. A count of the summary has the
+// role of its state only when there is something to it: none failing is no error.
+func (s *State) Page(prefix string, hideSensible bool) pretty.Page {
 	type named struct {
 		domain string
 		status hostnameStatus
@@ -98,49 +105,66 @@ func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 			failing++
 		}
 	}
-	t.Line(fmt.Sprintf("DNS: %d names, %d with addresses, %d without; %d failing", len(all), with, len(all)-with, failing))
+	without := len(all) - with
+	count := func(role pretty.Role, n int, text string, is bool) pretty.Span {
+		if !is {
+			role = pretty.Plain
+		}
+		return pretty.As(role, fmt.Sprintf("%d %s", n, text))
+	}
+	t.Spans(
+		pretty.As(pretty.Heading, "DNS:"),
+		pretty.Span{Text: fmt.Sprintf(" %d names, ", len(all))},
+		count(pretty.OK, with, "with addresses", with > 0 && without == 0 && failing == 0),
+		pretty.Span{Text: ", "},
+		count(pretty.Warn, without, "without", without > 0),
+		pretty.Span{Text: "; "},
+		count(pretty.Error, failing, "failing", failing > 0),
+	)
 	now := time.Now()
 	for _, providerKey := range slices.Sorted(maps.Keys(s.providers)) {
-		t.Line("    Provider: " + providerKey)
+		t.Spans(pretty.As(pretty.Heading, "    Provider: "+providerKey))
 		for _, endpointKey := range slices.Sorted(maps.Keys(s.providers[providerKey].endpoints)) {
-			t.Line("        Endpoint: " + endpointKey)
+			t.Spans(pretty.As(pretty.Heading, "        Endpoint: "+endpointKey))
 			for _, n := range byEndpoint[providerKey+"\x00"+endpointKey] {
 				writeHostnameStatus(&t, "            ", n.domain, n.status, hideSensible, now)
 			}
 		}
 	}
-	return t.Render(prefix)
+	return t.Page(prefix)
 }
 
-// writeHostnameStatus adds a name to t: a line of it and how its updates go, and a row of each of
-// its addresses, of the MAC and what saw it for a discovered one, of its source for one without a
-// MAC.
+// writeHostnameStatus adds a name to t: a line of it and how its updates go, under it the error
+// of its last update, on a line of its own, which no timer then pushes off the screen, and a row
+// of each of its addresses, of the MAC and what saw it for a discovered one, of its source for
+// one without a MAC.
 func writeHostnameStatus(t *pretty.Table, indent, domain string, status hostnameStatus, hideSensible bool, now time.Time) {
-	line := indent + domain + ":"
+	line := pretty.Line{pretty.As(pretty.Name, indent+domain), {Text: ":"}}
 	if status.updateRunning {
-		line += " (update running)"
+		line = append(line, pretty.Span{Text: " (update running)"})
 	}
 	if status.nextUpdateTime.After(now) {
-		why := ""
+		// A debounce is how every change goes: only the retry is a wait to tell apart.
+		why, role := "", pretty.Detail
 		switch status.nextUpdateReason {
 		case updateDebounce:
 			why = fmt.Sprintf(", waiting for the %s debounce", status.debounce)
 		case updateRetry:
-			why = ", retrying after the error"
+			why, role = ", retrying after the error", pretty.Warn
 		}
-		line += fmt.Sprintf(" (next update: %v%s)", status.nextUpdateTime.Sub(now).Round(time.Second), why)
+		line = append(line, pretty.Span{Text: " "}, pretty.As(role, fmt.Sprintf("(next update: %v%s)", status.nextUpdateTime.Sub(now).Round(time.Second), why)))
 	}
 	if !status.updatedTime.IsZero() {
-		line += fmt.Sprintf(" (last update: %s)", status.updatedTime.Format(time.RFC3339))
+		line = append(line, pretty.Span{Text: " "}, pretty.As(pretty.Detail, fmt.Sprintf("(last update: %s)", status.updatedTime.Format(time.RFC3339))))
 	}
+	t.Spans(line...)
 	if status.updateError != nil {
 		err := status.updateError.Error()
 		if hideSensible {
 			err = "<sensible data hidden>"
 		}
-		line += fmt.Sprintf(" (last update error: %s)", err)
+		t.Spans(pretty.Span{Text: indent + "    "}, pretty.As(pretty.Error, fmt.Sprintf("(last update error: %s)", err)))
 	}
-	t.Line(line)
 
 	addrs := status.addrs.Get()
 	if len(addrs) == 0 {
@@ -148,7 +172,7 @@ func writeHostnameStatus(t *pretty.Table, indent, domain string, status hostname
 		if !status.emptiedTime.IsZero() {
 			gone = fmt.Sprintf("(no address: the last one went %s ago)", strings.TrimSpace(pretty.Up(now.Sub(status.emptiedTime))))
 		}
-		t.Line(indent + "    " + gone)
+		t.Spans(pretty.Span{Text: indent + "    "}, pretty.As(pretty.Warn, gone))
 		return
 	}
 	for _, addr := range addrs {

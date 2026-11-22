@@ -65,7 +65,7 @@ The alternative is `key_provisioning: true`, where Home Assistant provides the k
 | Flag | |
 |---|---|
 | `-config_file` | The configuration file, YAML or JSON. Default: `config.yaml` |
-| `-live` | Show the report in the terminal, updating live, instead of the log. It needs a terminal. `q`, Esc, Ctrl-C or a signal ends it. Only errors that stop the start are logged, so you don't see the configuration's warnings or the plugins' errors |
+| `-live` | Show the report in the terminal, updating live, instead of the log. It needs a terminal. `q`, Esc, Ctrl-C or a signal ends it. It uses the terminal's colors, and none when `NO_COLOR` is set. Only errors that stop the start are logged, so you don't see the configuration's warnings or the plugins' errors |
 | `-version` | Print the version |
 
 Everything else is set in the [configuration file](reference/configuration.md). For example, `log_level` sets the log level, `webserver.listen` sets where the web report is served, and `discovery.lifetime` sets how long addresses last.
@@ -116,7 +116,8 @@ The web server has these paths:
 
 | Path | Serves |
 |---|---|
-| `/` | The report, as text: the names and their records, the discovered hosts with their [names](discovery.md#names), the protocols that run, and the configuration |
+| `/` | The report: the names and their records, the [resolvers](resolver.md), the discovered hosts with their [names](discovery.md#names), the protocols that run, and the configuration. A browser gets it as a web page with colors, in the browser's light or dark theme: red for what fails, amber for what waits or has no address, green for what works. Anything else, such as `curl`, gets the same report as text |
+| `/status.txt` | The report as text, for a browser too |
 | `/healthz` | `ok` while the process runs and its [resolvers](resolver.md) answer; 503, with the reason, when one doesn't. For health checks |
 | `/status.json` | The same state as JSON: the names and their records, the discovered hosts with their `names`, the `protocols` that run, and the sources' runs |
 | `/metrics` | Prometheus metrics. For each name: its addresses, its updates by result, and its last success. For the program itself: `go_goroutines`, `go_memstats_heap_inuse_bytes` and, on Linux, `process_open_fds`, which should all stay level over days |

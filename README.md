@@ -42,6 +42,7 @@ DNS: 3 names, 3 with addresses, 0 without; 0 failing
             nas.lan.example.com: (next update: 7s, waiting for the 10s debounce)
                 192.168.1.50                                2m51s   12d           00:11:22:33:44:55  eth0
                 [fd12:3456:789a::50]                       41m37s   12d           00:11:22:33:44:55  eth0
+
 Discovery: 2 hosts, 1 named, 3 addresses
     00:11:22:33:44:55
         names:
@@ -57,7 +58,7 @@ Discovery: 2 hosts, 1 named, 3 addresses
                 mdns:announced on eth0                 38m 5s       6h20m
 ```
 
-The two times on each line are how long the address has left before it expires, and how long it has been seen. The same state is served as JSON at `/status.json`, and as Prometheus metrics at `/metrics`.
+The two times on each line are how long the address has left before it expires, and how long it has been seen. In a browser and in a terminal the report has colors: red for what fails, amber for what waits or has no address, green for what works. The words say the same without them. The same state is served as JSON at `/status.json`, and as Prometheus metrics at `/metrics`.
 
 ## How it works
 

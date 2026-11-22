@@ -19,6 +19,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -151,11 +152,11 @@ func main() {
 	}
 
 	if live {
-		liveOutput := make(chan string)
+		liveOutput := make(chan pretty.Page)
 		go func() {
 			for {
 				select {
-				case liveOutput <- wrapPrettyPrint(worker, "", false):
+				case liveOutput <- statusPage(worker, false):
 				case <-ctx.Done():
 					return
 				}
@@ -164,7 +165,7 @@ func main() {
 		}()
 		// The terminal takes the keys, Ctrl-C too: Run returns on them, and when ctx ends, as on
 		// a SIGTERM, which is no key. The terminal is given back before the wait for the updates.
-		terminal.Run(ctx, liveOutput)
+		terminal.RunPages(ctx, liveOutput)
 		closeTerminal()
 		stop()
 	}
@@ -188,12 +189,15 @@ func main() {
 // shutdownTimeout is how long the updates running get to end, when stopping.
 const shutdownTimeout = 30 * time.Second
 
-// webHandler serves the state: as text, JSON and Prometheus metrics, with the sensible data
-// hidden, as the server has no authentication. /healthz answers while the process runs, and its
+// webHandler serves the state: as a page, of HTML for a browser and of text for the rest, as JSON
+// and as Prometheus metrics, with the sensible data hidden, as the server has no authentication. /healthz answers while the process runs, and its
 // resolvers answer: 503 when one doesn't. A write that fails is of a client gone: nothing to do.
 func webHandler(worker *ipv6ddns.Worker) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", statusHandler(worker))
+	mux.HandleFunc("GET /status.txt", func(w http.ResponseWriter, r *http.Request) {
+		writeStatusText(w, worker)
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if err := worker.Healthy(); err != nil {
@@ -217,19 +221,102 @@ func webHandler(worker *ipv6ddns.Worker) http.Handler {
 }
 
 // statusHandler serves the state, with the sensible data hidden: the page has no authentication.
+// To what asks for HTML, as a browser does, it is the page with its colors; to the rest, as curl,
+// the same page as text, which /status.txt is to all.
 func statusHandler(worker *ipv6ddns.Worker) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = io.WriteString(w, wrapPrettyPrint(worker, "", true))
+		// A cache keeps one answer for each Accept.
+		w.Header().Set("Vary", "Accept")
+		if !acceptsHTML(r) {
+			writeStatusText(w, worker)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// The page is text and its style: nothing in it runs or loads, whatever a name on the
+		// network has in it.
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = io.WriteString(w, statusHTMLHead+statusPage(worker, true).HTML()+statusHTMLTail)
 	})
 }
 
-func wrapPrettyPrint(worker *ipv6ddns.Worker, prefix string, hideSensible bool) string {
-	var result strings.Builder
-	fmt.Fprint(&result, worker.PrettyPrint(prefix, hideSensible))
-	fmt.Fprint(&result, prefix, PrintVersion())
-	return result.String()
+func writeStatusText(w http.ResponseWriter, worker *ipv6ddns.Worker) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, statusPage(worker, true).String())
 }
+
+// acceptsHTML is whether the request asks for HTML by name: a browser does, and curl, of */*,
+// doesn't.
+func acceptsHTML(r *http.Request) bool {
+	for _, accept := range r.Header.Values("Accept") {
+		for media := range strings.SplitSeq(accept, ",") {
+			media, params, _ := strings.Cut(media, ";")
+			if strings.EqualFold(strings.TrimSpace(media), "text/html") && !notWanted(params) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// notWanted is whether the parameters of a media type of Accept have a quality of 0: not wanted.
+func notWanted(params string) bool {
+	for param := range strings.SplitSeq(params, ";") {
+		if q, ok := strings.CutPrefix(strings.TrimSpace(param), "q="); ok {
+			return strings.Trim(q, "0.") == "" && q != ""
+		}
+	}
+	return false
+}
+
+// statusPage is the page of the worker, and under it the version.
+func statusPage(worker *ipv6ddns.Worker, hideSensible bool) pretty.Page {
+	page := worker.Page("", hideSensible)
+	page.Add(pretty.As(pretty.Detail, strings.TrimSuffix(PrintVersion(), "\n")))
+	return page
+}
+
+// The page as HTML: the text in a pre, each role with its color, on the light or the dark theme
+// of the browser. All of it is here: the page is served on networks with no way out, and asks
+// for nothing from elsewhere. Every color is of a contrast of 4.5 or more on its ground.
+const statusHTMLHead = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ipv6ddns</title>
+<style>
+:root {
+	--bg: #ffffff; --fg: #1d2530;
+	--h: #1d2530; --n: #0f3a8a; --ok: #1d7a3e; --w: #8a5200; --e: #c0262d; --d: #5d6877;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #12161c; --fg: #dde3ea;
+		--h: #f1f4f8; --n: #9cc0ff; --ok: #5fcf83; --w: #e7b04f; --e: #ff7b7b; --d: #8c97a6;
+	}
+}
+body { margin: 0; background: var(--bg); color: var(--fg); }
+pre {
+	margin: 0; padding: 14px 16px; overflow-x: auto; tab-size: 4;
+	font: 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+.h { color: var(--h); font-weight: 600; }
+.n { color: var(--n); }
+.ok { color: var(--ok); }
+.w { color: var(--w); }
+.e { color: var(--e); font-weight: 600; }
+.d { color: var(--d); }
+</style>
+</head>
+<body>
+<pre>`
+
+const statusHTMLTail = `</pre>
+</body>
+</html>
+`
 
 // webserverPort is that of the web server's entries that give none.
 const webserverPort = config.DefaultWebserverPort

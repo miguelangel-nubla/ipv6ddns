@@ -200,6 +200,7 @@ discovery:
 	for path, want := range map[string]struct{ contentType, body string }{
 		"/":            {"text/plain; charset=utf-8", "www.duckdns.org"},
 		"/other":       {"text/plain; charset=utf-8", "www.duckdns.org"},
+		"/status.txt":  {"text/plain; charset=utf-8", "www.duckdns.org"},
 		"/healthz":     {"text/plain; charset=utf-8", "ok"},
 		"/status.json": {"application/json", `"domain": "www.duckdns.org"`},
 		"/metrics":     {"text/plain; version=0.0.4; charset=utf-8", `ipv6ddns_hostname_addresses{provider="duckdns",endpoint="duck",hostname="www.duckdns.org"} 0`},
@@ -227,6 +228,49 @@ discovery:
 		}
 		if path == "/status.json" && !json.Valid(response.Body.Bytes()) {
 			t.Errorf("%s: invalid JSON", path)
+		}
+	}
+
+	// A browser, which asks for HTML by name, gets the page with its roles, hidden the same, and
+	// nothing in it that runs or loads. What asks for anything, as curl, or refuses HTML, gets
+	// the text, as /status.txt gives to a browser too.
+	get := func(path, accept string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if accept != "" {
+			request.Header.Set("Accept", accept)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+	page := get("/", browser)
+	body := page.Body.String()
+	if page.Header().Get("Content-Type") != "text/html; charset=utf-8" || page.Header().Get("Vary") != "Accept" ||
+		page.Header().Get("Content-Security-Policy") != "default-src 'none'; style-src 'unsafe-inline'" {
+		t.Errorf("a browser: headers %v", page.Header())
+	}
+	for _, has := range []string{`<span class="h">DNS:</span>`, `www.duckdns.org</span>:`, `<span class="w">(no address)</span>`, `<span class="h">Config:</span>`, `<span class="d">ipv6ddns `} {
+		if !strings.Contains(body, has) {
+			t.Errorf("a browser: no %q on the page:\n%s", has, body)
+		}
+	}
+	for _, not := range []string{secret, "<script", "http://", "https://fonts", "0 failing</span>"} {
+		if strings.Contains(body, not) {
+			t.Errorf("a browser: %q is on the page:\n%s", not, body)
+		}
+	}
+	text := get("/", "").Body.String()
+	for accept, path := range map[string]string{"*/*": "/", "text/html;q=0, text/plain": "/", browser: "/status.txt"} {
+		response := get(path, accept)
+		if response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || strings.Contains(response.Body.String(), "<span") {
+			t.Errorf("Accept %q of %s: %s, want the text:\n%s", accept, path, response.Header().Get("Content-Type"), response.Body.String())
+		}
+	}
+	// The sections are apart, by a blank line, in the text too.
+	for _, section := range []string{"\n\nDiscovery: ", "\n\nConfig:\n"} {
+		if !strings.Contains(text, section) {
+			t.Errorf("no blank line before %q:\n%s", strings.TrimSpace(section), text)
 		}
 	}
 }

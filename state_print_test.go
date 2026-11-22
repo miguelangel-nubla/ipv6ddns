@@ -44,8 +44,22 @@ func TestPrettyPrintHostname(t *testing.T) {
 	for h.status().updateError == nil {
 		time.Sleep(time.Millisecond)
 	}
-	if page := render(h); !strings.Contains(page, ", retrying after the error)") || !strings.Contains(page, "(last update error: <sensible data hidden>)") {
+	// The error is on a line of its own, under the name: no timer before it pushes it off.
+	if page := render(h); !regexp.MustCompile(`, retrying after the error\)[^\n]*\n    \(last update error: <sensible data hidden>\)\n    \[2001`).MatchString(page) {
 		t.Errorf("after an error:\n%s", page)
+	}
+	var tb pretty.Table
+	writeHostnameStatus(&tb, "", "nas.example.com", h.status(), true, time.Now())
+	roles := map[string]pretty.Role{}
+	for _, line := range tb.Page("") {
+		for _, span := range line {
+			roles[strings.SplitN(strings.TrimSpace(span.Text), " ", 2)[0]] = span.Role
+		}
+	}
+	for start, want := range map[string]pretty.Role{"nas.example.com": pretty.Name, "(next": pretty.Warn, "(last": pretty.Error, "[2001:db8::a]": pretty.Plain} {
+		if got, ok := roles[start]; !ok || got != want {
+			t.Errorf("the role of %q: %d (there: %t), want %d", start, got, ok, want)
+		}
 	}
 
 	// Its last address goes.

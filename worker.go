@@ -16,6 +16,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 	"go.uber.org/zap"
 )
 
@@ -615,62 +616,98 @@ func (w *Worker) matching(tasks []config.Task, discovered []*ipv6disc.Addr) *ipv
 	return result
 }
 
+// PrettyPrint is the status page as text: Page, without the roles.
 func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
-	var result strings.Builder
-	fmt.Fprint(&result, w.State.PrettyPrint(prefix, hideSensible))
-	fmt.Fprint(&result, w.prettyPrintResolvers(prefix))
-	fmt.Fprint(&result, w.discWorker.State.PrettyPrint(prefix, hideSensible))
-	fmt.Fprint(&result, w.discWorker.PrettyPrintStats(prefix))
-	fmt.Fprint(&result, w.config.PrettyPrint(prefix, hideSensible))
-	return result.String()
+	return w.Page(prefix, hideSensible).String()
 }
 
-// prettyPrintResolvers tells, of each resolver, where it listens, whom it answers, and what it
-// answered: nothing without resolvers.
-func (w *Worker) prettyPrintResolvers(prefix string) string {
-	if len(w.resolvers) == 0 {
-		return ""
+// Page is the status page: the names, the resolvers, the discovery and the configuration, each
+// after a blank line, and each piece with its role, for a terminal or a web page to color. The
+// words say every state all the same: as text it lacks nothing.
+func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
+	var page pretty.Page
+	for _, section := range []pretty.Page{
+		w.State.Page(prefix, hideSensible),
+		w.resolversPage(prefix),
+		append(w.discWorker.State.Page(prefix), w.discWorker.StatsPage(prefix)...),
+		w.config.Page(prefix, hideSensible),
+	} {
+		if len(section) == 0 {
+			continue
+		}
+		if len(page) > 0 {
+			page.Add()
+		}
+		page = append(page, section...)
 	}
-	var result strings.Builder
+	return page
+}
+
+// resolversPage tells, of each resolver, where it listens, whom it answers, and what it
+// answered: nothing without resolvers.
+func (w *Worker) resolversPage(prefix string) pretty.Page {
+	if len(w.resolvers) == 0 {
+		return nil
+	}
+	var page pretty.Page
+	plain := func(format string, args ...any) {
+		page.Add(pretty.Span{Text: prefix + fmt.Sprintf(format, args...)})
+	}
+	detail := func(format string, args ...any) {
+		page.Add(pretty.As(pretty.Detail, prefix+fmt.Sprintf(format, args...)))
+	}
 	serving := 0
 	for _, r := range w.resolvers {
 		if r.Status().Serving {
 			serving++
 		}
 	}
-	fmt.Fprintf(&result, "%sResolvers: %d, %d serving\n", prefix, len(w.resolvers), serving)
+	all := pretty.OK
+	if serving < len(w.resolvers) {
+		all = pretty.Error
+	}
+	page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, "Resolvers:"), pretty.Span{Text: fmt.Sprintf(" %d, ", len(w.resolvers))}, pretty.As(all, fmt.Sprintf("%d serving", serving)))
 	for _, r := range w.resolvers {
 		s := r.Status()
-		state := "serving"
+		state := pretty.As(pretty.OK, "serving")
 		if !s.Serving {
-			state = "not serving"
+			state = pretty.As(pretty.Error, "not serving")
 			if s.Error != "" {
-				state += ": " + s.Error
+				state.Text += ": " + s.Error
 			}
 		}
-		fmt.Fprintf(&result, "%s    %s: %s\n", prefix, s.Name, state)
-		fmt.Fprintf(&result, "%s        Listening: %s\n", prefix, strings.Join(s.Listening, ", "))
-		fmt.Fprintf(&result, "%s        Allow: %s\n", prefix, strings.Join(s.Allow, ", "))
+		page.Add(pretty.As(pretty.Name, prefix+"    "+s.Name), pretty.Span{Text: ": "}, state)
+		plain("        Listening: %s", strings.Join(s.Listening, ", "))
+		plain("        Allow: %s", strings.Join(s.Allow, ", "))
 		var zones []string
 		for _, z := range s.Zones {
 			zones = append(zones, fmt.Sprintf("%s (%d names)", z, s.ZoneNames[z]))
 		}
-		fmt.Fprintf(&result, "%s        Zones: %s\n", prefix, strings.Join(zones, ", "))
-		var upstreams []string
-		for _, u := range s.Upstreams {
-			upstreams = append(upstreams, fmt.Sprintf("%s (%d failed)", u, s.UpstreamFailures[u]))
+		plain("        Zones: %s", strings.Join(zones, ", "))
+		// An upstream that failed stands out; one that never did steps back.
+		upstreams := pretty.Line{{Text: prefix + "        Upstream: "}}
+		for i, u := range s.Upstreams {
+			sep := ""
+			if i > 0 {
+				sep = ", "
+			}
+			failed := pretty.Detail
+			if s.UpstreamFailures[u] > 0 {
+				failed = pretty.Warn
+			}
+			upstreams = append(upstreams, pretty.Span{Text: sep + u + " "}, pretty.As(failed, fmt.Sprintf("(%d failed)", s.UpstreamFailures[u])))
 		}
-		fmt.Fprintf(&result, "%s        Upstream: %s\n", prefix, strings.Join(upstreams, ", "))
+		page.Add(upstreams...)
 		var queries []string
 		for _, kind := range resolver.Kinds {
 			queries = append(queries, fmt.Sprintf("%s %d", kind, s.Queries[kind]))
 		}
-		fmt.Fprintf(&result, "%s        Queries: %s\n", prefix, strings.Join(queries, ", "))
+		detail("        Queries: %s", strings.Join(queries, ", "))
 		cached := "none"
 		if s.CacheSize > 0 {
 			cached = fmt.Sprintf("%d of %d", s.CacheEntries, s.CacheSize)
 		}
-		fmt.Fprintf(&result, "%s        Cache: %s\n", prefix, cached)
+		detail("        Cache: %s", cached)
 	}
-	return result.String()
+	return page
 }

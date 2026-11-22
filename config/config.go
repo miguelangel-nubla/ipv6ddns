@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	disc "github.com/miguelangel-nubla/ipv6disc/pkg/config"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 	"github.com/xeipuuv/gojsonschema"
 	"sigs.k8s.io/yaml"
 )
@@ -41,6 +42,30 @@ type Config struct {
 
 	// What in the configuration runs but does nothing: NewConfig sets them, to log.
 	Warnings []string `json:"-"`
+}
+
+// hidden is what the page has in place of what it doesn't show.
+const hidden = "<sensible data hidden>"
+
+// Page is PrettyPrint with the roles: its sections as headings, and what stands for hidden data
+// as a detail. The sections are the lines the page itself writes at the top two levels: what the
+// configuration names is deeper, so no name of it reads as one.
+func (c *Config) Page(prefix string, hideSensible bool) pretty.Page {
+	var page pretty.Page
+	text := strings.TrimSuffix(c.PrettyPrint("", hideSensible), "\n")
+	for line := range strings.SplitSeq(text, "\n") {
+		body := strings.TrimLeft(line, " ")
+		indent := len(line) - len(body)
+		switch {
+		case indent <= 4 && strings.HasSuffix(body, ":"):
+			page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, line))
+		case hideSensible && strings.HasSuffix(line, hidden):
+			page.Add(pretty.Span{Text: prefix + strings.TrimSuffix(line, hidden)}, pretty.As(pretty.Detail, hidden))
+		default:
+			page.Add(pretty.Span{Text: prefix + line})
+		}
+	}
+	return page
 }
 
 func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
@@ -154,7 +179,7 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 
 		result.WriteString(prefix + "            Settings: ")
 		if hideSensible {
-			result.WriteString("<sensible data hidden>\n")
+			result.WriteString(hidden + "\n")
 		} else {
 			bytes, _ := json.MarshalIndent(credential.RawSettings, "            ", "    ")
 			result.Write(bytes)
@@ -211,7 +236,7 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 				}
 				result.WriteString(prefix + "                Params: " + params + "\n")
 			} else {
-				result.WriteString(prefix + "                Params: <sensible data hidden>\n")
+				result.WriteString(prefix + "                Params: " + hidden + "\n")
 			}
 		}
 	}
