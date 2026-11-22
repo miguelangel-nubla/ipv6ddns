@@ -61,8 +61,8 @@ func NewLink(t testing.TB, number int) *Link {
 		PeerAddress: fmt.Sprintf("198.18.%d.2", number),
 	}
 	remove := func() {
-		exec.Command("ip", "link", "del", l.Interface).Run()
-		exec.Command("ip", "netns", "del", l.Namespace).Run()
+		_ = exec.Command("ip", "link", "del", l.Interface).Run()
+		_ = exec.Command("ip", "netns", "del", l.Namespace).Run()
 	}
 	remove() // what a test that was killed left
 	t.Cleanup(remove)

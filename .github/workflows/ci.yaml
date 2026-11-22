@@ -261,7 +261,7 @@ jobs:
           echo "== linux, integration"
           golangci-lint run --build-tags integration ./...
           echo "== linux, live"
-          golangci-lint run --build-tags live ./ddns
+          golangci-lint run --build-tags live ./...
 
   # Vulnerabilities in the code the module calls, of its dependencies and of Go.
   vulncheck:

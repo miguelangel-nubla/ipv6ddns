@@ -70,13 +70,13 @@ func (m *Machine) Avahi(t testing.TB, hostName string) {
 	}
 	t.Cleanup(func() {
 		// As a host that shuts down: it says goodbye.
-		cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Process.Signal(syscall.SIGTERM)
 		done := make(chan struct{})
-		go func() { cmd.Wait(); close(done) }()
+		go func() { _ = cmd.Wait(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
-			cmd.Process.Kill()
+			_ = cmd.Process.Kill()
 			<-done
 		}
 		if t.Failed() {

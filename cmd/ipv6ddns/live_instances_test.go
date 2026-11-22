@@ -927,7 +927,9 @@ credentials:
 				t.Errorf("%s has something of the MAC nobody has: %s", i.name, line)
 			}
 			// But what the server of both refused of two updates at once.
-			if entry.Level == "error" && !(strings.Contains(entry.Msg, "endpoint pair") && (strings.Contains(entry.Msg, "already exists") || strings.Contains(entry.Msg, "no such record exists"))) {
+			refused := strings.Contains(entry.Msg, "endpoint pair") &&
+				(strings.Contains(entry.Msg, "already exists") || strings.Contains(entry.Msg, "no such record exists"))
+			if entry.Level == "error" && !refused {
 				t.Errorf("%s logged the error: %s", i.name, line)
 			}
 		}

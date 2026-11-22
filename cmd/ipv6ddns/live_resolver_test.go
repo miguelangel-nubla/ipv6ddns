@@ -130,10 +130,10 @@ func startUpstream(t *testing.T, m *livetest.Machine, answer string) *fakeUpstre
 			u.tcp.Add(1)
 		}
 		mode := u.mode.Load().(string)
-		switch {
-		case mode == "down":
+		switch mode {
+		case "down":
 			return
-		case mode == "slow":
+		case "slow":
 			time.Sleep(3 * time.Second)
 		}
 		if mode == "truncate" && overUDP {

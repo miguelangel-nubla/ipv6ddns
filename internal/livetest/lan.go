@@ -80,10 +80,10 @@ func NewLAN(t testing.TB, number int) *LAN {
 			pids, _ := exec.Command("ip", "netns", "pids", name).Output()
 			for _, pid := range strings.Fields(string(pids)) {
 				if pid != strconv.Itoa(os.Getpid()) {
-					exec.Command("kill", "-9", pid).Run()
+					_ = exec.Command("kill", "-9", pid).Run()
 				}
 			}
-			exec.Command("ip", "netns", "del", name).Run()
+			_ = exec.Command("ip", "netns", "del", name).Run()
 		}
 	}
 	remove() // what a test that was killed left
@@ -340,7 +340,10 @@ func (l *LAN) Capture(t testing.TB) *Capture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, 8<<20)
+	// A bigger buffer, so that a burst of frames isn't lost; the frames still come without it.
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, 8<<20); err != nil {
+		t.Logf("the capture's buffer stays as it was: %v", err)
+	}
 	// Reads wake up to see whether to stop.
 	if err := syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, &syscall.Timeval{Usec: 100_000}); err != nil {
 		t.Fatal(err)
@@ -363,7 +366,12 @@ func (l *LAN) Capture(t testing.TB) *Capture {
 			// As a frame comes in to a port, not as the bridge sends it on to the others; and
 			// as the router sends its own.
 			ll, ok := from.(*syscall.SockaddrLinklayer)
-			if !ok || !(ports[ll.Ifindex] && ll.Pkttype != syscall.PACKET_OUTGOING || ll.Ifindex == bridge && ll.Pkttype == syscall.PACKET_OUTGOING) {
+			if !ok {
+				continue
+			}
+			intoPort := ports[ll.Ifindex] && ll.Pkttype != syscall.PACKET_OUTGOING
+			fromRouter := ll.Ifindex == bridge && ll.Pkttype == syscall.PACKET_OUTGOING
+			if !intoPort && !fromRouter {
 				continue
 			}
 			if mac, kind := frameKind(buf[:n]); kind != "" {
