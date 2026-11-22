@@ -10,6 +10,7 @@ on:
   # Weekly too: new vulnerabilities, and new Go releases, come without a commit.
   schedule:
     - cron: '47 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -87,9 +88,65 @@ jobs:
           go vet -tags integration ./...
           go build -race -o "$RUNNER_TEMP/ipv6ddns" ./cmd/ipv6ddns
           go test -race -tags integration -exec "sudo env ESPHOME_PYTHON=$(which python) IPV6DDNS_COMMAND=$RUNNER_TEMP/ipv6ddns" -v -run '^TestLive' . ./cmd/ipv6ddns ./pkg/listen ./pkg/esphome
+
+  # The command, for a platform of each kind the release has, beside the tests and not after them:
+  # one that no longer compiles shows here, not at the tag. The release's every platform, and its
+  # configuration, are built weekly, in build-all.
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - linux/amd64
+          - linux/arm64
+          - linux/arm/7
+          - darwin/arm64
+          - windows/amd64
+          - freebsd/amd64
+    steps:
       -
-        # The binaries as the release builds them, for every platform: one that no longer
-        # compiles shows here, not at the tag.
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: Build
+        env:
+          CGO_ENABLED: "0"
+          TARGET: ${{ matrix.target }}
+        run: |
+          IFS=/ read -r GOOS GOARCH GOARM <<EOF
+          $TARGET
+          EOF
+          export GOOS GOARCH GOARM
+          go build -o /dev/null ./cmd/ipv6ddns
+
+  # Every platform of the release, as goreleaser builds them, and its configuration: weekly, and
+  # when asked, as they take a quarter of an hour.
+  build-all:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      -
+        name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
         name: Build
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
