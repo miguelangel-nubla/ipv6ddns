@@ -52,7 +52,7 @@ func TestConfigurationHasTheDiscovery(t *testing.T) {
 		"| `enabled` | boolean | `false` | Whether the family's addresses are kept",
 		"## Discovery hostnames\n\n`discovery.hostnames`\n",
 		"## Discovery solicit\n\n`discovery.solicit`\n",
-		"| `ipv6` | boolean | `false` | For each filter that names a mac.address and the eui64 type",
+		"| `ipv6` | boolean | `false` | For each filter with a mac.address and the eui64 type",
 		"| `ask` | boolean | `true` | ",
 		"| `max_prefix` | number | `22` | ",
 		"| `servers` | list, or comma separated | - | ",

@@ -1,22 +1,22 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "description": "Mikrotik RouterOS static DNS, /ip/dns/static, over its API. RouterOS finds a name's records by its exact letters, capitals too: those of a hostname whose capitals change in the configuration stay, to be removed by hand. See docs/mikrotik.md.",
+    "description": "MikroTik RouterOS static DNS, /ip/dns/static, through its API. RouterOS matches a name's records by its exact spelling, capitals included: when a hostname's capitals change in the configuration, the old records stay, and must be removed by hand. See docs/mikrotik.md.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
         "address": {
             "type": "string",
             "minLength": 1,
-            "description": "The router, with a port unless the default: 8728, or 8729 with TLS."
+            "description": "The router, with a port unless it's the default: 8728, or 8729 with TLS."
         },
         "use_tls": {
             "type": "boolean",
-            "description": "The API over TLS, the api-ssl service. Without it, the password crosses the network in the clear."
+            "description": "Whether to use the API over TLS, the api-ssl service. Without it, the password crosses the network unencrypted."
         },
         "tls_fingerprint": {
             "type": "string",
             "pattern": "^([a-fA-F0-9]{64})?$",
-            "description": "The SHA-256 fingerprint of the router's certificate, in hex: with it, that certificate and no other is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true."
+            "description": "The SHA-256 fingerprint of the router's certificate, in hex. With it, only that certificate is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true."
         },
         "username": {
             "type": "string",
@@ -29,12 +29,12 @@
         },
         "zone": {
             "type": "string",
-            "description": "The zone of the names: lan."
+            "description": "The zone of the names, as lan."
         },
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "The records' TTL: 5m, 1h."
+            "description": "The records' TTL, as 5m or 1h."
         }
     },
     "required": [

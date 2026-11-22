@@ -8,26 +8,26 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 
 | Key | Takes | |
 |---|---|---|
-| `tasks` | object | **Required.** The host names to keep, by task name: the addresses its filters match, and those of the sources it names, go to the host names of its endpoints. |
-| `credentials` | object | **Required.** The DNS providers to update, by credential name, which tasks' endpoints name. |
-| `resolvers` | object | DNS servers for the clients of a network, by name: each answers the zones of its resolver credentials, with the addresses the tasks give their names, and records of its own, and asks its upstream servers the rest. See the [resolver](../resolver.md). |
+| `tasks` | object | **Required.** The DNS names to keep up to date, by task name. Each task takes the addresses its filters match, and those of the sources it lists, and gives them to the names under its endpoints. |
+| `credentials` | object | **Required.** The DNS providers to update, by credential name. Tasks name them under endpoints. |
+| `resolvers` | object | DNS servers for the clients on a network, by name. Each answers the zones of its resolver credentials, with the addresses the tasks give their names and with its own records, and asks its upstream servers everything else. See the [resolver](../resolver.md). |
 | `discovery` | object | How hosts are discovered: on the local links, by the protocols enabled, and by plugins reading the tables of routers. Every key is optional: what is left out is its default. |
-| `sources` | object | Sources of addresses without a MAC, as the network's public IPv4, by name, which tasks name in their sources. |
-| `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | The level of the log. Default: info. |
-| `webserver` | object | The web server: the report, /status.json and /metrics. |
-| `homeassistant` | object | Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md. |
+| `sources` | object | Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. |
+| `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | How much the log says. Default: info. |
+| `webserver` | object | The web server, with the status page, /status.json and /metrics. |
+| `homeassistant` | object | Makes ipv6ddns a device of Home Assistant's ESPHome integration. Home Assistant finds it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now. It also gives the states that homeassistant sources read. See docs/home-assistant-integration.md. |
 
 ## Tasks
 
 `tasks.<name>`
 
-The host names to keep, by task name: the addresses its filters match, and those of the sources it names, go to the host names of its endpoints.
+The DNS names to keep up to date, by task name. Each task takes the addresses its filters match, and those of the sources it lists, and gives them to the names under its endpoints.
 
 | Key | Takes | |
 |---|---|---|
-| `filter` | list of object | Filter sets: an address any of them matches is the task's. Within a set, every rule must match. |
-| `endpoints` | object | **Required.** The host names to update, by credential: a name in the credential's zone, "" for the zone itself, "*.name" for a wildcard. Or a template, a name for each host the filters match, by what the host is called, which needs discovery.hostnames: "{hostname}" is the name of every host called so, with the addresses of them all; "{n}.{hostname}" one of each, numbered from 1 by MAC among those there now; "{mac}" the host's MAC, its twelve digits. A name written as it is wins over a template's. |
-| `sources` | list of string | The sources whose addresses the task's names get too. |
+| `filter` | list of object | Which addresses the task takes. It's a list of sets: an address that matches any set is taken. Within a set, every rule must match. |
+| `endpoints` | object | **Required.** The names to update, by credential. A name is in the credential's zone: "" is the zone itself, and "*.name" a wildcard. A name can also be a template, which makes a name for each host the filters match, from what the host calls itself. "{hostname}" is one name for every host called that, with all their addresses; "{n}.{hostname}" is one name per host, numbered from 1 in MAC order among those present; "{mac}" is the host's MAC, as twelve digits. {hostname} needs a discovery protocol or plugin that learns names. A name written out beats a template's. |
+| `sources` | list of string | The sources whose addresses the task's names also get. |
 
 ## Task filters
 
@@ -37,111 +37,111 @@ Each filter set: an address that every rule of one set matches is the task's. Se
 
 | Key | Takes | |
 |---|---|---|
-| `self` | boolean | The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen. Not those of an interface without a MAC, as a PPP link or a tunnel: a source gives them. |
-| `mac` | object | Rules on the MAC address of the host. |
-| `ip` | object | Rules on the address. |
+| `self` | boolean | The addresses of the machine ipv6ddns runs on, on the interfaces discovery uses, instead of a host's: for a Home Assistant host or a server. It needs the family's discovery listen on. Interfaces with no MAC, such as a PPP link or a tunnel, aren't included: a source gives those. |
+| `mac` | object | Rules on the host's MAC address. |
+| `ip` | object | Rules on the address itself. |
 
 ## Filter mac
 
 `tasks.<name>.filter[].mac`
 
-Rules on the MAC address of the host.
+Rules on the host's MAC address.
 
 | Key | Takes | |
 |---|---|---|
-| `address` | string | The MAC address: 00:11:22:33:44:55. Also read as 00-11-22-33-44-55 or 0011.2233.4455. |
-| `mask` | list of string | VALUE/MASK pairs of MACs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's. |
-| `type` | list of `local`, `global`, `unicast`, `multicast`, `!local`, `!global`, `!unicast`, `!multicast` | MAC types, all of which must apply: global, local, unicast, multicast. "!type": not of the type. |
+| `address` | string | The MAC address, as 00:11:22:33:44:55. 00-11-22-33-44-55 and 0011.2233.4455 work too. |
+| `mask` | list of string | VALUE/MASK pairs, all of which the MAC must match. For one vendor's devices: 00:11:22:00:00:00/ff:ff:ff:00:00:00. |
+| `type` | list of `local`, `global`, `unicast`, `multicast`, `!local`, `!global`, `!unicast`, `!multicast` | MAC types, all of which must apply: global, local, unicast, multicast. A ! in front excludes the type, as "!local". |
 
 ## Filter ip
 
 `tasks.<name>.filter[].ip`
 
-Rules on the address.
+Rules on the address itself.
 
 | Key | Takes | |
 |---|---|---|
-| `type` | list of `global`, `private`, `ula`, `cgnat`, `link_local`, `eui64`, `random`, `temporary`, `!global`, `!private`, `!ula`, `!cgnat`, `!link_local`, `!eui64`, `!random`, `!temporary` | Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6, not from the MAC), temporary (an IPv6 privacy address of this machine's, which changes every day or so). "!type": not of the type, as "!temporary". |
-| `prefix` | string | A prefix the address must be in: 2001:db8::/32, 192.168.1.0/24. |
-| `mask` | list of string | VALUE/MASK pairs of addresses of one family, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff for the IPv6 addresses ending in ::1, 0.0.0.5/0.0.0.255 for the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair matches the addresses of its family only. |
+| `type` | list of `global`, `private`, `ula`, `cgnat`, `link_local`, `eui64`, `random`, `temporary`, `!global`, `!private`, `!ula`, `!cgnat`, `!link_local`, `!eui64`, `!random`, `!temporary` | Address types, all of which must apply: global, private, ula, cgnat, link_local; eui64, an IPv6 address made from the MAC, which doesn't change; random, an IPv6 address not made from the MAC; temporary, an IPv6 privacy address of this machine, which changes about once a day. A ! in front excludes the type, as "!temporary". |
+| `prefix` | string | A prefix the address must be in, as 2001:db8::/32 or 192.168.1.0/24. |
+| `mask` | list of string | VALUE/MASK pairs, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff matches the IPv6 addresses ending in ::1, and 0.0.0.5/0.0.0.255 the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair only matches addresses of its own family. |
 | `family` | list of `4`, `6` | 4, 6 or both. Default: 6. |
-| `seen` | list of  | How the address was seen: a record of each rule, all of which it must have, each of its own times, while they count. Rules: a protocol and its way, as protocol: mdns and way: announced; or reported, by a plugin or the kernel, from a table. |
-| `not_seen` | list of  | Records the address must have none of, as seen takes them: not_seen with reported {} is an address the host showed itself, never only one a table reports. |
+| `seen` | list of  | How the address must have been seen: a list of records, all of which it must have, each still current. A record is a protocol and how it saw the address, as protocol: mdns with way: announced; or reported, from a table of a plugin or of the kernel. |
+| `not_seen` | list of  | Records the address must have none of, written as for seen. For example, not_seen with reported: {} keeps the addresses the host showed itself, and never one that only a table reports. |
 
 ## Credentials
 
 `credentials.<name>`
 
-The DNS providers to update, by credential name, which tasks' endpoints name. The settings of each provider are in the [providers reference](providers.md).
+The DNS providers to update, by credential name. Tasks name them under endpoints. The settings of each provider are in the [providers reference](providers.md).
 
 | Key | Takes | |
 |---|---|---|
 | `provider` | string | **Required.** The DNS provider: see the providers reference. |
-| `settings` | object | **Required.** The provider's settings: see the providers reference. An unknown one is an error. |
-| `debounce` | duration | How long to wait for more changes before updating. Default: 10s. A resolver credential's: none, as its updates are kept in memory, at once. |
-| `retry` | duration | How long to wait before retrying a failed update: addresses that change meanwhile wait for it too. At least 1s. Default: 1m. |
+| `settings` | object | **Required.** The provider's settings: see the providers reference. An unknown setting is an error. |
+| `debounce` | duration | How long to wait for more changes before an update. Default: 10s. A resolver credential doesn't wait, since its updates only change memory. |
+| `retry` | duration | How long to wait before retrying a failed update. Changes that come meanwhile wait for the retry too. At least 1s. Default: 1m. |
 
 ## Resolvers
 
 `resolvers.<name>`
 
-DNS servers for the clients of a network, by name: each answers the zones of its resolver credentials, with the addresses the tasks give their names, and records of its own, and asks its upstream servers the rest. See the [resolver](../resolver.md).
+DNS servers for the clients on a network, by name. Each answers the zones of its resolver credentials, with the addresses the tasks give their names and with its own records, and asks its upstream servers everything else. See the [resolver](../resolver.md).
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `listen` | list, or comma separated | - | **Required.** Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports: 192.168.1.0/24, 192.168.1.2, [fd00::2]:5353; without a port, 53. A port alone is every address of the machine, a public one on a router too: give the network of the clients. An address and port is one resolver's, however two spell it. |
-| `allow` | list, or comma separated | - | The networks of the clients it answers, or their addresses: 192.168.1.0/24, fd00::/64. A query from any other is REFUSED. Default: the networks of the machine's addresses it listens on. |
-| `upstream` | list, or comma separated | - | **Required.** The servers it asks what isn't its own, in order, each for 2s: plain DNS, over UDP, and over TCP when the answer doesn't fit, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, without a port 53; DNS over TLS, as tls://1.1.1.1 or tls://dns.example.net, without a port 853; or DNS over HTTPS, as https://dns.example.net/dns-query, without a port 443. An encrypted server's certificate is verified, against the system's certificate authorities, for the host given, and its connections are kept for the next queries. A host name needs bootstrap. None answering is SERVFAIL. |
-| `bootstrap` | list, or comma separated | - | With an upstream given by host name, plain or encrypted, and only then: the servers asked its addresses, and nothing else, in order, over plain DNS: addresses, with a port or not. Not the system's resolver, which can be this one. The addresses found are kept for their TTL, a minute at least, an hour at most, and while these servers don't answer. |
-| `records` | list of string | - | Records of names of none of its zones, one per entry, in the syntax of a zone file, every name absolute, with its trailing dot: www.example.com. CNAME nas.home.arpa. A record without a TTL has 1m. |
-| `cache_size` | number | - | How many answers of the upstream servers it keeps, each for its TTL, a day at most, an hour for a name that doesn't exist or has no data: beyond it, the one asked the longest ago goes first. Default: 10000; 0, none, and every query is asked. The local names are never kept: they follow discovery at once. |
-| `forward_unknown_private_reverse_queries` | boolean | `false` | Whether the reverse of an address of a private network that the resolver has no name of is asked of the upstream servers, out of RFC 6303: for an upstream server of the network that knows more of their names, as a router does of its DHCP clients. By default it is no such name, the resolver's own, and the question doesn't leave it: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and the documentation's, and fd00::/8, fe80::/10, ::1 and 2001:db8::/32. |
+| `listen` | list, or comma separated | - | **Required.** Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Without a port, 53. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port, however each writes it. |
+| `allow` | list, or comma separated | - | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. Default: the networks of the addresses it listens on. |
+| `upstream` | list, or comma separated | - | **Required.** The servers it asks about names that aren't its own, in order, giving each 2s. Plain DNS, over UDP, and over TCP when the answer doesn't fit: 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, port 53 by default. DNS over TLS: tls://1.1.1.1 or tls://dns.example.net, port 853 by default. DNS over HTTPS: https://dns.example.net/dns-query, port 443 by default. An encrypted server's certificate is checked against the system's certificate authorities, for the host given, and its connections are reused. A host name needs bootstrap. When none answers, the client gets SERVFAIL. |
+| `bootstrap` | list, or comma separated | - | Only for upstream servers given by host name, plain or encrypted: the servers that look up their addresses, and nothing else. Addresses, with or without a port, asked in order over plain DNS. The system's resolver isn't used, since it may be this one. The addresses found are kept for their TTL, between a minute and an hour, and for as long as these servers don't answer. |
+| `records` | list of string | - | Records of names outside its zones, one per entry, in zone file syntax, with every name absolute and ending in a dot: www.example.com. CNAME nas.home.arpa. A record without a TTL gets 1m. |
+| `cache_size` | number | - | How many answers of the upstream servers it keeps, each for its TTL: a day at most, and an hour for a name that doesn't exist or has no data. When full, the one asked longest ago goes first. Default: 10000. 0 keeps none, and every query goes upstream. Local names are never kept: they follow discovery at once. |
+| `forward_unknown_private_reverse_queries` | boolean | `false` | Whether to ask the upstream servers for the reverse name of a private address the resolver has no name for: for an upstream server that knows more names, as a router does for its DHCP clients. By default, as RFC 6303 says, the resolver answers that there's no such name, and the question never leaves it. The private ranges are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and documentation ones, fd00::/8, fe80::/10, ::1 and 2001:db8::/32. |
 
 ## Sources
 
 `sources.<name>`
 
-Sources of addresses without a MAC, as the network's public IPv4, by name, which tasks name in their sources. See [sources](../sources.md).
+Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. See [sources](../sources.md).
 
 | Key | Takes | |
 |---|---|---|
-| `type` | `http`, `dns`, `command`, `static`, `homeassistant` | **Required.** dns: the public address, as OpenDNS's or Google's resolvers see it. http: from echo services over HTTPS, or urls. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block. |
-| `family` | list of `4`, `6` | http and dns: the families to find. Default: 4. |
+| `type` | `http`, `dns`, `command`, `static`, `homeassistant` | **Required.** Where the addresses come from. dns: the public address, as OpenDNS's or Google's resolvers see it. http: echo services over HTTPS, or the urls given. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block. |
+| `family` | list of `4`, `6` | For http and dns: the families to find. Default: 4. |
 | `interval` | duration | How often it runs. Default: 5m. |
 | `lifetime` | duration | How long an address stays after the last run that gave it. Default: 3 intervals. |
-| `urls` | list of string | http: the echo services to ask, in order. |
-| `command` | string | command: the program to run, from the configuration's directory. |
-| `args` | list of string | command: its arguments. |
-| `addresses` | list of string | static: the addresses. |
-| `entity` | string | homeassistant: the entity, as sensor.wan_ip. |
-| `attribute` | string | homeassistant: the attribute of the entity to read, rather than its state. |
+| `urls` | list of string | For http: the echo services to ask, in order. |
+| `command` | string | For command: the program to run, from the configuration's folder. |
+| `args` | list of string | For command: its arguments. |
+| `addresses` | list of string | For static: the addresses. |
+| `entity` | string | For homeassistant: the entity, as sensor.wan_ip. |
+| `attribute` | string | For homeassistant: an attribute of the entity to read instead of its state. |
 
 ## Web server
 
 `webserver`
 
-The web server: the report, /status.json and /metrics. See [the web report](../installation.md#the-web-report).
+The web server, with the status page, /status.json and /metrics. See [the web report](../installation.md#the-web-report).
 
 | Key | Takes | |
 |---|---|---|
-| `listen` | list, or comma separated | Where to serve: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, 8053. A host name listens on each address it resolves to, at start; a network, on each address of the machine in it. |
+| `listen` | list, or comma separated | Where to serve: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it. |
 
 ## Home Assistant
 
 `homeassistant`
 
-Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md. See [the Home Assistant integration](../home-assistant-integration.md).
+Makes ipv6ddns a device of Home Assistant's ESPHome integration. Home Assistant finds it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now. It also gives the states that homeassistant sources read. See docs/home-assistant-integration.md. See [the Home Assistant integration](../home-assistant-integration.md).
 
 | Key | Takes | |
 |---|---|---|
-| `key` | string | **Required**, without `key_provisioning`. The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change: nothing is written. Make one with openssl rand -base64 32. This, or key_provisioning: true. |
-| `key_provisioning` | boolean | Whether Home Assistant makes the key and gives it when adding the device, as to ESPHome's devices: it is kept in key_provisioning_state_file. Default: false, and the block needs a key. |
-| `key_provisioning_state_file` | string | With key_provisioning: true, and only then: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. One for each instance: another with a state file that is in use doesn't start. Deleting it makes the device a new one, without a key. |
-| `name` | string | The device's name in the network: lower case letters, digits and hyphens. Default: ipv6ddns. One for each instance on the network: a second with a name that is announced already doesn't announce itself. |
+| `key` | string | **Required**, without `key_provisioning`. The encryption key: base64 of 32 bytes. Home Assistant asks for it when adding the device, and can't replace it later, since ipv6ddns stores nothing. Make one with openssl rand -base64 32. Give this, or key_provisioning: true. |
+| `key_provisioning` | boolean | Whether Home Assistant makes the key and hands it over when adding the device, as it does for ESPHome devices. The key is kept in key_provisioning_state_file. Default: false, and then the block needs a key. |
+| `key_provisioning_state_file` | string | Only with key_provisioning: true. Where the device keeps the key Home Assistant gave, and its identity, by which Home Assistant knows it. A file ipv6ddns can write; a relative path is from the configuration's folder. Default: homeassistant.state. Each instance needs its own: one whose state file is in use by another doesn't start. Deleting it makes the device a new one, with no key. |
+| `name` | string | The device's name on the network: lower-case letters, digits and hyphens. Default: ipv6ddns. Each instance on the network needs its own: a second one, whose name is announced already, doesn't announce itself. |
 | `friendly_name` | string | The name Home Assistant shows. Default: the name. |
 | `port` | number | The port Home Assistant connects to, which the device announces. Default: 6053, ESPHome's. |
-| `announce` | boolean | Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true. |
-| `listen` | list, or comma separated | **Required.** Required. Where Home Assistant can connect to the device: a list of networks, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.10, [fd00::1]:7000, myhost or 6053. A network means this machine's addresses in it; an entry without a port uses port (6053). A port alone means every address of this machine, including a public one on a router: prefer the network Home Assistant is on. The device announces itself by mDNS only on the interfaces of these addresses, and announces one port, so entries with different ports need announce: false. |
+| `announce` | boolean | Whether the device announces itself over mDNS, so that Home Assistant finds it. Without it, add the device by its address. Default: true. |
+| `listen` | list, or comma separated | **Required.** Required. Where Home Assistant can connect to the device: networks, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.10, [fd00::1]:7000, myhost or 6053. A network means this machine's addresses in it. Without a port, port (6053). A port alone means every address of this machine, including a public one on a router: prefer the network Home Assistant is on. The device announces itself over mDNS only on these addresses' interfaces, and with one port, so entries with different ports need announce: false. |
 
 ## Discovery
 
@@ -160,7 +160,7 @@ How hosts are discovered: on the local links, by the protocols enabled, and by p
 | `hostnames` | object | - | The names of the hosts: always kept, of what learns them, each protocol under protocols that does, and the plugins, of their routers' DHCP leases. To learn none, disable those protocols, and the names of ssdp and wsd. |
 | `protocols` | object | - | The protocols of the local discovery, each with its switch, enabled, and its options: always a mapping, never true or false alone. One runs when it is enabled, its family is, and the family listens, or for what probes is active. |
 | `plugins` | object | - | The plugins, by name: each reads the neighbor tables of a router or another host, and its DHCP leases: their names, and that an address found otherwise is leased. The name is the source of what it finds. |
-| `solicit` | object | - | Asking the hosts the filters want, which aren't otherwise found, once a minute. Of ipv6ddns, not of ipv6disc: the hosts are those the filters name by their MAC. |
+| `solicit` | object | - | Asks for the hosts the filters name by MAC, once a minute, when nothing else finds them. Part of ipv6ddns, not of ipv6disc. |
 
 ## Discovery IPv6
 
@@ -202,12 +202,12 @@ The names of the hosts: always kept, of what learns them, each protocol under pr
 
 `discovery.solicit`
 
-Asking the hosts the filters want, which aren't otherwise found, once a minute. Of ipv6ddns, not of ipv6disc: the hosts are those the filters name by their MAC.
+Asks for the hosts the filters name by MAC, once a minute, when nothing else finds them. Part of ipv6ddns, not of ipv6disc.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `ipv6` | boolean | `false` | For each filter that names a mac.address and the eui64 type, a neighbor solicitation for the EUI-64 address of that MAC, on each /64 listened on. It needs ipv6.listen, which reads the answers. |
-| `ipv4` | boolean | `false` | For each filter that names a mac.address with ip.family 4, ARP requests to that MAC alone, for the addresses of the local subnets within the filter's ip.prefix. It needs ipv4.enabled, Linux and CAP_NET_RAW. |
+| `ipv6` | boolean | `false` | For each filter with a mac.address and the eui64 type: a neighbor solicitation for that MAC's EUI-64 address, on each /64 discovery listens on. It needs ipv6.listen, which reads the answers. |
+| `ipv4` | boolean | `false` | For each filter with a mac.address and ip.family 4: ARP requests to that MAC alone, for the local subnets' addresses inside the filter's ip.prefix. It needs ipv4.enabled, Linux and CAP_NET_RAW. |
 
 ## Discovery protocols
 

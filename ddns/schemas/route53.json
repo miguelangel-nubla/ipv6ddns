@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "description": "AWS Route 53, over its API. The zone is the hosted zone's, learned from AWS at the first update: a name written relative, as nas, and the same written whole, are two names until then, each writing the records with its own addresses alone, and the start warns of them. Write a name one way.",
+    "description": "AWS Route 53, through its API. ipv6ddns learns the hosted zone's name from AWS at the first update. Until then, a name written relative, as nas, and the same name written in full are two names, each writing the records with its own addresses alone, and the start warns of them. Write each name one way.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
@@ -17,17 +17,17 @@
         "region": {
             "type": "string",
             "minLength": 1,
-            "description": "The API's region: us-east-1."
+            "description": "The API's region, as us-east-1."
         },
         "hosted_zone_id": {
             "type": "string",
             "minLength": 1,
-            "description": "The hosted zone's ID: Z123...."
+            "description": "The hosted zone's ID, as Z123...."
         },
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "The records' TTL: 5m, 1h."
+            "description": "The records' TTL, as 5m or 1h."
         }
     },
     "required": [

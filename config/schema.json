@@ -14,7 +14,7 @@
                             "properties": {
                                 "self": {
                                     "type": "boolean",
-                                    "description": "The addresses of the machine ipv6ddns runs on, on the interfaces discovery runs on, rather than of a MAC: a Home Assistant host, a server. With the family's listen. Not those of an interface without a MAC, as a PPP link or a tunnel: a source gives them."
+                                    "description": "The addresses of the machine ipv6ddns runs on, on the interfaces discovery uses, instead of a host's: for a Home Assistant host or a server. It needs the family's discovery listen on. Interfaces with no MAC, such as a PPP link or a tunnel, aren't included: a source gives those."
                                 },
                                 "mac": {
                                     "type": "object",
@@ -22,7 +22,7 @@
                                         "address": {
                                             "type": "string",
                                             "pattern": "^([0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{4}(\\.[0-9A-Fa-f]{4}){2})?$",
-                                            "description": "The MAC address: 00:11:22:33:44:55. Also read as 00-11-22-33-44-55 or 0011.2233.4455."
+                                            "description": "The MAC address, as 00:11:22:33:44:55. 00-11-22-33-44-55 and 0011.2233.4455 work too."
                                         },
                                         "mask": {
                                             "type": "array",
@@ -30,7 +30,7 @@
                                                 "type": "string",
                                                 "pattern": "^[^/]+/[^/]+$"
                                             },
-                                            "description": "VALUE/MASK pairs of MACs, all of which the MAC must match: 00:11:22:00:00:00/ff:ff:ff:00:00:00 for a vendor's."
+                                            "description": "VALUE/MASK pairs, all of which the MAC must match. For one vendor's devices: 00:11:22:00:00:00/ff:ff:ff:00:00:00."
                                         },
                                         "type": {
                                             "type": "array",
@@ -47,11 +47,11 @@
                                                     "!multicast"
                                                 ]
                                             },
-                                            "description": "MAC types, all of which must apply: global, local, unicast, multicast. \"!type\": not of the type."
+                                            "description": "MAC types, all of which must apply: global, local, unicast, multicast. A ! in front excludes the type, as \"!local\"."
                                         }
                                     },
                                     "additionalProperties": false,
-                                    "description": "Rules on the MAC address of the host."
+                                    "description": "Rules on the host's MAC address."
                                 },
                                 "ip": {
                                     "type": "object",
@@ -79,11 +79,11 @@
                                                     "!temporary"
                                                 ]
                                             },
-                                            "description": "Address types, all of which must apply: global, private, ula, cgnat, link_local, eui64 (IPv6 from the MAC, stable), random (IPv6, not from the MAC), temporary (an IPv6 privacy address of this machine's, which changes every day or so). \"!type\": not of the type, as \"!temporary\"."
+                                            "description": "Address types, all of which must apply: global, private, ula, cgnat, link_local; eui64, an IPv6 address made from the MAC, which doesn't change; random, an IPv6 address not made from the MAC; temporary, an IPv6 privacy address of this machine, which changes about once a day. A ! in front excludes the type, as \"!temporary\"."
                                         },
                                         "prefix": {
                                             "type": "string",
-                                            "description": "A prefix the address must be in: 2001:db8::/32, 192.168.1.0/24."
+                                            "description": "A prefix the address must be in, as 2001:db8::/32 or 192.168.1.0/24."
                                         },
                                         "mask": {
                                             "type": "array",
@@ -91,7 +91,7 @@
                                                 "type": "string",
                                                 "pattern": "^[^/]+/[^/]+$"
                                             },
-                                            "description": "VALUE/MASK pairs of addresses of one family, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff for the IPv6 addresses ending in ::1, 0.0.0.5/0.0.0.255 for the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair matches the addresses of its family only."
+                                            "description": "VALUE/MASK pairs, all of which the address must match in the bits the mask sets: ::1/::ffff:ffff:ffff:ffff matches the IPv6 addresses ending in ::1, and 0.0.0.5/0.0.0.255 the IPv4 ones ending in .5. The mask is an address, not a prefix length: prefix takes those. A pair only matches addresses of its own family."
                                         },
                                         "family": {
                                             "type": "array",
@@ -109,23 +109,23 @@
                                             "items": {
                                                 "$ref": "#/$defs/seen"
                                             },
-                                            "description": "How the address was seen: a record of each rule, all of which it must have, each of its own times, while they count. Rules: a protocol and its way, as protocol: mdns and way: announced; or reported, by a plugin or the kernel, from a table."
+                                            "description": "How the address must have been seen: a list of records, all of which it must have, each still current. A record is a protocol and how it saw the address, as protocol: mdns with way: announced; or reported, from a table of a plugin or of the kernel."
                                         },
                                         "not_seen": {
                                             "type": "array",
                                             "items": {
                                                 "$ref": "#/$defs/seen"
                                             },
-                                            "description": "Records the address must have none of, as seen takes them: not_seen with reported {} is an address the host showed itself, never only one a table reports."
+                                            "description": "Records the address must have none of, written as for seen. For example, not_seen with reported: {} keeps the addresses the host showed itself, and never one that only a table reports."
                                         }
                                     },
                                     "additionalProperties": false,
-                                    "description": "Rules on the address."
+                                    "description": "Rules on the address itself."
                                 }
                             },
                             "additionalProperties": false
                         },
-                        "description": "Filter sets: an address any of them matches is the task's. Within a set, every rule must match."
+                        "description": "Which addresses the task takes. It's a list of sets: an address that matches any set is taken. Within a set, every rule must match."
                     },
                     "endpoints": {
                         "type": "object",
@@ -135,14 +135,14 @@
                                 "type": "string"
                             }
                         },
-                        "description": "The host names to update, by credential: a name in the credential's zone, \"\" for the zone itself, \"*.name\" for a wildcard. Or a template, a name for each host the filters match, by what the host is called, which needs discovery.hostnames: \"{hostname}\" is the name of every host called so, with the addresses of them all; \"{n}.{hostname}\" one of each, numbered from 1 by MAC among those there now; \"{mac}\" the host's MAC, its twelve digits. A name written as it is wins over a template's."
+                        "description": "The names to update, by credential. A name is in the credential's zone: \"\" is the zone itself, and \"*.name\" a wildcard. A name can also be a template, which makes a name for each host the filters match, from what the host calls itself. \"{hostname}\" is one name for every host called that, with all their addresses; \"{n}.{hostname}\" is one name per host, numbered from 1 in MAC order among those present; \"{mac}\" is the host's MAC, as twelve digits. {hostname} needs a discovery protocol or plugin that learns names. A name written out beats a template's."
                     },
                     "sources": {
                         "type": "array",
                         "items": {
                             "type": "string"
                         },
-                        "description": "The sources whose addresses the task's names get too."
+                        "description": "The sources whose addresses the task's names also get."
                     }
                 },
                 "required": [
@@ -150,7 +150,7 @@
                 ],
                 "additionalProperties": false
             },
-            "description": "The host names to keep, by task name: the addresses its filters match, and those of the sources it names, go to the host names of its endpoints."
+            "description": "The DNS names to keep up to date, by task name. Each task takes the addresses its filters match, and those of the sources it lists, and gives them to the names under its endpoints."
         },
         "credentials": {
             "type": "object",
@@ -163,15 +163,15 @@
                     },
                     "settings": {
                         "type": "object",
-                        "description": "The provider's settings: see the providers reference. An unknown one is an error."
+                        "description": "The provider's settings: see the providers reference. An unknown setting is an error."
                     },
                     "debounce": {
                         "$ref": "#/$defs/duration",
-                        "description": "How long to wait for more changes before updating. Default: 10s. A resolver credential's: none, as its updates are kept in memory, at once."
+                        "description": "How long to wait for more changes before an update. Default: 10s. A resolver credential doesn't wait, since its updates only change memory."
                     },
                     "retry": {
                         "$ref": "#/$defs/duration",
-                        "description": "How long to wait before retrying a failed update: addresses that change meanwhile wait for it too. At least 1s. Default: 1m."
+                        "description": "How long to wait before retrying a failed update. Changes that come meanwhile wait for the retry too. At least 1s. Default: 1m."
                     }
                 },
                 "required": [
@@ -180,47 +180,47 @@
                 ],
                 "additionalProperties": false
             },
-            "description": "The DNS providers to update, by credential name, which tasks' endpoints name."
+            "description": "The DNS providers to update, by credential name. Tasks name them under endpoints."
         },
         "resolvers": {
             "type": "object",
-            "description": "DNS servers for the clients of a network, by name: each answers the zones of its resolver credentials, with the addresses the tasks give their names, and records of its own, and asks its upstream servers the rest. See the [resolver](../resolver.md).",
+            "description": "DNS servers for the clients on a network, by name. Each answers the zones of its resolver credentials, with the addresses the tasks give their names and with its own records, and asks its upstream servers everything else. See the [resolver](../resolver.md).",
             "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
                     "listen": {
                         "$ref": "#/$defs/stringList",
-                        "description": "Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports: 192.168.1.0/24, 192.168.1.2, [fd00::2]:5353; without a port, 53. A port alone is every address of the machine, a public one on a router too: give the network of the clients. An address and port is one resolver's, however two spell it."
+                        "description": "Where it answers, over UDP and TCP: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Without a port, 53. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port, however each writes it."
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The networks of the clients it answers, or their addresses: 192.168.1.0/24, fd00::/64. A query from any other is REFUSED. Default: the networks of the machine's addresses it listens on."
+                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. Default: the networks of the addresses it listens on."
                     },
                     "upstream": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The servers it asks what isn't its own, in order, each for 2s: plain DNS, over UDP, and over TCP when the answer doesn't fit, as 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, without a port 53; DNS over TLS, as tls://1.1.1.1 or tls://dns.example.net, without a port 853; or DNS over HTTPS, as https://dns.example.net/dns-query, without a port 443. An encrypted server's certificate is verified, against the system's certificate authorities, for the host given, and its connections are kept for the next queries. A host name needs bootstrap. None answering is SERVFAIL."
+                        "description": "The servers it asks about names that aren't its own, in order, giving each 2s. Plain DNS, over UDP, and over TCP when the answer doesn't fit: 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, port 53 by default. DNS over TLS: tls://1.1.1.1 or tls://dns.example.net, port 853 by default. DNS over HTTPS: https://dns.example.net/dns-query, port 443 by default. An encrypted server's certificate is checked against the system's certificate authorities, for the host given, and its connections are reused. A host name needs bootstrap. When none answers, the client gets SERVFAIL."
                     },
                     "bootstrap": {
                         "$ref": "#/$defs/stringList",
-                        "description": "With an upstream given by host name, plain or encrypted, and only then: the servers asked its addresses, and nothing else, in order, over plain DNS: addresses, with a port or not. Not the system's resolver, which can be this one. The addresses found are kept for their TTL, a minute at least, an hour at most, and while these servers don't answer."
+                        "description": "Only for upstream servers given by host name, plain or encrypted: the servers that look up their addresses, and nothing else. Addresses, with or without a port, asked in order over plain DNS. The system's resolver isn't used, since it may be this one. The addresses found are kept for their TTL, between a minute and an hour, and for as long as these servers don't answer."
                     },
                     "records": {
                         "type": "array",
                         "items": {
                             "type": "string"
                         },
-                        "description": "Records of names of none of its zones, one per entry, in the syntax of a zone file, every name absolute, with its trailing dot: www.example.com. CNAME nas.home.arpa. A record without a TTL has 1m."
+                        "description": "Records of names outside its zones, one per entry, in zone file syntax, with every name absolute and ending in a dot: www.example.com. CNAME nas.home.arpa. A record without a TTL gets 1m."
                     },
                     "cache_size": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "How many answers of the upstream servers it keeps, each for its TTL, a day at most, an hour for a name that doesn't exist or has no data: beyond it, the one asked the longest ago goes first. Default: 10000; 0, none, and every query is asked. The local names are never kept: they follow discovery at once."
+                        "description": "How many answers of the upstream servers it keeps, each for its TTL: a day at most, and an hour for a name that doesn't exist or has no data. When full, the one asked longest ago goes first. Default: 10000. 0 keeps none, and every query goes upstream. Local names are never kept: they follow discovery at once."
                     },
                     "forward_unknown_private_reverse_queries": {
                         "type": "boolean",
                         "default": false,
-                        "description": "Whether the reverse of an address of a private network that the resolver has no name of is asked of the upstream servers, out of RFC 6303: for an upstream server of the network that knows more of their names, as a router does of its DHCP clients. By default it is no such name, the resolver's own, and the question doesn't leave it: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and the documentation's, and fd00::/8, fe80::/10, ::1 and 2001:db8::/32."
+                        "description": "Whether to ask the upstream servers for the reverse name of a private address the resolver has no name for: for an upstream server that knows more names, as a router does for its DHCP clients. By default, as RFC 6303 says, the resolver answers that there's no such name, and the question never leaves it. The private ranges are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and documentation ones, fd00::/8, fe80::/10, ::1 and 2001:db8::/32."
                     }
                 },
                 "required": [
@@ -510,16 +510,16 @@
                 "solicit": {
                     "type": "object",
                     "additionalProperties": false,
-                    "description": "Asking the hosts the filters want, which aren't otherwise found, once a minute. Of ipv6ddns, not of ipv6disc: the hosts are those the filters name by their MAC.",
+                    "description": "Asks for the hosts the filters name by MAC, once a minute, when nothing else finds them. Part of ipv6ddns, not of ipv6disc.",
                     "properties": {
                         "ipv6": {
                             "type": "boolean",
-                            "description": "For each filter that names a mac.address and the eui64 type, a neighbor solicitation for the EUI-64 address of that MAC, on each /64 listened on. It needs ipv6.listen, which reads the answers.",
+                            "description": "For each filter with a mac.address and the eui64 type: a neighbor solicitation for that MAC's EUI-64 address, on each /64 discovery listens on. It needs ipv6.listen, which reads the answers.",
                             "default": false
                         },
                         "ipv4": {
                             "type": "boolean",
-                            "description": "For each filter that names a mac.address with ip.family 4, ARP requests to that MAC alone, for the addresses of the local subnets within the filter's ip.prefix. It needs ipv4.enabled, Linux and CAP_NET_RAW.",
+                            "description": "For each filter with a mac.address and ip.family 4: ARP requests to that MAC alone, for the local subnets' addresses inside the filter's ip.prefix. It needs ipv4.enabled, Linux and CAP_NET_RAW.",
                             "default": false
                         }
                     }
@@ -528,7 +528,7 @@
         },
         "sources": {
             "type": "object",
-            "description": "Sources of addresses without a MAC, as the network's public IPv4, by name, which tasks name in their sources.",
+            "description": "Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources.",
             "additionalProperties": {
                 "type": "object",
                 "properties": {
@@ -541,7 +541,7 @@
                             "static",
                             "homeassistant"
                         ],
-                        "description": "dns: the public address, as OpenDNS's or Google's resolvers see it. http: from echo services over HTTPS, or urls. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block."
+                        "description": "Where the addresses come from. dns: the public address, as OpenDNS's or Google's resolvers see it. http: echo services over HTTPS, or the urls given. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block."
                     },
                     "family": {
                         "type": "array",
@@ -552,7 +552,7 @@
                                 6
                             ]
                         },
-                        "description": "http and dns: the families to find. Default: 4."
+                        "description": "For http and dns: the families to find. Default: 4."
                     },
                     "interval": {
                         "$ref": "#/$defs/duration",
@@ -568,35 +568,35 @@
                             "type": "string",
                             "pattern": "^https?://"
                         },
-                        "description": "http: the echo services to ask, in order."
+                        "description": "For http: the echo services to ask, in order."
                     },
                     "command": {
                         "type": "string",
-                        "description": "command: the program to run, from the configuration's directory."
+                        "description": "For command: the program to run, from the configuration's folder."
                     },
                     "args": {
                         "type": "array",
                         "items": {
                             "type": "string"
                         },
-                        "description": "command: its arguments."
+                        "description": "For command: its arguments."
                     },
                     "addresses": {
                         "type": "array",
                         "items": {
                             "type": "string"
                         },
-                        "description": "static: the addresses."
+                        "description": "For static: the addresses."
                     },
                     "entity": {
                         "type": "string",
                         "pattern": "^[a-z_]+\\.[a-z0-9_]+$",
-                        "description": "homeassistant: the entity, as sensor.wan_ip."
+                        "description": "For homeassistant: the entity, as sensor.wan_ip."
                     },
                     "attribute": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "homeassistant: the attribute of the entity to read, rather than its state."
+                        "description": "For homeassistant: an attribute of the entity to read instead of its state."
                     }
                 },
                 "required": [
@@ -616,16 +616,16 @@
                 "panic",
                 "fatal"
             ],
-            "description": "The level of the log. Default: info."
+            "description": "How much the log says. Default: info."
         },
         "webserver": {
             "type": "object",
             "additionalProperties": false,
-            "description": "The web server: the report, /status.json and /metrics.",
+            "description": "The web server, with the status page, /status.json and /metrics.",
             "properties": {
                 "listen": {
                     "$ref": "#/$defs/stringList",
-                    "description": "Where to serve: ports, addresses, networks of the machine's addresses and host names: 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24, myhost; without a port, 8053. A host name listens on each address it resolves to, at start; a network, on each address of the machine in it."
+                    "description": "Where to serve: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it."
                 }
             }
         },
@@ -635,26 +635,26 @@
             "required": [
                 "listen"
             ],
-            "description": "Makes ipv6ddns a device of Home Assistant's ESPHome integration: Home Assistant discovers it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now; and it sends the states homeassistant sources read. See docs/home-assistant-integration.md.",
+            "description": "Makes ipv6ddns a device of Home Assistant's ESPHome integration. Home Assistant finds it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now. It also gives the states that homeassistant sources read. See docs/home-assistant-integration.md.",
             "properties": {
                 "key": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9+/]{43}=$",
-                    "description": "The encryption key: the base64 of 32 bytes, which Home Assistant asks when adding the device, and can't change: nothing is written. Make one with openssl rand -base64 32. This, or key_provisioning: true."
+                    "description": "The encryption key: base64 of 32 bytes. Home Assistant asks for it when adding the device, and can't replace it later, since ipv6ddns stores nothing. Make one with openssl rand -base64 32. Give this, or key_provisioning: true."
                 },
                 "key_provisioning": {
                     "type": "boolean",
-                    "description": "Whether Home Assistant makes the key and gives it when adding the device, as to ESPHome's devices: it is kept in key_provisioning_state_file. Default: false, and the block needs a key."
+                    "description": "Whether Home Assistant makes the key and hands it over when adding the device, as it does for ESPHome devices. The key is kept in key_provisioning_state_file. Default: false, and then the block needs a key."
                 },
                 "key_provisioning_state_file": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "With key_provisioning: true, and only then: where the device keeps its identity, by which Home Assistant knows it, and the key Home Assistant gave. A file ipv6ddns can write; relative, from the configuration's folder. Default: homeassistant.state. One for each instance: another with a state file that is in use doesn't start. Deleting it makes the device a new one, without a key."
+                    "description": "Only with key_provisioning: true. Where the device keeps the key Home Assistant gave, and its identity, by which Home Assistant knows it. A file ipv6ddns can write; a relative path is from the configuration's folder. Default: homeassistant.state. Each instance needs its own: one whose state file is in use by another doesn't start. Deleting it makes the device a new one, with no key."
                 },
                 "name": {
                     "type": "string",
                     "pattern": "^[a-z0-9]([a-z0-9-]{0,29}[a-z0-9])?$",
-                    "description": "The device's name in the network: lower case letters, digits and hyphens. Default: ipv6ddns. One for each instance on the network: a second with a name that is announced already doesn't announce itself."
+                    "description": "The device's name on the network: lower-case letters, digits and hyphens. Default: ipv6ddns. Each instance on the network needs its own: a second one, whose name is announced already, doesn't announce itself."
                 },
                 "friendly_name": {
                     "type": "string",
@@ -669,11 +669,11 @@
                 },
                 "announce": {
                     "type": "boolean",
-                    "description": "Whether the device announces itself by mDNS, for Home Assistant to find it. Without, add it by its address. Default: true."
+                    "description": "Whether the device announces itself over mDNS, so that Home Assistant finds it. Without it, add the device by its address. Default: true."
                 },
                 "listen": {
                     "$ref": "#/$defs/stringList",
-                    "description": "Required. Where Home Assistant can connect to the device: a list of networks, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.10, [fd00::1]:7000, myhost or 6053. A network means this machine's addresses in it; an entry without a port uses port (6053). A port alone means every address of this machine, including a public one on a router: prefer the network Home Assistant is on. The device announces itself by mDNS only on the interfaces of these addresses, and announces one port, so entries with different ports need announce: false."
+                    "description": "Required. Where Home Assistant can connect to the device: networks, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.10, [fd00::1]:7000, myhost or 6053. A network means this machine's addresses in it. Without a port, port (6053). A port alone means every address of this machine, including a public one on a router: prefer the network Home Assistant is on. The device announces itself over mDNS only on these addresses' interfaces, and with one port, so entries with different ports need announce: false."
                 }
             },
             "if": {
@@ -724,7 +724,7 @@
             ]
         },
         "stringList": {
-            "description": "A list, or one string of comma separated values. Numbers, as ports, are taken as written.",
+            "description": "A list, or one string of comma-separated values. Numbers, such as ports, are kept as written.",
             "oneOf": [
                 {
                     "type": [
@@ -767,7 +767,7 @@
                         "ssdp",
                         "wsd"
                     ],
-                    "description": "A protocol of the local discovery that saw the address."
+                    "description": "The discovery protocol that saw the address."
                 },
                 "way": {
                     "type": "string",
@@ -776,7 +776,7 @@
                         "answered",
                         "heard"
                     ],
-                    "description": "How the protocol saw it: announced, the host said the address is its own; answered, it replied to a probe of the discovery's; heard, it used the address, unprompted. Without, any way."
+                    "description": "How the protocol saw it. announced: the host said the address is its own. answered: the host replied to a probe of discovery's. heard: the host used the address, unprompted. Without it, any way."
                 },
                 "reported": {
                     "type": "object",
@@ -787,7 +787,7 @@
                             "items": {
                                 "type": "string"
                             },
-                            "description": "Who reported it: plugins by name, or by type, as mikrotik; or kernel, this machine's own. Without, anyone."
+                            "description": "Who reported it: plugins by name, or by type, as mikrotik; or kernel, for this machine's own. Without it, anyone."
                         },
                         "from": {
                             "type": "array",
@@ -799,17 +799,17 @@
                                     "interfaces"
                                 ]
                             },
-                            "description": "From which of their tables: neighbors, leases, interfaces. Without, any."
+                            "description": "Which of their tables: neighbors, leases, interfaces. Without it, any."
                         }
                     },
-                    "description": "Reported by something else than the host: a plugin, or this machine's kernel, from one of its tables. {} is by anyone, from any table."
+                    "description": "Reported by something other than the host: a plugin, or this machine's kernel, from one of its tables. {} means by anyone, from any table."
                 },
                 "interfaces": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
-                    "description": "On these local interfaces only. Without, on any."
+                    "description": "Only on these local interfaces. Without it, any."
                 }
             },
             "oneOf": [
@@ -824,7 +824,7 @@
                     ]
                 }
             ],
-            "description": "A record the address has: of a protocol, and how it saw the address; or a report. One of protocol or reported."
+            "description": "A record the address has: a protocol and how it saw the address, or a report. Give protocol or reported, not both."
         },
         "discoveryDuration": {
             "description": "A duration, as 90s, 1m30s or 4h, or a number of seconds.",

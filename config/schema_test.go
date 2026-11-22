@@ -180,16 +180,16 @@ func renameRefs(value any) {
 const solicitSchema = `{
 	"type": "object",
 	"additionalProperties": false,
-	"description": "Asking the hosts the filters want, which aren't otherwise found, once a minute. Of ipv6ddns, not of ipv6disc: the hosts are those the filters name by their MAC.",
+	"description": "Asks for the hosts the filters name by MAC, once a minute, when nothing else finds them. Part of ipv6ddns, not of ipv6disc.",
 	"properties": {
 		"ipv6": {
 			"type": "boolean",
-			"description": "For each filter that names a mac.address and the eui64 type, a neighbor solicitation for the EUI-64 address of that MAC, on each /64 listened on. It needs ipv6.listen, which reads the answers.",
+			"description": "For each filter with a mac.address and the eui64 type: a neighbor solicitation for that MAC's EUI-64 address, on each /64 discovery listens on. It needs ipv6.listen, which reads the answers.",
 			"default": false
 		},
 		"ipv4": {
 			"type": "boolean",
-			"description": "For each filter that names a mac.address with ip.family 4, ARP requests to that MAC alone, for the addresses of the local subnets within the filter's ip.prefix. It needs ipv4.enabled, Linux and CAP_NET_RAW.",
+			"description": "For each filter with a mac.address and ip.family 4: ARP requests to that MAC alone, for the local subnets' addresses inside the filter's ip.prefix. It needs ipv4.enabled, Linux and CAP_NET_RAW.",
 			"default": false
 		}
 	}

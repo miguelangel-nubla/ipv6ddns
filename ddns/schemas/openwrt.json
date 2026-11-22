@@ -7,7 +7,7 @@
         "address": {
             "type": "string",
             "minLength": 1,
-            "description": "The router, with a port unless 22."
+            "description": "The router, with a port unless it's 22."
         },
         "username": {
             "type": "string",
@@ -16,7 +16,7 @@
         },
         "password": {
             "type": "string",
-            "description": "Its password, or an ssh_key."
+            "description": "Its password, or use ssh_key."
         },
         "ssh_key": {
             "type": "string",
@@ -25,16 +25,16 @@
         "host_key": {
             "type": "string",
             "pattern": "^(SHA256:[A-Za-z0-9+/]{43})?$",
-            "description": "The fingerprint of the host's SSH key, any of them when it has several, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted and the log warns with the fingerprint seen."
+            "description": "The fingerprint of the host's SSH key, as ssh-keygen -l shows it: SHA256:.... Any of its keys works. Recommended: without it, any key is accepted, and the log warns with the fingerprint it saw."
         },
         "zone": {
             "type": "string",
-            "description": "The zone of the names: lan."
+            "description": "The zone of the names, as lan."
         },
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "Unused: dnsmasq's records have no TTL of their own. Kept so that the configurations giving it load."
+            "description": "Not used: dnsmasq's records have no TTL of their own. Accepted so that configurations that set it still load."
         }
     },
     "required": [

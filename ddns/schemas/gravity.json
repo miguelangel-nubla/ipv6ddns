@@ -1,13 +1,13 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "description": "Gravity, a DNS server for the home network, over its API. The zone itself is the record @. A zone made with the web interface's Gravity-hosted preset answers from memory first, and Gravity, v0.34.0 at least, then answers with one record of each type: a host with several IPv6 addresses resolves to one of them. Leave the zone its etcd handler alone for all of them to be answered.",
+    "description": "Gravity, a DNS server for home networks, through its API. The zone itself is the record @. A zone made with the web interface's Gravity-hosted preset answers from memory first, and Gravity v0.34.0 and later then gives one record of each type: a host with several IPv6 addresses resolves to just one of them. To have all of them answered, leave the zone only its etcd handler.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
         "server": {
             "type": "string",
             "minLength": 1,
-            "description": "Its address: http://gravity.lan."
+            "description": "Its address, as http://gravity.lan."
         },
         "api_key": {
             "type": "string",
@@ -17,12 +17,12 @@
         "zone": {
             "type": "string",
             "minLength": 1,
-            "description": "The zone, with its final dot: home.lan."
+            "description": "The zone, ending in a dot, as home.lan."
         },
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "The records' TTL: 5m, 1h. Default: 5m. Gravity has it per record since v0.32, and needs it there."
+            "description": "The records' TTL, as 5m or 1h. Default: 5m. Gravity v0.32 and later keeps a TTL per record, and requires it."
         }
     },
     "required": [

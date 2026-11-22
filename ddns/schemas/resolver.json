@@ -1,30 +1,30 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "description": "A zone that a resolver of ipv6ddns answers, to the clients of its network, from memory: see the [resolver](../resolver.md). Its debounce defaults to none, as nothing is sent anywhere.",
+    "description": "A zone that one of ipv6ddns's resolvers answers from memory, for the clients on its network: see the [resolver](../resolver.md). Its debounce defaults to none, since nothing is sent anywhere.",
     "type": "object",
     "additionalProperties": false,
     "properties": {
         "resolver": {
             "type": "string",
             "minLength": 1,
-            "description": "The resolver that answers the zone, of resolvers. Needed only with more than one."
+            "description": "Which of the resolvers answers the zone. Needed only when there's more than one."
         },
         "zone": {
             "type": "string",
             "minLength": 1,
-            "description": "The zone: home.arpa."
+            "description": "The zone, as home.arpa."
         },
         "records": {
             "type": "array",
             "items": {
                 "type": "string"
             },
-            "description": "Records of names of the zone that no task publishes, one per entry, in the syntax of a zone file, relative to the zone or absolute within it: printer A 192.168.1.20, files CNAME nas, _ipp._tcp SRV 0 0 631 printer. A record without a TTL has the zone's."
+            "description": "Records of names in the zone that no task publishes, one per entry, in zone file syntax, relative to the zone or absolute within it: printer A 192.168.1.20, files CNAME nas, _ipp._tcp SRV 0 0 631 printer. A record without a TTL gets the zone's."
         },
         "ttl": {
             "type": "string",
             "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-            "description": "The TTL of the names' addresses, and of the records that give none: 5m, 1h. Default: 1m."
+            "description": "The TTL of the names' addresses, and of the records that give none, as 5m or 1h. Default: 1m."
         }
     },
     "required": [
