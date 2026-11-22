@@ -67,3 +67,5 @@ A tag makes a release: goreleaser builds it and publishes it on GitHub, with its
 
 - **A prerelease** is a tag of `dev` with a prerelease part: `v0.23.0-rc.1`, `-rc.2`, `-beta.1`. GitHub marks it a prerelease, not the latest release, and its images have its own tags only: `latest`, `vX` and `vX.Y` stay on the last release, so nobody gets it who didn't ask for it. An ipv6ddns prerelease can take an ipv6disc prerelease in `go.mod`, which Go takes as any version: `go get github.com/miguelangel-nubla/ipv6disc@v0.19.0-rc.1`. The add-on repository is told of releases only, so Home Assistant users get none of them.
 - **A release** is `dev` merged into `main`, and tagged there: `v0.23.0`.
+
+A tag whose commit says `[skip ci]` starts no release: GitHub skips every workflow of that push, the tag's too. Tag a commit that doesn't, or run the release on the tag by hand: *Actions*, *goreleaser*, *Run workflow*, with the tag under *Use workflow from*.
