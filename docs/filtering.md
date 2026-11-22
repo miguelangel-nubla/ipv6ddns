@@ -324,7 +324,7 @@ This task takes two things:
 - This machine's stable public IPv6 addresses. The temporary ones, which change every day or so, are left out.
 - The network's public IPv4, from a [source](sources.md), for a server behind NAT.
 
-Home Assistant add-ons, and containers on the host's network, have this machine's addresses. So their names can be endpoints of the same task.
+Home Assistant apps, and containers on the host's network, have this machine's addresses. So their names can be endpoints of the same task.
 
 ```yaml
 sources:

@@ -1,4 +1,4 @@
-# Home Assistant add-on: ipv6ddns
+# Home Assistant app: ipv6ddns
 
 DNS names for every device on your network, wherever its addresses move.
 
@@ -7,5 +7,5 @@ names in one of three places: at your DNS provider, at your router, or in
 ipv6ddns itself, which then answers as the LAN's DNS server. You install no
 software on the devices, and set no static addresses.
 
-Read [the add-on's documentation](DOCS.md), or the documentation of
+Read [the app's documentation](DOCS.md), or the documentation of
 [ipv6ddns](https://github.com/miguelangel-nubla/ipv6ddns).

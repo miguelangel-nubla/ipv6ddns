@@ -6,7 +6,7 @@
 - **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:latest` and `:v0` follow the latest release, `:v0.18` follows that minor version's patches, and `:v0.18.0` stays on that exact version.
 - **From source**, with [Go](https://go.dev/doc/install): `go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns@latest`.
 - **On a MikroTik router**, as a container: see [MikroTik](mikrotik.md#running-as-a-container-on-routeros).
-- **In Home Assistant**, as an add-on: see [its documentation](../homeassistant/addon/DOCS.md).
+- **In Home Assistant**, as an app: see [its documentation](../homeassistant/addon/DOCS.md).
 
 ## What discovery needs
 

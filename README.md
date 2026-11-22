@@ -11,7 +11,7 @@ ipv6ddns finds every host on your LAN, over IPv6 and IPv4, and keeps a DNS name 
 - **Every machine by name, with nothing to set per host.** Each host gets the name it calls itself, such as `printer.home.arpa` or `laptop.home.arpa`. Names appear and disappear as hosts come and go.
 - **The LAN's DNS server, if you want one.** ipv6ddns can answer those names itself, along with records you write and the reverse names. It forwards every other query, over TLS or HTTPS if you like, and caches the answers.
 
-It runs on one machine on the network. It can also run as a [Home Assistant add-on](homeassistant/addon/DOCS.md), which makes it a device in Home Assistant too.
+It runs on one machine on the network. It can also run as a [Home Assistant app](homeassistant/addon/DOCS.md) (formerly called an add-on), which makes it a device in Home Assistant too.
 
 ## What you can do with it
 
@@ -19,12 +19,12 @@ It runs on one machine on the network. It can also run as a [Home Assistant add-
 |---|---|
 | Every machine on the network reachable by name, from every device | [Guide: every machine on the network by name](docs/guides/network-wide-names.md) |
 | A server's public name kept up to date when its IPv6 prefix changes | [Quick start](#quick-start), then [filtering](docs/filtering.md) to choose which of its addresses |
-| Home Assistant itself at a public name, such as `ha.example.com` | [The add-on: publishing Home Assistant](homeassistant/addon/DOCS.md#publishing-home-assistant-itself) |
+| Home Assistant itself at a public name, such as `ha.example.com` | [The app: publishing Home Assistant](homeassistant/addon/DOCS.md#publishing-home-assistant-itself) |
 | The names in your router's DNS: MikroTik, OpenWrt, OPNsense, pfSense | [Your router's DNS instead](docs/guides/network-wide-names.md#your-routers-dns-instead), and the [providers reference](docs/reference/providers.md) |
 | A DNS server for the LAN, with your own records | [The resolver](docs/resolver.md) |
 | The network's public IPv4 under the same name as the IPv6 | [Sources](docs/sources.md) |
 
-There is more in the [guides](docs/guides/README.md), and in the [guides for the Home Assistant add-on](docs/guides/home-assistant/README.md).
+There is more in the [guides](docs/guides/README.md), and in the [guides for the Home Assistant app](docs/guides/home-assistant/README.md).
 
 ## What it looks like
 
@@ -108,7 +108,7 @@ For a complete setup, pick a [guide](docs/guides/README.md) instead.
 
 - **Binaries** for Linux, macOS, FreeBSD and the other BSDs are on the [releases page](https://github.com/miguelangel-nubla/ipv6ddns/releases). Discovery listens to the network, so it needs [a few privileges](docs/installation.md#what-discovery-needs).
 - **Docker**: run `ghcr.io/miguelangel-nubla/ipv6ddns` on the host's network. See [installation](docs/installation.md).
-- **Home Assistant**: install [the add-on](homeassistant/addon/DOCS.md).
+- **Home Assistant**: install [the app](homeassistant/addon/DOCS.md).
 
 ## Documentation
 
@@ -118,7 +118,7 @@ The full index is in [docs](docs/README.md).
 |---|---|
 | **Getting started** | |
 | [Installation and running](docs/installation.md) | Binaries, Docker, flags, the web report, health and metrics, several instances at once |
-| [Guides](docs/guides/README.md) | Common setups from start to end, also [for the Home Assistant add-on](docs/guides/home-assistant/README.md) |
+| [Guides](docs/guides/README.md) | Common setups from start to end, also [for the Home Assistant app](docs/guides/home-assistant/README.md) |
 | **Configuring** | |
 | [Configuration](docs/configuration.md) | The file's structure, secrets, validation |
 | [Filtering](docs/filtering.md) | Choosing which addresses a name gets |
@@ -127,7 +127,7 @@ The full index is in [docs](docs/README.md).
 | [Sources](docs/sources.md) | The public IPv4, and other addresses without a MAC |
 | [Resolver](docs/resolver.md) | ipv6ddns as the LAN's DNS server: its zones, records, and what it forwards |
 | **Home Assistant** | |
-| [The add-on](homeassistant/addon/DOCS.md) | Installing it, its configuration, and [how it is made](docs/home-assistant.md) |
+| [The app](homeassistant/addon/DOCS.md) | Installing it, its configuration, and [how it is made](docs/home-assistant.md) |
 | [The integration](docs/home-assistant-integration.md) | ipv6ddns as a device in Home Assistant, and entity states used as addresses |
 | **Platforms** | |
 | [MikroTik](docs/mikrotik.md) | RouterOS as a DNS provider, a discovery plugin, and a container host |

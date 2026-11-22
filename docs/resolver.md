@@ -396,7 +396,7 @@ A port under 1024 needs root, or the `CAP_NET_BIND_SERVICE` capability.
 
 - **As a binary run by another user:** `sudo setcap 'cap_net_raw,cap_net_bind_service+ep' $(command -v ipv6ddns)` gives the binary that capability, together with the one discovery needs.
 - **In Docker:** the container runs as root, and Docker grants `NET_BIND_SERVICE` by default, as it does `NET_RAW`. A runtime, or a Kubernetes `securityContext`, that drops capabilities must keep it. The image needs nothing more. On the host's network, the resolver listens on the host's addresses.
-- **As the Home Assistant add-on:** the add-on runs as root on the host's network, with Docker's capabilities and `NET_RAW`, so it can open port 53 with no change to the add-on. Home Assistant's own DNS is on its internal network, not on the host's LAN address. The host's LAN address is the one to give the resolver.
+- **As the Home Assistant app:** the app runs as root on the host's network, with Docker's capabilities and `NET_RAW`, so it can open port 53 with no change to the app. Home Assistant's own DNS is on its internal network, not on the host's LAN address. The host's LAN address is the one to give the resolver.
 
 ### Another DNS server on the same machine
 

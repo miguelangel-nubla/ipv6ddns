@@ -71,7 +71,7 @@ dockers_v2:
     flags:
       - "--pull"
       - "--target=ipv6ddns"
-  # The Home Assistant add-on: the same, started with its folder's configuration. It pulls the tag of its version,
+  # The Home Assistant app: the same, started with its folder's configuration. It pulls the tag of its version,
   # without the v.
   -
     id: addon
@@ -90,8 +90,8 @@ dockers_v2:
       - homeassistant/starter.config.yaml
     labels:
       org.opencontainers.image.created: "{{ .Date }}"
-      org.opencontainers.image.title: "{{ .ProjectName }} Home Assistant add-on"
-      org.opencontainers.image.description: "DNS names for every device on your network, wherever its addresses move: the Home Assistant add-on"
+      org.opencontainers.image.title: "{{ .ProjectName }} Home Assistant app"
+      org.opencontainers.image.description: "DNS names for every device on your network, wherever its addresses move: the Home Assistant app"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.url: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"

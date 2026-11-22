@@ -1,6 +1,6 @@
 # ipv6ddns: the names to keep, and the DNS providers to keep them at.
 #
-# Until you add tasks, it only discovers: the add-on's page lists the hosts of the network and their
+# Until you add tasks, it only discovers: the app's page lists the hosts of the network and their
 # MAC addresses, to choose from. Every key: https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md
 #
 # An example: Home Assistant itself, its stable public IPv6 addresses and the network's public
@@ -47,9 +47,9 @@
 tasks: {}
 credentials: {}
 
-# The add-on's page in Home Assistant: the report, served to Home Assistant alone, at the address
-# its Supervisor reaches the add-on at, which the network outside doesn't. Keep these lines:
-# without them the add-on still runs, and its page shows an error.
+# The app's page in Home Assistant: the report, served to Home Assistant alone, at the address
+# its Supervisor reaches the app at, which the network outside doesn't. Keep these lines:
+# without them the app still runs, and its page shows an error.
 webserver:
   listen: 172.30.32.1:8053
 

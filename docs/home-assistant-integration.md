@@ -1,6 +1,6 @@
 # Home Assistant integration
 
-A `homeassistant` block makes ipv6ddns a device in Home Assistant. It uses the ESPHome integration, which every Home Assistant already has, so there's no custom integration to install. It works wherever ipv6ddns runs on the network: as the [add-on](../homeassistant/addon/DOCS.md), in Docker, or as a plain binary.
+A `homeassistant` block makes ipv6ddns a device in Home Assistant. It uses the ESPHome integration, which every Home Assistant already has, so there's no custom integration to install. It works wherever ipv6ddns runs on the network: as the [app](../homeassistant/addon/DOCS.md), in Docker, or as a plain binary.
 
 - **Home Assistant gets** each name's addresses, when the name was last updated, and whether that update has a problem. It also gets the number of hosts discovered, and a button that updates every name now.
 - **ipv6ddns gets** the state of any entity, through a [`homeassistant` source](sources.md#types). For example, a router's WAN address sensor can give a name its A record, and the record follows the sensor as it changes.
@@ -138,7 +138,7 @@ An entry of `listen` is one of these:
 
 - **A network**, as above. The device listens on the machine's addresses in that network, as they are when ipv6ddns starts. Use a network on a router, and on any machine that has a public address or is on networks Home Assistant isn't on, such as a container attached to several networks.
 - **An address**, such as `10.2.3.4`, or a host name. The device listens on just that one.
-- **A port alone**, such as `6053`. The device listens on every address of the machine, and announces itself on each interface discovery runs on. That's fine for a machine on a single network, like the add-on's, whose machine is Home Assistant's own. On a router, though, every address includes the internet side. With `key_provisioning: true`, anyone who reaches the port before Home Assistant adds the device could give it a key first.
+- **A port alone**, such as `6053`. The device listens on every address of the machine, and announces itself on each interface discovery runs on. That's fine for a machine on a single network, like the app's, whose machine is Home Assistant's own. On a router, though, every address includes the internet side. With `key_provisioning: true`, anyone who reaches the port before Home Assistant adds the device could give it a key first.
 
 Without `listen`, ipv6ddns doesn't start:
 

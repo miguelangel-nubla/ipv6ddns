@@ -8,7 +8,7 @@ New here? The [README](../README.md) explains what ipv6ddns does. Each [guide](g
 
 - [Installation and running](installation.md): binaries, Docker, what discovery needs, flags, the web report, health and metrics, several instances at once.
 - [Guides](guides/README.md): complete common setups, such as [every machine on the network by name](guides/network-wide-names.md).
-- [Guides for the Home Assistant add-on](guides/home-assistant/README.md): what changes in each guide when ipv6ddns runs as the add-on.
+- [Guides for the Home Assistant app](guides/home-assistant/README.md): what changes in each guide when ipv6ddns runs as the app.
 
 ## Configuring
 
@@ -21,9 +21,9 @@ New here? The [README](../README.md) explains what ipv6ddns does. Each [guide](g
 
 ## Home Assistant
 
-- [The add-on](../homeassistant/addon/DOCS.md): installing it, and its configuration.
+- [The app](../homeassistant/addon/DOCS.md): installing it, and its configuration.
 - [The integration](home-assistant-integration.md): ipv6ddns as a device in Home Assistant, and entity states used as addresses.
-- [How the add-on is built](home-assistant.md).
+- [How the app is built](home-assistant.md).
 
 ## Platforms
 

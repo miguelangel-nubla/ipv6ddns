@@ -106,7 +106,7 @@ A test fails when the pages are out of date, when a key has no description, or w
 The [guides](docs/guides/README.md) are linked from posts elsewhere, which nobody updates. So once a guide is published, its file name and its headings stay as they are, because those links use the headings' anchors.
 
 - A new guide is a new file. It covers one setup, and is named after what it sets up.
-- Add it to the guides' index, and to the [add-on's index](docs/guides/home-assistant/README.md) too. Write a page for the add-on's side only where the add-on changes something.
+- Add it to the guides' index, and to the [app's index](docs/guides/home-assistant/README.md) too. Write a page for the app's side only where the app changes something.
 - Give its configuration whole, ready to copy. It is tested like every other example.
 
 ### Writing style
@@ -137,7 +137,7 @@ A tag makes a release: goreleaser builds it and publishes it on GitHub, with its
   - GitHub marks it as a prerelease, not as the latest release.
   - Its images only get its own tags. `latest`, `vX` and `vX.Y` stay on the last release, so nobody gets a prerelease without asking for it.
   - It can depend on an ipv6disc prerelease in `go.mod`, which Go treats like any other version: `go get github.com/miguelangel-nubla/ipv6disc@v0.19.0-rc.1`.
-  - The add-on repository is only notified of releases, so Home Assistant users never get a prerelease.
+  - The app repository is only notified of releases, so Home Assistant users never get a prerelease.
 - **A release** is `dev` merged into `main`, and tagged there: `v0.23.0`.
 
 A tag whose commit message contains `[skip ci]` starts no release. GitHub skips every workflow of that push, including the tag's. Either tag a commit without it, or run the release on the tag by hand: *Actions*, *goreleaser*, *Run workflow*, with the tag under *Use workflow from*.

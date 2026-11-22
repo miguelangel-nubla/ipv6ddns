@@ -4,11 +4,11 @@ Reach every device on your network by its own name, such as `nas.home.arpa`, `pr
 
 ipv6ddns finds the hosts on the network, learns what each one is called, and answers DNS for them itself. A new device has its name as soon as it shows up. A name follows its device when the device's addresses change: a new IPv6 prefix from the ISP, a new DHCP lease, a laptop moving from Wi-Fi to cable.
 
-The setup is the same on a homelab server, a Raspberry Pi, or a Home Assistant machine. Running ipv6ddns as the Home Assistant add-on? Start with [the add-on's side of this guide](home-assistant/network-wide-names.md), which sends you back here.
+The setup is the same on a homelab server, a Raspberry Pi, or a Home Assistant machine. Running ipv6ddns as the Home Assistant app? Start with [the app's side of this guide](home-assistant/network-wide-names.md), which sends you back here.
 
 ## What you need
 
-- **A machine on the LAN that is always on**, to run ipv6ddns. [Install it](../installation.md) as a binary, in Docker on the host's network, or as the Home Assistant add-on. ipv6ddns answers DNS on port 53, so nothing else on that machine may hold port 53 on its LAN address. Pi-hole and AdGuard Home do.
+- **A machine on the LAN that is always on**, to run ipv6ddns. [Install it](../installation.md) as a binary, in Docker on the host's network, or as the Home Assistant app. ipv6ddns answers DNS on port 53, so nothing else on that machine may hold port 53 on its LAN address. Pi-hole and AdGuard Home do.
 - **Access to your router's DHCP settings**, to give the devices that machine as their DNS server.
 
 The examples use `192.168.1.0/24` for the LAN, `192.168.1.1` for the router, and `192.168.1.2` for the machine that runs ipv6ddns. Use your own.
