@@ -50,6 +50,8 @@ A host is called what it says, and anything on the network can say `nas`, or `ro
 - A name of a task, written as it is, at the same endpoint, has its task's addresses and no other. A host called the same is left out of it, and the log says so, once.
 - A record of a resolver's zone is the record: a host called the same doesn't change its answer.
 
+What isn't written in the configuration has no such guard. A record of the zone made by hand at a provider, as `www`, is a template's as soon as a host on the network says it is called `www`: the template `"{hostname}"` makes its records the host's addresses, and removes the others. A template with something of its own around the placeholder, as `"{hostname}.lan"` or `"{hostname}.hosts"`, keeps the names of the hosts under it, apart from the zone's.
+
 For a name that matters, write it, with a filter by MAC: a template is for the rest. A name is cleaned to one DNS label before it is used, of lower case letters, digits and hyphens: none is `*`, nor has a dot.
 
 ## When a host leaves
