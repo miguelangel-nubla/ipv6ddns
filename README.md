@@ -30,18 +30,31 @@ There is more in the [guides](docs/guides/README.md), and in the [guides for the
 
 The web report, or `-live` in a terminal, shows two things: each name, with its addresses and the state of its updates, and each host found, with its names and how each address was seen.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/report-dark.svg">
+  <img src="docs/images/report-light.svg" alt="The report: the names with their addresses, then the hosts found with their names. A name that fails is in red, one that waits or has no address in amber, and the count of names is green when all work. The same report is below as text.">
+</picture>
+
+<details>
+<summary>The same report, as text</summary>
+
 ```
-DNS: 3 names, 3 with addresses, 0 without; 0 failing
+DNS: 4 names, 3 with addresses, 1 without; 1 failing
     Provider: cloudflare
         Endpoint: cloudflare
+            vpn.example.com: (next update: 42s, retrying after the error)
+                (last update error: failed to list DNS records for vpn: context deadline exceeded)
+                [2001:db8:1234:5678::1]                    1h12m40s   31d 1h        12:34:56:78:90:ab  eth0
             www.example.com: (last update: 2026-01-25T01:49:35Z)
-                [2001:db8:1234:5678:abcd:ef01:2345:6789]   35m15s    2d 5h        12:34:56:78:90:ab  eth0, router
-                203.0.113.99                               27m 2s       9h14m     source wan
+                [2001:db8:1234:5678:abcd:ef01:2345:6789]     35m15s    2d 5h        12:34:56:78:90:cd  eth0, router
+                203.0.113.99                                 27m 2s       9h14m     source wan
     Provider: technitium
         Endpoint: home-dns
+            laptop.lan.example.com: (last update: 2026-01-24T22:37:41Z)
+                (no address: the last one went 3h12m ago)
             nas.lan.example.com: (next update: 7s, waiting for the 10s debounce)
-                192.168.1.50                                2m51s   12d           00:11:22:33:44:55  eth0
-                [fd12:3456:789a::50]                       41m37s   12d           00:11:22:33:44:55  eth0
+                192.168.1.50                                  2m51s   12d           00:11:22:33:44:55  eth0
+                [fd12:3456:789a::50]                         41m37s   12d           00:11:22:33:44:55  eth0
 
 Discovery: 2 hosts, 1 named, 3 addresses
     00:11:22:33:44:55
@@ -57,6 +70,8 @@ Discovery: 2 hosts, 1 named, 3 addresses
                 ndp:answered on eth0                   41m37s   12d
                 mdns:announced on eth0                 38m 5s       6h20m
 ```
+
+</details>
 
 The two times on each line are how long the address has left before it expires, and how long it has been seen. In a browser and in a terminal the report has colors: red for what fails, amber for what waits or has no address, green for what works. The words say the same without them. The same state is served as JSON at `/status.json`, and as Prometheus metrics at `/metrics`.
 

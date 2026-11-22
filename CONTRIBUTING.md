@@ -101,6 +101,8 @@ go test ./internal/docgen -update
 
 A test fails when the pages are out of date, when a key has no description, or when an example in the documentation doesn't validate.
 
+The same command redraws the README's picture of the report, `docs/images/report-light.svg` and `report-dark.svg`, from the report the README has as text under it. Change the text, never the pictures. A test holds the picture's colors to those the program gives each kind of line.
+
 ### Guides
 
 The [guides](docs/guides/README.md) are linked from posts elsewhere, which nobody updates. So once a guide is published, its file name and its headings stay as they are, because those links use the headings' anchors.
