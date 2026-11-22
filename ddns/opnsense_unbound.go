@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
+	"net/netip"
 	"strings"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
@@ -39,26 +39,26 @@ func NewOpnsenseUnbound(settings json.RawMessage) (Service, error) {
 	return &service, nil
 }
 
-// Update changes the host overrides of the name, A and AAAA, one by one, and then reconfigures
-// Unbound: those of the name's other types, as an MX, stay.
 func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
 	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(u.Address), u.TLSFingerprint))
 
-	var search struct {
-		Rows []unboundOverrideRow `json:"rows"`
-	}
-	if err := u.call(client, http.MethodGet, "settings/searchHostOverride", nil, &search); err != nil {
-		return fmt.Errorf("failed to fetch existing Host Overrides: %w", err)
+	// 1. Fetch existing Host Overrides
+	existingOverrides, err := u.getOverrides(client)
+	if err != nil {
+		return fmt.Errorf("failed to fetch existing Host Overrides: %v", err)
 	}
 
 	fqdn := FQDN(hostname, u.Zone)
-	hostPart, domainPart := SplitFQDN(fqdn)
 	desiredIPs := desiredRecords(addrCollection)
-	ttl := strconv.Itoa(int(u.TTL.Seconds()))
 
-	currentIPs := make(map[string][]string) // the UUIDs of each address's overrides
+	// Filter existing overrides for this FQDN
+	hostPart, domainPart := SplitFQDN(fqdn)
+
+	ttl := fmt.Sprintf("%d", int(u.TTL.Seconds()))
+
+	currentIPs := make(map[string][]string) // IP -> list of UUIDs
 	staleTTL := make(map[string]bool)       // by UUID
-	for _, row := range search.Rows {
+	for _, row := range existingOverrides {
 		if row.Hostname != hostPart || row.Domain != domainPart {
 			continue
 		}
@@ -80,49 +80,53 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 		}
 	}
 
-	// Each change sets pending before it is sent: one whose answer doesn't come may be made.
-	for ip, recordType := range desiredIPs {
+	// 2. Manage IPs
+	// Add missing IPs and clean up duplicates for existing ones
+	for ip := range desiredIPs {
 		uuids, exists := currentIPs[ip]
 		if !exists {
 			u.pending = true
-			if err := u.saveOverride(client, "addHostOverride", hostPart, domainPart, recordType, ip); err != nil {
-				return fmt.Errorf("failed to add override %s -> %s: %w", fqdn, ip, err)
+			err := u.addOverride(client, hostPart, domainPart, ip)
+			if err != nil {
+				return fmt.Errorf("failed to add override %s -> %s: %v", fqdn, ip, err)
 			}
-			continue
-		}
-		// An address has one override: the others are deleted.
-		for _, uuid := range uuids[1:] {
-			u.pending = true
-			if err := u.deleteOverride(client, uuid); err != nil {
-				return fmt.Errorf("failed to delete duplicate override %s -> %s (UUID: %s): %w", fqdn, ip, uuid, err)
+		} else {
+			// Duplicate records exist for this IP, remove extra ones
+			for i := 1; i < len(uuids); i++ {
+				u.pending = true
+				err := u.deleteOverride(client, uuids[i])
+				if err != nil {
+					return fmt.Errorf("failed to delete duplicate override %s -> %s (UUID: %s): %w", fqdn, ip, uuids[i], err)
+				}
 			}
-		}
-		// And the one kept has the TTL set.
-		if staleTTL[uuids[0]] {
-			u.pending = true
-			if err := u.saveOverride(client, "setHostOverride/"+uuids[0], hostPart, domainPart, recordType, ip); err != nil {
-				return fmt.Errorf("failed to set the TTL of override %s -> %s: %w", fqdn, ip, err)
+			// And the one kept has the TTL set.
+			if staleTTL[uuids[0]] {
+				u.pending = true
+				if err := u.saveOverride(client, "setHostOverride/"+uuids[0], hostPart, domainPart, ip); err != nil {
+					return fmt.Errorf("failed to set the TTL of override %s -> %s: %v", fqdn, ip, err)
+				}
 			}
 		}
 	}
 
+	// 3. Remove obsolete IPs
 	for ip, uuids := range currentIPs {
-		if _, keep := desiredIPs[ip]; keep {
-			continue
-		}
-		for _, uuid := range uuids {
-			u.pending = true
-			if err := u.deleteOverride(client, uuid); err != nil {
-				return fmt.Errorf("failed to delete override %s -> %s: %w", fqdn, ip, err)
+		if _, keep := desiredIPs[ip]; !keep {
+			for _, uuid := range uuids {
+				u.pending = true
+				err := u.deleteOverride(client, uuid)
+				if err != nil {
+					return fmt.Errorf("failed to delete override %s -> %s: %v", fqdn, ip, err)
+				}
 			}
 		}
 	}
 
-	// The changes of this update, or of one that failed before it, are served once Unbound is
-	// reconfigured.
+	// 4. Reconfigure, after the changes of this update or of one that failed before it: a
+	// change sent, whether or not its answer came, counts as made.
 	if u.pending {
-		if err := u.call(client, http.MethodPost, "service/reconfigure", struct{}{}, nil); err != nil {
-			return fmt.Errorf("failed to reconfigure Unbound: %w", err)
+		if err := u.reconfigure(client); err != nil {
+			return fmt.Errorf("failed to reconfigure Unbound: %v", err)
 		}
 		u.pending = false
 	}
@@ -130,61 +134,93 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	return nil
 }
 
-// unboundOverrideRow is a host override, as searchHostOverride lists it.
+// Helper types for OPNsense API
 type unboundOverrideRow struct {
 	UUID     string `json:"uuid"`
 	Enabled  string `json:"enabled"`
 	Hostname string `json:"hostname"`
 	Domain   string `json:"domain"`
 	// The type, A, AAAA or MX: up to OPNsense 25.1, with its description, "AAAA (IPv6 address)".
-	RR string `json:"rr"`
-	// The address.
-	Server string `json:"server"`
+	RR     string `json:"rr"`
+	Server string `json:"server"` // This is the IP address
 	// In seconds: empty when the version doesn't tell it.
 	TTL         string `json:"ttl"`
 	Description string `json:"description"`
 }
 
-// saveOverride posts the override of an address to action: addHostOverride for a new one,
-// setHostOverride/<uuid> to replace that one.
-func (u *OpnsenseUnbound) saveOverride(client *http.Client, action, hostname, domain, recordType, ip string) error {
-	return u.call(client, http.MethodPost, "settings/"+action, map[string]any{
+type unboundSearchResponse struct {
+	Rows []unboundOverrideRow `json:"rows"`
+}
+
+type opnsenseResponse struct {
+	Result string `json:"result"`
+	Status string `json:"status"`
+}
+
+func (u *OpnsenseUnbound) getOverrides(client *http.Client) ([]unboundOverrideRow, error) {
+	url := fmt.Sprintf("%s/api/unbound/settings/searchHostOverride", strings.TrimRight(u.Address, "/"))
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.SetBasicAuth(u.Key, u.Secret)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp unboundSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
+		return nil, err
+	}
+
+	return searchResp.Rows, nil
+}
+
+func (u *OpnsenseUnbound) addOverride(client *http.Client, hostname, domain, ip string) error {
+	return u.saveOverride(client, "addHostOverride", hostname, domain, ip)
+}
+
+// saveOverride posts an override to action: addHostOverride for a new one, setHostOverride/<uuid>
+// to replace that one.
+func (u *OpnsenseUnbound) saveOverride(client *http.Client, action, hostname, domain, ip string) error {
+	url := fmt.Sprintf("%s/api/unbound/settings/%s", strings.TrimRight(u.Address, "/"), action)
+
+	recordType := "A"
+	if addr, err := netip.ParseAddr(ip); err == nil && addr.Is6() {
+		recordType = "AAAA"
+	}
+
+	payload := map[string]interface{}{
 		"host": map[string]string{
 			"enabled":     "1",
 			"hostname":    hostname,
 			"domain":      domain,
 			"rr":          recordType,
 			"server":      ip,
-			"ttl":         strconv.Itoa(int(u.TTL.Seconds())),
+			"ttl":         fmt.Sprintf("%d", int(u.TTL.Seconds())),
 			"description": "Managed by ipv6ddns",
 		},
-	}, nil)
-}
-
-func (u *OpnsenseUnbound) deleteOverride(client *http.Client, uuid string) error {
-	return u.call(client, http.MethodPost, "settings/delHostOverride/"+uuid, struct{}{}, nil)
-}
-
-// call sends a request of Unbound's API, at path under /api/unbound/, with body as JSON when not
-// nil. A GET's answer is read into out; that of any other method must say it was done, as
-// "saved", "deleted" or the status "ok", which out then needn't read.
-func (u *OpnsenseUnbound) call(client *http.Client, method, path string, body, out any) error {
-	var reader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		reader = bytes.NewReader(data)
 	}
-	req, err := http.NewRequest(method, strings.TrimRight(u.Address, "/")+"/api/unbound/"+path, reader)
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
 	req.SetBasicAuth(u.Key, u.Secret)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -192,32 +228,89 @@ func (u *OpnsenseUnbound) call(client *http.Client, method, path string, body, o
 	}
 	defer resp.Body.Close()
 
-	answer, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("%s: reading the answer: %w", path, err)
-	}
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: status %d: %s", path, resp.StatusCode, answer)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
-	if method == http.MethodGet {
-		if err := json.Unmarshal(answer, out); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
+
+	var apiResp opnsenseResponse
+	if err := json.Unmarshal(body, &apiResp); err == nil {
+		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
+			return fmt.Errorf("%s failed: %s", action, string(body))
 		}
-		return nil
+	} else {
+		return fmt.Errorf("%s failed to parse response: %s", action, string(body))
 	}
-	var done struct {
-		Result string `json:"result"`
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(answer, &done); err != nil {
-		return fmt.Errorf("%s: an answer that isn't JSON: %s", path, answer)
-	}
-	if done.Result != "saved" && done.Result != "deleted" && done.Status != "ok" {
-		return fmt.Errorf("%s failed: %s", path, answer)
-	}
+
 	return nil
 }
 
-func (u *OpnsenseUnbound) Domain(hostname string) string {
-	return FQDN(hostname, u.Zone)
+func (u *OpnsenseUnbound) deleteOverride(client *http.Client, uuid string) error {
+	url := fmt.Sprintf("%s/api/unbound/settings/delHostOverride/%s", strings.TrimRight(u.Address, "/"), uuid)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBufferString("{}"))
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(u.Key, u.Secret)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp opnsenseResponse
+	if err := json.Unmarshal(body, &apiResp); err == nil {
+		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
+			return fmt.Errorf("delHostOverride failed: %s", string(body))
+		}
+	} else {
+		return fmt.Errorf("delHostOverride failed to parse response: %s", string(body))
+	}
+
+	return nil
+}
+
+func (u *OpnsenseUnbound) reconfigure(client *http.Client) error {
+	url := fmt.Sprintf("%s/api/unbound/service/reconfigure", strings.TrimRight(u.Address, "/"))
+
+	req, err := http.NewRequest("POST", url, bytes.NewBufferString("{}"))
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(u.Key, u.Secret)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("reconfigure failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp opnsenseResponse
+	if err := json.Unmarshal(body, &apiResp); err == nil {
+		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
+			return fmt.Errorf("reconfigure failed: %s", string(body))
+		}
+	} else {
+		return fmt.Errorf("reconfigure failed to parse response: %s", string(body))
+	}
+
+	return nil
+}
+
+func (c *OpnsenseUnbound) Domain(hostname string) string {
+	return FQDN(hostname, c.Zone)
 }

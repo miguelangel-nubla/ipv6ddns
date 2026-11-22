@@ -43,7 +43,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	}
 	api, err := cloudflare.NewWithAPIToken(c.APIToken, options...)
 	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
+		return fmt.Errorf("failed to initialize: %v", err)
 	}
 
 	// And the update has this one, for all its requests: the client tries one answered with an
@@ -58,7 +58,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	}
 	zones, err := api.ListZonesContext(ctx, cloudflare.WithZoneFilters(zoneName, "", ""))
 	if err != nil {
-		return fmt.Errorf("failed to read zone ID: %w", err)
+		return fmt.Errorf("failed to read zone ID: %v", err)
 	}
 	if len(zones.Result) != 1 {
 		return fmt.Errorf("failed to read zone ID: %d zones of the name %s", len(zones.Result), c.Zone)
@@ -74,7 +74,7 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	}
 	currentRecords, _, err := api.ListDNSRecords(ctx, rc, params)
 	if err != nil {
-		return fmt.Errorf("failed to list DNS records for %s: %w", hostname, err)
+		return fmt.Errorf("failed to list DNS records for %s: %s", hostname, err)
 	}
 
 	ttl := int(c.TTL.Seconds())

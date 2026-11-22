@@ -64,7 +64,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	}
 	apiClient, err := gravity.NewClientWithResponses(g.Server, gravity.WithHTTPClient(newHTTPClient(nil)))
 	if err != nil {
-		return fmt.Errorf("failed to create gravity client: %w", err)
+		return fmt.Errorf("failed to create gravity client: %v", err)
 	}
 
 	name := gravityRecordName(hostname, g.Zone)
@@ -79,7 +79,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	}
 	currentRecords, err := apiClient.DnsGetRecordsWithResponse(ctx, &params, requestEditors...)
 	if err != nil {
-		return fmt.Errorf("failed to call current records: %w", err)
+		return fmt.Errorf("failed to call current records: %v", err)
 	}
 
 	if currentRecords.JSON200 == nil {
@@ -115,7 +115,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 			requestEditors...,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to call create DNS record: %w", err)
+			return fmt.Errorf("failed to call create DNS record: %v", err)
 		}
 		if response.StatusCode() < 200 || response.StatusCode() >= 300 {
 			return fmt.Errorf("failed to create DNS record: %v", response.Status())
@@ -173,7 +173,7 @@ func (g *Gravity) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 			requestEditors...,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to call delete DNS record: %w", err)
+			return fmt.Errorf("failed to call delete DNS record: %v", err)
 		}
 
 		if response.StatusCode() < 200 || response.StatusCode() >= 300 {
