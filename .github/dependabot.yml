@@ -1,7 +1,9 @@
 version: 2
+# Work goes to dev, and reaches main when it is released: so do the updates.
 updates:
   - package-ecosystem: gomod
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     commit-message:
@@ -20,6 +22,7 @@ updates:
           - github.com/oapi-codegen/*
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     commit-message:
