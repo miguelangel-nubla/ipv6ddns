@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func mikrotikFake(fake *fakeDNS) func(string, map[string]string, map[string]stri
 		case "/ip/dns/static/print":
 			var rows []map[string]string
 			for _, rec := range fake.of(queries["name"]) {
-				row := map[string]string{".id": "*" + rec.id, "name": rec.name, "address": rec.ip, "ttl": routerOSTime(rec.ttl)}
+				row := map[string]string{".id": "*" + rec.id, "name": rec.name, "address": rec.ip, "ttl": routerOSTime(rec.ttl), "disabled": strconv.FormatBool(rec.disabled)}
 				if rec.rrType != "A" {
 					row["type"] = rec.rrType
 				}
@@ -114,6 +115,7 @@ func TestMikrotikUpdate(t *testing.T) {
 			t.Errorf("record %s: ttl %d, want 26h: of the one it had too", rec.ip, rec.ttl)
 		}
 	}
+	fake.checkDisabled(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas.lan")
 }
 
 // A fingerprint without TLS would be a password in the clear with nothing checked.

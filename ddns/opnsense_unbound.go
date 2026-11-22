@@ -58,6 +58,9 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 
 	currentIPs := make(map[string][]string) // IP -> list of UUIDs
 	staleTTL := make(map[string]bool)       // by UUID
+	// The addresses of disabled overrides: OPNsense's, left as they are, and the address has
+	// one, so none is added.
+	disabledIPs := make(map[string]bool)
 	for _, row := range existingOverrides {
 		if row.Hostname != hostPart || row.Domain != domainPart {
 			continue
@@ -72,6 +75,10 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 			continue
 		}
 		if ip, ok := canonicalIP(row.Server); ok {
+			if row.Enabled == "0" {
+				disabledIPs[ip] = true
+				continue
+			}
 			currentIPs[ip] = append(currentIPs[ip], row.UUID)
 			// A version that doesn't tell the TTL has none to compare.
 			if rowTTL := strings.TrimSpace(row.TTL); rowTTL != "" && rowTTL != ttl {
@@ -84,6 +91,9 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	// Add missing IPs and clean up duplicates for existing ones
 	for ip := range desiredIPs {
 		uuids, exists := currentIPs[ip]
+		if !exists && disabledIPs[ip] {
+			continue
+		}
 		if !exists {
 			u.pending = true
 			err := u.addOverride(client, hostPart, domainPart, ip)

@@ -43,7 +43,7 @@ An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`,
 
 Names are expected in lower case: in the configuration, and in the records at the provider. Some providers match a record's name as it is written, so a record of the name in another case, as `NAS` made by hand, may not be found: it is neither updated nor removed, and is answered beside the name's own.
 
-A record at the provider that is disabled, and has an address the name should have, is left as it is: the address stays unanswered, as the provider's own choice, and no other record is added for it. A disabled record of an address the name no longer has is removed, as any other.
+A record disabled at the provider, of Mikrotik or OPNsense, is the provider's own choice: it is left as it is, whatever its address, and no record is added beside it, so its address stays unanswered, also when the name has it again. Technitium enables the disabled records of a name when a record is added to it: there they are records as any other.
 
 ## Secrets
 

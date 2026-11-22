@@ -39,6 +39,8 @@ type record struct {
 	id, name, rrType, ip string
 	ttl                  int
 	proxied              bool
+	// Disabled at the provider: not answered, and ipv6ddns's to leave alone.
+	disabled bool
 }
 
 // fakeDNS is the record store of a fake provider API, counting the changes made to it.
@@ -142,6 +144,62 @@ func (f *fakeDNS) check(update func(*ipv6disc.AddrCollection) error, name, other
 	f.records = records
 }
 
+// disabledIP is the address of a disabled record that the name no longer has.
+const disabledIP = "2001:db8::bad"
+
+// checkDisabled runs the update with the desired addresses, then with none, on a name with two
+// disabled records: one of an address it no longer has, and one of an address it has. A disabled
+// record is the provider's: both stay as they are, disabled and of their TTL, and no record is
+// added beside the one of the address it has, which so stays unanswered.
+func (f *fakeDNS) checkDisabled(update func(*ipv6disc.AddrCollection) error, name string) {
+	f.t.Helper()
+	f.mutex.Lock()
+	// The address of the disabled record wanted has that record alone.
+	f.records = slices.DeleteFunc(f.records, func(r record) bool { return r.name == name && sameIP(r.ip, newIP) })
+	var disabled []string
+	for _, ip := range []string{disabledIP, newIP} {
+		r := f.add(name, "AAAA", ip, 300)
+		f.records[len(f.records)-1].disabled = true
+		disabled = append(disabled, r.id)
+	}
+	f.mutex.Unlock()
+
+	for i, addrs := range []*ipv6disc.AddrCollection{desired(), ipv6disc.NewAddrCollection()} {
+		if err := update(addrs); err != nil {
+			f.t.Fatalf("update %d: %v", i+1, err)
+		}
+		f.mutex.Lock()
+		for _, id := range disabled {
+			j := slices.IndexFunc(f.records, func(r record) bool { return r.id == id })
+			if j < 0 || !f.records[j].disabled || f.records[j].ttl != 300 {
+				f.t.Errorf("update %d: the disabled record %s was changed or removed: %v", i+1, id, f.records)
+			}
+		}
+		var withNewIP, enabled []string
+		for _, r := range f.addresses(name) {
+			if sameIP(r.ip, newIP) {
+				withNewIP = append(withNewIP, r.id)
+			}
+			if !r.disabled {
+				ip, _ := canonicalIP(r.ip)
+				enabled = append(enabled, r.rrType+" "+ip)
+			}
+		}
+		if len(withNewIP) != 1 {
+			f.t.Errorf("update %d: the address of the disabled record has %d records, want that one alone: %v", i+1, len(withNewIP), f.records)
+		}
+		slices.Sort(enabled)
+		want := []string{"A " + newIPv4, "AAAA " + wantedIP}
+		if i == 1 {
+			want = nil
+		}
+		if !slices.Equal(enabled, want) {
+			f.t.Errorf("update %d: the records enabled are %v, want %v", i+1, enabled, want)
+		}
+		f.mutex.Unlock()
+	}
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
@@ -220,7 +278,10 @@ func TestOpnsenseUnboundUpdate(t *testing.T) {
 			var rows []map[string]string
 			for _, rec := range fake.records {
 				host, domain := SplitFQDN(rec.name)
-				row := map[string]string{"uuid": rec.id, "hostname": host, "domain": domain, "server": rec.ip, "ttl": strconv.Itoa(rec.ttl)}
+				row := map[string]string{"uuid": rec.id, "enabled": "1", "hostname": host, "domain": domain, "server": rec.ip, "ttl": strconv.Itoa(rec.ttl)}
+				if rec.disabled {
+					row["enabled"] = "0"
+				}
 				// The type as OPNsense tells it: its description up to 25.1, and since the
 				// type, with the description apart. Some rows of each.
 				description := map[string]string{"A": "A (IPv4 address)", "AAAA": "AAAA (IPv6 address)", "MX": "MX (Mail server)"}[rec.rrType]
@@ -279,6 +340,7 @@ func TestOpnsenseUnboundUpdate(t *testing.T) {
 	if reconfigures != 2 {
 		t.Errorf("got %d reconfigures, want 2, one for each update that changes something: none when nothing changes", reconfigures)
 	}
+	fake.checkDisabled(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas.lan")
 }
 
 func TestPfsenseRestapiUnboundUpdate(t *testing.T) {
