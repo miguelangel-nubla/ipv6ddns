@@ -10,12 +10,13 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/internal/reportpic"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 )
 
 // The picture of the report in the README has the roles reportpic.Roles reads from its text: they
-// are the roles the program gives, of every kind of line of the names and of the discovery.
+// are the roles the program gives, of every kind of line of the names, of the resolvers and of the discovery.
 func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 	// The names: one that works and waits for its debounce, one that fails and retries, one
 	// whose last address went, and one that never had any.
@@ -54,11 +55,31 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 	disc.RegisterName(hw, "nas", "mdns on eth0", time.Hour)
 	disc.ReportName(hw, "nas", "router", "leases", time.Hour)
 
+	// The resolvers: one that serves, with an upstream that failed, and one that doesn't.
+	resolvers := resolversPage("", []resolver.Status{
+		{Name: "lan", Listening: []string{"192.168.1.2:53"}, Allow: []string{"192.168.1.0/24"}, Zones: []string{"lan.example.com"}, ZoneNames: map[string]int{"lan.example.com": 1},
+			Serving: true, Upstreams: []string{"192.168.1.1", "tls://1.1.1.1"}, UpstreamFailures: map[string]uint64{"tls://1.1.1.1": 3}, Queries: map[string]uint64{resolver.Local: 7}, CacheSize: 10000, CacheEntries: 12},
+		{Name: "guests", Error: "listen udp 192.168.2.1:53: bind: address already in use", Upstreams: []string{"192.168.1.1"}},
+	})
+
+	// And the resolvers when all serve.
+	one := resolversPage("", []resolver.Status{{Name: "lan", Listening: []string{"192.168.1.2:53"}, Serving: true, Upstreams: []string{"192.168.1.1"}}})
+	for i, line := range reportpic.Roles(one.String()) {
+		if want, have := roles(one[i]), roles(line); want != have {
+			t.Errorf("the roles of %q:\n%s the program's\n%s the picture's", one[i].String(), want, have)
+		}
+	}
+	if !strings.Contains(one.String(), "Resolvers: 1, 1 serving\n") {
+		t.Errorf("the page of a resolver:\n%s", one.String())
+	}
+
 	for _, hide := range []bool{true, false} {
 		page := append(state.Page("", hide), pretty.Line{})
+		page = append(page, resolvers...)
+		page = append(page, pretty.Line{})
 		page = append(page, disc.Page("")...)
 		text := page.String()
-		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "        names:", "            nas "} {
+		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 2, 1 serving", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
 			if !strings.Contains(text, has) {
 				t.Fatalf("the page of the test has no %q:\n%s", has, text)
 			}

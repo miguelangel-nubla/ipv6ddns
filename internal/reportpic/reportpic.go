@@ -17,10 +17,13 @@ var (
 	counts   = regexp.MustCompile(`^ (\d+ names?, )(\d+) with addresses, (\d+) without; (\d+) failing$`)
 	nameLine = regexp.MustCompile(`^( +[^ ]+)(:)(.*)$`)
 	note     = regexp.MustCompile(` \([^()]*(\([^()]*\)[^()]*)*\)`)
+	serving  = regexp.MustCompile(`^ (\d+), (\d+) serving$`)
+	failed   = regexp.MustCompile(`\((\d+) failed\)`)
 )
 
-// Roles gives the names and the discovery of a report, as text, the roles the program gives
-// them: a test holds it to what the program writes. The other sections are left as text.
+// Roles gives the names, the resolvers and the discovery of a report, as text, the roles the
+// program gives them: a test holds it to what the program writes. The configuration is left as
+// text.
 func Roles(text string) pretty.Page {
 	var page pretty.Page
 	current, group := "", ""
@@ -35,6 +38,8 @@ func Roles(text string) pretty.Page {
 		switch current {
 		case "DNS":
 			page = append(page, dnsLine(line, body, indent))
+		case "Resolvers":
+			page = append(page, resolverLine(line, body, indent))
 		case "Discovery":
 			switch {
 			case indent == 8 && strings.HasSuffix(body, ":"):
@@ -59,6 +64,13 @@ func Roles(text string) pretty.Page {
 // summary is the rest of a section's first line: the counts of the names each with the role of
 // its state, when there is something to it.
 func summary(section, rest string) pretty.Line {
+	if m := serving.FindStringSubmatch(rest); section == "Resolvers" && m != nil {
+		role := pretty.OK
+		if m[1] != m[2] {
+			role = pretty.Error
+		}
+		return pretty.Line{{Text: " " + m[1] + ", "}, pretty.As(role, m[2]+" serving")}
+	}
 	m := counts.FindStringSubmatch(rest)
 	if section != "DNS" || m == nil {
 		return pretty.Line{{Text: rest}}
@@ -109,6 +121,35 @@ func dnsLine(line, body string, indent int) pretty.Line {
 		return out
 	case indent > 12:
 		return row(line, pretty.Plain)
+	}
+	return pretty.Line{{Text: line}}
+}
+
+// resolverLine is a line of a resolver: its name with whether it serves, what it is given as it
+// is, an upstream that failed set apart, and its counters as details.
+func resolverLine(line, body string, indent int) pretty.Line {
+	switch {
+	case indent == 4:
+		name, state, _ := strings.Cut(line, ": ")
+		role := pretty.Error
+		if state == "serving" {
+			role = pretty.OK
+		}
+		return pretty.Line{pretty.As(pretty.Name, name), {Text: ": "}, pretty.As(role, state)}
+	case strings.HasPrefix(body, "Queries: "), strings.HasPrefix(body, "Cache: "):
+		return pretty.Line{pretty.As(pretty.Detail, line)}
+	case strings.HasPrefix(body, "Upstream: "):
+		var out pretty.Line
+		last := 0
+		for _, m := range failed.FindAllStringSubmatchIndex(line, -1) {
+			role := pretty.Detail
+			if line[m[2]:m[3]] != "0" {
+				role = pretty.Warn
+			}
+			out = append(out, pretty.Span{Text: line[last:m[0]]}, pretty.As(role, line[m[0]:m[1]]))
+			last = m[1]
+		}
+		return append(out, pretty.Span{Text: line[last:]})
 	}
 	return pretty.Line{{Text: line}}
 }

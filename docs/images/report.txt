@@ -1,0 +1,30 @@
+DNS: 4 names, 3 with addresses, 1 without; 1 failing
+    Provider: cloudflare
+        Endpoint: cloudflare
+            vpn.example.com: (next update: 42s, retrying after the error)
+                (last update error: failed to list DNS records for vpn: context deadline exceeded)
+                [2001:db8:1234:5678::1]                    1h12m40s   31d 1h        12:34:56:78:90:ab  eth0
+            www.example.com: (last update: 2026-01-25T01:49:35Z)
+                [2001:db8:1234:5678:abcd:ef01:2345:6789]     35m15s    2d 5h        12:34:56:78:90:cd  eth0, router
+                203.0.113.99                                 27m 2s       9h14m     source wan
+    Provider: technitium
+        Endpoint: home-dns
+            laptop.lan.example.com: (last update: 2026-01-24T22:37:41Z)
+                (no address: the last one went 3h12m ago)
+            nas.lan.example.com: (next update: 7s, waiting for the 10s debounce)
+                192.168.1.50                                  2m51s   12d           00:11:22:33:44:55  eth0
+                [fd12:3456:789a::50]                         41m37s   12d           00:11:22:33:44:55  eth0
+
+Discovery: 2 hosts, 1 named, 3 addresses
+    00:11:22:33:44:55
+        names:
+            nas                                      3h59m12s   12d
+                mdns on eth0                         3h59m12s   12d
+                reported by router from leases       3h51m 7s    3d 4h
+        addresses:
+            192.168.1.50                                2m51s   12d
+                arp:answered on eth0                    2m51s   12d
+                reported by router from leases        (lease)    3d 4h
+            fd12:3456:789a::50                         41m37s   12d
+                ndp:answered on eth0                   41m37s   12d
+                mdns:announced on eth0                 38m 5s       6h20m

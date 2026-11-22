@@ -405,6 +405,13 @@ An address already taken by another program, or by another instance, isn't caugh
 
 **Status.** The [web report](installation.md#the-web-report) shows each resolver: where it listens, whom it answers, how many queries of each kind it answered, and how many answers its cache holds.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/resolvers-dark.svg">
+  <img src="images/resolvers-light.svg" alt="The resolvers in the report. One resolver, lan, is serving, in green. It listens on 192.168.1.2 port 53, answers the LAN, and has the zone lan.example.com with 23 names. Of its two upstream servers, one has 3 failed queries, in amber. Then its queries by kind, and its cache, 1274 of 10000.">
+</picture>
+
+A resolver that isn't serving is in red, with the reason. An upstream server with failed queries is in amber.
+
 - **`/status.json`** has the resolvers under `resolvers`. Each has `upstream_addresses`, the addresses the bootstrap servers found for each upstream given by host name, and the cache's `cache_entries` out of `cache_size`.
 - **`/metrics`** has:
   - `ipv6ddns_resolver_queries_total` by `kind`: `local`, `nodata`, `forwarded`, `cached`, `refused` and `servfail`. A query answered from the cache is `cached`, and one an upstream server answered is `forwarded`. A local name whose CNAME leads outside is `local` in both cases.

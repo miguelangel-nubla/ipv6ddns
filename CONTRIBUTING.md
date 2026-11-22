@@ -101,7 +101,7 @@ go test ./internal/docgen -update
 
 A test fails when the pages are out of date, when a key has no description, or when an example in the documentation doesn't validate.
 
-The same command redraws the README's picture of the report, `docs/images/report-light.svg` and `report-dark.svg`, from the report the README has as text under it. Change the text, never the pictures. A test holds the picture's colors to those the program gives each kind of line.
+The same command redraws the pictures of the report, the `.svg` files in `docs/images/`, each from the `.txt` file beside it. Change the text, never the pictures. A test holds the pictures' colors to those the program gives each kind of line.
 
 ### Guides
 

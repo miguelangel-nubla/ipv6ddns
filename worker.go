@@ -646,7 +646,16 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 // resolversPage tells, of each resolver, where it listens, whom it answers, and what it
 // answered: nothing without resolvers.
 func (w *Worker) resolversPage(prefix string) pretty.Page {
-	if len(w.resolvers) == 0 {
+	statuses := make([]resolver.Status, 0, len(w.resolvers))
+	for _, r := range w.resolvers {
+		statuses = append(statuses, r.Status())
+	}
+	return resolversPage(prefix, statuses)
+}
+
+// resolversPage is the page of the resolvers of those statuses.
+func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
+	if len(statuses) == 0 {
 		return nil
 	}
 	var page pretty.Page
@@ -657,18 +666,17 @@ func (w *Worker) resolversPage(prefix string) pretty.Page {
 		page.Add(pretty.As(pretty.Detail, prefix+fmt.Sprintf(format, args...)))
 	}
 	serving := 0
-	for _, r := range w.resolvers {
-		if r.Status().Serving {
+	for _, s := range statuses {
+		if s.Serving {
 			serving++
 		}
 	}
 	all := pretty.OK
-	if serving < len(w.resolvers) {
+	if serving < len(statuses) {
 		all = pretty.Error
 	}
-	page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, "Resolvers:"), pretty.Span{Text: fmt.Sprintf(" %d, ", len(w.resolvers))}, pretty.As(all, fmt.Sprintf("%d serving", serving)))
-	for _, r := range w.resolvers {
-		s := r.Status()
+	page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, "Resolvers:"), pretty.Span{Text: fmt.Sprintf(" %d, ", len(statuses))}, pretty.As(all, fmt.Sprintf("%d serving", serving)))
+	for _, s := range statuses {
 		state := pretty.As(pretty.OK, "serving")
 		if !s.Serving {
 			state = pretty.As(pretty.Error, "not serving")
