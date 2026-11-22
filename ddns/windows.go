@@ -63,7 +63,7 @@ func (w *WindowsDNS) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 			w.unverified.note(w.Address, hostKey)
 		}
 	default:
-		runner = &LocalRunner{}
+		runner = newLocalRunner()
 	}
 	if err != nil {
 		return err
@@ -259,7 +259,17 @@ func preparePowerShellCommand(psScript string) (string, error) {
 	return base64.StdEncoding.EncodeToString(bytes), nil
 }
 
-type LocalRunner struct{}
+// LocalRunner runs the commands of one update in a local PowerShell, within updateTimeout from
+// when it is made, together: a PowerShell that hangs is killed then.
+type LocalRunner struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func newLocalRunner() *LocalRunner {
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	return &LocalRunner{ctx: ctx, cancel: cancel}
+}
 
 func (l *LocalRunner) RunPS(psScript string) ([]byte, error) {
 	encoded, err := preparePowerShellCommand(psScript)
@@ -275,8 +285,13 @@ func (l *LocalRunner) RunPS(psScript string) ([]byte, error) {
 
 	// A PowerShell that hangs is killed, and what it started doesn't keep this waiting for its
 	// output.
-	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
-	defer cancel()
+	ctx := l.ctx
+	if ctx == nil {
+		// A LocalRunner made as a literal: each command has the time.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), updateTimeout)
+		defer cancel()
+	}
 	command := exec.CommandContext(ctx, bin, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded)
 	command.WaitDelay = 5 * time.Second
 	// Capture stderr independently
@@ -295,6 +310,9 @@ func (l *LocalRunner) RunPS(psScript string) ([]byte, error) {
 }
 
 func (l *LocalRunner) Close() error {
+	if l.cancel != nil {
+		l.cancel()
+	}
 	return nil
 }
 
