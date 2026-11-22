@@ -1,9 +1,10 @@
 # Home Assistant add-on: ipv6ddns
 
-[ipv6ddns](https://github.com/miguelangel-nubla/ipv6ddns) finds the devices of
-your network by their MAC address, and keeps their names at your DNS providers
-as their addresses change: your ISP's new IPv6 prefix, a device's new address,
-the network's public IPv4.
+[ipv6ddns](https://github.com/miguelangel-nubla/ipv6ddns) gives every device
+on your network a DNS name, wherever its addresses move: your ISP's new IPv6
+prefix, a device's new address, the network's public IPv4. It finds the hosts,
+and keeps their names at your DNS provider, at your router, or answers them
+itself as the LAN's DNS server.
 
 ## Installation
 
@@ -16,6 +17,10 @@ the network's public IPv4.
    their MAC addresses.
 3. Edit that `config.yaml`, with the File editor or Studio Code Server add-on,
    and restart the add-on.
+
+Guides for common setups, as every machine on the network by name, with the
+add-on's side of each:
+[guides for the add-on](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/guides/home-assistant/README.md).
 
 ## Configuration
 

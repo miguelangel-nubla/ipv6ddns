@@ -62,6 +62,7 @@ dockers_v2:
     labels:
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.description: "DNS names for every device on your network, wherever its addresses move"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.url: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"
@@ -90,6 +91,7 @@ dockers_v2:
     labels:
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.title: "{{ .ProjectName }} Home Assistant add-on"
+      org.opencontainers.image.description: "DNS names for every device on your network, wherever its addresses move: the Home Assistant add-on"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.url: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"

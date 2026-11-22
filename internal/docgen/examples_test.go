@@ -115,11 +115,16 @@ func TestAddonStarterConfig(t *testing.T) {
 }
 
 // Every configuration in the documentation loads: the examples stay true to the schema and the
-// code. A block of a filter alone is taken as a task's; one of Docker Compose is left out.
+// code. A block of a filter alone is taken as a task's; one of Docker Compose is left out; and one
+// that starts with addedMark, as a guide adds a part to its configuration, is merged into the last
+// whole one of its page, and loads with it.
 func TestDocExamples(t *testing.T) {
 	root := filepath.Join("..", "..")
 	files := []string{"README.md", "CONTRIBUTING.md"}
 	docs, _ := filepath.Glob(filepath.Join(root, "docs", "*.md"))
+	guides, _ := filepath.Glob(filepath.Join(root, "docs", "guides", "*.md"))
+	addonGuides, _ := filepath.Glob(filepath.Join(root, "docs", "guides", "*", "*.md"))
+	docs = append(append(docs, guides...), addonGuides...)
 	addon, _ := filepath.Glob(filepath.Join(root, "homeassistant", "addon", "*.md"))
 	docs = append(docs, addon...)
 	for _, d := range docs {
@@ -132,8 +137,23 @@ func TestDocExamples(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		var whole string // the last whole configuration of the page
 		for i, m := range yamlBlock.FindAllStringSubmatch(string(content), -1) {
 			block := dedent(m[1])
+			if strings.HasPrefix(block, addedMark) {
+				if whole == "" {
+					t.Errorf("%s, example %d: %s, and there is no configuration above it", file, i+1, addedMark)
+					continue
+				}
+				merged, err := mergeYAML(whole, block)
+				if err != nil {
+					t.Errorf("%s, example %d: %v\n%s", file, i+1, err, block)
+					continue
+				}
+				block = merged
+			} else if regexp.MustCompile(`(?m)^(tasks|credentials):`).MatchString(block) {
+				whole = block
+			}
 			if strings.HasPrefix(block, "services:") || strings.HasPrefix(block, "# compose.yaml") {
 				continue
 			}
@@ -187,7 +207,7 @@ func TestDocExamples(t *testing.T) {
 				t.Errorf("%s, example %d: %v\n%s", file, i+1, err, block)
 				continue
 			}
-			// The providers check their settings themselves; a form from before warns.
+			// The providers check their settings themselves; what does nothing warns.
 			for name, credential := range cfg.Credentials {
 				if _, err := ddns.NewService(credential.Provider, credential.RawSettings); err != nil {
 					t.Errorf("%s, example %d, credential %s: %v", file, i+1, name, err)
@@ -202,6 +222,39 @@ func TestDocExamples(t *testing.T) {
 	if checked == 0 {
 		t.Error("no example found")
 	}
+}
+
+// addedMark starts an example that adds to the configuration above it, in a guide.
+const addedMark = "# Added to the configuration above"
+
+// mergeYAML is base with added's keys put in, a mapping's into the mapping of the same key, and
+// anything else in place of base's.
+func mergeYAML(base, added string) (string, error) {
+	var b, a map[string]any
+	if err := yaml.Unmarshal([]byte(base), &b); err != nil {
+		return "", err
+	}
+	if err := yaml.Unmarshal([]byte(added), &a); err != nil {
+		return "", err
+	}
+	out, err := yaml.Marshal(mergeMaps(b, a))
+	return string(out), err
+}
+
+func mergeMaps(base, added map[string]any) map[string]any {
+	if base == nil {
+		base = map[string]any{}
+	}
+	for k, v := range added {
+		if am, ok := v.(map[string]any); ok {
+			if bm, ok := base[k].(map[string]any); ok {
+				base[k] = mergeMaps(bm, am)
+				continue
+			}
+		}
+		base[k] = v
+	}
+	return base
 }
 
 func indent(s, prefix string) string {

@@ -51,6 +51,8 @@ go test ./internal/docgen -update
 
 A test fails when the pages are behind, when a key has no description, or when an example of the documentation doesn't validate.
 
+The [guides](docs/guides/README.md) are linked from posts elsewhere, which nobody updates: a guide's file name and its headings, whose anchors the links have, stay as they are once published. A new guide is a new file, of one setup, named by what it sets up; it goes in the index, and in the [add-on's](docs/guides/home-assistant/README.md) too, with a page of the add-on's side only where the add-on changes something. Its configuration is whole, as a reader copies it, and is tested as every example is.
+
 ## Adding a DNS provider
 
 1. Copy a provider of [`ddns/`](ddns/), as `cloudflare.go`, and its test.

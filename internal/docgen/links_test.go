@@ -24,7 +24,7 @@ func anchor(h string) string {
 func TestDocLinks(t *testing.T) {
 	root := filepath.Join("..", "..")
 	var files []string
-	for _, pattern := range []string{"*.md", "docs/*.md", "docs/*/*.md", "homeassistant/addon/*.md"} {
+	for _, pattern := range []string{"*.md", "docs/*.md", "docs/*/*.md", "docs/*/*/*.md", "homeassistant/addon/*.md"} {
 		found, _ := filepath.Glob(filepath.Join(root, pattern))
 		files = append(files, found...)
 	}
