@@ -11,7 +11,7 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 | `tasks` | object | **Required.** The DNS names to keep up to date, by task name. Each task takes the addresses its filters match, and those of the sources it lists, and gives them to the names under its endpoints. |
 | `credentials` | object | **Required.** The DNS providers to update, by credential name. Tasks name them under endpoints. |
 | `resolvers` | object | DNS servers for the clients on a network, by name. Each answers the zones of its resolver credentials, with the addresses the tasks give their names and with its own records, and asks its upstream servers everything else. See the [resolver](../resolver.md). |
-| `discovery` | object | How hosts are discovered: on the local links, by the protocols enabled, and by plugins reading the tables of routers. Every key is optional: what is left out is its default. |
+| `discovery` | object | How hosts are found: on the local links, by the protocols turned on, and by plugins that read routers' tables. Every key is optional: a key left out has its default. |
 | `sources` | object | Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. |
 | `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | How much the log says. Default: info. |
 | `webserver` | object | The web server, with the status page, /status.json and /metrics. |
@@ -147,56 +147,56 @@ Makes ipv6ddns a device of Home Assistant's ESPHome integration. Home Assistant 
 
 `discovery`
 
-How hosts are discovered: on the local links, by the protocols enabled, and by plugins reading the tables of routers. Every key is optional: what is left out is its default. The keys are those of [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc), whose discovery it is, but `solicit`, which is of ipv6ddns: a file of its command's keys is this block. See [discovery](../discovery.md).
+How hosts are found: on the local links, by the protocols turned on, and by plugins that read routers' tables. Every key is optional: a key left out has its default. The keys are those of [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc), whose discovery it is, but `solicit`, which is of ipv6ddns: a file of its command's keys is this block. See [discovery](../discovery.md).
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `lifetime` | duration | `1h` | How long an address stays after it was last seen, unless its family says. |
-| `rediscover` | duration | - | How often the active discovery probes every host. Default: a third of the shortest lifetime of the families that probe, so that a quiet host is probed before it expires. |
-| `interfaces` | list, or comma separated | - | The interfaces the local discovery of both families runs on: names, or patterns as en*. Default: all. The plugins aren't concerned. |
-| `exclude_interfaces` | list, or comma separated | - | The interfaces the local discovery doesn't run on: names, or patterns as docker*, veth*. |
-| `ipv6` | object | - | IPv6: the switches of all its protocols at once. A protocol runs only when it is enabled, under protocols, and its family, and the way it works, are on here. |
-| `ipv4` | object | - | IPv4: the switches of all its protocols at once. A protocol runs only when it is enabled, under protocols, and its family, and the way it works, are on here. |
-| `hostnames` | object | - | The names of the hosts: always kept, of what learns them, each protocol under protocols that does, and the plugins, of their routers' DHCP leases. To learn none, disable those protocols, and the names of ssdp and wsd. |
-| `protocols` | object | - | The protocols of the local discovery, each with its switch, enabled, and its options: always a mapping, never true or false alone. One runs when it is enabled, its family is, and the family listens, or for what probes is active. |
-| `plugins` | object | - | The plugins, by name: each reads the neighbor tables of a router or another host, and its DHCP leases: their names, and that an address found otherwise is leased. The name is the source of what it finds. |
+| `lifetime` | duration | `1h` | How long an address stays after it was last seen, unless its family sets its own. |
+| `rediscover` | duration | - | How often active discovery probes every host. Default: a third of the shortest lifetime among the families that probe, so that a quiet host is probed before it expires. |
+| `interfaces` | list, or comma separated | - | The interfaces local discovery runs on, for both families: names, or patterns such as en*. Default: all. Plugins aren't affected. |
+| `exclude_interfaces` | list, or comma separated | - | The interfaces local discovery skips: names, or patterns such as docker* or veth*. |
+| `ipv6` | object | - | IPv6: switches for all its protocols at once. A protocol runs only when it's enabled under protocols, and its family and the way it works are on here. |
+| `ipv4` | object | - | IPv4: switches for all its protocols at once. A protocol runs only when it's enabled under protocols, and its family and the way it works are on here. |
+| `hostnames` | object | - | The hosts' names, which are always kept. They come from each protocol under protocols that learns names, and from plugins, which read their routers' DHCP leases. To learn none, turn those protocols off, and the names option of ssdp and wsd. |
+| `protocols` | object | - | The local discovery protocols, each with its enabled switch and its options: always a mapping, never true or false on its own. A protocol runs when it's enabled and its family is on and listens, or, for what probes, is active. |
+| `plugins` | object | - | The plugins, by name. Each reads the neighbor tables of a router or another host, and its DHCP leases: the names in them, and that an address found otherwise is leased. The plugin's name is the source of what it finds. |
 | `solicit` | object | - | Asks for the hosts the filters name by MAC, once a minute, when nothing else finds them. Part of ipv6ddns, not of ipv6disc. |
 
 ## Discovery IPv6
 
 `discovery.ipv6`
 
-IPv6: the switches of all its protocols at once. A protocol runs only when it is enabled, under protocols, and its family, and the way it works, are on here.
+IPv6: switches for all its protocols at once. A protocol runs only when it's enabled under protocols, and its family and the way it works are on here.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Whether the family's addresses are kept, and the plugins read them. Without it, the rest of the family is off. |
-| `listen` | boolean | `true` | The local discovery of IPv6: its protocols hear, and ask one host of what they heard of it. Without it, only the plugins find IPv6 addresses. |
-| `active` | boolean | `true` | Probing every host of the links, at every rediscover: the multicast ping, the search of SSDP, the probe of WS-Discovery, and the query of mDNS. Only with listen, which reads the answers. |
-| `lifetime` | duration | - | How long the family's addresses stay after they were last seen, whatever found them, the plugins too. Default: lifetime. |
+| `enabled` | boolean | `true` | Whether the family's addresses are kept, and the plugins read them. When off, the rest of the family is off too. |
+| `listen` | boolean | `true` | Local discovery of IPv6: its protocols listen, and ask each host about what they heard of it. When off, only plugins find IPv6 addresses. |
+| `active` | boolean | `true` | Probes every host on the links at each rediscover: the multicast ping, the SSDP search, the WS-Discovery probe and the mDNS query. Needs listen, which reads the answers. |
+| `lifetime` | duration | - | How long the family's addresses stay after they were last seen, whatever found them, plugins included. Default: lifetime. |
 
 ## Discovery IPv4
 
 `discovery.ipv4`
 
-IPv4: the switches of all its protocols at once. A protocol runs only when it is enabled, under protocols, and its family, and the way it works, are on here.
+IPv4: switches for all its protocols at once. A protocol runs only when it's enabled under protocols, and its family and the way it works are on here.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Whether the family's addresses are kept, and the plugins read them. Without it, the rest of the family is off. |
-| `listen` | boolean | `true` | The local discovery of IPv4: the neighbor table is read, and the ARP of the hosts heard. Without it, only the plugins find IPv4 addresses. |
-| `active` | boolean | `true` | Probing every host of the subnets, at every rediscover: the sweep, which broadcasts an ARP request for each address, and the query of mDNS. Only with listen, which reads the answers. |
-| `lifetime` | duration | - | How long the family's addresses stay after they were last seen, whatever found them, the plugins too. Default: lifetime. |
+| `enabled` | boolean | `false` | Whether the family's addresses are kept, and the plugins read them. When off, the rest of the family is off too. |
+| `listen` | boolean | `true` | Local discovery of IPv4: the neighbor table is read, and the hosts' ARP is heard. When off, only plugins find IPv4 addresses. |
+| `active` | boolean | `true` | Probes every host on the subnets at each rediscover: the sweep, which broadcasts an ARP request for each address, and the mDNS query. Needs listen, which reads the answers. |
+| `lifetime` | duration | - | How long the family's addresses stay after they were last seen, whatever found them, plugins included. Default: lifetime. |
 
 ## Discovery hostnames
 
 `discovery.hostnames`
 
-The names of the hosts: always kept, of what learns them, each protocol under protocols that does, and the plugins, of their routers' DHCP leases. To learn none, disable those protocols, and the names of ssdp and wsd.
+The hosts' names, which are always kept. They come from each protocol under protocols that learns names, and from plugins, which read their routers' DHCP leases. To learn none, turn those protocols off, and the names option of ssdp and wsd.
 
 | Key | Takes | |
 |---|---|---|
-| `lifetime` | duration | How long a name stays after it was last said, whatever said it, the plugins too. Default: lifetime. |
+| `lifetime` | duration | How long a name stays after it was last given, whatever gave it, plugins included. Default: lifetime. |
 
 ## Discovery solicit
 
@@ -213,7 +213,7 @@ Asks for the hosts the filters name by MAC, once a minute, when nothing else fin
 
 `discovery.protocols`
 
-The protocols of the local discovery, each with its switch, enabled, and its options: always a mapping, never true or false alone. One runs when it is enabled, its family is, and the family listens, or for what probes is active.
+The local discovery protocols, each with its enabled switch and its options: always a mapping, never true or false on its own. A protocol runs when it's enabled and its family is on and listens, or, for what probes, is active.
 
 ```yaml
 discovery:
@@ -229,7 +229,7 @@ discovery:
 
 `discovery.protocols.ndp`
 
-IPv6, listening. The neighbor discovery of each link: every advertisement and solicitation heard tells an address and its MAC, and the MAC of whatever the others of IPv6 hear is asked by it, with a neighbor solicitation. Without it ping, ssdp and wsd find nothing, and are an error to enable. It needs root or CAP_NET_RAW.
+IPv6, listening. Neighbor discovery on each link: every advertisement and solicitation heard gives an address and its MAC. It also asks, with a neighbor solicitation, the MAC of whatever the other IPv6 protocols hear. Without it, ping, ssdp and wsd find nothing, and enabling them is an error. It needs root or CAP_NET_RAW.
 
 | Key | Takes | Default | |
 |---|---|---|---|
@@ -239,7 +239,7 @@ IPv6, listening. The neighbor discovery of each link: every advertisement and so
 
 `discovery.protocols.ping`
 
-IPv6. Listening, an address is pinged before it expires, so that a host still there keeps it. Active, every host is, by a ping to the group of all nodes. It needs root or CAP_NET_RAW.
+IPv6. Listening, an address is pinged before it expires, so that a host still there keeps it. Active, every host is pinged at once, through the all-nodes group. It needs root or CAP_NET_RAW.
 
 | Key | Takes | Default | |
 |---|---|---|---|
@@ -249,40 +249,40 @@ IPv6. Listening, an address is pinged before it expires, so that a host still th
 
 `discovery.protocols.ssdp`
 
-IPv6. SSDP, of the UPnP devices: active, a search goes to its group, and listening hears the answers, at the port it left from. No group is joined.
+IPv6. SSDP, for UPnP devices. Active, a search goes to its group; listening hears the answers, on the port the search left from. No group is joined.
 
 | Key | Takes | Default | |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Whether the protocol runs. |
-| `names` | boolean | `true` | Whether a device that answers the search is asked its description, over HTTP, for its friendly name. |
+| `names` | boolean | `true` | Whether a device that answers the search is asked for its description, over HTTP, to get its friendly name. |
 
 ### wsd
 
 `discovery.protocols.wsd`
 
-IPv6. WS-Discovery, of Windows and Samba: active, a probe goes to its group, and listening hears the answers, at the port it left from. No group is joined.
+IPv6. WS-Discovery, for Windows and Samba. Active, a probe goes to its group; listening hears the answers, on the port the probe left from. No group is joined.
 
 | Key | Takes | Default | |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Whether the protocol runs. |
-| `names` | boolean | `true` | Whether a computer that answers the probe is asked its metadata, over HTTP, for its name. |
+| `names` | boolean | `true` | Whether a computer that answers the probe is asked for its metadata, over HTTP, to get its name. |
 
 ### mdns
 
 `discovery.protocols.mdns`
 
-Either family, listening. mDNS: its groups are joined, on port 5353, and whatever sends there is a host of the link, whose address is found as any other, and what it announces is its name. Active, a query for the services goes to the group.
+Either family, listening. mDNS: it joins its groups, on port 5353. Whatever sends there is a host on the link, whose address is found as any other, and the name it announces is its name. Active, a query for services goes to the group.
 
 | Key | Takes | Default | |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Whether the protocol runs. |
-| `ask` | boolean | `true` | Whether questions are sent: the query to the group, at every rediscover, and to each host for its name. Without it mDNS only listens. |
+| `ask` | boolean | `true` | Whether to send questions: the query to the group at each rediscover, and to each host for its name. When off, mDNS only listens. |
 
 ### arp
 
 `discovery.protocols.arp`
 
-IPv4, listening. The kernel's neighbor table, read every minute, and after each sweep.
+IPv4, listening. Reads the kernel's neighbor table every minute, and after each sweep.
 
 | Key | Takes | Default | |
 |---|---|---|---|
@@ -292,48 +292,48 @@ IPv4, listening. The kernel's neighbor table, read every minute, and after each 
 
 `discovery.protocols.arp-sweep`
 
-IPv4, active. A sweep of the local subnets: a UDP packet to the discard port of each address, so that the kernel resolves it, which broadcasts an ARP request for each. arp or arp-listen tells the hosts that answer: without both it is an error to enable.
+IPv4, active. Sweeps the local subnets: a UDP packet to the discard port of each address makes the kernel resolve it, which broadcasts an ARP request. arp or arp-listen hears the hosts that answer: enabling it without either is an error.
 
 | Key | Takes | Default | |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Whether the protocol runs. |
-| `max_prefix` | number | `22` | The largest subnet swept whole, by the length of its prefix: 22 is a /22, of 1022 addresses. A larger one is swept in the /24 of the interface's address only, or in the prefix of this length there when that is smaller. |
+| `max_prefix` | number | `22` | The largest subnet swept whole, by prefix length: 22 is a /22, of 1022 addresses. In a larger one, only the /24 around the interface's address is swept, or the prefix of this length there, when that is smaller. |
 
 ### arp-listen
 
 `discovery.protocols.arp-listen`
 
-IPv4, listening. The ARP the hosts send, heard by a packet socket that only listens: each is found at once, not at the next reading of the table. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs.
+IPv4, listening. Hears the ARP that hosts send, through a packet socket that only listens, so each host is found at once instead of at the next table read. It needs Linux, and root or CAP_NET_RAW: without the privilege, the log says so once, and the rest runs.
 
 | Key | Takes | |
 |---|---|---|
-| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, where alone it can; elsewhere false, and true is an error. |
+| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, the only system where it can; false elsewhere, where true is an error. |
 
 ### dhcp
 
 `discovery.protocols.dhcp`
 
-Either family, listening. What the DHCP clients say to all as they ask for an address, heard by packet sockets that only listen: the address a client asks for is found as any other, and the name it gives its server is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs.
+Either family, listening. Hears what DHCP clients broadcast as they ask for an address, through packet sockets that only listen. The address a client asks for is found as any other, and the name it gives its server is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege, the log says so once, and the rest runs.
 
 | Key | Takes | |
 |---|---|---|
-| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, where alone it can; elsewhere false, and true is an error. |
+| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, the only system where it can; false elsewhere, where true is an error. |
 
 ### lldp
 
 `discovery.protocols.lldp`
 
-Either family, listening. What the LLDP neighbor of an interface says of itself, heard by a packet socket that only listens: the addresses it is managed at are found as any other, and its system name is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege it is said once in the log, and the rest runs.
+Either family, listening. Hears what an interface's LLDP neighbor says about itself, through a packet socket that only listens. The addresses it's managed at are found as any other, and its system name is its name. It needs Linux, and root or CAP_NET_RAW: without the privilege, the log says so once, and the rest runs.
 
 | Key | Takes | |
 |---|---|---|
-| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, where alone it can; elsewhere false, and true is an error. |
+| `enabled` | boolean | Whether the protocol runs. Default: true on Linux, the only system where it can; false elsewhere, where true is an error. |
 
 ### netbios
 
 `discovery.protocols.netbios`
 
-IPv4, listening. A host is asked its node status, by a question sent to it alone: Windows answers, and Samba, with the machine's name. Names only.
+IPv4, listening. Asks each host for its node status, with a question sent to it alone: Windows and Samba answer with the machine's name. Names only.
 
 | Key | Takes | Default | |
 |---|---|---|---|
@@ -343,7 +343,7 @@ IPv4, listening. A host is asked its node status, by a question sent to it alone
 
 `discovery.protocols.llmnr`
 
-Either family, listening. A host is asked the name of one of its addresses, by a question to the group of LLMNR, which every host of the link hears: Windows answers, and systemd-resolved. Names only.
+Either family, listening. Asks a host for the name of one of its addresses, through the LLMNR group, which every host on the link hears: Windows and systemd-resolved answer. Names only.
 
 | Key | Takes | Default | |
 |---|---|---|---|
@@ -353,43 +353,43 @@ Either family, listening. A host is asked the name of one of its addresses, by a
 
 `discovery.protocols.dns`
 
-Of no family: DNS servers are asked the name of each address, its PTR record, of the hosts the plugins found too. Names only.
+Of either family. Asks DNS servers for each address's name, its PTR record, including those of hosts the plugins found. Names only.
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Whether the protocol runs: once it has servers, which it asks alone. |
-| `servers` | list, or comma separated | - | The servers asked: without, dns asks nobody. each an address, alone or with its port, as 192.168.1.1, 192.168.1.1:5353 or [fd00::1]:53. Only these are asked, never the system's resolver. |
+| `enabled` | boolean | `true` | Whether the protocol runs, once it has servers, the only ones it asks. |
+| `servers` | list, or comma separated | - | The servers to ask; without any, dns asks nobody. Each is an address, with or without a port, as 192.168.1.1, 192.168.1.1:5353 or [fd00::1]:53. Only these are asked, never the system's resolver. |
 
 ## Discovery plugins
 
 `discovery.plugins.<name>`
 
-The plugins, by name: each reads the neighbor tables of a router or another host, and its DHCP leases: their names, and that an address found otherwise is leased. The name is the source of what it finds. Each type takes its own keys only.
+The plugins, by name. Each reads the neighbor tables of a router or another host, and its DHCP leases: the names in them, and that an address found otherwise is leased. The plugin's name is the source of what it finds. Each type takes its own keys only.
 
 ### `linux`, `freebsd`
 
-A plugin over SSH, linux or freebsd: with a password, an identity file, or both.
+A plugin over SSH, linux or freebsd, with a password, an identity file, or both.
 
 | Key | Takes | |
 |---|---|---|
 | `type` | string | **Required.** The type of the plugin. |
-| `interval` | duration | **Required.** How often the table is read: 60s, 5m. |
-| `address` | string | **Required.** The host, with its port unless 22: 192.168.1.1, [2001:db8::1]:2222. |
+| `interval` | duration | **Required.** How often the table is read, as 60s or 5m. |
+| `address` | string | **Required.** The host, with its port unless it's 22, as 192.168.1.1 or [2001:db8::1]:2222. |
 | `username` | string | **Required.** The SSH user. |
-| `password` | string | Its password. Or an identity_file, or both. |
+| `password` | string | Its password. An identity_file works instead, or as well. |
 | `identity_file` | string | The SSH private key file. |
-| `host_key` | string | The fingerprint of the host's SSH key, any of them when it has several, SHA256:..., as ssh-keygen -l shows it. Recommended: without it, any key is accepted, and the log warns with the fingerprint seen. |
+| `host_key` | string | The fingerprint of the host's SSH key, as ssh-keygen -l shows it: SHA256:.... Any of its keys works. Recommended: without it, any key is accepted, and the log warns with the fingerprint it saw. |
 
 ### `mikrotik`
 
-A plugin over the Mikrotik API.
+A plugin over the MikroTik API.
 
 | Key | Takes | |
 |---|---|---|
 | `type` | string | **Required.** The type of the plugin. |
-| `interval` | duration | **Required.** How often the tables are read: 60s, 5m. |
-| `address` | string | **Required.** The router, with its port unless the default: 8728, or 8729 with TLS. |
+| `interval` | duration | **Required.** How often the tables are read, as 60s or 5m. |
+| `address` | string | **Required.** The router, with its port unless it's the default: 8728, or 8729 with TLS. |
 | `username` | string | **Required.** An API user: the read and api policies are enough. |
 | `password` | string | Its password. |
-| `use_tls` | boolean | true or false: the API over TLS, the api-ssl service. Without it, the password crosses the network in the clear. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, 64 hex digits, colons allowed, when the system's CAs can't verify it, as the self-signed one RouterOS makes. It needs use_tls. |
+| `use_tls` | boolean | Whether to use the API over TLS, the api-ssl service. Without it, the password crosses the network unencrypted. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, as 64 hex digits, colons allowed. For when the system's CAs can't verify it, as with the self-signed one RouterOS makes. It needs use_tls. |

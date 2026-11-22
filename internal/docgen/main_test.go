@@ -47,7 +47,7 @@ func TestConfigurationHasTheDiscovery(t *testing.T) {
 	}
 	for _, want := range []string{
 		"## Discovery\n\n`discovery`\n",
-		"| `lifetime` | duration | `1h` | How long an address stays after it was last seen, unless its family says. |",
+		"| `lifetime` | duration | `1h` | How long an address stays after it was last seen, unless its family sets its own. |",
 		"## Discovery IPv4\n\n`discovery.ipv4`\n",
 		"| `enabled` | boolean | `false` | Whether the family's addresses are kept",
 		"## Discovery hostnames\n\n`discovery.hostnames`\n",
@@ -58,7 +58,7 @@ func TestConfigurationHasTheDiscovery(t *testing.T) {
 		"| `servers` | list, or comma separated | - | ",
 		"| `plugins` | object | - | ",
 		"## Discovery plugins\n\n`discovery.plugins.<name>`\n",
-		"| `interval` | duration | **Required.** How often the table is read: 60s, 5m. |",
+		"| `interval` | duration | **Required.** How often the table is read, as 60s or 5m. |",
 		"| `use_tls` | boolean | ",
 	} {
 		if !strings.Contains(page, want) {
