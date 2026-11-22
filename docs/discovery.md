@@ -1,10 +1,14 @@
 # Discovery
 
-Discovery finds the addresses of the hosts of the network, each with its MAC, for the [filters](filtering.md) of the tasks. It is the [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc) library, and the `discovery` block is its configuration: the keys its own command takes in its file, read the same and with the same errors, so that a file of one is the block of the other. [Its documentation](https://github.com/miguelangel-nubla/ipv6disc/blob/main/docs/discovery.md) has the details of each protocol. Every key is in the [configuration reference](reference/configuration.md#discovery). Two things are ipv6ddns's own: the lifetime is an hour by default, where ipv6disc's is four, and [`solicit`](#solicitation), whose hosts are the filters'.
+Discovery finds the hosts of the network and their addresses, each with its MAC, for the tasks' [filters](filtering.md) to choose from.
+
+It's the [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc) library, and the `discovery` block is its configuration: the same keys its own command takes, read the same way, with the same errors. A file for one works as the block of the other. [Its documentation](https://github.com/miguelangel-nubla/ipv6disc/blob/main/docs/discovery.md) has the details of each protocol, and every key is in the [configuration reference](reference/configuration.md#discovery).
+
+Two things are ipv6ddns's own: the lifetime is an hour by default, where ipv6disc's is four, and [`solicit`](#solicitation), which asks for the hosts the filters name.
 
 ## Families and ways
 
-IPv6 is discovered by default, IPv4 when asked. Each family has its switches, under `ipv6` and `ipv4`:
+IPv6 is discovered by default, IPv4 only when you turn it on. Each family has its own switches, under `ipv6` and `ipv4`:
 
 | | `ipv6` | `ipv4` |
 |---|---|---|
@@ -14,7 +18,7 @@ IPv6 is discovered by default, IPv4 when asked. Each family has its switches, un
 | `active` (default on): probing every host | Multicast ping, SSDP and WS-Discovery, on each link | A sweep: a UDP packet to each address of the local subnets (a /22 at most, or the /24 of the address), so the kernel resolves the hosts. It broadcasts an ARP request for each address |
 | `lifetime` | How long the family's addresses stay after they were last seen | The same |
 
-A family is a mapping of its switches, never `true` or `false` alone: `ipv4: true` is an error that says how it is written: `enabled: true` under `ipv4`.
+A family is always a mapping of its switches, never `true` or `false` on its own. `ipv4: true` is an error, which says to write `enabled: true` under `ipv4` instead.
 
 ```yaml
 discovery:
@@ -25,11 +29,11 @@ discovery:
     ipv4: true          # the hosts the filters name are asked
 ```
 
-Active probing and IPv6 solicitation need `listen`, which reads their answers: without it, they do nothing.
+Active probing and IPv6 solicitation need `listen`, which reads their answers. Without it, they do nothing.
 
 ## Protocols
 
-The switches of a family are those of all its protocols at once. Under `protocols`, each has its own, `enabled`, and its options beside it: always a mapping, as the families. A protocol runs when it is enabled, and its family is, and listens, or for the sweep is active.
+A family's switches turn all of its protocols on or off at once. Under `protocols`, each protocol also has its own `enabled`, with its options beside it, again always as a mapping. A protocol runs when it's enabled, its family is enabled, and its family listens (or, for the sweep, is active).
 
 | Protocol | Default | Family | |
 |---|---|---|---|
@@ -43,7 +47,7 @@ The switches of a family are those of all its protocols at once. Under `protocol
 | `dhcp`, `lldp` | on, on Linux | Either | What DHCP clients and LLDP neighbors say, heard. Linux only |
 | `netbios`, `llmnr`, `dns` | on | | A host is asked its name, or the `servers` of `dns` are, once it has some: [names](#names) only |
 
-By default every protocol is on, with its options: `ssdp` and `wsd` fetch names, `mdns` asks. Those that hear frames are on where they can run, on Linux; without the privilege they need, `CAP_NET_RAW`, the log says so once, and the rest runs. One that is off sends nothing, joins no group and opens no socket:
+By default every protocol is on, with its options on too: `ssdp` and `wsd` fetch names, and `mdns` asks. The protocols that listen for raw frames are on where they can run, on Linux. Without the privilege they need, `CAP_NET_RAW`, the log says so once and everything else runs. A protocol that is off sends nothing, joins no group and opens no socket:
 
 ```yaml
 discovery:
@@ -56,11 +60,19 @@ discovery:
       enabled: false
 ```
 
-What can't run is an error at start, not a protocol left out without a word: one there is none of, `ping`, `ssdp` or `wsd` without `ndp`, which tells them the MAC of what they hear, `arp-listen`, `dhcp` or `lldp` anywhere but on Linux, and `enabled` under `hostnames`, as there was. The log says at start which run, the web report and `-live` show them under `Protocols`, and `/status.json` has them as `protocols`. Each, with its options and defaults, is in the [reference](reference/configuration.md#discovery-protocols).
+A protocol that can't run is an error at start, rather than being silently left out:
+
+- a protocol that doesn't exist;
+- `ping`, `ssdp` or `wsd` without `ndp`, which tells them the MAC of what they hear;
+- `arp-listen`, `dhcp` or `lldp` anywhere but Linux.
+
+At start, the log says which protocols run. The web report and `-live` show them under `Protocols`, and `/status.json` has them as `protocols`. Each protocol, with its options and defaults, is in the [reference](reference/configuration.md#discovery-protocols).
 
 ## Names
 
-Discovery keeps the names the hosts go by: what a protocol learns, as mDNS, and what the plugins read in their routers' DHCP leases. A name is whatever the device claims, cleaned to one DNS label: nothing proves it, and two hosts can claim the same. To learn none, turn off the protocols that learn them; `hostnames` has only their `lifetime`:
+Discovery keeps the names the hosts go by: what a protocol learns, as mDNS, and what the plugins read in their routers' DHCP leases. A name is whatever the device claims, cleaned into one DNS label. Nothing proves it, and two hosts can claim the same name.
+
+To learn no names, turn off the protocols that learn them. `hostnames` only has their `lifetime`:
 
 ```yaml
 discovery:
@@ -83,11 +95,13 @@ discovery:
       names: false
 ```
 
-The web report and `-live` show a host's names under its MAC, each with what said it, and when: how long each source has left, and how long it has said it. `/status.json` has them as the host's `names`, with each source under `said`. They tell which host a MAC is, when writing a filter; and a task can name its hosts by them, with a [template](hostnames.md) among its `endpoints`, as `{hostname}`.
+The web report and `-live` show a host's names under its MAC, each with what said it and when: how long each source has left, and how long it has been saying it. `/status.json` has them as the host's `names`, with each source under `said`.
+
+Names help you tell which host a MAC belongs to when writing a filter. A task can also name its hosts by them, with a [template](hostnames.md) among its `endpoints`, as `{hostname}`.
 
 ## Local IPv4 addresses
 
-A device's local IPv4 address, as `192.168.1.10`, has its MAC, so discovery finds it as it finds IPv6 ones, once `discovery.ipv4.enabled` is on. A filter takes IPv4 addresses only when its `ip.family` says, so turning IPv4 on doesn't take a device's private IPv4 to a public DNS:
+A device's local IPv4 address, as `192.168.1.10`, comes with its MAC, so discovery finds it just as it finds IPv6 ones, once `discovery.ipv4.enabled` is on. A filter only takes IPv4 addresses when its `ip.family` says so, so turning IPv4 on doesn't send a device's private IPv4 to a public DNS:
 
 ```yaml
 discovery:
@@ -120,7 +134,7 @@ The network's public IPv4, which has no MAC, comes from a [source](sources.md).
 
 ## Solicitation
 
-Some addresses are never seen without asking. With `discovery.solicit`, which has a switch for each family, `ipv6` and `ipv4`, both off by default, the hosts the filters want are asked once a minute, and on a network's /64 as soon as it is listened on, as at the start:
+Some addresses are never seen unless you ask for them. `discovery.solicit` has a switch for each family, `ipv6` and `ipv4`, both off by default. When on, ipv6ddns asks for the hosts the filters want once a minute, and on a network's /64 as soon as it starts listening on it, as at the start:
 
 ```yaml
 discovery:
@@ -128,18 +142,18 @@ discovery:
     ipv6: true
 ```
 
-- **IPv6**: a host sends from its temporary addresses, so its stable one may never be seen, and routers don't list it. For each filter that names a `mac.address` and the `eui64` type, `ipv6ddns` works out that address on each /64 of the network and asks for it with a neighbor solicitation.
-- **IPv4**: a quiet host may be in no ARP table. For each filter that names a `mac.address` with `ip.family` 4, `ipv6ddns` asks that MAC, with ARP requests sent to it alone, for each address of the local subnets within the filter's `ip.prefix`, up to 4096, or without one those the sweep would ask. Nothing is broadcast, though a switch that no longer knows where the MAC is floods the requests, as any frame to it. It needs Linux and `CAP_NET_RAW`.
+- **IPv6:** a host sends from its temporary addresses, so its stable address may never be seen, and routers don't list it. For each filter that names a `mac.address` and the `eui64` type, ipv6ddns works out that address on each /64 of the network, and asks for it with a neighbor solicitation.
+- **IPv4:** a quiet host may be in no ARP table. For each filter that names a `mac.address` with `ip.family` 4, ipv6ddns sends ARP requests to that MAC alone. It asks for each address of the local subnets within the filter's `ip.prefix`, up to 4096; without a prefix, the addresses the sweep would ask. Nothing is broadcast, though a switch that no longer knows where the MAC is floods the requests, as it would any frame for it. This needs Linux and `CAP_NET_RAW`.
 
-An address that answers is discovered as any other; one that doesn't is never published.
+An address that answers is discovered like any other. One that doesn't is never published.
 
-IPv4 solicitation reads its own answers, so it works with `ipv4.listen` off too, and with nothing else to discover: the log then says there is no discovery, and the hosts asked are found all the same. It needs `ipv4.enabled`, as all of IPv4: a family that is off is not asked for, which the log warns of at start.
+IPv4 solicitation reads its own answers. So it works with `ipv4.listen` off too, even with nothing else to discover: the log then says there's no discovery, and the hosts asked are found anyway. It does need `ipv4.enabled`, like everything IPv4: a family that is off isn't asked for, and the log warns about it at start.
 
-The solicitation is ipv6ddns's, not ipv6disc's, whose keys the rest of the block are: only ipv6ddns has filters to take the hosts from.
+Solicitation is ipv6ddns's own, unlike the rest of the block, which is ipv6disc's: only ipv6ddns has filters to take the hosts from.
 
 ## Interfaces
 
-The local discovery runs on every interface that is up, not a loopback and has a MAC, unless `interfaces` names those it runs on, and `exclude_interfaces` those it doesn't: names, or patterns as `docker*`. On a host running containers, leave their bridges out, so that the containers don't count as hosts, and the probes stay off their networks:
+Local discovery runs on every interface that is up, isn't a loopback, and has a MAC. `interfaces` limits it to the ones you name, and `exclude_interfaces` leaves some out, by name or pattern, as `docker*`. On a machine running containers, leave their bridges out, so the containers don't count as hosts and the probes stay off their networks:
 
 ```yaml
 discovery:
@@ -149,13 +163,13 @@ discovery:
     - veth*
 ```
 
-The interfaces without a MAC, as PPP links, WireGuard and other tunnels, are left out, and their own addresses with them: a host is its MAC, and there is none there. An address of this machine on such an interface comes from a [source](sources.md). For IPv6, an interface with only a link-local address is not listened on either.
+Interfaces without a MAC, as PPP links, WireGuard and other tunnels, are left out, along with their own addresses: a host is identified by its MAC, and there isn't one there. To publish this machine's address on such an interface, use a [source](sources.md). For IPv6, an interface with only a link-local address isn't listened on either.
 
-The plugins aren't concerned: they read other hosts' tables.
+None of this affects plugins, which read other hosts' tables.
 
 ## Lifetimes
 
-An address stays for its lifetime after it was last seen, and goes then: its records are updated without it. The lifetime is `discovery.lifetime`, an hour by default, unless the family has its own:
+An address stays for its lifetime after it was last seen, and then goes: its records are updated without it. The lifetime is `discovery.lifetime`, an hour by default, unless the family has its own:
 
 ```yaml
 discovery:
@@ -165,25 +179,25 @@ discovery:
     lifetime: 3m        # a device that leaves loses its A record within minutes
 ```
 
-This machine's own addresses, those of [`self`](filtering.md), are the exception: one its interface loses, as a prefix that went or a temporary address replaced, goes when the interfaces are next looked at, every minute.
+This machine's own addresses, those of [`self`](filtering.md), are the exception. When its interface loses one, as when a prefix goes or a temporary address is replaced, it goes at the next check of the interfaces, every minute.
 
-Nothing is updated before a name's first address is found: after a start, its records stay as they are until then. Once it had addresses and the last one goes, its records are removed.
+Nothing is updated before a name's first address is found: after a start, its records stay as they are until then. Once it has had addresses and the last one goes, its records are removed.
 
 ### After a start
 
-A start knows nothing of what was found before it: what it publishes is what it has found since. A host answers the multicast ping from one address, its preferred, and sends nothing from the others, so an address it keeps beside the one it uses, as a stable address beside temporary ones, is found only when the host speaks from it. Until then, its record is taken off: the name has the addresses found so far.
+After a start, ipv6ddns knows nothing of what it found before: it publishes only what it has found since. A host answers the multicast ping from one address, its preferred one, and sends nothing from the others. So an address it keeps beside the one it uses, as a stable address beside temporary ones, is only found when the host sends from it. Until then its record is removed, and the name has only the addresses found so far.
 
-Probing more, or sooner, doesn't find it: every ping is answered from the same address. What does:
+Probing more often, or sooner, doesn't help, because every ping is answered from the same address. These do:
 
-- A router's [plugin](#plugins): the router's neighbor table has every address in use on the link, the quiet ones too, at its next read.
-- The [solicitation](#solicitation) of an EUI-64 address: a filter that names the host's `mac.address` and the `eui64` type has it asked, at once.
-- A name written for a host that has to keep its address through restarts, with the filter that finds it in one of these ways.
+- **A router [plugin](#plugins):** the router's neighbor table has every address in use on the link, quiet ones included, at its next read.
+- **[Solicitation](#solicitation) of an EUI-64 address:** a filter that names the host's `mac.address` and the `eui64` type has it asked for at once.
+- **A written name** for a host that must keep its address through restarts, with a filter that finds it in one of these ways.
 
-Before an IPv6 address the local discovery found expires, it is pinged, so a host still there keeps it. The active discovery probes every host again every `rediscover`, by default a third of the shortest lifetime of the families that probe.
+Before an IPv6 address found by local discovery expires, it's pinged, so a host that is still there keeps it. Active discovery probes every host again every `rediscover`, by default a third of the shortest lifetime among the families that probe.
 
 ## Plugins
 
-A plugin reads the neighbor table of a router, or of a host, every `interval`: it finds the hosts of networks the local discovery doesn't reach, as other VLANs, or all of them without raw sockets.
+A plugin reads the neighbor table of a router, or of another host, every `interval`. It finds the hosts of networks local discovery doesn't reach, such as other VLANs, or all of them without needing raw sockets.
 
 | Type | Reads | Over |
 |---|---|---|
@@ -203,4 +217,4 @@ discovery:
       host_key: SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 ```
 
-Each type's keys are in the [reference](reference/configuration.md#discovery-plugins). Give an SSH plugin its `host_key`: [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc/blob/main/docs/plugins.md#ssh-host-keys) says how to get it. The plugins read the tables of the families on, and only the entries confirmed recently, so that the addresses of hosts that left expire.
+Each type's keys are in the [reference](reference/configuration.md#discovery-plugins). Give an SSH plugin its `host_key`; [ipv6disc's docs](https://github.com/miguelangel-nubla/ipv6disc/blob/main/docs/plugins.md#ssh-host-keys) say how to get it. Plugins read the tables of the families that are on, and only entries confirmed recently, so the addresses of hosts that left do expire.

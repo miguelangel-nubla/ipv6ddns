@@ -11,7 +11,7 @@ You run `ipv6ddns` in a container on your Mikrotik router. It detects your NAS a
 
 ## Discovery Plugin
 
-The Mikrotik discovery plugin allows `ipv6ddns` to query the router's neighbor list and IPv6 neighbor table to find active hosts. This is useful when `ipv6ddns` is running on a device that doesn't see all network traffic (e.g., in a container or a different segment). Or just for convenience when runnning `ipv6ddns` directly as a container on RouterOS.
+The Mikrotik discovery plugin allows `ipv6ddns` to query the router's neighbor list and IPv6 neighbor table to find active hosts. This is useful when `ipv6ddns` is running on a device that doesn't see all network traffic (e.g., in a container or a different segment). Or just for convenience when running `ipv6ddns` directly as a container on RouterOS.
 
 ### Configuration
 
@@ -31,13 +31,13 @@ discovery:
 
 Its keys are in the [reference](reference/configuration.md#mikrotik).
 
-With `use_tls: true` alone, the router's certificate is verified with the system's CAs, for the name or address in `address`. That fails for the certificate RouterOS makes itself, which is self-signed: give its `tls_fingerprint`, 64 hex digits, colons allowed, which is then all that is checked. Unlike the DNS provider below, the plugin's error doesn't show the fingerprint. Get it with:
+With `use_tls: true` alone, the router's certificate is verified against the system's certificate authorities, for the name or address in `address`. That fails for the self-signed certificate RouterOS makes itself. In that case give its `tls_fingerprint`, 64 hex digits, colons allowed, and only the fingerprint is checked. Unlike the DNS provider's below, the plugin's error doesn't show the fingerprint, so get it with:
 
 ```bash
 openssl s_client -connect 192.168.88.1:8729 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
 ```
 
-`tls_fingerprint` without `use_tls: true` is an error. Without `use_tls`, on the `api` service, port 8728, the password crosses the network in the clear.
+`tls_fingerprint` without `use_tls: true` is an error. Without `use_tls`, the plugin uses the plain `api` service on port 8728, and the password crosses the network unencrypted.
 
 ### Requirements
 - **API User**: The plugin only reads the neighbor tables (`/ipv6/neighbor/print`, and `/ip/arp/print` for IPv4), so give it a dedicated read-only user, and optionally limit it to the address `ipv6ddns` connects from:

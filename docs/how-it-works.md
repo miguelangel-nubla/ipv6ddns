@@ -17,8 +17,8 @@ A DDNS client on the server only knows the server's addresses, and which of them
 `ipv6ddns` runs once, anywhere on the network, and watches it:
 
 1. [Discovery](discovery.md) finds every address on the network with the MAC that has it: by listening, by probing, and by reading the neighbor tables of the routers. A MAC address doesn't change when the addresses do, so it identifies the device.
-2. Each task's [filters](filtering.md) choose the addresses of its names: of this MAC, global, stable.
-3. When they change, the names' records at the [DNS providers](reference/providers.md) are updated, after a short debounce that gathers a prefix change into one update.
+2. Each task's [filters](filtering.md) choose the addresses of its names: of this MAC, global, stable. A task's name can also be a [template](hostnames.md), `{hostname}`, for a name for every host it matches.
+3. When the addresses change, the names' records at the [DNS providers](reference/providers.md) are updated, after a short debounce that gathers a prefix change into one update. Or ipv6ddns answers the names itself, as the network's [resolver](resolver.md).
 
 The configuration and the credentials are in one place, for the whole network, and nothing is installed on the devices.
 

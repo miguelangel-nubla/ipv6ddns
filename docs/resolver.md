@@ -1,8 +1,10 @@
 # The resolver
 
-ipv6ddns can be a DNS server itself, for the clients of a network: a resolver answers the zones of its `resolver` credentials, with the addresses the tasks give their names as soon as discovery finds them, and records written for them, and asks its upstream servers, as the router or a public resolver, everything else. The clients are given its address as their DNS server, by DHCP or by the router's advertisements, and a name of the LAN, as `nas.home.arpa`, follows its host wherever its addresses move, with no DNS server of the network to update.
+ipv6ddns can be the DNS server of your network. A resolver answers the zones of its `resolver` credentials with the addresses your tasks give their names, as soon as discovery finds them, plus any records you write. Everything else it asks of its upstream servers, such as your router or a public resolver.
 
-Nothing is sent to a provider: an update of the zone is in memory, at once, and never fails.
+You give the devices the resolver's address as their DNS server, by DHCP or in the router's advertisements. Then a name on the LAN, as `nas.home.arpa`, follows its host wherever its addresses move, with no other DNS server to update.
+
+Nothing is sent to a provider: an update of a zone happens in memory, at once, and never fails.
 
 ```yaml
 resolvers:
@@ -39,14 +41,22 @@ tasks:
         - nas
 ```
 
-The keys are in the reference: [`resolvers`](reference/configuration.md#resolvers), and [the provider's settings](reference/providers.md#resolver).
+Every key is in the reference: [`resolvers`](reference/configuration.md#resolvers), and [the provider's settings](reference/providers.md#resolver). For a whole setup, see the guide [every machine on the network by name](guides/network-wide-names.md).
 
 ## A resolver
 
-- **`listen`**, required, is where it answers, over UDP and TCP, as [`webserver.listen`](installation.md#the-web-report) takes it: a network, as `192.168.1.0/24`, for each address of the machine in it; an address, as `192.168.1.2` or `[fd00::2]:5353`; a host name; or a port alone, for every address of the machine. Without a port, 53. A port alone, on a router, is its public address too: give the network of the clients instead.
-- **`allow`** is the networks, or addresses, of the clients it answers. A query from any other is `REFUSED`. By default, the networks of the machine's addresses it listens on: `192.168.1.0/24` above, as the machine's interface has it; with a port alone, every network of the machine.
-- **`upstream`**, required, one or more, is the servers it asks what isn't its own: addresses or host names, with a port or not, as `192.168.1.1`, `1.1.1.1:53`, `[2606:4700:4700::1111]` or `dns.example.net`, over plain DNS; or, [encrypted](#encrypted-upstream-servers), `tls://` for DNS over TLS, as `tls://1.1.1.1`, and `https://` for DNS over HTTPS, as `https://dns.example.net/dns-query`.
-- **`bootstrap`**, with an upstream given by host name, plain or encrypted, and only then, is the servers that find its addresses, and are asked nothing else: addresses, with a port or not, over plain DNS. Not the system's resolver, which may be this very one, asking itself. The addresses found, IPv4 and IPv6, are asked in turn as one upstream server; they are kept for as long as the answer says, a minute at least and an hour at most, and while the bootstrap servers don't answer, asked again every 10 seconds then. An upstream they never found is passed over, as one that is down.
+- **`listen`** (required) is where it answers, over UDP and TCP. It takes the same forms as [`webserver.listen`](installation.md#the-web-report):
+  - a network, as `192.168.1.0/24`, for each of the machine's addresses in it;
+  - an address, as `192.168.1.2` or `[fd00::2]:5353`;
+  - a host name;
+  - or a port alone, for every address of the machine.
+
+  Without a port, it's 53. On a router, a port alone includes the router's public address too, so give the clients' network instead.
+- **`allow`** is the networks or addresses of the clients it answers. Anyone else gets `REFUSED`. By default it's the networks of the machine's addresses it listens on: `192.168.1.0/24` above, as the machine's interface has it. With a port alone, that's every network of the machine.
+- **`upstream`** (required) is one or more servers it asks for everything that isn't its own. Each is an address or a host name, with or without a port: `192.168.1.1`, `1.1.1.1:53`, `[2606:4700:4700::1111]` or `dns.example.net`, over plain DNS. They can also be [encrypted](#encrypted-upstream-servers): `tls://1.1.1.1` for DNS over TLS, or `https://dns.example.net/dns-query` for DNS over HTTPS.
+- **`bootstrap`** is needed only when an upstream is given by host name. These servers find the upstream's addresses, and are asked nothing else. They're addresses, with or without a port, over plain DNS. The system's resolver isn't used for this, since it may be this very resolver, asking itself.
+
+  The addresses found, IPv4 and IPv6, are tried in turn as one upstream server. They're kept as long as the answer says, between a minute and an hour. While the bootstrap servers don't answer, they're asked again every 10 seconds. An upstream they never found is skipped, as one that is down.
 
 ```yaml
 resolvers:
@@ -58,15 +68,16 @@ resolvers:
     bootstrap:
       - 9.9.9.9
 ```
-- **`records`** are records of names of none of its zones, as a name of a public domain that the LAN reaches at a local address. Each name is absolute, with its trailing dot, its targets too.
-- **`cache_size`** is how many answers of the upstream servers it keeps, in [its cache](#the-cache): `10000` by default, and `0` for none.
+
+- **`records`** are records for names outside all of its zones, as a public domain's name that the LAN should reach at a local address. Write each name in full, with its trailing dot, and the targets too.
+- **`cache_size`** is how many upstream answers it keeps in [its cache](#the-cache): `10000` by default, `0` for none.
 
 ## Encrypted upstream servers
 
-An upstream server can be asked over an encrypted connection, so that the network between, as the provider's, doesn't read the names asked, nor change the answers:
+An upstream server can be asked over an encrypted connection, so that the network in between, such as your ISP's, can't read the names asked or change the answers.
 
-- **`tls://host[:port]`** is DNS over TLS, of RFC 7858: port 853, unless another is given. Nothing follows the host: a path is of `https://`.
-- **`https://host[:port]/path`** is DNS over HTTPS, of RFC 8484: port 443, unless another is given, and the path the server answers at, which is to be given, `/dns-query` for most. Each query is a `POST` of `application/dns-message`, over HTTP/2 when the server has it. A redirect isn't followed.
+- **`tls://host[:port]`** is DNS over TLS ([RFC 7858](https://www.rfc-editor.org/rfc/rfc7858)), on port 853 unless you give another. Nothing goes after the host: a path is for `https://`.
+- **`https://host[:port]/path`** is DNS over HTTPS ([RFC 8484](https://www.rfc-editor.org/rfc/rfc8484)), on port 443 unless you give another. The path is where the server answers, `/dns-query` for most, and you have to give it. Each query is a `POST` of `application/dns-message`, over HTTP/2 when the server supports it. Redirects aren't followed.
 
 ```yaml
 resolvers:
@@ -80,28 +91,37 @@ resolvers:
       - 9.9.9.9
 ```
 
-The host is a host name, which `bootstrap` finds as it does that of a plain upstream, and never the system's resolver; or an address. The server's certificate is verified, against the certificate authorities of the system, for the host as given: for the host name, which is also the name the connection asks the server for, its SNI; and with an address, the certificate must hold that address, as that of `1.1.1.1` does, and few others do. No option turns the verification off: a server whose certificate doesn't verify is passed over, as one that is down, and counts in `ipv6ddns_resolver_upstream_failures_total`.
+The host is either a host name, which `bootstrap` finds as for a plain upstream, or an address.
 
-The connections are kept, and used again:
+The server's certificate is always verified, against the system's certificate authorities, for the host as you wrote it:
 
-- To a server of DNS over TLS, a connection carries one query at a time, and is kept open for the next for 30 seconds: queries at once each have their own, as many as there are, and each is closed after 30 seconds without a query. A connection that the server closed meanwhile is replaced, and the query asked again on the new one.
-- To a server of DNS over HTTPS, one client, whose connections HTTP/2 shares among the queries at once, each closed after 30 seconds without one. It connects to the addresses that `bootstrap` found, or to the address given, and to nothing else: no proxy of the environment either.
+- For a host name, the certificate must be for that name, which is also the name the connection asks for (its SNI).
+- For an address, the certificate must contain that address. `1.1.1.1`'s does, but few others do.
 
-The queries that go encrypted are padded, to a multiple of 128 bytes, as RFC 8467 recommends: their size tells less of the name asked. The rest is as for any upstream: 2 seconds each, the next when one fails, `SERVFAIL` when none answers. And an encrypted upstream is named, in the status and the metrics, as written.
+There's no option to turn verification off. A server whose certificate doesn't verify is skipped, as one that is down, and counts in `ipv6ddns_resolver_upstream_failures_total`.
 
-The certificate authorities are the system's. On Linux, Go reads them from the usual places of the distributions, and the environment variables `SSL_CERT_FILE`, a file of certificates in PEM, and `SSL_CERT_DIR`, directories of them, name others in their place: for a server whose certificate is of an authority of your own. The Docker image has the authorities of Alpine's `ca-certificates`; another image is to have them, or no certificate verifies: `x509: certificate signed by unknown authority`.
+Connections are kept and reused:
+
+- **DNS over TLS:** a connection carries one query at a time, and is kept open for the next for 30 seconds. Queries at the same time each get their own connection, and each closes after 30 seconds without a query. If the server closed a connection in the meantime, it's replaced, and the query is asked again on the new one.
+- **DNS over HTTPS:** one client, whose connections HTTP/2 shares among concurrent queries, each closed after 30 seconds without one. It connects only to the addresses `bootstrap` found, or the address you gave. It doesn't use a proxy from the environment either.
+
+Encrypted queries are padded to a multiple of 128 bytes, as [RFC 8467](https://www.rfc-editor.org/rfc/rfc8467) recommends, so their size says less about the name asked. Everything else is as for any upstream: 2 seconds each, then the next one, and `SERVFAIL` when none answers. In the status and the metrics, an encrypted upstream is named as you wrote it.
+
+The certificate authorities are the system's. On Linux, Go reads them from the usual places of each distribution. The environment variables `SSL_CERT_FILE` (a file of PEM certificates) and `SSL_CERT_DIR` (directories of them) name others instead, for a server whose certificate comes from your own authority. The Docker image has Alpine's `ca-certificates`. Another image must have them too, or no certificate verifies: `x509: certificate signed by unknown authority`.
 
 ## A zone
 
-A credential of the provider `resolver` is a zone that a resolver answers: `zone`, and `resolver`, the resolver's name, which can be left out when there is one. Its names are those of the tasks' endpoints, as for any provider: `nas` is `nas.home.arpa`, `""` is `home.arpa` itself, `"*.nas"` a wildcard. Its `records` are records of the zone's other names, relative to it, or absolute within it, as `printer.home.arpa.`.
+A credential with the provider `resolver` is a zone that a resolver answers. It has a `zone`, and a `resolver`, the resolver's name, which you can leave out when there's only one.
 
-The addresses of a name have the zone's `ttl`, by default `1m`, and so do its records that give none. The credential's [`debounce`](configuration.md#its-parts) is none by default, for this provider: a change is answered at once. A zone with no task serves its records.
+The zone's names are those of the tasks' endpoints, as for any provider: `nas` is `nas.home.arpa`, `""` is `home.arpa` itself, and `"*.nas"` is a wildcard. Its `records` are records of the zone's other names, written relative to the zone, or in full within it, as `printer.home.arpa.`.
 
-Two resolvers can each have a zone of the same name, through two credentials: the same name then has another answer on each network, a split horizon, as `nas.home.arpa` with the addresses of the LAN on one and those of a VPN on the other.
+The addresses of a name have the zone's `ttl`, `1m` by default, and so do its records that don't give their own. The credential's [`debounce`](configuration.md#its-parts) is zero by default for this provider, so a change is answered at once. A zone with no task still serves its records.
+
+Two resolvers can each have a zone of the same name, through two credentials. The same name then has a different answer on each network, a split horizon: `nas.home.arpa` with the LAN's addresses on one, and the VPN's on the other.
 
 ## Records
 
-Each record is an entry, written as in a zone file: a name, a TTL or not, the class `IN` or not, a type, and its data.
+Write each record as a line of a zone file: a name, an optional TTL, an optional class `IN`, a type, and its data.
 
 ```yaml
 resolvers:
@@ -123,38 +143,38 @@ credentials:
         - "@ MX 10 mail.example.com."  # the zone itself
 ```
 
-Several records of a name and a type are answered together, as the two addresses of a name. Any type is taken, but an SOA, which the resolver makes, and those of a message, as OPT.
+Several records of the same name and type are answered together, as the two addresses of a name. Any type works except an SOA, which the resolver makes itself, and the types that belong to a message, such as OPT.
 
 ## How a query is answered
 
-In order:
+In this order:
 
-1. A client outside `allow` is refused: `REFUSED`, and nothing is asked upstream.
-2. A name of the resolver's `records` is answered from them.
-3. A name of a zone, that of the deepest zone that holds it, the one of the most labels, as `printer.lab.home.arpa` of `lab.home.arpa` before `home.arpa`, while `printer.home.arpa` is of `home.arpa`, is answered when a task publishes it or a record has it: the task's current addresses, as A and AAAA, or the records of its type. Answers of a zone are authoritative, `AA`.
-   - Of another type, or of a task's name with no address yet, or no more, the answer is that there is none: `NOERROR`, empty, with an SOA of the zone, which the resolver makes, whose 10 seconds are how long a client keeps it. A host that shows has its name a moment after.
-   - A wildcard, `*.dev`, answers any name under `dev` that has nothing of its own, and that has no name in between with something: `a.dev` and `a.b.dev`, but not `a.b.dev` when `b.dev`, or a name under it, has records. The answer has the name asked.
-4. The reverse of an address, a `PTR` query of a name of `in-addr.arpa` or `ip6.arpa`, is answered with the names of steps 2 and 3 that have that address, when one does: see [reverse names](#reverse-names).
-5. Anything else, a name that a zone doesn't have as well as one of no zone, is answered from [the cache](#the-cache) when the answer is there. Or it is forwarded to the upstream servers in order, each given 2 seconds, and, over plain DNS, over TCP when its answer over UDP doesn't fit; the first answer, whatever its code, is relayed as it is, with the client's id, and the client's EDNS, its size and its DO bit, went up with the query. None answering is `SERVFAIL`.
+1. **A client outside `allow`** gets `REFUSED`, and nothing is asked upstream.
+2. **A name in the resolver's own `records`** is answered from them.
+3. **A name of a zone** is answered when a task publishes it or a record has it: the task's current addresses, as A and AAAA, or the records of the type asked. The zone is the deepest one that holds the name: `printer.lab.home.arpa` belongs to `lab.home.arpa` before `home.arpa`, while `printer.home.arpa` belongs to `home.arpa`. Answers from a zone are authoritative (`AA`).
+   - When the name has nothing of the type asked, or is a task's name with no address yet or any more, the answer is "no data": `NOERROR`, empty, with an SOA of the zone that the resolver makes. Its 10 seconds are how long a client remembers that. A host that shows up has its name a moment later.
+   - A wildcard, `*.dev`, answers any name under `dev` that has nothing of its own, provided no name in between has something: it answers `a.dev` and `a.b.dev`, but not `a.b.dev` when `b.dev`, or a name under it, has records. The answer carries the name asked.
+4. **The reverse of an address**, a `PTR` query of a name under `in-addr.arpa` or `ip6.arpa`, is answered with the names of steps 2 and 3 that have that address, if any. See [reverse names](#reverse-names).
+5. **Anything else**, whether a name no zone has or a name of no zone, is answered from [the cache](#the-cache) if it's there. Otherwise it's forwarded to the upstream servers in order, each given 2 seconds. Over plain DNS, it's asked again over TCP when the UDP answer doesn't fit. The first answer, whatever its code, is relayed as it is, with the client's id. The client's EDNS, its size and its DO bit, went upstream with the query. If none answers, it's `SERVFAIL`.
 
-A name a zone doesn't have isn't `NXDOMAIN`, but upstream's answer: a zone can be a part of a domain that exists elsewhere, as `home.example.com` of a public `example.com`.
+A name that a zone doesn't have isn't `NXDOMAIN` but whatever upstream answers. That's because a zone can be part of a domain that exists elsewhere, as `home.example.com` of a public `example.com`.
 
-A CNAME is followed among the local names, the tasks', the zones' records and the resolver's, up to 8 of them, and every step is in the answer; a target that isn't local is asked upstream, or taken from the cache, and its answer appended, as the stub resolvers of the clients follow no CNAME themselves. A query of the type CNAME has the CNAME alone.
+CNAMEs are followed among the local names (the tasks', the zones' records, and the resolver's own), up to 8 of them, and every step is in the answer. A target that isn't local is asked upstream, or taken from the cache, and its answer appended, since the clients' stub resolvers don't follow CNAMEs themselves. A query of type CNAME gets the CNAME alone.
 
-An answer that doesn't fit in the UDP size of the client, 512 bytes or what its EDNS says, has `TC` set, and the client asks again over TCP.
+An answer too big for the client's UDP size, 512 bytes or what its EDNS says, has `TC` set, and the client asks again over TCP.
 
 ## Reverse names
 
-The address of a host has its name back: `dig -x 192.168.1.20`, a `PTR` query of `20.1.168.192.in-addr.arpa`, or of the name under `ip6.arpa` for an IPv6 address, is answered with every name the resolver answers with that address:
+The address of a host gives its name back. `dig -x 192.168.1.20`, a `PTR` query of `20.1.168.192.in-addr.arpa`, or of the name under `ip6.arpa` for an IPv6 address, is answered with every name the resolver answers with that address:
 
-- the names of the tasks, of its zones, that have the address now: when discovery gives a name another address, the reverse of the one it had is no longer answered, and that of the new one is, at once;
-- the names of the `A` and `AAAA` records, of its zones and of its own `records`, that give it.
+- **The tasks' names** in its zones that have the address now. When discovery gives a name a new address, the old address's reverse stops answering, and the new one's starts, at once.
+- **The names of `A` and `AAAA` records**, of its zones and its own `records`, that give the address.
 
-They come sorted, each once, in an authoritative answer, `AA`, with the zone's `ttl`, or the record's own when it gives one; the shortest, when the names differ in it. A wildcard is no host, and has no reverse. A `PTR` record written, in `records`, for the reverse name itself, is answered as any record, in the place of these.
+They come sorted, each once, in an authoritative answer (`AA`), with the zone's `ttl`, or the record's own when it has one; the shortest when they differ. A wildcard isn't a host, and has no reverse. A `PTR` record you wrote in `records` for the reverse name itself is answered as any record, in place of these.
 
 ### Private networks
 
-The reverse of an address of a private network that the resolver has no name of is no such name, `NXDOMAIN`, answered by the resolver itself, as [RFC 6303](https://www.rfc-editor.org/rfc/rfc6303) asks: the question doesn't leave the network, to servers that know nothing of it, and the client has its answer at once. The networks are those that are no one's on the internet:
+When the resolver has no name for an address of a private network, the reverse is "no such name", `NXDOMAIN`, answered by the resolver itself, as [RFC 6303](https://www.rfc-editor.org/rfc/rfc6303) asks. The question doesn't leave the network for servers that know nothing about it, and the client gets its answer at once. These are the networks that belong to no one on the internet:
 
 | | IPv4 | IPv6 |
 |---|---|---|
@@ -165,9 +185,9 @@ The reverse of an address of a private network that the resolver has no name of 
 | The documentation's | `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24` | `2001:db8::/32` |
 | Broadcast | `255.255.255.255` | |
 
-Each is a zone of its own, as `168.192.in-addr.arpa`, whose apex has the SOA and NS records RFC 6303 gives it; a name of it the resolver has an address of, asked another type than `PTR`, has no data.
+Each is a zone of its own, as `168.192.in-addr.arpa`, whose apex has the SOA and NS records RFC 6303 gives it. A name in it that the resolver has an address for, asked for a type other than `PTR`, gets "no data".
 
-This holds whatever the upstream servers are, a router of the network too. A local server that knows more of these names than the resolver does, as a router does of its DHCP clients, or one that answers the reverse of another VLAN's, can be asked anyway, out of RFC 6303: with `forward_unknown_private_reverse_queries`, every private reverse the resolver has no name of goes to the upstream servers, as any other name it doesn't know. What it names is answered as its own all the same: only what it can't answer is asked.
+This holds whatever the upstream servers are, including a router on the network. A local server may know more of these names than the resolver does: a router knows its DHCP clients, and another server may answer the reverse of another VLAN. To ask it anyway, against RFC 6303, set `forward_unknown_private_reverse_queries`. Then every private reverse the resolver has no name for goes upstream, as any other name it doesn't know. The resolver still answers the names it has itself: only what it can't answer is asked.
 
 ```yaml
 resolvers:
@@ -178,29 +198,31 @@ resolvers:
     forward_unknown_private_reverse_queries: true
 ```
 
-Turn it on only for upstream servers of the network: a public one knows none of these names, and the questions would leave the network for nothing.
+Only turn it on for upstream servers on your network. A public one knows none of these names, and the questions would leave the network for nothing.
 
 ### Other addresses
 
-The reverse of any other address is forwarded, as any other name. And a resolver gives the reverse of the names it answers itself alone: of two with a zone of one name, a split horizon, each tells an address's name as its own zone has it.
+The reverse of any other address is forwarded, as any other name. A resolver only gives the reverse of names it answers itself: with a split horizon, each of the two resolvers gives an address's name as its own zone has it.
 
 ## The cache
 
-The answers of the upstream servers are kept, `cache_size` of them, `10000` by default, and a name asked again within its time is answered from them, without asking: `cache_size: 0` keeps none, and asks every time.
+The upstream servers' answers are kept, up to `cache_size` of them, `10000` by default. A name asked again while its answer is still valid is answered from the cache, without asking upstream. `cache_size: 0` keeps nothing, and asks every time.
 
-- An answer with records is kept for the shortest of their TTLs, a day at most.
-- That a name doesn't exist, `NXDOMAIN`, or has no data of a type, is kept as RFC 2308 has it, for the minimum of the zone's SOA that comes with it, or that SOA's TTL, the lower: an hour at most.
-- Never kept: a failure, as `SERVFAIL` or `REFUSED`; a truncated answer; an answer of no data that has no SOA, which tells no time; and one whose time is 0.
+- **An answer with records** is kept for the shortest of their TTLs, a day at most.
+- **"No such name" (`NXDOMAIN`) or "no data"** is kept as [RFC 2308](https://www.rfc-editor.org/rfc/rfc2308) says: for the lower of the minimum of the SOA that comes with it and that SOA's TTL, an hour at most.
+- **Never kept:** a failure, such as `SERVFAIL` or `REFUSED`; a truncated answer; a "no data" answer without an SOA, which says no time; and an answer whose time is 0.
 
-An answer from the cache has the client's id, the name as the client spells it, and its EDNS; its TTLs are what is left of them, less the seconds it was kept, so that the clients keep it no longer than the upstream server said: an answer is dropped when its time is over, so a TTL that is served is 1 at least. One too big for the client's UDP size is truncated, as any. The same name and type asked with the DO bit, or the CD bit, is another answer, kept beside. Beyond `cache_size`, the answer asked the longest ago makes room.
+An answer from the cache gets the client's id, the name as the client spelled it, and the client's EDNS. Its TTLs are what's left of them, less the seconds it was kept, so clients don't keep it longer than the upstream server said. An answer is dropped when its time is up, so a TTL served is always at least 1. One too big for the client's UDP size is truncated, as any answer.
 
-The local names are never kept: a task's name, a record, a reverse name come from memory, and follow discovery at once. Of a CNAME to a name outside, the local CNAME is always fresh, and its target's answer comes from the cache as any forwarded one.
+The same name and type asked with the DO or CD bit is a different answer, kept separately. Beyond `cache_size`, the answer asked longest ago makes room.
 
-The cache is in memory, each resolver's own, and empty at the start. The upstream servers' answers are trusted as they come, as they were before it: it adds no validation.
+Local names are never cached: a task's name, a record or a reverse name comes from memory, and follows discovery at once. For a local CNAME to an outside name, the CNAME is always current, and its target's answer comes from the cache as any forwarded one.
+
+Each resolver has its own cache, in memory, empty at the start. Upstream answers are trusted as they arrive, as they were before the cache existed: it adds no validation.
 
 ## The rules
 
-They are checked at the start: a mistake stops it, saying where it is.
+The configuration is checked at the start. A mistake stops it, and says where it is.
 
 | The mistake | The error |
 |---|---|
@@ -231,31 +253,42 @@ They are checked at the start: a mistake stops it, saying where it is.
 | A record of a name a task publishes | `credentials.home.settings.records: "nas TXT \"x\"": nas.home.arpa. is a name task nas publishes, which has its addresses: a record is of another name` |
 | CNAMEs in a loop | `resolvers.lan: the CNAMEs a.home.arpa. -> b.home.arpa. -> a.home.arpa. are a loop` |
 
-Two resolvers whose entries are two spellings of one address and port are told once the entries are read as the machine has them, at the start, before either listens: a network and the machine's address in it, a host name and the address it resolves to, a port alone, which is every address, and any address at that port, or `0.0.0.0` and any IPv4 address. The error names both resolvers, the address, and each one's entry as written; with two ports alone, `every address, port 53`. An address taken by another program, or another instance, fails as it listens: `address already in use`.
+Two resolvers with two spellings of the same address and port are caught once the entries are resolved as the machine has them, at the start, before either one listens. That covers a network and the machine's address in it, a host name and the address it resolves to, a port alone (every address) and any address at that port, and `0.0.0.0` and any IPv4 address. The error names both resolvers, the address, and each one's entry as written; for two ports alone, `every address, port 53`. An address taken by another program, or another instance, fails when it tries to listen: `address already in use`.
 
 ## At start and stop
 
-The resolvers start with the rest, before discovery: one that can't listen on one of its addresses stops the start, as the web server does, and nothing of it is left listening. They stop with the rest, at `SIGINT` or `SIGTERM`: no new query is taken, and those being answered have the time the program gives its stop, 30 seconds, the same the updates running have, and none of their own. An upstream server has its 2 seconds, so they end well before; one still asked upstream when the time is over is given up, and the connections kept to the encrypted upstream servers are closed.
+The resolvers start before discovery, with the rest. If one can't listen on one of its addresses, the start stops, as for the web server, and nothing of it is left listening.
 
-The [web report](installation.md#the-web-report) shows each resolver, where it listens, whom it answers, how many queries of each kind and how many answers its cache holds; `/status.json` has them under `resolvers`, with the addresses the bootstrap servers found for each upstream given by host name, `upstream_addresses`, and the cache's `cache_entries` of `cache_size`; `/metrics` has `ipv6ddns_resolver_queries_total`, by `kind`, `local`, `nodata`, `forwarded`, `cached`, `refused` and `servfail`, `ipv6ddns_resolver_cache_entries`, the answers in the cache, `ipv6ddns_resolver_upstream_failures_total`, by `upstream`, as written for an encrypted one, and `ipv6ddns_resolver_serving`. A query answered from the cache is `cached`, and `forwarded` one that an upstream server answered; a local name whose CNAME leads outside is `local` either way. `/healthz` fails, with 503, while a resolver isn't serving.
+They stop with the rest, at `SIGINT` or `SIGTERM`. No new query is taken, and those being answered get the time the program gives its stop, 30 seconds, the same as the updates running, with no time of their own. An upstream server has 2 seconds, so they finish well before. A query still waiting upstream when the time is up is given up, and the connections kept to encrypted upstream servers are closed.
+
+The [web report](installation.md#the-web-report) shows each resolver: where it listens, whom it answers, how many queries of each kind it answered, and how many answers its cache holds.
+
+- **`/status.json`** has them under `resolvers`, with `upstream_addresses`, the addresses the bootstrap servers found for each upstream given by host name, and the cache's `cache_entries` of `cache_size`.
+- **`/metrics`** has `ipv6ddns_resolver_queries_total` by `kind` (`local`, `nodata`, `forwarded`, `cached`, `refused` and `servfail`), `ipv6ddns_resolver_cache_entries`, `ipv6ddns_resolver_upstream_failures_total` by `upstream` (an encrypted one as written), and `ipv6ddns_resolver_serving`. A query answered from the cache is `cached`, one an upstream server answered is `forwarded`, and a local name whose CNAME leads outside is `local` either way.
+- **`/healthz`** fails, with 503, while a resolver isn't serving.
 
 ## Port 53
 
-A port under 1024 needs root, or the `CAP_NET_BIND_SERVICE` capability: `sudo setcap 'cap_net_raw,cap_net_bind_service+ep' $(command -v ipv6ddns)` gives a binary run by another user both, with discovery's. In Docker the container runs as root, and Docker grants `NET_BIND_SERVICE` by default, as `NET_RAW`; a runtime, or a Kubernetes `securityContext`, that drops capabilities is to keep it. The image needs nothing more. On the host's network, the resolver listens on the host's addresses.
+A port under 1024 needs root, or the `CAP_NET_BIND_SERVICE` capability. `sudo setcap 'cap_net_raw,cap_net_bind_service+ep' $(command -v ipv6ddns)` gives a binary run by another user both, along with what discovery needs.
 
-The Home Assistant add-on runs as root on the host's network, with Docker's capabilities and `NET_RAW`: port 53 is open to it, as far as is known, with no change to the add-on. Home Assistant's own DNS is on its internal network, not on the host's LAN address, which is the one to give.
+In Docker, the container runs as root, and Docker grants `NET_BIND_SERVICE` by default, as `NET_RAW`. A runtime, or a Kubernetes `securityContext`, that drops capabilities must keep it. The image needs nothing more. On the host's network, the resolver listens on the host's addresses.
 
-Another DNS server on the machine holds port 53 on its addresses. systemd-resolved, on most Linux desktops and many servers, listens on `127.0.0.53:53` and `127.0.0.54:53` only, so a resolver that listens on the LAN address, as `192.168.1.0/24`, starts beside it; one on a port alone, every address, can't. dnsmasq, Pi-hole, AdGuard Home or a router's own DNS on the same machine take every address, and the resolver can't start: `address already in use`.
+The Home Assistant add-on runs as root on the host's network, with Docker's capabilities and `NET_RAW`, so port 53 is open to it with no change to the add-on. Home Assistant's own DNS is on its internal network, not on the host's LAN address, which is the one to give.
+
+Another DNS server on the same machine holds port 53 on its addresses:
+
+- **systemd-resolved**, on most Linux desktops and many servers, listens only on `127.0.0.53:53` and `127.0.0.54:53`. A resolver that listens on the LAN address, as `192.168.1.0/24`, starts beside it. One on a port alone, every address, can't.
+- **dnsmasq, Pi-hole, AdGuard Home**, or a router's own DNS on the same machine take every address, and the resolver can't start: `address already in use`.
 
 ## Several resolvers
 
-Run two or more instances of ipv6ddns, on different machines of the network, with the same resolver configuration, and give the clients all of them as their DNS servers: DHCP's option 6, and for IPv6 the RDNSS of the router's advertisements, or DHCPv6. Each discovers the same hosts, and has the same zones and records, so they give the same answers, as two instances that keep [one name](installation.md#several-instances) agree on its addresses; one down, the clients ask the other.
+Run two or more instances of ipv6ddns on different machines of the network, with the same resolver configuration, and give the clients all of them as DNS servers: DHCP's option 6, and for IPv6 the RDNSS of the router's advertisements, or DHCPv6. Each one discovers the same hosts and has the same zones and records, so they give the same answers, as two instances that keep [one name](installation.md#several-instances) agree on its addresses. When one is down, the clients ask the other.
 
-The one difference: right after a host shows, changes its address or leaves, the instances can differ for a few seconds, until each has discovered it, and an address that is gone stays on each for its own lifetime. A client can ask either meanwhile.
+The one difference: right after a host shows up, changes its address or leaves, the instances can differ for a few seconds, until each has discovered it. And an address that's gone stays on each for its own lifetime. A client may ask either one meanwhile.
 
 ## Security
 
-- **Allow**: a resolver answers the clients of `allow` alone, by default the networks it listens on. A resolver that answers anyone, on an address the internet reaches, is an open resolver: it relays any query upstream, and its answers, larger than the queries, can be sent to a victim whose address the queries forge, an amplification. Don't widen `allow` to everybody, and don't listen on a public address: a port alone, on a router, is one.
-- **DNSSEC**: the local answers aren't signed. A name of a zone that is signed publicly, given another answer here, as `www.example.com` of a signed `example.com`, fails on a client that validates DNSSEC itself: give such names in a zone that isn't, as `home.arpa`, or one you don't sign. The forwarded answers are relayed as they are, signatures with them, when the client's DO bit asks for them, and are kept apart from those asked without it.
-- **Upstream**: over plain DNS, the names asked and the answers cross the network in the clear, and whoever is on the path can read the ones and change the others; an [encrypted upstream](#encrypted-upstream-servers) closes that path, up to the server, which still reads every name. The clients' own queries to the resolver are plain DNS, on the LAN.
-- **Cache**: an answer of an upstream server is served to every client for its TTL, a wrong one too, as with any caching resolver; nothing is kept past a day, nor past the stop. `cache_size: 0` asks every time.
+- **Allow:** a resolver only answers the clients in `allow`, by default the networks it listens on. A resolver that answers anyone, on an address the internet reaches, is an open resolver. It relays any query upstream, and its answers, larger than the queries, can be aimed at a victim whose address the queries fake: an amplification attack. Don't widen `allow` to everyone, and don't listen on a public address. On a router, a port alone is one.
+- **DNSSEC:** local answers aren't signed. A name of a publicly signed zone given another answer here, as `www.example.com` of a signed `example.com`, fails on a client that validates DNSSEC itself. Put such names in a zone that isn't signed, as `home.arpa`, or one you don't sign. Forwarded answers are relayed as they are, with their signatures, when the client's DO bit asks for them, and are cached apart from those asked without it.
+- **Upstream:** over plain DNS, the names asked and the answers cross the network unencrypted, and anyone on the path can read the questions and change the answers. An [encrypted upstream](#encrypted-upstream-servers) closes that path up to the server, which still sees every name. The clients' own queries to the resolver are plain DNS, on the LAN.
+- **Cache:** an upstream answer is served to every client for its TTL, a wrong one too, as with any caching resolver. Nothing is kept past a day, or past a restart. `cache_size: 0` asks every time.

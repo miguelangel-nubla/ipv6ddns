@@ -1,6 +1,6 @@
 # Names by the hosts' names
 
-A task's host name can be a template: a name for each host its filters match, by what the host is called. With it, every host of the LAN that says its name has one in DNS, with no task of its own: `printer.home.arpa`, `laptop.home.arpa`, as they come and go.
+A task's name can be a template: instead of one fixed name, it makes a name for every host the task matches, from what the host calls itself. Every device on the LAN that announces a name gets one in DNS, with no task of its own, as `printer.home.arpa` or `laptop.home.arpa`. Names appear as hosts arrive, and go when they leave.
 
 ```yaml
 resolvers:
@@ -27,50 +27,54 @@ tasks:
         - "{n}.{hostname}"
 ```
 
-The hosts' names are those [discovery learns](discovery.md#names), by a protocol that learns them, as mDNS, on by default, or a plugin that reads its router's leases. The filter says which hosts, and which of their addresses, as for any task. The endpoint is any credential: a [resolver](resolver.md)'s zone, a DNS provider, or both.
+The hosts' names come from [discovery](discovery.md#names): mDNS, which is on by default, other protocols that carry names, or a plugin that reads your router's DHCP leases. The task's filter decides which hosts get a name, and which of their addresses it has, as for any task. The endpoint can be any credential: a [resolver](resolver.md) zone, a DNS provider, or both.
+
+For a complete setup, see the guide [every machine on the network by name](guides/network-wide-names.md).
 
 ## The placeholders
 
-| In the name | It is | Its addresses |
+| In the name | It is | The name's addresses |
 |---|---|---|
-| `{hostname}` | A name of the host | Alone in the name: those of every host called so, that the filter matches |
-| `{n}` | The host's place among those of its name, from 1, by MAC: needs `{hostname}` | The host's |
-| `{mac}` | The host's MAC, its twelve digits, as `001122334455` | The host's |
+| `{hostname}` | A name of the host | Those of every host with that name that the filter matches |
+| `{n}` | The host's position among hosts with the same name, from 1, ordered by MAC. Needs `{hostname}` | The host's own |
+| `{mac}` | The host's MAC, as twelve digits: `001122334455` | The host's own |
 
-A template is written in quotes, as YAML takes a `{` for something of its own. It can have more around the placeholders, as `"{hostname}.lan"`, `"{n}.{hostname}"`, `"{mac}.hosts"`, or `"*.{hostname}"` for a wildcard.
+Write a template in quotes, because YAML reads a bare `{` as something of its own. You can add text around the placeholders: `"{hostname}.lan"`, `"{n}.{hostname}"`, `"{mac}.hosts"`, or `"*.{hostname}"` for a wildcard.
 
-- **`{hostname}`**, alone, is one name for all the hosts called so: two that both say `printer` are both under `printer`, with the addresses of each. A host with several names, as one by mDNS and another in the router's leases, has each of them.
-- **`{n}.{hostname}`** tells them apart: `1.printer`, `2.printer`, in the order of their MACs. It is the place among those there now, and nothing more: when the first leaves, the second is `1.printer`. A host alone of its name is its `1.`, so that the name is there whether another comes or not.
-- **`{mac}`** is the host's own, whatever comes and goes, and whatever it is called. It needs no name: `"{mac}.hosts"` alone works with every protocol of names off.
+- **`{hostname}` on its own** is one name shared by every host called that. If two devices both say `printer`, `printer` has the addresses of both. A host with several names, say one from mDNS and another from the router's leases, gets each of them.
+- **`{n}.{hostname}`** tells them apart: `1.printer`, `2.printer`, in MAC order. The number is the position among the hosts present right now, nothing more: when `1.printer` leaves, the other one becomes `1.printer`. A host that is alone with its name is `1.` too, so the name exists whether another one shows up or not.
+- **`{mac}`** stays the same whatever comes and goes, and whatever the host calls itself. It needs no name at all, so `"{mac}.hosts"` works even with every name protocol turned off.
 
 ## A name written wins
 
-A host is called what it says, and anything on the network can say `nas`, or `router`. So a name that is written in the configuration is never a template's:
+Any device on the network can claim to be called `nas` or `router`. So a name written in the configuration always beats a template:
 
-- A name of a task, written as it is, at the same endpoint, has its task's addresses and no other. A host called the same is left out of it, and the log says so, once.
-- A record of a resolver's zone is the record: a host called the same doesn't change its answer.
+- **A task's fixed name** at the same endpoint keeps its own task's addresses only. A host that calls itself the same is left out of it, and the log says so once.
+- **A resolver zone's record** stays as written. A host with the same name doesn't change its answer.
 
-What isn't written in the configuration has no such guard. A record of the zone made by hand at a provider, as `www`, is a template's as soon as a host on the network says it is called `www`: the template `"{hostname}"` makes its records the host's addresses, and removes the others. A template with something of its own around the placeholder, as `"{hostname}.lan"` or `"{hostname}.hosts"`, keeps the names of the hosts under it, apart from the zone's.
+A name that isn't in the configuration has no such protection. If you created a record by hand at a provider, say `www`, a template `"{hostname}"` takes it over as soon as a host on the network says it's called `www`: the record gets that host's addresses, and the others are removed. To keep the hosts' names apart from your own records, put something around the placeholder, as `"{hostname}.lan"` or `"{hostname}.hosts"`.
 
-For a name that matters, write it, with a filter by MAC: a template is for the rest. A name is cleaned to one DNS label before it is used, of lower case letters, digits and hyphens: none is `*`, nor has a dot.
+For a name that matters, write it in a task, with a filter by MAC, and leave templates for everything else.
+
+Names are cleaned before use: each becomes one DNS label of lower-case letters, digits and hyphens. A cleaned name is never `*` and never contains a dot.
 
 ## When a host leaves
 
-Its names lose its addresses when discovery lets it go, after its [lifetime](discovery.md#lifetimes): a name with none left has its records removed, and is then forgotten. A resolver stops answering it at once, and asks its upstream servers, as for any name it doesn't have.
+A host's names lose its addresses when discovery lets the host go, at the end of its [lifetime](discovery.md#lifetimes). A name left with no address has its records removed, and is then forgotten. A resolver stops answering it straight away, and from then on asks its upstream servers, as for any name it doesn't have.
 
-What ipv6ddns doesn't know is the names it made before it was started. A host that left while ipv6ddns wasn't running keeps its records at a DNS provider, which nothing removes: those of the hosts that are there are set right as they are found. A resolver has no such records, as its names are in memory. For a name that has to be exact at a provider through restarts, write it.
+What ipv6ddns can't know about is names it created before it was started. If a host left while ipv6ddns wasn't running, its records stay at a DNS provider, and nothing removes them. The records of hosts that are still there are corrected as they're found. A resolver doesn't have this problem, since it keeps its names in memory. If a name must be exactly right at a provider across restarts, write it in a task.
 
 ## What it doesn't do
 
-- A task's [`sources`](sources.md), addresses without a MAC, are of its names written as they are: a template's names are of hosts, which a source's addresses aren't.
-- The [Home Assistant device](home-assistant-integration.md) has an entity for each name written in the configuration, and none for a template's, which aren't known when it starts.
-- Each name of a template is updated on its own at a provider: a network of many named hosts is as many updates when ipv6ddns starts, which a provider that limits its requests may slow down. The [retry](reference/configuration.md) takes care of those refused.
+- **Sources:** a task's [`sources`](sources.md), addresses without a MAC, only go to the names written in it. A template's names belong to hosts, and a source's addresses don't belong to any host.
+- **Home Assistant entities:** the [Home Assistant device](home-assistant-integration.md) has an entity for each name written in the configuration, but none for a template's names, which aren't known when it starts.
+- **Rate limits:** each name from a template is updated on its own. On a network with many named hosts, that's as many updates when ipv6ddns starts, which a provider that limits requests may slow down. The [retry](reference/configuration.md) takes care of any that are refused.
 
 ## The errors
 
 | The mistake | The error |
 |---|---|
-| A placeholder there is none of | `task lan: endpoint home: the name "{host}": {host} is no placeholder: they are {hostname}, {n} and {mac}` |
+| A placeholder that doesn't exist | `task lan: endpoint home: the name "{host}": {host} is no placeholder: they are {hostname}, {n} and {mac}` |
 | `{n}` without `{hostname}` | `task lan: endpoint home: the name "{n}.lan": {n} is the place of a host among those of one name: it needs {hostname} beside it, as {n}.{hostname}` |
-| A brace alone | `task lan: endpoint home: the name "nas}": a brace that is of no placeholder: they are {hostname}, {n} and {mac}` |
+| A brace on its own | `task lan: endpoint home: the name "nas}": a brace that is of no placeholder: they are {hostname}, {n} and {mac}` |
 | `{hostname}` with nothing that learns names | `task lan: endpoint home: the name "{hostname}" is of the hosts' names, which nothing learns: it needs a protocol of discovery.protocols that does, as mdns, or a plugin` |
