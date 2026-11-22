@@ -439,8 +439,12 @@ func (c *connection) write(msgType uint16, data []byte) error {
 func (d *Device) writer(c *connection) {
 	defer close(c.done)
 	send := func(m outgoing) bool {
-		c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-		if err := c.sc.WriteMessage(m.msgType, m.data); err != nil {
+		// Without its deadline, a write to a client that reads nothing would wait for ever.
+		err := c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		if err == nil {
+			err = c.sc.WriteMessage(m.msgType, m.data)
+		}
+		if err != nil {
 			d.logf("%s: writing: %s", c.conn.RemoteAddr(), err)
 			c.conn.Close()
 			return false
@@ -492,13 +496,20 @@ func (d *Device) serveConn(ctx context.Context, conn net.Conn) {
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
 
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	// A connection whose deadlines can't be set could hold its slot for ever: it ends.
+	if err := conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		d.logf("%s: %s", conn.RemoteAddr(), err)
+		return
+	}
 	sc, trusted, err := accept(conn, d.Name, d.MAC, d.key)
 	if err != nil {
 		d.logf("%s: %s", conn.RemoteAddr(), err)
 		return
 	}
-	conn.SetDeadline(time.Time{})
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		d.logf("%s: %s", conn.RemoteAddr(), err)
+		return
+	}
 	c := &connection{sc: sc, conn: conn, trusted: trusted,
 		out: make(chan outgoing, 16), wake: make(chan struct{}, 1), done: make(chan struct{}),
 		queued: make(map[*entity]struct{})}
@@ -526,7 +537,10 @@ func (d *Device) serveConn(ctx context.Context, conn net.Conn) {
 	}()
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(idleTimeout))
+		if err := conn.SetReadDeadline(time.Now().Add(idleTimeout)); err != nil {
+			d.logf("%s: %s", conn.RemoteAddr(), err)
+			return
+		}
 		msgType, data, err := sc.ReadMessage()
 		if err != nil {
 			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
@@ -556,7 +570,8 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 	case msgPingRequest:
 		return false, c.write(msgPingResponse, nil)
 	case msgDisconnectRequest:
-		c.write(msgDisconnectResponse, nil)
+		// The connection ends, answered or not.
+		_ = c.write(msgDisconnectResponse, nil)
 		return true, nil
 	case msgDeviceInfoRequest:
 		return false, c.write(msgDeviceInfoResponse, d.deviceInfo())

@@ -439,7 +439,8 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		}
 	}
 	resp.Truncate(size)
-	w.WriteMsg(resp)
+	// A client gone, or a connection closed: nothing to do.
+	_ = w.WriteMsg(resp)
 }
 
 // answer makes the response to req, from a client at remote, and tells its kind.
@@ -623,9 +624,16 @@ func (s *Server) ask(ctx context.Context, m *dns.Msg, network, upstream string) 
 		return nil, err
 	}
 	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Now()) })
+	// Given up when ctx is done: by the deadline, or closing it where one can't be set.
+	stop := context.AfterFunc(ctx, func() {
+		if conn.SetDeadline(time.Now()) != nil {
+			conn.Close()
+		}
+	})
 	defer stop()
-	conn.SetDeadline(time.Now().Add(s.timeout))
+	if err := conn.SetDeadline(time.Now().Add(s.timeout)); err != nil {
+		return nil, err
+	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

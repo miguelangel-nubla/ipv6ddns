@@ -153,7 +153,7 @@ func TestDiscoveryErrors(t *testing.T) {
 		"solicit, not a switch": {"discovery:\n  solicit:\n    ipv6: 1\n", "discovery.solicit.ipv6: 1 is not true or false"},
 	} {
 		_, err := loadConfig(t, tt.config+"tasks: {}\n"+duckCredential)
-		if err == nil || !slices.Contains(strings.Split(err.Error(), "\n"), tt.want) && !(strings.HasSuffix(tt.want, ": ") && strings.HasPrefix(err.Error(), tt.want)) {
+		if err == nil || !slices.Contains(strings.Split(err.Error(), "\n"), tt.want) && (!strings.HasSuffix(tt.want, ": ") || !strings.HasPrefix(err.Error(), tt.want)) {
 			t.Errorf("%s: got\n%v\nwant a line\n%s", name, err, tt.want)
 		}
 		if err != nil && strings.Contains(err.Error(), "Must validate") {

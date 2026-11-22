@@ -146,7 +146,7 @@ func (c *testClient) closed(without uint16) bool {
 		got, _, err := c.ReadMessage()
 		if err != nil {
 			var timeout net.Error
-			return !(errors.As(err, &timeout) && timeout.Timeout())
+			return !errors.As(err, &timeout) || !timeout.Timeout()
 		}
 		if got == without {
 			return false

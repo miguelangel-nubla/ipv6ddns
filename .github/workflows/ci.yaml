@@ -234,17 +234,34 @@ jobs:
         with:
           persist-credentials: false
       -
+        # The Go of go.mod, not the latest: the linters are pinned, and one built for an older Go
+        # can't read what a newer one compiles. The tests run on the latest, for a new Go's
+        # changes; the linters move with go.mod, when both are bumped together.
         name: Set up Go
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version: 'stable'
-          check-latest: true
+          go-version-file: go.mod
       -
         name: Staticcheck
         run: |
           go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
           go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags integration ./...
           go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags live ./ddns
+      -
+        # As .golangci.yaml says: the errors nothing checks, and the formatting, of gofmt. On every
+        # system of the release, as each has files the others don't see; and the live tests, which
+        # only their tags build.
+        name: Golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+          for os in linux darwin freebsd netbsd openbsd solaris windows; do
+            echo "== $os"
+            GOOS=$os GOARCH=amd64 golangci-lint run ./...
+          done
+          echo "== linux, integration"
+          golangci-lint run --build-tags integration ./...
+          echo "== linux, live"
+          golangci-lint run --build-tags live ./ddns
 
   # Vulnerabilities in the code the module calls, of its dependencies and of Go.
   vulncheck:

@@ -106,9 +106,12 @@ func (d *Device) taken(ctx context.Context, port int, ifaces []net.Interface) er
 			if !open {
 				removed = nil
 			}
-		case <-done:
+		case err := <-done:
 			// The browsing ended, with its time, or couldn't start, without mDNS to look with:
 			// the announcement tells then. What it left unread is read.
+			if err != nil {
+				d.logf("looking for another device of this name: %s", err)
+			}
 			for {
 				select {
 				case entry, open := <-entries:

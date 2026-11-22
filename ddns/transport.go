@@ -316,13 +316,20 @@ func dialSSHConn(address string, config *ssh.ClientConfig) (*ssh.Client, error) 
 	if err != nil {
 		return nil, err
 	}
-	conn.SetDeadline(time.Now().Add(config.Timeout))
+	if err := conn.SetDeadline(time.Now().Add(config.Timeout)); err != nil {
+		conn.Close()
+		return nil, err
+	}
 	c, chans, reqs, err := ssh.NewClientConn(conn, address, config)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
-	conn.SetDeadline(time.Time{})
+	// Past the handshake, the commands have the update's time, which closes the connection.
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		c.Close()
+		return nil, err
+	}
 	return ssh.NewClient(c, chans, reqs), nil
 }
 

@@ -19,16 +19,16 @@ func TestOpnsenseUnboundReconfiguresAfterFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutex.Lock()
 		defer mutex.Unlock()
-		switch {
-		case r.URL.Path == "/api/unbound/settings/searchHostOverride":
+		switch r.URL.Path {
+		case "/api/unbound/settings/searchHostOverride":
 			writeJSON(w, map[string]any{"rows": overrides})
-		case r.URL.Path == "/api/unbound/settings/addHostOverride":
+		case "/api/unbound/settings/addHostOverride":
 			var body struct{ Host map[string]string }
 			json.NewDecoder(r.Body).Decode(&body)
 			body.Host["uuid"] = "u1"
 			overrides = append(overrides, body.Host)
 			writeJSON(w, map[string]string{"result": "saved"})
-		case r.URL.Path == "/api/unbound/service/reconfigure":
+		case "/api/unbound/service/reconfigure":
 			reconfigures++
 			if failReconfigure {
 				failReconfigure = false

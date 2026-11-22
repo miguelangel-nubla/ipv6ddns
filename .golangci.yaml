@@ -1,0 +1,20 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+
+linters:
+  settings:
+    staticcheck:
+      # The defaults, and not QF1008: w.State.Register says whose it is, where w.Register doesn't.
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022", "-QF1008"]
+  exclusions:
+    # The error of a Close or a Flush that ends something, and of a line printed, is of no use.
+    presets:
+      - std-error-handling
+    rules:
+      # The tests, and the SSH server they run, fail by what they check.
+      - path: (_test\.go|internal/sshtest/)
+        linters:
+          - errcheck

@@ -63,8 +63,13 @@ func (m *Mikrotik) connect(ctx context.Context) (*routeros.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The client reads with no deadline of its own: without this one, a router that says nothing
+	// would hold the update.
 	if deadline, ok := ctx.Deadline(); ok {
-		conn.SetDeadline(deadline)
+		if err := conn.SetDeadline(deadline); err != nil {
+			conn.Close()
+			return nil, err
+		}
 	}
 	client, err := routeros.NewClient(conn)
 	if err != nil {

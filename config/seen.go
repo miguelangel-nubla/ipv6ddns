@@ -164,7 +164,7 @@ func (n Seen) covers(s Seen, d Discovery) bool {
 		}
 		return len(s.Reported.By) > 0 && !slices.ContainsFunc(s.Reported.By, func(by string) bool {
 			p, plugin := d.Plugins[by]
-			return !slices.Contains(n.Reported.By, by) && !(plugin && slices.Contains(n.Reported.By, p.Type))
+			return !slices.Contains(n.Reported.By, by) && (!plugin || !slices.Contains(n.Reported.By, p.Type))
 		})
 	}
 	if n.Protocol != s.Protocol {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -175,7 +176,9 @@ func main() {
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	for _, server := range servers {
-		server.Shutdown(shutdown)
+		if err := server.Shutdown(shutdown); err != nil {
+			sugar.Errorf("web server: %s: the requests still being answered are cut", err)
+		}
 	}
 	if err := worker.Shutdown(shutdown); err != nil {
 		sugar.Errorf("%s: the updates still running are cut", err)
@@ -187,7 +190,7 @@ const shutdownTimeout = 30 * time.Second
 
 // webHandler serves the state: as text, JSON and Prometheus metrics, with the sensible data
 // hidden, as the server has no authentication. /healthz answers while the process runs, and its
-// resolvers answer: 503 when one doesn't.
+// resolvers answer: 503 when one doesn't. A write that fails is of a client gone: nothing to do.
 func webHandler(worker *ipv6ddns.Worker) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", statusHandler(worker))
@@ -195,20 +198,20 @@ func webHandler(worker *ipv6ddns.Worker) http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if err := worker.Healthy(); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(err.Error() + "\n"))
+			_, _ = io.WriteString(w, err.Error()+"\n")
 			return
 		}
-		w.Write([]byte("ok\n"))
+		_, _ = io.WriteString(w, "ok\n")
 	})
 	mux.HandleFunc("GET /status.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
-		encoder.Encode(worker.Status(true))
+		_ = encoder.Encode(worker.Status(true))
 	})
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		worker.Status(true).WriteMetrics(w)
+		_ = worker.Status(true).WriteMetrics(w)
 	})
 	return mux
 }
@@ -217,7 +220,7 @@ func webHandler(worker *ipv6ddns.Worker) http.Handler {
 func statusHandler(worker *ipv6ddns.Worker) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write([]byte(wrapPrettyPrint(worker, "", true)))
+		_, _ = io.WriteString(w, wrapPrettyPrint(worker, "", true))
 	})
 }
 

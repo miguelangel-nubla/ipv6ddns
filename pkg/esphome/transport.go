@@ -88,8 +88,9 @@ func writeFrame(w io.Writer, payload []byte) error {
 	return err
 }
 
+// reject tells the client why it is refused, as it can: the connection ends either way.
 func reject(w io.Writer, reason string) {
-	writeFrame(w, append([]byte{handshakeReject}, reason...))
+	_ = writeFrame(w, append([]byte{handshakeReject}, reason...))
 }
 
 // msgConn is a connection past its handshake, encrypted or not.

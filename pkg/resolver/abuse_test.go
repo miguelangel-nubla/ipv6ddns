@@ -39,7 +39,7 @@ func TestManyClients(t *testing.T) {
 			for i := range each {
 				m := new(dns.Msg)
 				var want string
-				var qtype uint16 = dns.TypeA
+				qtype := dns.TypeA
 				switch i % 4 {
 				case 0:
 					m.SetQuestion("nas.home.arpa.", qtype)

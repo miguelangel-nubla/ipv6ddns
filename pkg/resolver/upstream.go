@@ -250,8 +250,16 @@ func (s *Server) askTLS(ctx context.Context, srv *upstreamServer, m *dns.Msg, ta
 // exchangeOn writes m on c and reads its answer, until deadline, or ctx is done: an answer of
 // another id, or question, is none.
 func exchangeOn(ctx context.Context, c *dotConn, m *dns.Msg, deadline time.Time) (*dns.Msg, error) {
-	c.SetDeadline(deadline)
-	stop := context.AfterFunc(ctx, func() { c.SetDeadline(time.Now()) })
+	if err := c.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
+	// Given up when ctx is done: by the deadline, or closing it where one can't be set. A
+	// connection that fails isn't kept.
+	stop := context.AfterFunc(ctx, func() {
+		if c.SetDeadline(time.Now()) != nil {
+			c.Close()
+		}
+	})
 	defer stop()
 	if err := c.WriteMsg(m); err != nil {
 		return nil, err

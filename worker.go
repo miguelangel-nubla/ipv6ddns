@@ -330,8 +330,10 @@ func (w *Worker) Start(ctx context.Context) error {
 	}
 	for i, r := range w.resolvers {
 		if err := r.Start(); err != nil {
+			// Of a start that fails, the error is the start's: those just started have no query to
+			// cut.
 			for _, started := range w.resolvers[:i] {
-				started.Shutdown(context.Background())
+				_ = started.Shutdown(context.Background())
 			}
 			return err
 		}
@@ -341,7 +343,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	// A start that fails past them leaves none listening.
 	closeResolvers := func() {
 		for _, r := range w.resolvers {
-			r.Shutdown(context.Background())
+			_ = r.Shutdown(context.Background())
 		}
 	}
 
@@ -425,7 +427,9 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 				resolvers.Add(1)
 				go func() {
 					defer resolvers.Done()
-					r.Shutdown(ctx)
+					if err := r.Shutdown(ctx); err != nil {
+						w.logger.Warnf("resolver %s: %s: the queries still being answered are cut", r.Status().Name, err)
+					}
 				}()
 			}
 		}

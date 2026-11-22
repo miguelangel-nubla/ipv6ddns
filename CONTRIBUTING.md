@@ -11,7 +11,7 @@ go vet ./...
 go test -race ./...
 ```
 
-CI runs those, a 32-bit build, a build for every platform of the release, `staticcheck`, `govulncheck`, and the live tests below.
+CI runs those, a 32-bit build, a build for every platform of the release, `staticcheck`, `golangci-lint` as [`.golangci.yaml`](.golangci.yaml) sets it, on each system of the release, `govulncheck`, and the live tests below.
 
 The tests of the Home Assistant device that connect with Home Assistant's own library, [aioesphomeapi](https://github.com/esphome/aioesphomeapi), skip without it: `ESPHOME_PYTHON` names a Python that has it, at the version [CI](.github/workflows/ci.yaml) installs, and `ESPHOME_MDNS_INTERFACES` two interfaces for the test of discovery to announce on, as CI's dummy ones. With `ESPHOME_COMPAT_REQUIRED` set, as in CI, they fail instead.
 
