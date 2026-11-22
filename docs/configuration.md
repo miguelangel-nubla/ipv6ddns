@@ -41,6 +41,10 @@ discovery:      # how hosts are found: IPv6 by default
 
 An endpoint's name is in the credential's zone: `nas` is `nas.home.example.com`, `""` is the zone itself, `"*.nas"` a wildcard. Written whole, as `nas.home.example.com`, or in another case, it is the same name: the tasks that name it either way give it their addresses together.
 
+Names are expected in lower case: in the configuration, and in the records at the provider. Some providers match a record's name as it is written, so a record of the name in another case, as `NAS` made by hand, may not be found: it is neither updated nor removed, and is answered beside the name's own.
+
+A record at the provider that is disabled, and has an address the name should have, is left as it is: the address stays unanswered, as the provider's own choice, and no other record is added for it. A disabled record of an address the name no longer has is removed, as any other.
+
 ## Secrets
 
 Any string value takes:
