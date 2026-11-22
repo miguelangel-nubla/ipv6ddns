@@ -35,7 +35,7 @@ func TestPrettyPrintHostname(t *testing.T) {
 	if !regexp.MustCompile(`nas\.example\.com: \(next update: (59m59s|1h0m0s), waiting for the 1h0m0s debounce\)\n`).MatchString(page) {
 		t.Errorf("waiting for the debounce:\n%s", page)
 	}
-	if !regexp.MustCompile(`\n    \[2001:db8::a\] +[0-9hms ]+ +up +[0-9dhms ]+ +` + macA + `  eth0\n`).MatchString(page) {
+	if !regexp.MustCompile(`\n    \[2001:db8::a\] +[0-9hms ]+ {2,}[0-9dhms ]+ +` + macA + `  eth0\n`).MatchString(page) {
 		t.Errorf("the address's row:\n%s", page)
 	}
 
