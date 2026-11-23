@@ -1,0 +1,37 @@
+name: rerun
+
+# A job of CI that GitHub had no runner for is run again, by itself: when its macOS runners are
+# short, a job waits, is cancelled with nothing run, and its run ends as failed, though nothing
+# was tested. Up to three times, and only when that is all that went wrong: tools/ci-rerun.sh
+# tells which.
+#
+# GitHub runs this as the default branch has it, whatever branch the CI run was of.
+
+on:
+  workflow_run:
+    workflows:
+      - ci
+    types:
+      - completed
+
+permissions:
+  actions: write
+  checks: read
+  contents: read
+
+jobs:
+  rerun:
+    if: ${{ github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.run_attempt < 4 }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN: ${{ github.event.workflow_run.id }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Jobs without a runner
+        run: tools/ci-rerun.sh "$GITHUB_REPOSITORY" "$RUN"
