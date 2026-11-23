@@ -134,7 +134,8 @@ func loadDeviceState(path string) (*deviceState, error) {
 		return &state, nil
 	case errors.Is(err, fs.ErrNotExist):
 		state.Identity = make([]byte, 32)
-		rand.Read(state.Identity)
+		// It never fails: without randomness the process ends.
+		_, _ = rand.Read(state.Identity)
 		if err := state.save(path); err != nil {
 			return nil, fmt.Errorf("%w: with key_provisioning, the key Home Assistant gives is stored there. Set key_provisioning_state_file to a file ipv6ddns can write, or give a key instead", err)
 		}

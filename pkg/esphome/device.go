@@ -145,7 +145,8 @@ type subscription struct {
 // GenerateKey returns a new encryption key, in the base64 Home Assistant takes.
 func GenerateKey() string {
 	key := make([]byte, 32)
-	rand.Read(key)
+	// It never fails: without randomness the process ends.
+	_, _ = rand.Read(key)
 	return base64.StdEncoding.EncodeToString(key)
 }
 
