@@ -41,5 +41,7 @@ if [ "${1:-}" = --update ]; then
 	exit 0
 fi
 
+# Every system the flake is for is read, and this one's checks are built and run.
+nix flake check --no-build --all-systems
 nix flake check -L "$@"
 echo "nix-test: ok"
