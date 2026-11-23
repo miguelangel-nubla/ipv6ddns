@@ -1,4 +1,4 @@
-# services.ipv6ddns: ipv6ddns as a service of NixOS, with the limits its packages run it under.
+# services.ipv6ddns: ipv6ddns as a service of NixOS, by the unit its packages have.
 self:
 {
   config,
@@ -93,58 +93,24 @@ in
     # The command, for its --version and its --live, and its manual page.
     environment.systemPackages = [ cfg.package ];
 
+    # The unit is the one of the packages, packaging/ipv6ddns.service, which the package brings
+    # with it: its limits are written there, once, and a test of the packages holds the service
+    # to discover under them. Here is only what NixOS has otherwise.
+    systemd.packages = [ cfg.package ];
     systemd.services.ipv6ddns = {
-      description = "ipv6ddns: DNS names for every device on your network, wherever its addresses move";
-      documentation = [
-        "man:ipv6ddns(1)"
-        "https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/README.md"
-      ];
       wantedBy = [ "multi-user.target" ];
-      wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
-
-      # As packaging/ipv6ddns.service, which a test of the packages holds to discover under them:
-      # root with two capabilities, raw sockets and the ports under 1024, and a file system it
-      # can't write, but for its state.
       serviceConfig = {
-        ExecStart = "${lib.getExe cfg.package} --config ${configFile}";
-        Restart = "on-failure";
-        RestartSec = "5s";
-        # The updates running get 30 seconds to end, and then the process ends by itself.
-        TimeoutStopSec = "40s";
+        # In place of the unit's, with the configuration of this module.
+        ExecStart = [
+          ""
+          "${lib.getExe cfg.package} --config ${configFile}"
+        ];
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
-
+        # The state is not beside the configuration, which is in the store: the unit's folder
+        # to write to, /etc/ipv6ddns, is not there, and this one is in its place.
+        ReadWritePaths = [ "" ];
         StateDirectory = "ipv6ddns";
         WorkingDirectory = "/var/lib/ipv6ddns";
-
-        CapabilityBoundingSet = [
-          "CAP_NET_RAW"
-          "CAP_NET_BIND_SERVICE"
-        ];
-        NoNewPrivileges = true;
-        ProtectSystem = "strict";
-        ProtectHome = "read-only";
-        PrivateTmp = true;
-        PrivateDevices = true;
-        ProtectClock = true;
-        ProtectControlGroups = true;
-        ProtectHostname = true;
-        ProtectKernelLogs = true;
-        ProtectKernelModules = true;
-        ProtectKernelTunables = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-          "AF_NETLINK"
-          "AF_PACKET"
-          "AF_UNIX"
-        ];
-        SystemCallArchitectures = "native";
       };
     };
   };

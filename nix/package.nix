@@ -22,6 +22,7 @@ buildGoModule {
       ../pkg
       ../source
       ../packaging/ipv6ddns.1
+      ../packaging/ipv6ddns.service
       (lib.fileset.fileFilter (file: file.hasExt "go") ../.)
     ];
   };
@@ -47,8 +48,13 @@ buildGoModule {
 
   nativeBuildInputs = [ installShellFiles ];
 
+  # The unit is the packages' own, with the command where Nix has it: the NixOS module runs it,
+  # so that the limits of the service are written once.
   postInstall = ''
     installManPage packaging/ipv6ddns.1
+    install -Dm644 packaging/ipv6ddns.service $out/lib/systemd/system/ipv6ddns.service
+    substituteInPlace $out/lib/systemd/system/ipv6ddns.service \
+      --replace-fail /usr/bin/ipv6ddns $out/bin/ipv6ddns
     install -Dm644 cmd/ipv6ddns/example.config.yaml $out/share/ipv6ddns/example.config.yaml
   '';
 

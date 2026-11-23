@@ -34,6 +34,15 @@ pkgs.testers.runNixOSTest {
         f"curl -fsS http://127.0.0.1:8053/status.json | grep -i '{mac}'", timeout=180
     )
 
+    # Its limits are the unit's of the packages, which it runs by: the two capabilities, and a
+    # file system it can't write, but for its state.
+    capabilities = machine.succeed("systemctl show ipv6ddns.service -p CapabilityBoundingSet --value").split()
+    assert sorted(capabilities) == ["cap_net_bind_service", "cap_net_raw"], capabilities
+    assert machine.succeed("systemctl show ipv6ddns.service -p ProtectSystem --value").strip() == "strict"
+    assert machine.succeed("systemctl show ipv6ddns.service -p NoNewPrivileges --value").strip() == "yes"
+    machine.succeed("systemctl cat ipv6ddns.service | grep -q 'man:ipv6ddns(1)'")
+    machine.succeed("test -d /var/lib/ipv6ddns")
+
     # And nothing was refused to it.
     machine.fail(
         "journalctl -u ipv6ddns.service | grep -Ei 'not permitted|permission denied|read-only file system'"

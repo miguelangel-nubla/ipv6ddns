@@ -83,7 +83,7 @@ A change to the service's limits must pass this test, and a new limit that disco
 
 ### The flake
 
-[`flake.nix`](flake.nix) has the package for Nix, [`nix/package.nix`](nix/package.nix), and the NixOS module, [`nix/module.nix`](nix/module.nix), whose service has the limits of [`packaging/ipv6ddns.service`](packaging/ipv6ddns.service): change both together.
+[`flake.nix`](flake.nix) has the package for Nix, [`nix/package.nix`](nix/package.nix), and the NixOS module, [`nix/module.nix`](nix/module.nix). The module runs the service by the packages' own unit, [`packaging/ipv6ddns.service`](packaging/ipv6ddns.service), which the Nix package brings with it: the limits of the service are written there alone.
 
 `tools/nix-test.sh` checks it with Docker, as CI does: the package builds, and a NixOS virtual machine runs the module's service, which must discover a second machine on its network.
 
