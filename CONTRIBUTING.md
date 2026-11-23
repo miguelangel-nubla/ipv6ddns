@@ -66,9 +66,9 @@ What the live tests cover:
 
 ### The packages
 
-[`packaging/`](packaging/) has what the packages add to the binary: the service, which is a systemd unit in the `.deb` and the `.rpm` and an OpenRC script in Alpine's `.apk`, the starting configuration, the scripts that run at an install, an upgrade or a removal, and the manual page. The `nfpms` block of [`.goreleaser.yaml`](.goreleaser.yaml) puts them together.
+[`packaging/`](packaging/) has what the packages add to the binary: the service, which is a systemd unit in the `.deb`, the `.rpm` and Arch's package and an OpenRC script in Alpine's `.apk`, the starting configuration, the scripts that run at an install, an upgrade or a removal, and the manual page. The `nfpms` block of [`.goreleaser.yaml`](.goreleaser.yaml) puts them together.
 
-`tools/package-test.sh` builds the packages as a release does, and tests them with Docker, in Debian, Fedora and Alpine containers that boot their own init. In each one it:
+`tools/package-test.sh` builds the packages as a release does, and tests them with Docker, in Debian, Fedora, Arch and Alpine containers that boot their own init. Arch has an image for amd64 only, and its systemd doesn't start emulated: on another architecture, as an Apple silicon Mac, its package is only installed, upgraded and removed, and CI, on amd64, tests its service. In each one it:
 
 - installs the package, and checks that nothing was started;
 - starts the service, and checks that it discovers a host on a link with it: its addresses by NDP and by ping, and its names by mDNS and by DHCP. This is what shows that the limits the service runs under leave discovery its sockets;

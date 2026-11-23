@@ -9,12 +9,14 @@
   |---|---|---|
   | Debian, Ubuntu and their kin | `.deb` | `sudo apt install ./ipv6ddns_*.deb` |
   | Fedora, RHEL and theirs | `.rpm` | `sudo dnf install ./ipv6ddns_*.rpm` |
+  | Arch and its kin | `.pkg.tar.zst` | `sudo pacman -U ./ipv6ddns_*.pkg.tar.zst` |
   | Alpine | `.apk` | `apk add --allow-untrusted ./ipv6ddns_*.apk` |
 
   The packages are for `amd64`, `arm64`, `riscv64` and 32-bit ARM. On other architectures, use the binary.
 
   - **On a Raspberry Pi with a 32-bit system**, the `.deb` is the `armv6` one, for every model: it is the only 32-bit ARM `.deb`, and it also runs on ARMv7.
   - **The `.rpm` and the `.apk` have one for each**, `armv6` and `armv7`, as their systems tell the two apart.
+  - **Arch's package** is for `amd64`, `arm64` and `armv7`, the architectures Arch and Arch Linux ARM have.
 - **With [Homebrew](https://brew.sh)**, on macOS: `brew install miguelangel-nubla/tap/ipv6ddns`. It is built from source, on your machine. See [as a service](#as-a-service).
 - **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:latest` and `:v0` follow the latest release, `:v0.18` follows that minor version's patches, and `:v0.18.0` stays on that exact version.
 - **From source**, with [Go](https://go.dev/doc/install): `go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns@latest`.
@@ -36,7 +38,7 @@ On a machine that runs other containers, exclude their bridges from discovery: s
 
 ## As a service
 
-The packages, and Homebrew, install ipv6ddns as a service, with a starting configuration and a manual page, `man ipv6ddns`. The service is systemd's in the `.deb` and the `.rpm`, OpenRC's in Alpine's `.apk`, and launchd's with Homebrew.
+The packages, and Homebrew, install ipv6ddns as a service, with a starting configuration and a manual page, `man ipv6ddns`. The service is systemd's in the `.deb`, the `.rpm` and Arch's package, OpenRC's in Alpine's `.apk`, and launchd's with Homebrew.
 
 1. **Edit the configuration**: `/etc/ipv6ddns/config.yaml`, or with Homebrew `config.yaml` in the folder `ipv6ddns` of `$(brew --prefix)/etc`. Only root, and with Homebrew you, can read it, since it holds the credentials. As installed, it only discovers, and serves the report at `http://127.0.0.1:8053`.
 2. **Start it**, now and at every boot. Installing the package starts nothing.
@@ -54,7 +56,7 @@ The packages, and Homebrew, install ipv6ddns as a service, with a starting confi
 - **Under OpenRC, and with Homebrew, the service runs as root**, without those limits. On macOS, raw sockets are root's alone.
 - **With Homebrew, a service that ran as root leaves files of root's.** `brew uninstall ipv6ddns` then stops at them: stop the service, and remove them with `sudo rm -rf "$(brew --prefix)/Cellar/ipv6ddns"`.
 
-The packages have no repository yet, so `apt`, `dnf` and `apk` don't upgrade them by themselves: install the new release's package over the old one.
+The packages have no repository yet, so `apt`, `dnf`, `pacman` and `apk` don't upgrade them by themselves: install the new release's package over the old one.
 
 ## With Docker Compose
 

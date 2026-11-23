@@ -208,8 +208,8 @@ jobs:
         run: go test -race ./...
 
   # The packages of a release, built as it builds them, and installed, started, upgraded and
-  # removed where they are for: Debian and Fedora, each with its systemd, and Alpine, with its
-  # OpenRC. In each, the service discovers a host as the package lets it.
+  # removed where they are for: Debian, Fedora and Arch, each with its systemd, and Alpine, with
+  # its OpenRC. In each, the service discovers a host as the package lets it.
   packages:
     runs-on: ubuntu-latest
     steps:

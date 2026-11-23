@@ -162,9 +162,9 @@ archives:
     format_overrides:
     - goos: windows
       formats: zip
-# The packages of Linux: the binary, a service that an install doesn't start, of systemd in a deb
-# or an rpm and of OpenRC in Alpine's apk, a configuration to begin from, which an upgrade keeps,
-# and the manual page.
+# The packages of Linux: the binary, a service that an install doesn't start, of systemd in a
+# deb, an rpm or Arch's package and of OpenRC in Alpine's apk, a configuration to begin from,
+# which an upgrade keeps, and the manual page.
 nfpms:
   - &package
     id: packages
@@ -175,6 +175,7 @@ nfpms:
       - deb
       - rpm
       - apk
+      - archlinux
     vendor: Miguel Angel Nubla
     maintainer: Miguel Angel Nubla <miguelangel.nubla@gmail.com>
     homepage: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"
@@ -192,6 +193,9 @@ nfpms:
       - src: packaging/ipv6ddns.service
         dst: /usr/lib/systemd/system/ipv6ddns.service
         packager: rpm
+      - src: packaging/ipv6ddns.service
+        dst: /usr/lib/systemd/system/ipv6ddns.service
+        packager: archlinux
       - src: packaging/ipv6ddns.openrc
         dst: /etc/init.d/ipv6ddns
         packager: apk
@@ -217,15 +221,25 @@ nfpms:
       postinstall: packaging/postinstall.sh
       preremove: packaging/preremove.sh
       postremove: packaging/postremove.sh
-    # Alpine tells its scripts nothing of what happens, and has one of its own for an upgrade.
+    # Alpine and Arch tell their scripts nothing of what happens, and each has one of its own
+    # for an upgrade. Arch's are parts of functions, which pacman calls.
     overrides:
       apk:
         scripts:
           postinstall: packaging/apk-postinstall.sh
           preremove: packaging/apk-preremove.sh
+      archlinux:
+        scripts:
+          postinstall: packaging/arch-postinstall.sh
+          preremove: packaging/arch-preremove.sh
+          postremove: packaging/arch-postremove.sh
     apk:
       scripts:
         postupgrade: packaging/apk-postupgrade.sh
+    archlinux:
+      scripts:
+        postupgrade: packaging/arch-postupgrade.sh
+      packager: Miguel Angel Nubla <miguelangel.nubla@gmail.com>
   # The same, for ARMv7, where its package is another than ARMv6's: not a deb.
   - <<: *package
     id: packages-armv7
@@ -234,6 +248,7 @@ nfpms:
     formats:
       - rpm
       - apk
+      - archlinux
 # A tag with a prerelease part, as v1.0.0-rc.1, is a prerelease on GitHub: not the latest release.
 release:
   prerelease: auto

@@ -1,7 +1,8 @@
 #!/bin/sh
 # The packages, built as a release builds them and installed where they are for, from any system
-# with Docker: the deb in Debian and the rpm in Fedora, each with its systemd, and the apk in
-# Alpine, with its OpenRC. Each in a container that boots its init and is thrown away. In each:
+# with Docker: the deb in Debian, the rpm in Fedora and Arch's package in Arch, each with its
+# systemd, and the apk in Alpine, with its OpenRC. Each in a container that boots its init and
+# is thrown away. In each:
 #
 # - an install starts nothing;
 # - the service runs with the configuration the package brings, and discovers, as the package
@@ -161,20 +162,21 @@ inside='
 	! service_active || fail "the removal left the service running"
 	! service_enabled || fail "the removal left the service enabled"
 	[ ! -e "$service_file" ] && [ ! -e /usr/bin/ipv6ddns ] || fail "the removal left files"
-	grep -qs "^# mine$" "$config" "$config.rpmsave" || fail "the removal took the configuration"
+	grep -qs "^# mine$" "$config" "$config.rpmsave" "$config.pacsave" || fail "the removal took the configuration"
 '
 
 # check tests a package in a container of the image given: prepare installs what the test needs
-# and ends as the init of the system, which has started once ready says so.
+# and ends as the init of the system, which has started once ready says so. The container is of
+# the architecture Docker runs, or of the one given last, for an image that has no other.
 check() {
-	image=$1 service=$2 prepare=$3 ready=$4 file=$5 install=$6 upgrade=$7 remove=$8
+	image=$1 service=$2 prepare=$3 ready=$4 file=$5 install=$6 upgrade=$7 remove=$8 platform=${9:-$arch}
 	name=ipv6ddns-package-test-$$
 	echo "package-test: $file in $image"
-	docker run -d --rm --name "$name" --platform "linux/$arch" --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock \
+	docker run -d --rm --name "$name" --platform "linux/$platform" --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock \
 		-v "$PWD/dist":/dist:ro "$image" sh -euc "$prepare" >/dev/null
 	trap 'docker rm -f "$name" >/dev/null 2>&1' EXIT
 	started=no
-	for _ in $(seq 180); do
+	for _ in $(seq 600); do
 		if docker exec "$name" sh -c "$ready" >/dev/null 2>&1; then
 			started=yes
 			break
@@ -206,6 +208,42 @@ check fedora:latest "$systemd" '
 	exec /usr/lib/systemd/systemd
 ' 'systemctl is-system-running | grep -Eq "running|degraded"' \
 	"$(package rpm)" 'dnf install -yq' 'dnf reinstall -yq' 'dnf remove -yq ipv6ddns'
+
+# Arch is of amd64 alone. Where Docker runs another architecture it is emulated, and its systemd
+# doesn't start so: there the package is installed, upgraded and removed without a service to
+# tell, and it says so. pacman's own sandbox doesn't start emulated either, and is left out.
+# The image leaves the manual pages of every package out, which the test looks for: not so here.
+pacman='pacman --disable-sandbox --noconfirm'
+extract='sed -i "/^NoExtract/d" /etc/pacman.conf'
+pkg=$(package_of amd64 pkg.tar.zst)
+if [ "$arch" = amd64 ]; then
+	check archlinux:latest "$systemd" "
+		$extract
+		$pacman -Syu --needed systemd curl jq iproute2 avahi busybox >/dev/null 2>&1
+		exec /usr/lib/systemd/systemd
+	" 'systemctl is-system-running | grep -Eq "running|degraded"' \
+		"$pkg" "$pacman -U" "$pacman -U" "$pacman -R ipv6ddns"
+else
+	echo "package-test: $pkg in archlinux:latest, emulated: its files and its configuration alone, without the service, which only amd64 tests"
+	docker run --rm --platform linux/amd64 -v "$PWD/dist":/dist:ro -e PACMAN="$pacman" -e EXTRACT="$extract" -e PKG="$pkg" archlinux:latest sh -euc '
+		fail() {
+			echo "package-test: $*" >&2
+			exit 1
+		}
+		config=/etc/ipv6ddns/config.yaml
+		eval "$EXTRACT"
+		$PACMAN -U "/dist/$PKG" >/dev/null 2>&1 || fail "the install"
+		ipv6ddns --version | grep -q "^ipv6ddns " || fail "the command does not say its version"
+		[ "$(stat -c "%a %U" "$config")" = "600 root" ] || fail "the configuration is not of root alone"
+		[ -s /usr/share/man/man1/ipv6ddns.1.gz ] && [ -s /usr/lib/systemd/system/ipv6ddns.service ] || fail "no manual page, or no unit"
+		echo "# mine" >>"$config"
+		$PACMAN -U "/dist/$PKG" >/dev/null 2>&1 || fail "the upgrade"
+		grep -q "^# mine$" "$config" || fail "the upgrade replaced the configuration"
+		$PACMAN -R ipv6ddns >/dev/null 2>&1 || fail "the removal"
+		[ ! -e /usr/bin/ipv6ddns ] && [ ! -e /usr/lib/systemd/system/ipv6ddns.service ] || fail "the removal left files"
+		grep -qs "^# mine$" "$config" "$config.pacsave" || fail "the removal took the configuration"
+	'
+fi
 
 check alpine:latest "$openrc" '
 	apk add -q openrc busybox-openrc curl jq iproute2 avahi
