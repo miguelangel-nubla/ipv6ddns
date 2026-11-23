@@ -83,31 +83,24 @@ jobs:
 
   homebrew-tap:
     # The formula of the tap, miguelangel-nubla/homebrew-tap, is of this version once it is
-    # released: it builds from the source of the tag. Needs the secret HOMEBREW_TAP_TOKEN, a token
-    # allowed to write to that repository; without it, nothing is changed, and
-    # tools/homebrew-formula.sh does it by hand. Not for a prerelease, as v1.0.0-rc.1.
+    # released: it builds from the source of the tag, and the tap's update.sh gives it that
+    # source and its checksum. Needs the secret HOMEBREW_TAP_TOKEN, a token allowed to write to
+    # that repository; without it, nothing is changed, and update.sh does it by hand. Not for a
+    # prerelease, as v1.0.0-rc.1.
     needs: goreleaser
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    permissions: {}
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       TAG: ${{ github.ref_name }}
     steps:
       -
-        name: Checkout
-        if: env.HOMEBREW_TAP_TOKEN != ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      -
-        name: Formula
         if: env.HOMEBREW_TAP_TOKEN != ''
         run: |
-          git clone -q "https://x-access-token:$HOMEBREW_TAP_TOKEN@github.com/miguelangel-nubla/homebrew-tap.git" "$RUNNER_TEMP/tap"
-          tools/homebrew-formula.sh "$TAG" "$RUNNER_TEMP/tap/Formula/ipv6ddns.rb"
-          cd "$RUNNER_TEMP/tap"
+          git clone -q "https://x-access-token:$HOMEBREW_TAP_TOKEN@github.com/miguelangel-nubla/homebrew-tap.git" tap
+          cd tap
+          ./update.sh ipv6ddns "$TAG"
           # Run again on a tag, the formula is already of it.
           git diff --quiet && exit 0
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
