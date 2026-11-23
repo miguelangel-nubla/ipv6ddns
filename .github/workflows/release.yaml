@@ -80,3 +80,36 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/miguelangel-nubla/hassio-repository/dispatches \
             -d '{"event_type":"update","client_payload":{"app":"ipv6ddns"}}'
+
+  homebrew-tap:
+    # The formula of the tap, miguelangel-nubla/homebrew-tap, is of this version once it is
+    # released: it builds from the source of the tag. Needs the secret HOMEBREW_TAP_TOKEN, a token
+    # allowed to write to that repository; without it, nothing is changed, and
+    # tools/homebrew-formula.sh does it by hand. Not for a prerelease, as v1.0.0-rc.1.
+    needs: goreleaser
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      -
+        name: Checkout
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Formula
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        run: |
+          git clone -q "https://x-access-token:$HOMEBREW_TAP_TOKEN@github.com/miguelangel-nubla/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          tools/homebrew-formula.sh "$TAG" "$RUNNER_TEMP/tap/Formula/ipv6ddns.rb"
+          cd "$RUNNER_TEMP/tap"
+          # Run again on a tag, the formula is already of it.
+          git diff --quiet && exit 0
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qam "ipv6ddns ${TAG#v}"
+          git push -q

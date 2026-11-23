@@ -81,6 +81,12 @@ The build covers every system of a release and takes minutes: `PACKAGES_BUILT=1 
 
 A change to the service's limits must pass this test, and a new limit that discovery could meet must be seen to fail it when set too tight.
 
+### The Homebrew formula
+
+The formula is in its own repository, [`miguelangel-nubla/homebrew-tap`](https://github.com/miguelangel-nubla/homebrew-tap). It builds from the source of a tag, with Go, so a release only changes its source and its checksum: the release workflow does it, with `tools/homebrew-formula.sh`, when it has the secret `HOMEBREW_TAP_TOKEN`. Without the secret, run the script by hand on a clone of the tap.
+
+To test a change to the formula, use a container, `docker run --rm -it homebrew/brew`, rather than your own Homebrew.
+
 ### Live tests of the DNS providers
 
 A provider's fake API is written by the same person who wrote the provider, so the two always agree. The providers therefore also have live tests against the real server, wherever that server runs in a container.

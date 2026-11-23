@@ -15,6 +15,7 @@
 
   - **On a Raspberry Pi with a 32-bit system**, the `.deb` is the `armv6` one, for every model: it is the only 32-bit ARM `.deb`, and it also runs on ARMv7.
   - **The `.rpm` and the `.apk` have one for each**, `armv6` and `armv7`, as their systems tell the two apart.
+- **With [Homebrew](https://brew.sh)**, on macOS: `brew install miguelangel-nubla/tap/ipv6ddns`. It is built from source, on your machine. See [as a service](#as-a-service).
 - **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:latest` and `:v0` follow the latest release, `:v0.18` follows that minor version's patches, and `:v0.18.0` stays on that exact version.
 - **From source**, with [Go](https://go.dev/doc/install): `go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns@latest`.
 - **On a MikroTik router**, as a container: see [MikroTik](mikrotik.md#running-as-a-container-on-routeros).
@@ -35,22 +36,23 @@ On a machine that runs other containers, exclude their bridges from discovery: s
 
 ## As a service
 
-The packages install ipv6ddns as a service, with a starting configuration and a manual page, `man ipv6ddns`. The service is systemd's in the `.deb` and the `.rpm`, and OpenRC's in Alpine's `.apk`.
+The packages, and Homebrew, install ipv6ddns as a service, with a starting configuration and a manual page, `man ipv6ddns`. The service is systemd's in the `.deb` and the `.rpm`, OpenRC's in Alpine's `.apk`, and launchd's with Homebrew.
 
-1. **Edit `/etc/ipv6ddns/config.yaml`.** Only root can read it, since it holds the credentials. As installed, it only discovers, and serves the report at `http://127.0.0.1:8053`.
+1. **Edit the configuration**: `/etc/ipv6ddns/config.yaml`, or with Homebrew `config.yaml` in the folder `ipv6ddns` of `$(brew --prefix)/etc`. Only root, and with Homebrew you, can read it, since it holds the credentials. As installed, it only discovers, and serves the report at `http://127.0.0.1:8053`.
 2. **Start it**, now and at every boot. Installing the package starts nothing.
 3. **After a change** to the configuration, restart it.
 
-| | systemd | OpenRC, on Alpine |
-|---|---|---|
-| Start it, now and at every boot | `sudo systemctl enable --now ipv6ddns` | `rc-update add ipv6ddns default && rc-service ipv6ddns start` |
-| Restart it | `sudo systemctl restart ipv6ddns` | `rc-service ipv6ddns restart` |
-| The log | `journalctl -u ipv6ddns` | `/var/log/messages`, by syslog |
+| | systemd | OpenRC, on Alpine | Homebrew, on macOS |
+|---|---|---|---|
+| Start it, now and at every boot | `sudo systemctl enable --now ipv6ddns` | `rc-update add ipv6ddns default && rc-service ipv6ddns start` | `sudo brew services start ipv6ddns` |
+| Restart it | `sudo systemctl restart ipv6ddns` | `rc-service ipv6ddns restart` | `sudo brew services restart ipv6ddns` |
+| The log | `journalctl -u ipv6ddns` | `/var/log/messages`, by syslog | `ipv6ddns.log` in `$(brew --prefix)/var/log` |
 
 - **An upgrade** keeps your configuration, and restarts the service if it runs.
 - **A removal** stops the service and leaves the configuration you changed.
 - **Under systemd, the service runs as root with two capabilities only**, `CAP_NET_RAW` for discovery and `CAP_NET_BIND_SERVICE` for a [resolver](resolver.md) on port 53. The file system is read-only to it, except `/etc/ipv6ddns`, where it keeps the key Home Assistant gives it. A [`command` source](sources.md) runs inside those limits. To loosen them, use `sudo systemctl edit ipv6ddns` rather than editing the unit, which an upgrade replaces.
-- **Under OpenRC, the service runs as root**, without those limits.
+- **Under OpenRC, and with Homebrew, the service runs as root**, without those limits. On macOS, raw sockets are root's alone.
+- **With Homebrew, a service that ran as root leaves files of root's.** `brew uninstall ipv6ddns` then stops at them: stop the service, and remove them with `sudo rm -rf "$(brew --prefix)/Cellar/ipv6ddns"`.
 
 The packages have no repository yet, so `apt`, `dnf` and `apk` don't upgrade them by themselves: install the new release's package over the old one.
 
