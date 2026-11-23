@@ -87,7 +87,7 @@ A change to the service's limits must pass this test, and a new limit that disco
 
 `tools/nix-test.sh` checks it with Docker, as CI does: the package builds, and a NixOS virtual machine runs the module's service, which must discover a second machine on its network.
 
-The package pins a hash of the Go modules. **After any change to `go.sum`**, such as a new version of ipv6disc, the check fails until the hash is updated:
+The package pins a hash of the Go modules, which is behind after any change to `go.sum`, such as a new version of ipv6disc. On `dev`, CI writes it by itself: its `nix` job commits the new hash and starts CI on that commit, so wait for that run before a release. In a pull request it can't, and fails until you run this and commit the result:
 
 ```bash
 tools/nix-test.sh --update

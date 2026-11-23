@@ -231,12 +231,34 @@ jobs:
   # service of the NixOS module runs in a virtual machine, and discovers another.
   nix:
     runs-on: ubuntu-latest
+    # It keeps the hash of the Go modules itself: on dev, it writes the commit that has it, and
+    # starts CI on that commit, which a push of its own doesn't.
+    permissions:
+      contents: write
+      actions: write
     steps:
       -
         name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      -
+        # Behind go.sum after a change of the modules: written again on dev, and anywhere else
+        # told, as a pull request is not to be written to.
+        name: The hash of the Go modules
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tools/nix-test.sh --update
+          git diff --quiet -- nix/package.nix && exit 0
+          if [ "$GITHUB_EVENT_NAME" != push ] || [ "$GITHUB_REF" != refs/heads/dev ]; then
+            echo "::error::The hash of the Go modules in nix/package.nix is behind go.sum: run tools/nix-test.sh --update, and commit it."
+            exit 1
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "build: the hash of the Go modules, for Nix" -- nix/package.nix
+          git push -q "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" HEAD:dev
+          gh workflow run ci.yaml --ref dev
       -
         name: Test
         run: tools/nix-test.sh
