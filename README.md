@@ -85,6 +85,7 @@ For a complete setup, pick a [guide](docs/guides/README.md) instead.
 ## Install
 
 - **Binaries** for Linux, macOS, FreeBSD and the other BSDs are on the [releases page](https://github.com/miguelangel-nubla/ipv6ddns/releases). Discovery listens to the network, so it needs [a few privileges](docs/installation.md#what-discovery-needs).
+- **Packages** for Debian and Ubuntu (`.deb`), Fedora and RHEL (`.rpm`) and Alpine (`.apk`) are on the same page. They install ipv6ddns as a service, with a starting configuration. See [as a service](docs/installation.md#as-a-service).
 - **Docker**: run `ghcr.io/miguelangel-nubla/ipv6ddns` on the host's network. See [installation](docs/installation.md).
 - **Home Assistant**: install [the app](homeassistant/addon/DOCS.md).
 
@@ -95,7 +96,7 @@ The full index is in [docs](docs/README.md).
 | | |
 |---|---|
 | **Getting started** | |
-| [Installation and running](docs/installation.md) | Binaries, Docker, flags, the web report, health and metrics, several instances at once |
+| [Installation and running](docs/installation.md) | Binaries, packages, Docker, flags, the web report, health and metrics, several instances at once |
 | [Guides](docs/guides/README.md) | Common setups from start to end, also [for the Home Assistant app](docs/guides/home-assistant/README.md) |
 | **Configuring** | |
 | [Configuration](docs/configuration.md) | The file's structure, secrets, validation |
