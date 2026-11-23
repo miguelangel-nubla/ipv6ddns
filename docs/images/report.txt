@@ -7,13 +7,22 @@ DNS: 4 names, 3 with addresses, 1 without; 1 failing
             www.example.com: (last update: 2026-01-25T01:49:35Z)
                 [2001:db8:1234:5678:abcd:ef01:2345:6789]     35m15s    2d 5h        12:34:56:78:90:cd  eth0, router
                 203.0.113.99                                 27m 2s       9h14m     source wan
-    Provider: technitium
-        Endpoint: home-dns
+    Provider: resolver
+        Endpoint: home
             laptop.lan.example.com: (last update: 2026-01-24T22:37:41Z)
                 (no address: the last one went 3h12m ago)
             nas.lan.example.com: (next update: 7s, waiting for the 10s debounce)
                 192.168.1.50                                  2m51s   12d           00:11:22:33:44:55  eth0
                 [fd12:3456:789a::50]                         41m37s   12d           00:11:22:33:44:55  eth0
+
+Resolvers: 1, 1 serving
+    lan: serving
+        Listening: 192.168.1.2:53
+        Allow: 192.168.1.0/24
+        Zones: lan.example.com (2 names)
+        Upstream: 192.168.1.1 (0 failed)
+        Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0
+        Cache: 1274 of 10000
 
 Discovery: 2 hosts, 1 named, 3 addresses
     00:11:22:33:44:55
