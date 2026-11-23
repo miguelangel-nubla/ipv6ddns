@@ -98,7 +98,7 @@ See the example [this machine](#6-this-machine-ipv6ddns-runs-on).
 | `link_local` | A link-local address (`fe80::/10`, or `169.254.0.0/16`) |
 | `eui64` | An IPv6 address derived from the MAC address, which is stable |
 | `random` | An IPv6 address whose interface ID is not derived from the MAC. It's a privacy address, or a stable address made another way, as most systems make them now |
-| `temporary` | An IPv6 privacy address of this machine, which its kernel marks as temporary. It changes every day or so. Only known on Linux, and only for the [`self`](#filterself) addresses |
+| `temporary` | An IPv6 privacy address of this machine, which its kernel marks as temporary. It changes every day or so. Only known on Linux and macOS, and only for the [`self`](#filterself) addresses |
 
 **`mask`** is a bitwise match. In the bits that `MASK` sets, the address must equal `VALUE`.
 
