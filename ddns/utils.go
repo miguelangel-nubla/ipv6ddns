@@ -24,10 +24,24 @@ func FQDN(hostname, zone string) string {
 	return strings.Join([]string{hostname, zone}, ".")
 }
 
-// inZone tells whether name is zone or a name of it, whatever their case: DNS tells none apart.
+// inZone tells whether name is zone or a name of it, whatever the case of their ASCII letters:
+// DNS tells none of those apart, and every other byte it compares as it is.
 func inZone(name, zone string) bool {
-	name, zone = strings.ToLower(name), strings.ToLower(zone)
+	name, zone = lowerASCII(name), lowerASCII(zone)
 	return name == zone || strings.HasSuffix(name, "."+zone)
+}
+
+// lowerASCII is s with its ASCII letters in lower case, and every other byte as it was. Not
+// strings.ToLower, which makes one same character of every byte that is no UTF-8, so that two
+// names that differ would be the same.
+func lowerASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
 }
 
 // RelativeName returns the name of hostname within zone, for the providers that take it so: "" for

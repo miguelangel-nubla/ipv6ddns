@@ -40,10 +40,24 @@ func FuzzFQDN(f *testing.F) {
 	f.Add("host", "example.com")
 	f.Add("host.example.com.", ".example.com")
 	f.Add("", "")
+	// Given with its zone, in another case: it stays as it was given.
+	f.Add("Host.EXAMPLE.com", "example.com")
+	// Two bytes that are no UTF-8, and not the same: neither is in the zone of the other.
+	f.Add("\xb0", "\xf5")
 	f.Fuzz(func(t *testing.T, hostname, zone string) {
 		fqdn := FQDN(hostname, zone)
 		zone = strings.Trim(zone, ".")
-		if zone != "" && fqdn != zone && !strings.HasSuffix(fqdn, "."+zone) {
+		// In the zone as DNS tells it: whatever the case of the ASCII letters, and of them alone.
+		lower := func(s string) string {
+			b := []byte(s)
+			for i, c := range b {
+				if 'A' <= c && c <= 'Z' {
+					b[i] = c + 'a' - 'A'
+				}
+			}
+			return string(b)
+		}
+		if zone != "" && lower(fqdn) != lower(zone) && !strings.HasSuffix(lower(fqdn), "."+lower(zone)) {
 			t.Errorf("FQDN(%q, %q) = %q is not in the zone", hostname, zone, fqdn)
 		}
 		if host, domain := SplitFQDN(fqdn); domain != "" && host+"."+domain != fqdn {
