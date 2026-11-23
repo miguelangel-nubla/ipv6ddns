@@ -223,15 +223,17 @@ if ls dist/ipv6ddns_*_linux_armv7.deb >/dev/null 2>&1; then
 	echo "package-test: a deb for ARMv7, which a machine of ARMv6 would install too" >&2
 	exit 1
 fi
-out=$(mktemp -d)
-trap 'rm -rf "$out"' EXIT
+# Its files, for the container of ARMv6 to run: in a volume of Docker's, as they are root's, and
+# no file of this machine's for its user to remove.
+out=ipv6ddns-package-test-$$
+docker volume create "$out" >/dev/null
+trap 'docker volume rm -f "$out" >/dev/null 2>&1' EXIT
 docker run --rm --platform "linux/$arch" -v "$PWD/dist":/dist:ro -v "$out":/out debian:stable sh -euc '
 	[ "$(dpkg-deb -f "/dist/$1" Architecture)" = armhf ] || {
 		echo "package-test: $1 is of $(dpkg-deb -f "/dist/$1" Architecture), not armhf" >&2
 		exit 1
 	}
 	dpkg-deb -x "/dist/$1" /out
-	chmod -R a+rX /out
 ' sh "$deb"
 # As a Pi Zero: the processor of the first Raspberry Pis, which has no instruction of ARMv7.
 armv6() {
@@ -251,7 +253,7 @@ armv6 "apk add -q --allow-untrusted /dist/$apk >/dev/null && ipv6ddns --version"
 	echo "package-test: $apk does not install and run on ARMv6" >&2
 	exit 1
 }
-rm -rf "$out"
+docker volume rm -f "$out" >/dev/null
 trap - EXIT
 
 echo "package-test: ok"
