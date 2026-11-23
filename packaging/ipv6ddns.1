@@ -1,0 +1,38 @@
+.\" Generated from the code by go test ./cmd/ipv6ddns \-update: edit it, not this page.
+.TH IPV6DDNS 1 "" ipv6ddns "User Commands"
+.SH NAME
+ipv6ddns \- DNS names for every device on your network, wherever its addresses move
+.SH SYNOPSIS
+.B ipv6ddns
+[\fB\-\-config\fR \fIfile\fR]
+[\fB\-\-live\fR]
+[\fB\-\-version\fR]
+.SH DESCRIPTION
+ipv6ddns discovers the hosts of the network, with their addresses and names, and keeps the addresses of those its configuration chooses, IPv6 and IPv4, in the records of a DNS provider. It updates a name when its addresses change.
+.PP
+It runs until it is stopped. On SIGINT or SIGTERM the updates in progress get up to 30 seconds to finish, and a second signal stops it at once.
+.PP
+Local discovery needs raw sockets: root, or the CAP_NET_RAW capability.
+.SH OPTIONS
+.TP
+\fB\-\-config\fR \fIfile\fR
+The configuration file, YAML or JSON: the names to keep, the providers, the discovery, the level of the log and the web server. Without it: config.yaml, or /etc/ipv6ddns/config.yaml, the first there is.
+.TP
+\fB\-\-live\fR
+Show the state in the terminal, updating, instead of the log.
+.TP
+\fB\-\-version\fR
+Show the version, and exit.
+.PP
+Everything else is in the configuration file.
+.SH FILES
+.TP
+.I config.yaml
+The configuration, without \fB\-\-config\fR: the working directory's.
+.TP
+.I /etc/ipv6ddns/config.yaml
+The configuration, when the one before is not there: the system's, as a package installs it.
+.SH SEE ALSO
+The keys of the configuration file:
+.UR https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md
+.UE

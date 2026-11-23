@@ -1,0 +1,58 @@
+# ipv6ddns: the names to keep, and the DNS providers to keep them at.
+#
+# Until you add tasks, it only discovers: the report lists the hosts of the network and their MAC
+# addresses, to choose from. After a change: systemctl restart ipv6ddns
+#
+# Every key: https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md
+#
+# An example: this machine, its stable public IPv6 addresses and the network's public IPv4, as
+# server.example.com; and one host of the network, by its MAC, as www.example.com. At Cloudflare:
+#
+# sources:
+#   wan:
+#     type: dns
+#
+# tasks:
+#   server:
+#     filter:
+#       - self: true
+#         ip:
+#           type:
+#             - global
+#             - "!temporary"
+#     sources:
+#       - wan
+#     endpoints:
+#       cloudflare:
+#         - server
+#   webserver:
+#     filter:
+#       - mac:
+#           address: "00:11:22:33:44:55"
+#         ip:
+#           type:
+#             - global
+#     endpoints:
+#       cloudflare:
+#         - www
+#
+# credentials:
+#   cloudflare:
+#     provider: cloudflare
+#     settings:
+#       api_token: ${file:/etc/ipv6ddns/cloudflare_token}   # a file beside this one
+#       zone: example.com
+#       ttl: 1h
+#       proxied: false
+
+tasks: {}
+credentials: {}
+
+# The report, at http://127.0.0.1:8053, for this machine alone: it has no authentication. To
+# open it to a network, add the network, as 192.168.1.0/24.
+webserver:
+  listen:
+    - 127.0.0.1:8053
+
+# How much the log says: debug, info, warn or error. The log: journalctl -u ipv6ddns
+log_level: info

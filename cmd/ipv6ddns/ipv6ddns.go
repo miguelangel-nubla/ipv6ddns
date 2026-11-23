@@ -60,7 +60,7 @@ func init() {
 // defineFlags defines the flags on flag.CommandLine, each with its default: the tests define them
 // again on a new one, as a flag set can't forget what it was given.
 func defineFlags() {
-	flag.StringVar(&configFile, "config", "", "The configuration file, YAML or JSON: the names to keep, the providers, the discovery, the level of the log and the web server. Without it: "+strings.Join(configFiles, ", or ")+", the first there is")
+	flag.StringVar(&configFile, "config", "", "The configuration `file`, YAML or JSON: the names to keep, the providers, the discovery, the level of the log and the web server. Without it: "+strings.Join(configFiles, ", or ")+", the first there is")
 	flag.BoolVar(&live, "live", false, "Show the state in the terminal, updating, instead of the log")
 	flag.BoolVar(&showVersion, "version", false, "Show the version, and exit")
 	flag.Usage = usage

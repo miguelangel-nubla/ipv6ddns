@@ -3,3 +3,4 @@
 /cmd/ipv6ddns/version.go
 /dist/
 /config.yaml
+/packaging/ipv6ddns.1.gz

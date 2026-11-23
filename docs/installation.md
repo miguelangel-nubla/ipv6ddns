@@ -3,6 +3,13 @@
 ## Getting it
 
 - **A release**: download the binary for your system from the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest).
+- **A package**, from the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest), for your architecture. See [as a service](#as-a-service).
+
+  | System | Package | Install it with |
+  |---|---|---|
+  | Debian, Ubuntu and their kin | `.deb` | `sudo apt install ./ipv6ddns_*.deb` |
+  | Fedora, RHEL and theirs | `.rpm` | `sudo dnf install ./ipv6ddns_*.rpm` |
+  | Alpine | `.apk` | `apk add --allow-untrusted ./ipv6ddns_*.apk` |
 - **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:latest` and `:v0` follow the latest release, `:v0.18` follows that minor version's patches, and `:v0.18.0` stays on that exact version.
 - **From source**, with [Go](https://go.dev/doc/install): `go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns@latest`.
 - **On a MikroTik router**, as a container: see [MikroTik](mikrotik.md#running-as-a-container-on-routeros).
@@ -20,6 +27,27 @@ Local discovery listens to the network and sends probes. Both need raw sockets:
 Without raw sockets, [plugins](discovery.md#plugins) still find hosts, by reading your routers' neighbor tables. If you only use plugins, the container needs no privileges and no host network.
 
 On a machine that runs other containers, exclude their bridges from discovery: see [interfaces](discovery.md#interfaces).
+
+## As a service
+
+The packages install ipv6ddns as a service, with a starting configuration and a manual page, `man ipv6ddns`. The service is systemd's in the `.deb` and the `.rpm`, and OpenRC's in Alpine's `.apk`.
+
+1. **Edit `/etc/ipv6ddns/config.yaml`.** Only root can read it, since it holds the credentials. As installed, it only discovers, and serves the report at `http://127.0.0.1:8053`.
+2. **Start it**, now and at every boot. Installing the package starts nothing.
+3. **After a change** to the configuration, restart it.
+
+| | systemd | OpenRC, on Alpine |
+|---|---|---|
+| Start it, now and at every boot | `sudo systemctl enable --now ipv6ddns` | `rc-update add ipv6ddns default && rc-service ipv6ddns start` |
+| Restart it | `sudo systemctl restart ipv6ddns` | `rc-service ipv6ddns restart` |
+| The log | `journalctl -u ipv6ddns` | `/var/log/messages`, by syslog |
+
+- **An upgrade** keeps your configuration, and restarts the service if it runs.
+- **A removal** stops the service and leaves the configuration you changed.
+- **Under systemd, the service runs as root with two capabilities only**, `CAP_NET_RAW` for discovery and `CAP_NET_BIND_SERVICE` for a [resolver](resolver.md) on port 53. The file system is read-only to it, except `/etc/ipv6ddns`, where it keeps the key Home Assistant gives it. A [`command` source](sources.md) runs inside those limits. To loosen them, use `sudo systemctl edit ipv6ddns` rather than editing the unit, which an upgrade replaces.
+- **Under OpenRC, the service runs as root**, without those limits.
+
+The packages have no repository yet, so `apt`, `dnf` and `apk` don't upgrade them by themselves: install the new release's package over the old one.
 
 ## With Docker Compose
 

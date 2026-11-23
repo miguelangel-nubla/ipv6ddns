@@ -64,6 +64,21 @@ What the live tests cover:
 - **Restarts**, `TestLiveRestart`. The command is started while its machine is off the link. It is also killed in the middle of an update and started again. The records end up matching what the peer has, with nothing written twice.
 - **A shared host name**, `TestLiveSharedHostname`. Two hosts have the same name: one announces it by mDNS, and the other sends it in its DHCP requests, with a real udhcpc.
 
+### The packages
+
+[`packaging/`](packaging/) has what the packages add to the binary: the service, which is a systemd unit in the `.deb` and the `.rpm` and an OpenRC script in Alpine's `.apk`, the starting configuration, the scripts that run at an install, an upgrade or a removal, and the manual page. The `nfpms` block of [`.goreleaser.yaml`](.goreleaser.yaml) puts them together.
+
+`tools/package-test.sh` builds the packages as a release does, and tests them with Docker, in Debian, Fedora and Alpine containers that boot their own init. In each one it:
+
+- installs the package, and checks that nothing was started;
+- starts the service, and checks that it discovers a host on a link with it: its addresses by NDP and by ping, and its names by mDNS and by DHCP. This is what shows that the limits the service runs under leave discovery its sockets;
+- upgrades the package, and checks that the configuration was kept and the service restarted;
+- removes it, and checks that the service stopped and the configuration stayed.
+
+The build covers every system of a release and takes minutes: `PACKAGES_BUILT=1 tools/package-test.sh` tests the packages already in `dist/`.
+
+A change to the service's limits must pass this test, and a new limit that discovery could meet must be seen to fail it when set too tight.
+
 ### Live tests of the DNS providers
 
 A provider's fake API is written by the same person who wrote the provider, so the two always agree. The providers therefore also have live tests against the real server, wherever that server runs in a container.
@@ -100,6 +115,12 @@ go test ./internal/docgen -update
 ```
 
 A test fails when the pages are out of date, when a key has no description, or when an example in the documentation doesn't validate.
+
+The manual page, [`packaging/ipv6ddns.1`](packaging/ipv6ddns.1), is generated from the flags. After changing a flag, regenerate it:
+
+```bash
+go test ./cmd/ipv6ddns -update
+```
 
 The same command redraws the pictures of the report, the `.svg` files in `docs/images/`, each from the `.txt` file beside it. Change the text, never the pictures. A test holds the pictures' colors to those the program gives each kind of line.
 

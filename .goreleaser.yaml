@@ -2,6 +2,8 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    # The manual page, compressed as the packages have it.
+    - sh -c "gzip -9nc packaging/ipv6ddns.1 > packaging/ipv6ddns.1.gz"
 builds:
   - main: ./cmd/ipv6ddns
     env:
@@ -121,6 +123,67 @@ archives:
     format_overrides:
     - goos: windows
       formats: zip
+# The packages of Linux: the binary, a service that an install doesn't start, of systemd in a deb
+# or an rpm and of OpenRC in Alpine's apk, a configuration to begin from, which an upgrade keeps,
+# and the manual page.
+nfpms:
+  -
+    package_name: ipv6ddns
+    formats:
+      - deb
+      - rpm
+      - apk
+    vendor: Miguel Angel Nubla
+    maintainer: Miguel Angel Nubla <miguelangel.nubla@gmail.com>
+    homepage: "https://github.com/miguelangel-nubla/{{ .ProjectName }}"
+    description: |-
+      DNS names for every device on your network, wherever its addresses move
+      ipv6ddns discovers the hosts of the network and keeps their addresses,
+      IPv6 and IPv4, in the records of a DNS provider.
+    license: Apache-2.0
+    section: net
+    bindir: /usr/bin
+    contents:
+      - src: packaging/ipv6ddns.service
+        dst: /usr/lib/systemd/system/ipv6ddns.service
+        packager: deb
+      - src: packaging/ipv6ddns.service
+        dst: /usr/lib/systemd/system/ipv6ddns.service
+        packager: rpm
+      - src: packaging/ipv6ddns.openrc
+        dst: /etc/init.d/ipv6ddns
+        packager: apk
+        file_info:
+          mode: 0755
+      # The credentials are in it: root's alone to read.
+      - src: packaging/config.yaml
+        dst: /etc/ipv6ddns/config.yaml
+        type: config|noreplace
+        file_info:
+          mode: 0600
+      - dst: /etc/ipv6ddns
+        type: dir
+        file_info:
+          mode: 0755
+      - src: packaging/ipv6ddns.1.gz
+        dst: /usr/share/man/man1/ipv6ddns.1.gz
+      - src: cmd/ipv6ddns/example.config.yaml
+        dst: /usr/share/doc/ipv6ddns/example.config.yaml
+      - src: LICENSE.txt
+        dst: /usr/share/doc/ipv6ddns/copyright
+    scripts:
+      postinstall: packaging/postinstall.sh
+      preremove: packaging/preremove.sh
+      postremove: packaging/postremove.sh
+    # Alpine tells its scripts nothing of what happens, and has one of its own for an upgrade.
+    overrides:
+      apk:
+        scripts:
+          postinstall: packaging/apk-postinstall.sh
+          preremove: packaging/apk-preremove.sh
+    apk:
+      scripts:
+        postupgrade: packaging/apk-postupgrade.sh
 # A tag with a prerelease part, as v1.0.0-rc.1, is a prerelease on GitHub: not the latest release.
 release:
   prerelease: auto

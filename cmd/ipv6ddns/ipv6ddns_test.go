@@ -132,7 +132,7 @@ func TestUsage(t *testing.T) {
 			t.Fatalf("%s: %v", help, err)
 		}
 		usage := out.String()
-		for _, want := range []string{"Usage of", "  --config string\n", "Without it: config.yaml, or /etc/ipv6ddns/config.yaml, the first there is\n", "  --live\n", "  --version\n", "\nEverything else is in the configuration file, whose keys are at:\n  " + reference + "\n"} {
+		for _, want := range []string{"Usage of", "  --config file\n", "Without it: config.yaml, or /etc/ipv6ddns/config.yaml, the first there is\n", "  --live\n", "  --version\n", "\nEverything else is in the configuration file, whose keys are at:\n  " + reference + "\n"} {
 			if !strings.Contains(usage, want) {
 				t.Errorf("%s: no %q in:\n%s", help, want, usage)
 			}
