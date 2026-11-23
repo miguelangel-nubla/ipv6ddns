@@ -944,7 +944,7 @@ credentials:
 	}
 }
 
-// Two instances with -live on one machine, each at its own terminal: each shows its own state
+// Two instances with --live on one machine, each at its own terminal: each shows its own state
 // there, serves it at its port, and ends by its own key.
 func TestLiveTwoInstancesLive(t *testing.T) {
 	lan := livetest.NewLAN(t, 14)

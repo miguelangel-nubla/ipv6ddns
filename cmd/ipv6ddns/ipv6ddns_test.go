@@ -52,7 +52,7 @@ func resetFlags(t *testing.T) {
 	define()
 	t.Cleanup(func() {
 		// The values the flags were given are of the variables, which both sets have.
-		configFile, live, showVersion = "config.yaml", false, false
+		configFile, live, showVersion = "", false, false
 		define()
 		flag.CommandLine = original
 	})
@@ -63,21 +63,50 @@ func TestFlags(t *testing.T) {
 	resetFlags(t)
 	var names []string
 	flag.VisitAll(func(f *flag.Flag) { names = append(names, f.Name) })
-	if !slices.Equal(names, []string{"config_file", "live", "version"}) {
+	if !slices.Equal(names, []string{"config", "live", "version"}) {
 		t.Errorf("the flags are %v", names)
 	}
-	if err := flag.CommandLine.Parse(nil); err != nil || configFile != "config.yaml" || live || showVersion {
-		t.Errorf("without flags: config_file %q, live %v, version %v, %v", configFile, live, showVersion, err)
+	if err := flag.CommandLine.Parse(nil); err != nil || configFile != "" || live || showVersion {
+		t.Errorf("without flags: config %q, live %v, version %v, %v", configFile, live, showVersion, err)
 	}
-	if err := flag.CommandLine.Parse([]string{"-config_file", "other.yaml", "-live", "-version"}); err != nil || configFile != "other.yaml" || !live || !showVersion {
-		t.Errorf("with them: config_file %q, live %v, version %v, %v", configFile, live, showVersion, err)
+	if err := flag.CommandLine.Parse([]string{"--config", "other.yaml", "--live", "--version"}); err != nil || configFile != "other.yaml" || !live || !showVersion {
+		t.Errorf("with them: config %q, live %v, version %v, %v", configFile, live, showVersion, err)
+	}
+}
+
+// Without --config the file is the working directory's, then the system's: the first there is.
+func TestFindConfig(t *testing.T) {
+	folder := t.TempDir()
+	t.Chdir(folder)
+	system := filepath.Join(t.TempDir(), "config.yaml")
+	original := configFiles
+	configFiles = []string{"config.yaml", system}
+	t.Cleanup(func() { configFiles = original })
+
+	if file, err := findConfig("other.yaml"); err != nil || file != "other.yaml" {
+		t.Errorf("one given, which is not there: %q, %v", file, err)
+	}
+	if file, err := findConfig(""); err == nil || !strings.Contains(err.Error(), "config.yaml nor "+system) || !strings.Contains(err.Error(), "--config") {
+		t.Errorf("none there: %q, %v, want an error naming both and --config", file, err)
+	}
+	if err := os.WriteFile(system, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if file, err := findConfig(""); err != nil || file != system {
+		t.Errorf("the system's alone: %q, %v", file, err)
+	}
+	if err := os.WriteFile("config.yaml", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if file, err := findConfig(""); err != nil || file != "config.yaml" {
+		t.Errorf("both: %q, %v, want the working directory's", file, err)
 	}
 }
 
 // What was a flag is one no more, as any the command never had: its setting is a key of the
 // configuration file, which the usage tells where to find.
 func TestOldFlagsAreUnknown(t *testing.T) {
-	for _, old := range []string{"-log_level=debug", "-lifetime=1h", "-webserver_listen=8053", "-log_level", "-webserver_listen"} {
+	for _, old := range []string{"-config_file=config.yaml", "-config_file", "-log_level=debug", "-lifetime=1h", "-webserver_listen=8053", "-log_level", "-webserver_listen"} {
 		resetFlags(t)
 		var out strings.Builder
 		flag.CommandLine.SetOutput(&out)
@@ -91,23 +120,24 @@ func TestOldFlagsAreUnknown(t *testing.T) {
 	}
 }
 
-// The usage, which -h and -help show too, lists the flags there are, and tells where the keys
+// The usage, which --help shows too, as -h and -help, lists the flags there are, and tells where the keys
 // of the configuration file are: the reference, which is there.
 func TestUsage(t *testing.T) {
-	for _, help := range []string{"-h", "-help"} {
+	for _, help := range []string{"--help", "-help", "-h"} {
 		resetFlags(t)
 		var out strings.Builder
 		flag.CommandLine.SetOutput(&out)
-		if err := flag.CommandLine.Parse([]string{help}); !errors.Is(err, flag.ErrHelp) {
+		// A file given before it is not the default the usage tells.
+		if err := flag.CommandLine.Parse([]string{"--config", "other.yaml", help}); !errors.Is(err, flag.ErrHelp) {
 			t.Fatalf("%s: %v", help, err)
 		}
 		usage := out.String()
-		for _, want := range []string{"Usage of", "  -config_file string\n", "  -live\n", "  -version\n", "\nEverything else is in the configuration file, whose keys are at:\n  " + reference + "\n"} {
+		for _, want := range []string{"Usage of", "  --config string\n", "Without it: config.yaml, or /etc/ipv6ddns/config.yaml, the first there is\n", "  --live\n", "  --version\n", "\nEverything else is in the configuration file, whose keys are at:\n  " + reference + "\n"} {
 			if !strings.Contains(usage, want) {
 				t.Errorf("%s: no %q in:\n%s", help, want, usage)
 			}
 		}
-		for _, gone := range []string{"log_level", "lifetime", "webserver_listen"} {
+		for _, gone := range []string{"config_file", "log_level", "lifetime", "webserver_listen"} {
 			if strings.Contains(usage, gone) {
 				t.Errorf("%s: %s is in the usage:\n%s", help, gone, usage)
 			}
@@ -124,7 +154,7 @@ func TestUnexpectedArgs(t *testing.T) {
 	parse := func(args ...string) error {
 		flags := flag.NewFlagSet("ipv6ddns", flag.ContinueOnError)
 		flags.Bool("live", false, "")
-		file := flags.String("config_file", "config.yaml", "")
+		file := flags.String("config", "config.yaml", "")
 		if err := flags.Parse(args); err != nil {
 			t.Fatal(err)
 		}
@@ -132,17 +162,17 @@ func TestUnexpectedArgs(t *testing.T) {
 			return err
 		}
 		if want := "x"; *file != want {
-			t.Errorf("%q: config_file %q, want %q", args, *file, want)
+			t.Errorf("%q: config %q, want %q", args, *file, want)
 		}
 		return nil
 	}
-	if err := parse("-live=false", "-config_file", "x"); err != nil {
+	if err := parse("--live=false", "--config", "x"); err != nil {
 		t.Errorf("no words left: %v", err)
 	}
-	for _, args := range [][]string{{"-live", "false", "-config_file", "x"}, {"false"}} {
+	for _, args := range [][]string{{"--live", "false", "--config", "x"}, {"false"}} {
 		err := parse(args...)
-		if err == nil || !strings.Contains(err.Error(), `"false"`) || !strings.Contains(err.Error(), "-name=false") {
-			t.Errorf("%q: %v, want an error naming \"false\" and -name=false", args, err)
+		if err == nil || !strings.Contains(err.Error(), `"false"`) || !strings.Contains(err.Error(), "--name=false") {
+			t.Errorf("%q: %v, want an error naming \"false\" and --name=false", args, err)
 		}
 	}
 }
@@ -290,14 +320,14 @@ func TestSetLogLevel(t *testing.T) {
 		t.Errorf("a bad log level: %v, %s", err, level.Level())
 	}
 
-	// With -live nothing writes over the terminal: the level stays, and a bad one is still an error.
+	// With --live nothing writes over the terminal: the level stays, and a bad one is still an error.
 	live = true
 	logger, level := initializeLogger()
 	if err := setLogLevel("debug", level); err != nil || level.Level() != zap.FatalLevel || logger.Desugar().Core().Enabled(zap.ErrorLevel) {
-		t.Errorf("-live: %v, level %s, want fatal", err, level.Level())
+		t.Errorf("--live: %v, level %s, want fatal", err, level.Level())
 	}
 	if err := setLogLevel("loud", level); err == nil {
-		t.Error("-live and a bad log level: want an error")
+		t.Error("--live and a bad log level: want an error")
 	}
 	live = false
 	if logger, level := initializeLogger(); level.Level() != zap.InfoLevel || !logger.Desugar().Core().Enabled(zap.InfoLevel) {

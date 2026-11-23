@@ -30,7 +30,7 @@ services:
     network_mode: host
     restart: unless-stopped
     command:
-      - "-config_file"
+      - "--config"
       - "/config.yaml"
     volumes:
       - ./config.yaml:/config.yaml:ro
@@ -64,15 +64,15 @@ The alternative is `key_provisioning: true`, where Home Assistant provides the k
 
 | Flag | |
 |---|---|
-| `-config_file` | The configuration file, YAML or JSON. Default: `config.yaml` |
-| `-live` | Show the report in the terminal, updating live, instead of the log. It needs a terminal. `q`, Esc, Ctrl-C or a signal ends it. It uses the terminal's colors, and none when `NO_COLOR` is set. Only errors that stop the start are logged, so you don't see the configuration's warnings or the plugins' errors |
-| `-version` | Print the version |
+| `--config` | The configuration file, YAML or JSON. Without it: `config.yaml` in the working directory, or else `/etc/ipv6ddns/config.yaml` |
+| `--live` | Show the report in the terminal, updating live, instead of the log. It needs a terminal. `q`, Esc, Ctrl-C or a signal ends it. It uses the terminal's colors, and none when `NO_COLOR` is set. Only errors that stop the start are logged, so you don't see the configuration's warnings or the plugins' errors |
+| `--version` | Print the version |
 
 Everything else is set in the [configuration file](reference/configuration.md). For example, `log_level` sets the log level, `webserver.listen` sets where the web report is served, and `discovery.lifetime` sets how long addresses last.
 
-An unknown flag is an error. The error lists the flags that exist, as `-h` does.
+An unknown flag is an error. The error lists the flags that exist, as `--help` does.
 
-To turn a boolean flag off, write `-live=false`, not `-live false`. A word that is neither a flag nor a flag's value is an error.
+To turn a boolean flag off, write `--live=false`, not `--live false`. A word that is neither a flag nor a flag's value is an error.
 
 ## The web report
 
@@ -136,7 +136,7 @@ Two instances on one machine must differ in anything both would claim:
 | [`homeassistant`](home-assistant-integration.md#several-devices) `port`, or `listen` | Its own port, when both have the block. The default is 6053 | The same error |
 | `homeassistant.key_provisioning_state_file`, with `key_provisioning: true` | Its own file. The default is `homeassistant.state` beside the configuration, so two configurations in one folder must each name theirs. Not needed with a `key` | The one started second doesn't start, and says which file |
 | `homeassistant.name` | Its own name. The default is `ipv6ddns` | The one started second runs, but isn't announced to Home Assistant, and logs why |
-| `-live` | Its own terminal | |
+| `--live` | Its own terminal | |
 
 Nothing else is shared: no lock, no file, no discovery port.
 
@@ -178,4 +178,4 @@ Nothing merges the two sets of addresses. The records are whatever was written l
 
 ## Stopping
 
-On SIGINT or SIGTERM, ipv6ddns stops discovering and stops scheduling updates. It gives the updates in progress up to 30 seconds to finish. A second signal during that wait stops it at once. With `-live`, a key that quits the view stops it the same way.
+On SIGINT or SIGTERM, ipv6ddns stops discovering and stops scheduling updates. It gives the updates in progress up to 30 seconds to finish. A second signal during that wait stops it at once. With `--live`, a key that quits the view stops it the same way.

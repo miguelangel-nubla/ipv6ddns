@@ -32,6 +32,24 @@ var (
 	showVersion bool
 )
 
+// configFiles are where the configuration is looked for without --config, in this order: the
+// working directory's, as in a container, then the system's, as a package installs it.
+var configFiles = []string{"config.yaml", "/etc/ipv6ddns/config.yaml"}
+
+// findConfig is the configuration file: the one given, or without one the first of configFiles
+// there is.
+func findConfig(given string) (string, error) {
+	if given != "" {
+		return given, nil
+	}
+	for _, file := range configFiles {
+		if _, err := os.Stat(file); err == nil {
+			return file, nil
+		}
+	}
+	return "", fmt.Errorf("no configuration file: there is no %s. Give one with --config", strings.Join(configFiles, " nor "))
+}
+
 // reference is where every key of the configuration file is told.
 const reference = "https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md"
 
@@ -42,27 +60,43 @@ func init() {
 // defineFlags defines the flags on flag.CommandLine, each with its default: the tests define them
 // again on a new one, as a flag set can't forget what it was given.
 func defineFlags() {
-	flag.StringVar(&configFile, "config_file", "config.yaml", "The configuration file, YAML or JSON: the names to keep, the providers, the discovery, the level of the log and the web server")
+	flag.StringVar(&configFile, "config", "", "The configuration file, YAML or JSON: the names to keep, the providers, the discovery, the level of the log and the web server. Without it: "+strings.Join(configFiles, ", or ")+", the first there is")
 	flag.BoolVar(&live, "live", false, "Show the state in the terminal, updating, instead of the log")
 	flag.BoolVar(&showVersion, "version", false, "Show the version, and exit")
 	flag.Usage = usage
 }
 
-// usage lists the flags, as flag does, and tells where the rest is.
+// usage lists the flags as flag does, but each with two dashes, and tells where the rest is.
 func usage() {
 	fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
-	flag.PrintDefaults()
+	flag.VisitAll(func(f *flag.Flag) {
+		// The kind of its value, none for a boolean, and its default when it has one.
+		kind, text := flag.UnquoteUsage(f)
+		line := "  --" + f.Name
+		if kind != "" {
+			line += " " + kind
+		}
+		line += "\n    \t" + text
+		switch {
+		case f.DefValue == "" || f.DefValue == "false":
+		case kind == "string":
+			line += fmt.Sprintf(" (default %q)", f.DefValue)
+		default:
+			line += fmt.Sprintf(" (default %s)", f.DefValue)
+		}
+		fmt.Fprintln(flag.CommandLine.Output(), line)
+	})
 	fmt.Fprintf(flag.CommandLine.Output(), "\nEverything else is in the configuration file, whose keys are at:\n  %s\n", reference)
 }
 
 // unexpectedArgs is the error of the words left after the flags. There are none to give: flag
-// stops at the first, so the flags after it would be left out without a word, as -config_file
-// after "-live false".
+// stops at the first, so the flags after it would be left out without a word, as --config
+// after "--live false".
 func unexpectedArgs(args []string) error {
 	if len(args) == 0 {
 		return nil
 	}
-	return fmt.Errorf("unexpected argument %q: ipv6ddns takes only flags. To turn a boolean flag off, write -name=false", args[0])
+	return fmt.Errorf("unexpected argument %q: ipv6ddns takes only flags. To turn a boolean flag off, write --name=false", args[0])
 }
 
 func main() {
@@ -82,6 +116,10 @@ func main() {
 	sugar, level := initializeLogger()
 	ipv6ddns.Version = version
 
+	configFile, err := findConfig(configFile)
+	if err != nil {
+		sugar.Fatal(err)
+	}
 	config, err := config.NewConfig(configFile)
 	if err != nil {
 		sugar.Fatalf("error reading config: %s", err)
@@ -114,7 +152,7 @@ func main() {
 	closeTerminal := func() {}
 	if live {
 		if err := terminal.Init(); err != nil {
-			sugar.Fatalf("-live needs a terminal: %s", err)
+			sugar.Fatalf("--live needs a terminal: %s", err)
 		}
 		closeTerminal = sync.OnceFunc(terminal.Close)
 	}
@@ -321,7 +359,7 @@ const statusHTMLTail = `</pre>
 // webserverPort is that of the web server's entries that give none.
 const webserverPort = config.DefaultWebserverPort
 
-// setLogLevel gives the log the level of the configuration, info without one. With -live nothing
+// setLogLevel gives the log the level of the configuration, info without one. With --live nothing
 // writes over the terminal: the level stays, and one there is none of is still an error.
 func setLogLevel(logLevel string, level zap.AtomicLevel) error {
 	if logLevel == "" {

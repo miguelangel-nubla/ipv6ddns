@@ -28,7 +28,7 @@ There is more in the [guides](docs/guides/README.md), and in the [guides for the
 
 ## What it looks like
 
-The web report, or `-live` in a terminal, shows each name, with its addresses and the state of its updates, then the built-in DNS server if you use it, and each host found, with its names and how each address was seen.
+The web report, or `--live` in a terminal, shows each name, with its addresses and the state of its updates, then the built-in DNS server if you use it, and each host found, with its names and how each address was seen.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/report-dark.svg">

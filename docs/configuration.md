@@ -1,6 +1,6 @@
 # Configuration
 
-The configuration is a single file, in YAML or JSON, which you pass with `-config_file`.
+The configuration is a single file, in YAML or JSON, which you pass with `--config`.
 
 - Every key is in the [configuration reference](reference/configuration.md).
 - The [example configuration](../cmd/ipv6ddns/example.config.yaml) shows most keys in use.

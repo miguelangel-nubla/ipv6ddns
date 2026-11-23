@@ -99,7 +99,7 @@ func TestWorkerRunsTheProtocolsOfTheConfiguration(t *testing.T) {
 	}
 }
 
-// A host's names are where the hosts are: the status, and the page, which -live shows too.
+// A host's names are where the hosts are: the status, and the page, which --live shows too.
 func TestStatusHasTheNamesOfTheHosts(t *testing.T) {
 	hw, _ := net.ParseMAC(macA)
 	for _, kept := range []bool{true} {

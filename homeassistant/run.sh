@@ -11,4 +11,4 @@ if [ ! -f "$config" ]; then
 	echo "ipv6ddns: no configuration yet: wrote a starting one, config.yaml in the app's folder, addon_configs/<id>_ipv6ddns (app_configs in recent versions). Edit it, and restart the app." >&2
 fi
 
-exec ipv6ddns -config_file "$config"
+exec ipv6ddns --config "$config"

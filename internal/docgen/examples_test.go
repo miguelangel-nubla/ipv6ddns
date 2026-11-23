@@ -72,7 +72,7 @@ func TestAddonStarterConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(string(run), "\nexec ipv6ddns -config_file \"$config\"\n") {
+	if !strings.HasSuffix(string(run), "\nexec ipv6ddns --config \"$config\"\n") {
 		t.Errorf("the add-on starts the program otherwise than with its file:\n%s", run)
 	}
 	// And its documentation has the lines a configuration from before needs, as the starting one has them.

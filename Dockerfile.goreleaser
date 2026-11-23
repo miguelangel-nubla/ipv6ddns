@@ -17,7 +17,7 @@ RUN apk add --no-cache \
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/ipv6ddns /usr/local/bin/ipv6ddns
 
-# The configuration is config.yaml of the working directory, unless -config_file says: /config.yaml.
+# Without --config the configuration is config.yaml of the working directory: /config.yaml.
 WORKDIR /
 
 ENTRYPOINT ["ipv6ddns"]

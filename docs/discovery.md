@@ -89,7 +89,7 @@ A protocol that can't run is an error at start, instead of being silently left o
 To see which protocols run:
 
 - The log lists them at start.
-- The web report and `-live` show them under `Protocols`.
+- The web report and `--live` show them under `Protocols`.
 - `/status.json` has them as `protocols`.
 
 Each protocol, with its options and defaults, is in the [reference](reference/configuration.md#discovery-protocols).
@@ -123,7 +123,7 @@ discovery:
       names: false
 ```
 
-The web report and `-live` show a host's names under its MAC. Each name lists what said it, with two times for each: how long that report has left, and how long it has been saying the name. `/status.json` has them as the host's `names`, with each report under `said`.
+The web report and `--live` show a host's names under its MAC. Each name lists what said it, with two times for each: how long that report has left, and how long it has been saying the name. `/status.json` has them as the host's `names`, with each report under `said`.
 
 Names are useful in two ways:
 

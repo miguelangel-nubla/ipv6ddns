@@ -305,7 +305,7 @@ type instance struct {
 	exited chan struct{}
 	err    error
 	output lockedBuffer
-	// With -live: what is typed at its terminal.
+	// With --live: what is typed at its terminal.
 	keys io.Writer
 	// More of the command's environment, as NAME=value.
 	env []string
@@ -347,16 +347,16 @@ func configureIn(t *testing.T, m *livetest.Machine, asks *livetest.Machine, name
 		t.Fatal(err)
 	}
 	i := &instance{t: t, name: name, machine: m, folder: folder, web: net.JoinHostPort(m.IPv4.String(), strconv.Itoa(webPort)), client: asks.HTTPClient()}
-	i.cmd = m.Command(livetest.Command(t), "-config_file="+filepath.Join(folder, file))
+	i.cmd = m.Command(livetest.Command(t), "--config="+filepath.Join(folder, file))
 	return i
 }
 
-// live makes the instance one with -live, at a terminal of its own, testdata/terminal.py: its
+// live makes the instance one with --live, at a terminal of its own, testdata/terminal.py: its
 // screen is the instance's output, and it ends as its command does.
 func (i *instance) live() *instance {
 	i.t.Helper()
 	command := i.cmd.Args[slices.Index(i.cmd.Args, livetest.Command(i.t)):]
-	i.cmd = i.machine.Command(livetest.Python(i.t), append([]string{"testdata/terminal.py"}, append(command, "-live")...)...)
+	i.cmd = i.machine.Command(livetest.Python(i.t), append([]string{"testdata/terminal.py"}, append(command, "--live")...)...)
 	return i
 }
 
