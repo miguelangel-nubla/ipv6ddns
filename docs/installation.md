@@ -18,6 +18,7 @@
   - **The `.rpm` and the `.apk` have one for each**, `armv6` and `armv7`, as their systems tell the two apart.
   - **Arch's package** is for `amd64`, `arm64` and `armv7`, the architectures Arch and Arch Linux ARM have.
 - **With [Homebrew](https://brew.sh)**, on macOS: `brew install miguelangel-nubla/tap/ipv6ddns`. It is built from source, on your machine. See [as a service](#as-a-service).
+- **With [Nix](https://nixos.org)**: the repository is a flake, with the package and a module for NixOS. See [on NixOS](#on-nixos).
 - **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:latest` and `:v0` follow the latest release, `:v0.18` follows that minor version's patches, and `:v0.18.0` stays on that exact version.
 - **From source**, with [Go](https://go.dev/doc/install): `go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns@latest`.
 - **On a MikroTik router**, as a container: see [MikroTik](mikrotik.md#running-as-a-container-on-routeros).
@@ -57,6 +58,68 @@ The packages, and Homebrew, install ipv6ddns as a service, with a starting confi
 - **With Homebrew, a service that ran as root leaves files of root's.** `brew uninstall ipv6ddns` then stops at them: stop the service, and remove them with `sudo rm -rf "$(brew --prefix)/Cellar/ipv6ddns"`.
 
 The packages have no repository yet, so `apt`, `dnf`, `pacman` and `apk` don't upgrade them by themselves: install the new release's package over the old one.
+
+## On NixOS
+
+The repository is a flake. It has the package, built from source, and a NixOS module, `services.ipv6ddns`, which runs it as a systemd service under the same limits as the packages' service.
+
+Add the flake to your system's, and enable the service:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.ipv6ddns.url = "github:miguelangel-nubla/ipv6ddns";
+
+  outputs =
+    { nixpkgs, ipv6ddns, ... }:
+    {
+      nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          ipv6ddns.nixosModules.default
+          {
+            services.ipv6ddns = {
+              enable = true;
+              environmentFile = "/run/secrets/ipv6ddns.env";
+              settings = {
+                webserver.listen = [ "127.0.0.1:8053" ];
+                tasks.server = {
+                  filter = [
+                    {
+                      self = true;
+                      ip.type = [ "global" ];
+                    }
+                  ];
+                  endpoints.cloudflare = [ "server" ];
+                };
+                credentials.cloudflare = {
+                  provider = "cloudflare";
+                  settings = {
+                    api_token = "''${CLOUDFLARE_TOKEN}";
+                    zone = "example.com";
+                  };
+                };
+              };
+            };
+          }
+        ];
+      };
+    };
+}
+```
+
+| Option | |
+|---|---|
+| `enable` | Run the service |
+| `settings` | The [configuration](reference/configuration.md), as Nix. Without `tasks`, it only discovers |
+| `environmentFile` | A file of `NAME=value` lines, for the secrets the configuration names as `${NAME}` |
+| `configFile` | A configuration file of your own, used in place of `settings` |
+| `package` | The package to run. Default: the flake's |
+
+- **Keep secrets out of `settings`.** It is written to the Nix store, which every user can read. Name a secret as `${NAME}` and put it in `environmentFile`, as above, or as `${file:/run/secrets/name}`. In Nix, write `''${NAME}` so that Nix leaves it alone.
+- **With `key_provisioning`**, set `homeassistant.key_provisioning_state_file` to a file under `/var/lib/ipv6ddns`, the service's state directory. Its default is beside the configuration, which is in the store and can't be written to.
+- **The flake follows `main`**, which is the latest release. To stay on a version, name its tag: `github:miguelangel-nubla/ipv6ddns/v0.25.2`.
+- **Without NixOS**, `nix run github:miguelangel-nubla/ipv6ddns -- --version` runs the command, and `nix profile install github:miguelangel-nubla/ipv6ddns` installs it.
 
 ## With Docker Compose
 

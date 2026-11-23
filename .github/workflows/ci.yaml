@@ -227,6 +227,20 @@ jobs:
         name: Test
         run: tools/package-test.sh
 
+  # The flake: the package for Nix builds, with the hash of the Go modules it has, and the
+  # service of the NixOS module runs in a virtual machine, and discovers another.
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Test
+        run: tools/nix-test.sh
+
   test-32-bit:
     runs-on: ubuntu-latest
     steps:

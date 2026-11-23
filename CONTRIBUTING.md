@@ -81,6 +81,18 @@ The build covers every system of a release and takes minutes: `PACKAGES_BUILT=1 
 
 A change to the service's limits must pass this test, and a new limit that discovery could meet must be seen to fail it when set too tight.
 
+### The flake
+
+[`flake.nix`](flake.nix) has the package for Nix, [`nix/package.nix`](nix/package.nix), and the NixOS module, [`nix/module.nix`](nix/module.nix), whose service has the limits of [`packaging/ipv6ddns.service`](packaging/ipv6ddns.service): change both together.
+
+`tools/nix-test.sh` checks it with Docker, as CI does: the package builds, and a NixOS virtual machine runs the module's service, which must discover a second machine on its network.
+
+The package pins a hash of the Go modules. **After any change to `go.sum`**, such as a new version of ipv6disc, the check fails until the hash is updated:
+
+```bash
+tools/nix-test.sh --update
+```
+
 ### The Homebrew formula
 
 The formula is in its own repository, [`miguelangel-nubla/homebrew-tap`](https://github.com/miguelangel-nubla/homebrew-tap). It builds from the source of a tag, with Go, so a release only changes its source and its checksum. The tap does that by itself: every day, a workflow there makes the formula of the latest release, installs and tests it on macOS, and keeps it. A release here has nothing to do for it, and a prerelease is not followed.
