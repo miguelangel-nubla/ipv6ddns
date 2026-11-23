@@ -83,7 +83,7 @@ A change to the service's limits must pass this test, and a new limit that disco
 
 ### The Homebrew formula
 
-The formula is in its own repository, [`miguelangel-nubla/homebrew-tap`](https://github.com/miguelangel-nubla/homebrew-tap). It builds from the source of a tag, with Go, so a release only changes its source and its checksum: the release workflow does it, with the tap's `update.sh`, when it has the secret `HOMEBREW_TAP_TOKEN`. Without the secret, run `./update.sh ipv6ddns <tag>` by hand in a clone of the tap, and push it.
+The formula is in its own repository, [`miguelangel-nubla/homebrew-tap`](https://github.com/miguelangel-nubla/homebrew-tap). It builds from the source of a tag, with Go, so a release only changes its source and its checksum. The tap does that by itself: every hour, a workflow there makes the formula of the latest release, installs and tests it on macOS, and keeps it. A release here has nothing to do for it, and a prerelease is not followed.
 
 To test a change to the formula, use a container, `docker run --rm -it homebrew/brew`, rather than your own Homebrew.
 
