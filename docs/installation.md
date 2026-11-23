@@ -10,6 +10,11 @@
   | Debian, Ubuntu and their kin | `.deb` | `sudo apt install ./ipv6ddns_*.deb` |
   | Fedora, RHEL and theirs | `.rpm` | `sudo dnf install ./ipv6ddns_*.rpm` |
   | Alpine | `.apk` | `apk add --allow-untrusted ./ipv6ddns_*.apk` |
+
+  The packages are for `amd64`, `arm64`, `riscv64` and 32-bit ARM. On other architectures, use the binary.
+
+  - **On a Raspberry Pi with a 32-bit system**, the `.deb` is the `armv6` one, for every model: it is the only 32-bit ARM `.deb`, and it also runs on ARMv7.
+  - **The `.rpm` and the `.apk` have one for each**, `armv6` and `armv7`, as their systems tell the two apart.
 - **Docker**: `ghcr.io/miguelangel-nubla/ipv6ddns`, for linux/386, amd64, arm/v6, arm/v7 and arm64. `:latest` and `:v0` follow the latest release, `:v0.18` follows that minor version's patches, and `:v0.18.0` stays on that exact version.
 - **From source**, with [Go](https://go.dev/doc/install): `go install github.com/miguelangel-nubla/ipv6ddns/cmd/ipv6ddns@latest`.
 - **On a MikroTik router**, as a container: see [MikroTik](mikrotik.md#running-as-a-container-on-routeros).

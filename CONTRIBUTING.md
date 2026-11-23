@@ -75,6 +75,8 @@ What the live tests cover:
 - upgrades the package, and checks that the configuration was kept and the service restarted;
 - removes it, and checks that the service stopped and the configuration stayed.
 
+It also runs the 32-bit ARM `.deb` and `.apk` on an emulated ARMv6 processor, as a Raspberry Pi Zero has. There is one 32-bit ARM `.deb`, built for ARMv6: Debian calls ARMv6 and ARMv7 both `armhf`, so a second one, for ARMv7, would install on a Pi Zero and not run there.
+
 The build covers every system of a release and takes minutes: `PACKAGES_BUILT=1 tools/package-test.sh` tests the packages already in `dist/`.
 
 A change to the service's limits must pass this test, and a new limit that discovery could meet must be seen to fail it when set too tight.

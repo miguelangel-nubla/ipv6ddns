@@ -220,6 +220,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       -
+        # The packages of 32-bit ARM are run on a processor as a Raspberry Pi Zero's.
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      -
         name: Test
         run: tools/package-test.sh
 

@@ -5,7 +5,9 @@ before:
     # The manual page, compressed as the packages have it.
     - sh -c "gzip -9nc packaging/ipv6ddns.1 > packaging/ipv6ddns.1.gz"
 builds:
-  - main: ./cmd/ipv6ddns
+  # Every system: the archives, and the images.
+  - id: ipv6ddns
+    main: ./cmd/ipv6ddns
     env:
       - CGO_ENABLED=0
     goos:
@@ -41,9 +43,42 @@ builds:
     goarm:
       - 6
       - 7
+  # The packages are of the machines Linux is installed on with a package manager: built again,
+  # as a package takes every binary of the builds it names.
+  #
+  # The 32-bit ARM one is for ARMv6, which runs on ARMv7 too. Debian has one name for both,
+  # armhf, and Raspberry Pi OS uses it on a Pi Zero, whose ARMv6 doesn't run a binary for ARMv7:
+  # with a deb of each, both would install there, and one not run.
+  - id: packages
+    main: ./cmd/ipv6ddns
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+      - riscv64
+    goarm:
+      - 6
+  # The rpm and the apk tell ARMv7 from ARMv6, armv7hl and armv7, and a system of the first
+  # doesn't take a package of the second: one for each.
+  - id: packages-armv7
+    main: ./cmd/ipv6ddns
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm
+    goarm:
+      - 7
 # One image for every platform: the build context has the binary of each at <os>/<arch>[/<variant>]/.
 dockers_v2:
   -
+    ids:
+      - ipv6ddns
     images:
       - "ghcr.io/miguelangel-nubla/{{ .ProjectName }}"
     tags:
@@ -77,6 +112,8 @@ dockers_v2:
   # without the v.
   -
     id: addon
+    ids:
+      - ipv6ddns
     images:
       - "ghcr.io/miguelangel-nubla/{{ .ProjectName }}-addon"
     tags:
@@ -105,6 +142,8 @@ dockers_v2:
 
 archives:
   - 
+    ids:
+      - ipv6ddns
     files:
       - LICENSE*
       - README*
@@ -127,7 +166,10 @@ archives:
 # or an rpm and of OpenRC in Alpine's apk, a configuration to begin from, which an upgrade keeps,
 # and the manual page.
 nfpms:
-  -
+  - &package
+    id: packages
+    ids:
+      - packages
     package_name: ipv6ddns
     formats:
       - deb
@@ -184,6 +226,14 @@ nfpms:
     apk:
       scripts:
         postupgrade: packaging/apk-postupgrade.sh
+  # The same, for ARMv7, where its package is another than ARMv6's: not a deb.
+  - <<: *package
+    id: packages-armv7
+    ids:
+      - packages-armv7
+    formats:
+      - rpm
+      - apk
 # A tag with a prerelease part, as v1.0.0-rc.1, is a prerelease on GitHub: not the latest release.
 release:
   prerelease: auto

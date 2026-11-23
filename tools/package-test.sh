@@ -10,6 +10,10 @@
 # - an upgrade keeps the configuration and restarts the service;
 # - a removal stops it and leaves the configuration.
 #
+# And the packages of 32-bit ARM, on a processor as a Raspberry Pi Zero's, which Docker emulates:
+# the one deb there is of them, which Debian's name for it, armhf, lets a Pi Zero install, and
+# the apk of ARMv6, run there.
+#
 # The build takes minutes, for every system of a release. PACKAGES_BUILT=1 tests those dist/ has.
 set -eu
 cd "$(dirname "$0")/.."
@@ -20,16 +24,19 @@ if [ -z "${PACKAGES_BUILT:-}" ]; then
 		"goreleaser/goreleaser:${GORELEASER_VERSION:-latest}" release --snapshot --clean --skip=docker,archive
 fi
 
-# The packages of the architecture Docker runs.
-arch=$(docker version --format '{{.Server.Arch}}')
-package() {
-	set -- dist/ipv6ddns_*_linux_"$arch.$1"
+# package_of is the one package of an architecture and a format that dist/ has.
+package_of() {
+	set -- dist/ipv6ddns_*_linux_"$1.$2"
 	[ $# -eq 1 ] && [ -f "$1" ] || {
-		echo "package-test: not one package of $arch in dist/: $*" >&2
+		echo "package-test: not one such package in dist/: $*" >&2
 		exit 1
 	}
 	basename "$1"
 }
+# The packages of the architecture Docker runs. Every container names its platform: an image
+# is kept for one alone, and the one for ARMv6 below would be the one found here the next time.
+arch=$(docker version --format '{{.Server.Arch}}')
+package() { package_of "$arch" "$1"; }
 
 # The service, as each init has it.
 systemd='
@@ -163,7 +170,7 @@ check() {
 	image=$1 service=$2 prepare=$3 ready=$4 file=$5 install=$6 upgrade=$7 remove=$8
 	name=ipv6ddns-package-test-$$
 	echo "package-test: $file in $image"
-	docker run -d --rm --name "$name" --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock \
+	docker run -d --rm --name "$name" --platform "linux/$arch" --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock \
 		-v "$PWD/dist":/dist:ro "$image" sh -euc "$prepare" >/dev/null
 	trap 'docker rm -f "$name" >/dev/null 2>&1' EXIT
 	started=no
@@ -206,5 +213,45 @@ check alpine:latest "$openrc" '
 	exec /sbin/init
 ' '[ "$(rc-status -r)" = default ]' \
 	"$(package apk)" 'apk add -q --allow-untrusted' 'older && apk add -q --allow-untrusted' 'apk del -q ipv6ddns'
+
+# The 32-bit ARM packages. A deb is armhf for ARMv6 as for ARMv7, so there is one, of the binary
+# that runs on both: with one of each, a Raspberry Pi Zero would install either, and not run the
+# one for ARMv7.
+deb=$(package_of armv6 deb)
+echo "package-test: $deb, on ARMv6"
+if ls dist/ipv6ddns_*_linux_armv7.deb >/dev/null 2>&1; then
+	echo "package-test: a deb for ARMv7, which a machine of ARMv6 would install too" >&2
+	exit 1
+fi
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
+docker run --rm --platform "linux/$arch" -v "$PWD/dist":/dist:ro -v "$out":/out debian:stable sh -euc '
+	[ "$(dpkg-deb -f "/dist/$1" Architecture)" = armhf ] || {
+		echo "package-test: $1 is of $(dpkg-deb -f "/dist/$1" Architecture), not armhf" >&2
+		exit 1
+	}
+	dpkg-deb -x "/dist/$1" /out
+	chmod -R a+rX /out
+' sh "$deb"
+# As a Pi Zero: the processor of the first Raspberry Pis, which has no instruction of ARMv7.
+armv6() {
+	docker run --rm --platform linux/arm/v6 -e QEMU_CPU=arm1176 -v "$PWD/dist":/dist:ro -v "$out":/out:ro alpine:latest sh -euc "$1"
+}
+[ "$(armv6 'uname -m')" = armv6l ] || {
+	echo "package-test: Docker does not emulate ARMv6 here: it needs QEMU, as docker/setup-qemu-action installs" >&2
+	exit 1
+}
+armv6 '/out/usr/bin/ipv6ddns --version' | grep -q '^ipv6ddns ' || {
+	echo "package-test: the binary of $deb does not run on ARMv6" >&2
+	exit 1
+}
+apk=$(package_of armv6 apk)
+echo "package-test: $apk, on ARMv6"
+armv6 "apk add -q --allow-untrusted /dist/$apk >/dev/null && ipv6ddns --version" | grep -q '^ipv6ddns ' || {
+	echo "package-test: $apk does not install and run on ARMv6" >&2
+	exit 1
+}
+rm -rf "$out"
+trap - EXIT
 
 echo "package-test: ok"
