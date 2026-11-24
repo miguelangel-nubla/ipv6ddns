@@ -300,19 +300,20 @@ func (s *Server) serveQUICConn(conn *quic.Conn) {
 }
 
 // answerQUIC answers the query of a stream: the message, after its length in two bytes, with the
-// ID 0. A stream that breaks the protocol closes its connection, as RFC 9250 has it.
+// ID 0. A stream that breaks the protocol closes its connection, as RFC 9250 has it; one that
+// ends before its message is reset, both ways, so that the client sees no empty answer.
 func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream) {
 	defer stream.Close()
 	// A stream that can't have one is one already gone, which the reads then say.
 	_ = stream.SetDeadline(time.Now().Add(encryptedTimeout))
 	var length [2]byte
 	if _, err := io.ReadFull(stream, length[:]); err != nil {
-		stream.CancelRead(quic.StreamErrorCode(doqProtocolError))
+		resetQUIC(stream)
 		return
 	}
 	wire := make([]byte, binary.BigEndian.Uint16(length[:]))
 	if _, err := io.ReadFull(stream, wire); err != nil {
-		stream.CancelRead(quic.StreamErrorCode(doqProtocolError))
+		resetQUIC(stream)
 		return
 	}
 	req := new(dns.Msg)
@@ -334,6 +335,12 @@ func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream) {
 	binary.BigEndian.PutUint16(out, uint16(len(packed)))
 	// A client gone, or a stream it reset: nothing to do.
 	_, _ = stream.Write(append(out, packed...))
+}
+
+// resetQUIC resets the stream both ways, with the protocol's error: its Close after is nothing.
+func resetQUIC(stream *quic.Stream) {
+	stream.CancelRead(quic.StreamErrorCode(doqProtocolError))
+	stream.CancelWrite(quic.StreamErrorCode(doqProtocolError))
 }
 
 // shutdownEncrypted stops answering over HTTPS and QUIC: the answers being made over HTTPS are

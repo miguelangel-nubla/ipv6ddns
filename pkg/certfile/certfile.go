@@ -4,10 +4,10 @@ package certfile
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 )
@@ -129,19 +129,15 @@ func (c *Certificate) Status() *Status {
 	if c.cert == nil {
 		return st
 	}
+	// The leaf, which tls.LoadX509KeyPair parses: its names copied, as each status is its own.
 	leaf := c.cert.Leaf
-	if leaf == nil && len(c.cert.Certificate) > 0 {
-		leaf, _ = x509.ParseCertificate(c.cert.Certificate[0])
+	st.Names = slices.Clone(leaf.DNSNames)
+	for _, ip := range leaf.IPAddresses {
+		st.Names = append(st.Names, ip.String())
 	}
-	if leaf != nil {
-		st.Names = leaf.DNSNames
-		for _, ip := range leaf.IPAddresses {
-			st.Names = append(st.Names, ip.String())
-		}
-		if len(st.Names) == 0 && leaf.Subject.CommonName != "" {
-			st.Names = []string{leaf.Subject.CommonName}
-		}
-		st.NotAfter = leaf.NotAfter
+	if len(st.Names) == 0 && leaf.Subject.CommonName != "" {
+		st.Names = []string{leaf.Subject.CommonName}
 	}
+	st.NotAfter = leaf.NotAfter
 	return st
 }

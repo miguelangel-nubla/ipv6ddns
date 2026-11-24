@@ -55,10 +55,8 @@ const (
 func (c *Config) setUpCertificates() error {
 	owner := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(c.Certificates)) {
+		// Never nil: the schema takes an object alone.
 		t := c.Certificates[name]
-		if t == nil {
-			return fmt.Errorf("certificates.%s is empty: give certificate and key, the files of the certificate and of its key, in PEM, or acme, for ipv6ddns to get one", name)
-		}
 		t.UsedBy = nil
 		if err := c.setUpCertificate(name, t); err != nil {
 			return err

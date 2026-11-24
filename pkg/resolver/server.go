@@ -611,6 +611,10 @@ func (s *Server) forward(req *dns.Msg) (*dns.Msg, string, error) {
 // fit; DNS over TLS on a connection kept open; over HTTPS by its client. Each address of a server
 // given by host name is tried; then the next server.
 func (s *Server) exchange(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
+	// Of none, errors.Join would be nil: no answer, and no error either.
+	if len(s.upstreams) == 0 {
+		return nil, errors.New("no upstream server")
+	}
 	errs := make([]error, 0, len(s.upstreams))
 	for _, srv := range s.upstreams {
 		if ctx.Err() != nil {
