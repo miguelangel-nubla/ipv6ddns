@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -92,29 +91,11 @@ type target struct {
 // lifetime left zero is an hour; a rediscovery interval, a third of the shortest lifetime of the
 // families on.
 func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
-	// The tasks' filters ask the push sources for their prefix: copies, not the caller's.
-	tasks := make(map[string]config.Task, len(cfg.Tasks))
-	var w *Worker
-	sourcePrefix := func(name string) (netip.Prefix, bool) {
-		if s, ok := w.sources[name]; ok {
-			return s.Prefix()
-		}
-		return netip.Prefix{}, false
-	}
-	for name, task := range cfg.Tasks {
-		task.Filters = slices.Clone(task.Filters)
-		for i := range task.Filters {
-			task.Filters[i].IP.SourcePrefix = sourcePrefix
-		}
-		tasks[name] = task
-	}
-	cfg.Tasks = tasks
-
 	discovery := cfg.Discovery.Config()
 	if discovery.Lifetime == 0 {
 		discovery.Lifetime = config.DefaultLifetime
 	}
-	w = &Worker{
+	w := &Worker{
 		State:      NewState(),
 		discWorker: ipv6disc.NewWorker(logger, discovery),
 		logger:     logger,
@@ -538,10 +519,23 @@ func (w *Worker) lookForChanges() {
 		discovered = append(discovered, collection.Get()...)
 	}
 
+	// The push sources' prefixes, once: every address of the round is judged by the same.
+	prefixes := w.prefixes()
 	for _, t := range w.targets {
-		t.hostname.SetAddrCollection(w.matching(t.tasks, discovered))
+		t.hostname.SetAddrCollection(w.matching(t.tasks, discovered, prefixes))
 	}
-	w.expandTemplates(discovered)
+	w.expandTemplates(discovered, prefixes)
+}
+
+// prefixes are the IPv6 prefixes of their LAN that the push sources' routers sent, by source.
+func (w *Worker) prefixes() config.Prefixes {
+	prefixes := config.Prefixes{}
+	for name, s := range w.sources {
+		if p, ok := s.Prefix(); ok {
+			prefixes[name] = p
+		}
+	}
+	return prefixes
 }
 
 // expandTemplates gives the names of the tasks' templates the addresses of their hosts, as the
@@ -549,7 +543,7 @@ func (w *Worker) lookForChanges() {
 // a name. A name no host has any more is left without addresses, which removes its records, and
 // is then forgotten. A name that is written as it is, at the endpoint, is that one's: the
 // template's is left out, and said once.
-func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr) {
+func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr, prefixes config.Prefixes) {
 	if len(w.templates) == 0 {
 		return
 	}
@@ -574,7 +568,7 @@ func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr) {
 		// The hosts the task matches, by MAC, in the MACs' order.
 		hosts := make(map[string][]*ipv6disc.Addr)
 		for _, addr := range discovered {
-			if len(addr.Hw) > 0 && t.task.Match(addr) {
+			if len(addr.Hw) > 0 && t.task.Match(addr, prefixes) {
 				hosts[addr.Hw.String()] = append(hosts[addr.Hw.String()], addr)
 			}
 		}
@@ -641,11 +635,11 @@ func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr) {
 
 // matching returns the addresses that the filters of any of the tasks match, and those of the
 // tasks' sources.
-func (w *Worker) matching(tasks []config.Task, discovered []*ipv6disc.Addr) *ipv6disc.AddrCollection {
+func (w *Worker) matching(tasks []config.Task, discovered []*ipv6disc.Addr, prefixes config.Prefixes) *ipv6disc.AddrCollection {
 	result := ipv6disc.NewAddrCollection()
 	for _, task := range tasks {
 		for _, addr := range discovered {
-			if task.Match(addr) {
+			if task.Match(addr, prefixes) {
 				result.Add(addr)
 			}
 		}

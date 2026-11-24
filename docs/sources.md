@@ -161,7 +161,7 @@ tasks:
 
 - IPv4 addresses pass the rule, as does every address until the router has sent a prefix.
 - A unique local address, `fd00::/8`, is in no prefix the ISP gives: a filter with the rule leaves it out. Give it a filter set of its own, if a name is to have it.
-- The prefix is kept with the addresses, in the source's file, and shown in `/status.json`.
+- The prefix lasts the source's `lifetime` from when the router sent it, as the addresses do, though later updates send none: past it, the rule lets every address pass until the router sends one again. It is kept in the source's file, so a restart keeps it, and shown in `/status.json`.
 
 The web server has no other authentication, so give it an address of the LAN, not one the internet reaches. UniFi's dynamic DNS sends IPv4 alone; the IPv6 addresses of the devices come from discovery anyway.
 

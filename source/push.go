@@ -18,8 +18,10 @@ import (
 // pushState is what a push source keeps in its file: the addresses the router sent last, and when.
 type pushState struct {
 	Addresses []string  `json:"addresses"`
-	Prefix    string    `json:"prefix,omitempty"`
 	At        time.Time `json:"at"`
+	// The prefix of the LAN, and when it was sent, which may be before At.
+	Prefix   string     `json:"prefix,omitempty"`
+	PrefixAt *time.Time `json:"prefix_at,omitempty"`
 }
 
 // pushFile is the file of a push source: its state_file, relative to the configuration's folder,
@@ -48,17 +50,21 @@ func (s *Source) Accepts(password string) bool {
 // the addresses have replaces the source's of that family, and the other family's stay: a router
 // that sends IPv4 and IPv6 apart doesn't take one away with the other. The prefix replaces the
 // one before; without one, that one stays. They are kept for the source's lifetime, written to
-// its file, and the tasks match again. It tells whether they changed.
+// its file, and the tasks match again. It tells whether they changed. Pushes are one at a time.
 func (s *Source) Push(addrs []netip.Addr, prefix netip.Prefix) (bool, error) {
 	if len(addrs) == 0 && !prefix.IsValid() {
 		return false, errors.New("no address, nor prefix")
 	}
+	s.pushMutex.Lock()
+	defer s.pushMutex.Unlock()
+	now := time.Now()
 	prefixChanged := false
 	if prefix.IsValid() {
 		prefix = prefix.Masked()
 		s.mutex.Lock()
-		prefixChanged = s.prefix != prefix
-		s.prefix = prefix
+		before, had := s.prefixLocked(now)
+		prefixChanged = !had || before != prefix
+		s.prefix, s.prefixAt = prefix, now
 		s.mutex.Unlock()
 	}
 	families := map[int]bool{}
@@ -80,7 +86,6 @@ func (s *Source) Push(addrs []netip.Addr, prefix netip.Prefix) (bool, error) {
 	}
 	after := slices.Sorted(slices.Values(s.Addresses().Strings()))
 
-	now := time.Now()
 	s.mutex.Lock()
 	s.lastRun, s.lastSuccess, s.lastError = now, now, nil
 	s.runs++
@@ -94,11 +99,20 @@ func (s *Source) Push(addrs []netip.Addr, prefix netip.Prefix) (bool, error) {
 	return prefixChanged || !slices.Equal(before, after), err
 }
 
-// Prefix is the IPv6 prefix of its LAN that the router sent last, if it sent one.
+// Prefix is the IPv6 prefix of its LAN that the router sent last, if it sent one within the
+// source's lifetime.
 func (s *Source) Prefix() (netip.Prefix, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.prefix, s.prefix.IsValid()
+	return s.prefixLocked(time.Now())
+}
+
+// prefixLocked is Prefix, at now, with the mutex held.
+func (s *Source) prefixLocked(now time.Time) (netip.Prefix, bool) {
+	if !s.prefix.IsValid() || now.Sub(s.prefixAt) >= s.config.Lifetime.Duration {
+		return netip.Prefix{}, false
+	}
+	return s.prefix, true
 }
 
 // familyOf is 4 or 6.
@@ -113,9 +127,12 @@ func familyOf(ip netip.Addr) int {
 // renamed.
 func (s *Source) save(addrs []string, at time.Time) error {
 	state := pushState{Addresses: addrs, At: at.UTC()}
-	if p, ok := s.Prefix(); ok {
-		state.Prefix = p.String()
+	s.mutex.Lock()
+	if p, ok := s.prefixLocked(at); ok {
+		prefixAt := s.prefixAt.UTC()
+		state.Prefix, state.PrefixAt = p.String(), &prefixAt
 	}
+	s.mutex.Unlock()
 	data, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -147,16 +164,23 @@ func (s *Source) load() error {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return fmt.Errorf("source %s: %s doesn't read: %w", s.name, s.pushFile, err)
 	}
-	left := s.config.Lifetime.Duration - time.Since(state.At)
-	if left <= 0 {
-		return nil
-	}
 	if state.Prefix != "" {
 		prefix, err := netip.ParsePrefix(state.Prefix)
 		if err != nil {
 			return fmt.Errorf("source %s: %s has the prefix %q: %w", s.name, s.pushFile, state.Prefix, err)
 		}
-		s.prefix = prefix
+		prefixAt := state.At
+		if state.PrefixAt != nil {
+			prefixAt = *state.PrefixAt
+		}
+		// Prefix tells whether it is still within the lifetime.
+		s.mutex.Lock()
+		s.prefix, s.prefixAt = prefix, prefixAt
+		s.mutex.Unlock()
+	}
+	left := s.config.Lifetime.Duration - time.Since(state.At)
+	if left <= 0 {
+		return nil
 	}
 	for _, a := range state.Addresses {
 		ip, err := netip.ParseAddr(a)

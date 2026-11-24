@@ -113,12 +113,9 @@ func (c *Config) setUpCertificate(name string, t *TLS) error {
 
 // useCertificate tells of a server, resolvers.lan or webserver, that has encrypted entries and
 // no certificate, or one without the other, or a certificate that isn't of certificates; and
-// notes the server as one that shows it.
-func (c *Config) useCertificate(path, name string, encrypted bool) error {
-	schemes, example := "tls://, https:// or quic://", "tls://192.168.1.0/24"
-	if path == "webserver" {
-		schemes, example = "https://", "https://192.168.1.2"
-	}
+// notes the server as one that shows it. schemes are its encrypted ones, and example an entry of
+// them, for the errors.
+func (c *Config) useCertificate(path, name string, encrypted bool, schemes, example string) error {
 	switch {
 	case encrypted && name == "":
 		return fmt.Errorf("%s.tls is missing: an entry of listen is encrypted, %s, and the clients must be shown a certificate: give the name of one of certificates, as tls: home", path, schemes)

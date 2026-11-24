@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -169,46 +169,31 @@ func main() {
 	// The web server: of HTTP on its plain entries, and of HTTPS, HTTP/1.1 and HTTP/2, with the
 	// certificate of webserver.tls, on its https:// ones.
 	var servers []*http.Server
-	var listeners, httpsListeners []net.Listener
-	for _, entries := range []struct {
+	for _, part := range []struct {
 		entries []listen.Entry
-		https   bool
-	}{{config.Webserver.Plain, false}, {config.Webserver.HTTPS, true}} {
-		if len(entries.entries) == 0 {
+		tls     *tls.Config
+	}{
+		{config.Webserver.Plain, nil},
+		{config.Webserver.HTTPS, worker.WebserverTLS("h2", "http/1.1")},
+	} {
+		if len(part.entries) == 0 {
 			continue
 		}
-		opened, err := listen.Listen(entries.entries)
+		listeners, err := listen.Listen(part.entries)
 		if err != nil {
 			closeTerminal()
 			sugar.Fatalf("web server failed: %s", err)
 		}
-		if entries.https {
-			httpsListeners = append(httpsListeners, opened...)
-		} else {
-			listeners = append(listeners, opened...)
+		for _, listener := range listeners {
+			server := &http.Server{Handler: webHandler(worker), ReadHeaderTimeout: 10 * time.Second, TLSConfig: part.tls}
+			servers = append(servers, server)
+			go func() {
+				if err := serveWeb(sugar, server, listener); err != nil {
+					closeTerminal()
+					sugar.Fatalf("web server failed: %s", err)
+				}
+			}()
 		}
-	}
-	for _, listener := range slices.Concat(listeners, httpsListeners) {
-		https := slices.Contains(httpsListeners, listener)
-		server := &http.Server{Handler: webHandler(worker), ReadHeaderTimeout: 10 * time.Second}
-		if https {
-			server.TLSConfig = worker.WebserverTLS("h2", "http/1.1")
-		}
-		servers = append(servers, server)
-		go func() {
-			var err error
-			if https {
-				sugar.Infof("Starting web server on https://%s", listener.Addr())
-				err = server.ServeTLS(listener, "", "")
-			} else {
-				sugar.Infof("Starting web server on %s", listener.Addr())
-				err = server.Serve(listener)
-			}
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				closeTerminal()
-				sugar.Fatalf("web server failed: %s", err)
-			}
-		}()
 	}
 
 	if live {
@@ -379,6 +364,23 @@ const statusHTMLTail = `</pre>
 </body>
 </html>
 `
+
+// serveWeb serves the web server on the listener until it is shut down: over HTTPS, when it has
+// a TLS configuration. Its shutdown is no error.
+func serveWeb(logger *zap.SugaredLogger, server *http.Server, listener net.Listener) error {
+	var err error
+	if server.TLSConfig != nil {
+		logger.Infof("Starting web server on https://%s", listener.Addr())
+		err = server.ServeTLS(listener, "", "")
+	} else {
+		logger.Infof("Starting web server on %s", listener.Addr())
+		err = server.Serve(listener)
+	}
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
 
 // webserverPort is that of the web server's entries that give none.
 const webserverPort = config.DefaultWebserverPort

@@ -39,7 +39,7 @@ func TestTaskMatch(t *testing.T) {
 		{"a protocol that didn't see it", []Filters{bySource}, false},
 	}
 	for _, tt := range tests {
-		if got := (Task{Filters: tt.filters}).Match(addr); got != tt.want {
+		if got := (Task{Filters: tt.filters}).Match(addr, nil); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
 		}
 	}
@@ -88,7 +88,7 @@ func TestSelfFilters(t *testing.T) {
 	} {
 		f := filter(c.filter)
 		for addr, want := range c.want {
-			if got := f.Match(addr); got != want {
+			if got := f.Match(addr, nil); got != want {
 				t.Errorf("%s, %s: %v, want %v", c.filter, addr.Addr, got, want)
 			}
 		}
@@ -163,7 +163,7 @@ func TestInvalidMasksAreErrors(t *testing.T) {
 		{IP: IPFilters{Mask: []string{"::1/64"}}},
 		{MAC: MACFilters{Address: "00:11:22:33:44"}},
 	} {
-		if f.Match(host("de:ad:be:ef:00:01", "2001:db8::99")) {
+		if f.Match(host("de:ad:be:ef:00:01", "2001:db8::99"), nil) {
 			t.Errorf("%+v matches an unrelated host", f)
 		}
 	}
@@ -184,11 +184,11 @@ ip:
 	}
 	task := cfg.Tasks["web"]
 	for address, want := range map[string]bool{"192.168.1.5": true, "192.168.1.6": false, "2001:db8::5": false} {
-		if got := task.Match(host("00:11:22:33:44:55", address)); got != want {
+		if got := task.Match(host("00:11:22:33:44:55", address), nil); got != want {
 			t.Errorf("%s: got %t, want %t", address, got, want)
 		}
 	}
-	if task.Match(host("00:11:23:33:44:55", "192.168.1.5")) {
+	if task.Match(host("00:11:23:33:44:55", "192.168.1.5"), nil) {
 		t.Error("the MAC of another vendor matches")
 	}
 }
@@ -207,7 +207,7 @@ func TestMACAddressForms(t *testing.T) {
 		if got := task.Filters[0].MAC.Address; got != "00:11:22:aa:bb:cc" {
 			t.Errorf("%s: kept as %q", written, got)
 		}
-		if !task.Match(host("00:11:22:aa:bb:cc", "2001:db8::1")) || task.Match(host("00:11:22:aa:bb:cd", "2001:db8::1")) {
+		if !task.Match(host("00:11:22:aa:bb:cc", "2001:db8::1"), nil) || task.Match(host("00:11:22:aa:bb:cd", "2001:db8::1"), nil) {
 			t.Errorf("%s: doesn't match its host alone", written)
 		}
 	}
@@ -236,23 +236,18 @@ func TestMACAddressForms(t *testing.T) {
 // prefix_source: an IPv6 address in the prefix the push source has passes, one of another prefix
 // doesn't, and IPv4 passes; without a prefix yet, everything does.
 func TestPrefixSource(t *testing.T) {
-	prefix, known := netip.MustParsePrefix("2001:db8:1:2::/64"), true
-	f := Filters{IP: IPFilters{Family: []int{4, 6}, PrefixSource: "wan", SourcePrefix: func(name string) (netip.Prefix, bool) {
-		if name != "wan" {
-			t.Errorf("asked the prefix of %s", name)
-		}
-		return prefix, known
-	}}}
+	f := Filters{IP: IPFilters{Family: []int{4, 6}, PrefixSource: "wan"}}
+	prefixes := Prefixes{"wan": netip.MustParsePrefix("2001:db8:1:2::/64"), "other": netip.MustParsePrefix("2001:db8:1:3::/64")}
 	addr := func(ip string) *ipv6disc.Addr {
 		return ipv6disc.NewAddr(net.HardwareAddr{0, 0x11, 0x22, 0x33, 0x44, 0x55}, netip.MustParseAddr(ip), "test", time.Hour, nil)
 	}
 	for ip, want := range map[string]bool{"2001:db8:1:2::5": true, "2001:db8:1:3::5": false, "fd00::5": false, "192.168.1.5": true} {
-		if got := f.Match(addr(ip)); got != want {
+		if got := f.Match(addr(ip), prefixes); got != want {
 			t.Errorf("%s: %v, want %v", ip, got, want)
 		}
 	}
-	known = false
-	if !f.Match(addr("2001:db8:1:3::5")) {
+	delete(prefixes, "wan")
+	if !f.Match(addr("2001:db8:1:3::5"), prefixes) {
 		t.Error("without a prefix yet, an address is left out")
 	}
 }

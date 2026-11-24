@@ -50,22 +50,27 @@ type IPFilters struct {
 	// Fritz!Box sends the prefix of its LAN. IPv4 addresses pass. Until the router sent one, every
 	// address passes.
 	PrefixSource string `json:"prefix_source,omitempty"`
-	// What tells a source's prefix, set by the program: nil, no prefix.
-	SourcePrefix func(source string) (netip.Prefix, bool) `json:"-"`
 }
 
-// Match tells whether any of the task's filters matches the address.
-func (t Task) Match(addr *ipv6disc.Addr) bool {
+// Prefixes are the IPv6 prefixes of their LAN that the routers of push sources sent, by source,
+// as one round of matching takes them: what prefix_source compares with. A source that has none
+// is left out.
+type Prefixes map[string]netip.Prefix
+
+// Match tells whether any of the task's filters matches the address, with the push sources'
+// prefixes.
+func (t Task) Match(addr *ipv6disc.Addr, prefixes Prefixes) bool {
 	for _, f := range t.Filters {
-		if f.Match(addr) {
+		if f.Match(addr, prefixes) {
 			return true
 		}
 	}
 	return false
 }
 
-// Match tells whether the address passes every check of the filter.
-func (f Filters) Match(addr *ipv6disc.Addr) bool {
+// Match tells whether the address passes every check of the filter, with the push sources'
+// prefixes.
+func (f Filters) Match(addr *ipv6disc.Addr, prefixes Prefixes) bool {
 	return (!f.Self || addr.Self()) &&
 		filter.CheckFamily(addr.Addr, f.IP.Family) &&
 		filter.CheckMAC(addr.Hw, f.MAC.Address) &&
@@ -74,17 +79,17 @@ func (f Filters) Match(addr *ipv6disc.Addr) bool {
 		filter.CheckIPType(addr, f.IP.Type) &&
 		filter.CheckPrefix(addr.Addr, f.IP.Prefix) &&
 		filter.CheckMask(addr.Addr, f.IP.Mask) &&
-		f.IP.checkPrefixSource(addr.Addr) &&
+		f.IP.checkPrefixSource(addr.Addr, prefixes) &&
 		f.IP.checkSeen(addr)
 }
 
 // checkPrefixSource tells whether an IPv6 address is in the prefix of PrefixSource: every address
 // is, without the rule, without a prefix yet, or of IPv4.
-func (f IPFilters) checkPrefixSource(ip netip.Addr) bool {
-	if f.PrefixSource == "" || f.SourcePrefix == nil || !ip.Is6() || ip.Is4In6() {
+func (f IPFilters) checkPrefixSource(ip netip.Addr, prefixes Prefixes) bool {
+	if f.PrefixSource == "" || !ip.Is6() || ip.Is4In6() {
 		return true
 	}
-	prefix, ok := f.SourcePrefix(f.PrefixSource)
+	prefix, ok := prefixes[f.PrefixSource]
 	if !ok {
 		return true
 	}

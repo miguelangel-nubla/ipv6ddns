@@ -46,7 +46,7 @@ func (c *Config) setUpWebserver() error {
 		}
 		c.Webserver.Plain = append(c.Webserver.Plain, entries...)
 	}
-	return c.useCertificate("webserver", c.Webserver.TLS, len(c.Webserver.HTTPS) > 0)
+	return c.useCertificate("webserver", c.Webserver.TLS, len(c.Webserver.HTTPS) > 0, "https://", "https://192.168.1.2")
 }
 
 // cutScheme is the entry after its scheme, if it has it, whatever its letters' case.

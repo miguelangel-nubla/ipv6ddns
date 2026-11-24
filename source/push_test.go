@@ -1,10 +1,12 @@
 package source
 
 import (
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,5 +155,61 @@ func TestPushPrefix(t *testing.T) {
 	}
 	if got := again.Addresses().Strings(); !slices.Equal(got, []string{"203.0.113.9"}) {
 		t.Errorf("the addresses after a restart: %v", got)
+	}
+}
+
+// The prefix lasts the source's lifetime from when it was sent, as the addresses do, though later
+// updates send none; after a restart, from the time in the file.
+func TestPushPrefixLifetime(t *testing.T) {
+	dir := t.TempDir()
+	s := pushSource(t, dir, 300*time.Millisecond)
+	if _, err := s.Push(nil, netip.MustParsePrefix("2001:db8:1:2::/64")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	// An update without a prefix doesn't make the old one new.
+	if _, err := s.Push(pushed("203.0.113.9"), netip.Prefix{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := pushSource(t, dir, 300*time.Millisecond).Prefix(); !ok {
+		t.Error("after a restart within the lifetime, no prefix")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if p, ok := s.Prefix(); ok {
+		t.Errorf("past its lifetime: %s", p)
+	}
+	if st := s.Status(false); st.Prefix != "" {
+		t.Errorf("the status past its lifetime: %+v", st)
+	}
+	if p, ok := pushSource(t, dir, 300*time.Millisecond).Prefix(); ok {
+		t.Errorf("after a restart past its lifetime: %s", p)
+	}
+	// Sent again, it is new, and a change.
+	if changed, _ := s.Push(nil, netip.MustParsePrefix("2001:db8:1:2::/64")); !changed {
+		t.Error("the prefix sent again past its lifetime is no change")
+	}
+}
+
+// Pushes at once, of each family: each takes the state of the one before, and the file has the
+// last.
+func TestPushConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	s := pushSource(t, dir, 0)
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Go(func() {
+			if _, err := s.Push(pushed(fmt.Sprintf("203.0.113.%d", i+1), fmt.Sprintf("2001:db8::%x", i+1)), netip.Prefix{}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	got := s.Addresses().Strings()
+	if len(got) != 2 {
+		t.Fatalf("after the pushes: %v", got)
+	}
+	again := pushSource(t, dir, 0).Addresses().Strings()
+	if !slices.Equal(slices.Sorted(slices.Values(again)), slices.Sorted(slices.Values(got))) {
+		t.Errorf("the file has %v, the source %v", again, got)
 	}
 }

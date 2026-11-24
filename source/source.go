@@ -43,8 +43,12 @@ type Source struct {
 	// change.
 	pushFile string
 	ran      func()
-	// The IPv6 prefix of its LAN the router sent last: none, the zero one.
-	prefix netip.Prefix
+	// The IPv6 prefix of its LAN the router sent last, and when: none, the zero one. It lasts the
+	// source's lifetime from then, as the addresses do.
+	prefix   netip.Prefix
+	prefixAt time.Time
+	// One push at a time: each takes the state of the one before.
+	pushMutex sync.Mutex
 }
 
 // HomeAssistantStates are the states of Home Assistant's entities that homeassistant sources read:
@@ -242,8 +246,8 @@ func (s *Source) Status(hideSensible bool) Status {
 		Runs:      s.runs,
 		Failures:  s.failures,
 	}
-	if s.prefix.IsValid() {
-		status.Prefix = s.prefix.String()
+	if p, ok := s.prefixLocked(time.Now()); ok {
+		status.Prefix = p.String()
 	}
 	if !s.lastRun.IsZero() {
 		lastRun := s.lastRun

@@ -118,7 +118,7 @@ func (c *Config) setUpResolvers() error {
 				spec.ListenLines = append(spec.ListenLines, strings.TrimSpace(line))
 			}
 		}
-		if err := c.useCertificate(path, r.TLS, len(spec.Encrypted) > 0); err != nil {
+		if err := c.useCertificate(path, r.TLS, len(spec.Encrypted) > 0, "tls://, https:// or quic://", "tls://192.168.1.0/24"); err != nil {
 			return err
 		}
 		spec.CertificateName = r.TLS
@@ -382,8 +382,8 @@ const DefaultResolverDebounce = time.Duration(0)
 func listenTransport(line string) (transport, rest string) {
 	line = strings.TrimSpace(line)
 	for _, t := range []string{resolver.TransportTLS, resolver.TransportHTTPS, resolver.TransportQUIC} {
-		if after, ok := strings.CutPrefix(strings.ToLower(line), t+"://"); ok {
-			rest = line[len(line)-len(after):]
+		if after, ok := cutScheme(line, t+"://"); ok {
+			rest = after
 			if t == resolver.TransportHTTPS {
 				rest = strings.TrimSuffix(rest, resolver.DoHPath)
 			}
