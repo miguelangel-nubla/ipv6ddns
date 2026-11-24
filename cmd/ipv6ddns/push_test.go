@@ -12,6 +12,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // pushWorker is a worker with two push sources, wan and lab, each with its password, and a static
@@ -127,5 +128,52 @@ func TestPushHandler(t *testing.T) {
 	code, _ := ask("GET", "/nic/update?hostname=wan&myip=203.0.113.12", "", "")
 	if code != 401 {
 		t.Fatal(code)
+	}
+}
+
+// A request that doesn't read is 911; an update whose file can't be written is taken still,
+// answered good, and the error is logged.
+func TestPushHandlerFailures(t *testing.T) {
+	_, handler := pushWorker(t)
+	req := httptest.NewRequest("POST", "/nic/update", strings.NewReader("hostname=wan&myip=%zz"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	if body := strings.TrimSpace(resp.Body.String()); resp.Code != 400 || body != "911" {
+		t.Errorf("a body that doesn't read: %d %q", resp.Code, body)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+webserver:
+  listen: 127.0.0.1:8053
+sources:
+  wan:
+    type: push
+    password: secret
+    state_file: state/push-wan.json
+tasks: {}
+credentials: {}
+`), 0o600)
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core, logs := observer.New(zap.ErrorLevel)
+	w, err := ipv6ddns.NewWorker(zap.New(core).Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Once started, the file's folder becomes a file: it can't be written.
+	os.WriteFile(filepath.Join(dir, "state"), nil, 0o600)
+	req = httptest.NewRequest("GET", "/nic/update?hostname=wan&myip=203.0.113.9&password=secret", nil)
+	resp = httptest.NewRecorder()
+	webHandler(w).ServeHTTP(resp, req)
+	if body := strings.TrimSpace(resp.Body.String()); resp.Code != 200 || body != "good 203.0.113.9" {
+		t.Errorf("an update that isn't kept: %d %q", resp.Code, body)
+	}
+	if got := logs.FilterMessageSnippet("keeping the addresses").Len(); got != 1 {
+		t.Errorf("logged %v", logs.All())
 	}
 }

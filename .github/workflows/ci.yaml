@@ -182,7 +182,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       -
         name: Vet
-        run: go vet -tags live ./ddns
+        run: go vet -tags live ./...
       -
         name: Live tests of the providers
         run: tools/live-providers.sh
@@ -308,7 +308,7 @@ jobs:
         run: |
           go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
           go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags integration ./...
-          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags live ./ddns
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tags live ./...
       -
         # As .golangci.yaml says: the errors nothing checks, and the formatting, of gofmt. On every
         # system of the release, as each has files the others don't see; and the live tests, which

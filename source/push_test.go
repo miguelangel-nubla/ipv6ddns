@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -159,34 +160,66 @@ func TestPushPrefix(t *testing.T) {
 }
 
 // The prefix lasts the source's lifetime from when it was sent, as the addresses do, though later
-// updates send none; after a restart, from the time in the file.
+// updates send none; after a restart, from the time in the file. The times are set, not waited.
 func TestPushPrefixLifetime(t *testing.T) {
+	prefix := netip.MustParsePrefix("2001:db8:1:2::/64")
+	sentAt := func(s *Source) time.Time {
+		s.mutex.Lock()
+		defer s.mutex.Unlock()
+		return s.prefixAt
+	}
 	dir := t.TempDir()
-	s := pushSource(t, dir, 300*time.Millisecond)
-	if _, err := s.Push(nil, netip.MustParsePrefix("2001:db8:1:2::/64")); err != nil {
+	s := pushSource(t, dir, time.Hour)
+	if _, err := s.Push(nil, prefix); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(150 * time.Millisecond)
+	first := sentAt(s)
 	// An update without a prefix doesn't make the old one new.
 	if _, err := s.Push(pushed("203.0.113.9"), netip.Prefix{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := pushSource(t, dir, 300*time.Millisecond).Prefix(); !ok {
-		t.Error("after a restart within the lifetime, no prefix")
+	if !sentAt(s).Equal(first) {
+		t.Error("an update without a prefix renewed it")
 	}
-	time.Sleep(200 * time.Millisecond)
+
+	// Sent past its lifetime: gone, from the status too; sent again, new, and a change.
+	s.mutex.Lock()
+	s.prefixAt = time.Now().Add(-time.Hour - time.Second)
+	s.mutex.Unlock()
 	if p, ok := s.Prefix(); ok {
 		t.Errorf("past its lifetime: %s", p)
 	}
 	if st := s.Status(false); st.Prefix != "" {
 		t.Errorf("the status past its lifetime: %+v", st)
 	}
-	if p, ok := pushSource(t, dir, 300*time.Millisecond).Prefix(); ok {
-		t.Errorf("after a restart past its lifetime: %s", p)
-	}
-	// Sent again, it is new, and a change.
-	if changed, _ := s.Push(nil, netip.MustParsePrefix("2001:db8:1:2::/64")); !changed {
+	if changed, _ := s.Push(nil, prefix); !changed {
 		t.Error("the prefix sent again past its lifetime is no change")
+	}
+
+	// After a restart: the prefix of the file, by the time it was sent, which isn't the file's.
+	for name, c := range map[string]struct {
+		prefixAt time.Duration
+		want     bool
+	}{"within its lifetime": {-30 * time.Minute, true}, "past it": {-2 * time.Hour, false}} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			at, prefixAt := time.Now().UTC().Format(time.RFC3339), time.Now().Add(c.prefixAt).UTC().Format(time.RFC3339)
+			os.WriteFile(filepath.Join(dir, "push-wan.json"), []byte(`{"addresses":["203.0.113.9"],"at":"`+at+`","prefix":"2001:db8:1:2::/64","prefix_at":"`+prefixAt+`"}`), 0o600)
+			s := pushSource(t, dir, time.Hour)
+			if p, ok := s.Prefix(); ok != c.want || (ok && p != prefix) {
+				t.Errorf("%s, %v", p, ok)
+			}
+			if got := s.Addresses().Strings(); !slices.Equal(got, []string{"203.0.113.9"}) {
+				t.Errorf("the addresses: %v", got)
+			}
+		})
+	}
+
+	// A file without the prefix's time: the file's.
+	dir = t.TempDir()
+	os.WriteFile(filepath.Join(dir, "push-wan.json"), []byte(`{"addresses":[],"at":"`+time.Now().UTC().Format(time.RFC3339)+`","prefix":"2001:db8:1:2::/64"}`), 0o600)
+	if p, ok := pushSource(t, dir, time.Hour).Prefix(); !ok || p != prefix {
+		t.Errorf("without its time: %s, %v", p, ok)
 	}
 }
 
@@ -211,5 +244,63 @@ func TestPushConcurrent(t *testing.T) {
 	again := pushSource(t, dir, 0).Addresses().Strings()
 	if !slices.Equal(slices.Sorted(slices.Values(again)), slices.Sorted(slices.Values(got))) {
 		t.Errorf("the file has %v, the source %v", again, got)
+	}
+}
+
+// A file that doesn't read stops the source's making, with the file and what is wrong; one that
+// isn't there is no error.
+func TestPushFileErrors(t *testing.T) {
+	recent := time.Now().UTC().Format(time.RFC3339)
+	for _, c := range []struct{ name, content, want string }{
+		{"not JSON", "{", "doesn't read"},
+		{"a prefix that isn't one", `{"addresses":[],"at":"` + recent + `","prefix":"2001:db8::/129"}`, `has the prefix "2001:db8::/129"`},
+		{"an address that isn't one", `{"addresses":["203.0.113.300"],"at":"` + recent + `"}`, `has "203.0.113.300", not an address`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, "push-wan.json"), []byte(c.content), 0o600)
+			cfg := config.Source{Type: config.SourcePush, Password: "secret"}
+			cfg.Lifetime.Duration = config.PushForever
+			_, err := New("wan", cfg, dir, nil)
+			if err == nil || !strings.Contains(err.Error(), "source wan: ") || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("got %v, want %q", err, c.want)
+			}
+		})
+	}
+	// A file that can't be read, as a folder in its place.
+	dir := t.TempDir()
+	os.Mkdir(filepath.Join(dir, "push-wan.json"), 0o700)
+	cfg := config.Source{Type: config.SourcePush, Password: "secret"}
+	cfg.Lifetime.Duration = config.PushForever
+	if _, err := New("wan", cfg, dir, nil); err == nil || !strings.HasPrefix(err.Error(), "source wan: ") {
+		t.Errorf("a folder for the file: %v", err)
+	}
+}
+
+// A file that can't be written: the push is taken still, and changes the addresses, and the error
+// says so, of the file's folder and of the file.
+func TestPushSaveError(t *testing.T) {
+	for name, block := range map[string]string{"its folder is a file": "state", "the file is a folder": "state/push-wan.json"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := config.Source{Type: config.SourcePush, Password: "secret", StateFile: "state/push-wan.json"}
+			cfg.Lifetime.Duration = config.PushForever
+			s, err := New("wan", cfg, dir, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if block == "state" {
+				os.WriteFile(filepath.Join(dir, "state"), nil, 0o600)
+			} else {
+				os.MkdirAll(filepath.Join(dir, block), 0o700)
+			}
+			changed, err := s.Push(pushed("203.0.113.9"), netip.Prefix{})
+			if !changed || err == nil || !strings.Contains(err.Error(), "source wan: keeping the addresses: ") {
+				t.Errorf("%v, %v", changed, err)
+			}
+			if got := s.Addresses().Strings(); !slices.Equal(got, []string{"203.0.113.9"}) {
+				t.Errorf("the addresses: %v", got)
+			}
+		})
 	}
 }

@@ -515,3 +515,113 @@ func TestEncryptedManagedCertificate(t *testing.T) {
 		t.Errorf("the status once written: %+v", st)
 	}
 }
+
+// More of DNS over HTTPS: a body past the largest message is 413; a response, which is no query,
+// 400; and a GET with the padding of base64, which RFC 8484 leaves out, is answered still.
+func TestServeHTTPSMessages(t *testing.T) {
+	ca := newTestCA(t)
+	s := start(t, encryptedConfig(t, ca))
+	url := "https://" + addressOf(t, s, TransportHTTPS) + DoHPath
+	client := httpsClient(ca)
+	do := func(req *http.Request) (int, []byte) {
+		t.Helper()
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, body
+	}
+	post := func(body []byte) int {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/dns-message")
+		code, _ := do(req)
+		return code
+	}
+	if code := post(make([]byte, dns.MaxMsgSize+1)); code != http.StatusRequestEntityTooLarge {
+		t.Errorf("a body too large: %d", code)
+	}
+	response := new(dns.Msg)
+	response.SetQuestion("printer.home.arpa.", dns.TypeA)
+	response.Response = true
+	wire, _ := response.Pack()
+	if code := post(wire); code != http.StatusBadRequest {
+		t.Errorf("a response: %d", code)
+	}
+
+	query := new(dns.Msg)
+	query.SetQuestion("printer.home.arpa.", dns.TypeA)
+	query.Id = 0
+	// A header of 12 bytes and a question of 23: 35, which base64 pads with "=".
+	wire, _ = query.Pack()
+	padded := base64.URLEncoding.EncodeToString(wire)
+	if !strings.HasSuffix(padded, "=") {
+		t.Fatalf("no padding: %s", padded)
+	}
+	req, _ := http.NewRequest(http.MethodGet, url+"?dns="+padded, nil)
+	code, body := do(req)
+	answer := new(dns.Msg)
+	if code != http.StatusOK || answer.Unpack(body) != nil || len(answer.Answer) != 2 {
+		t.Errorf("a GET with padding: %d, %v", code, answer)
+	}
+}
+
+// More of DNS over QUIC: a response, which is no query, closes the connection with the protocol's
+// error; a stream that ends before the length it gave is reset, and the connection answers on.
+func TestServeQUICMessages(t *testing.T) {
+	ca := newTestCA(t)
+	s := start(t, encryptedConfig(t, ca))
+	address := addressOf(t, s, TransportQUIC)
+
+	conn := dialQUIC(t, ca, address)
+	stream, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.SetDeadline(time.Now().Add(3 * time.Second))
+	// 100 bytes said, 10 sent.
+	stream.Write(append([]byte{0, 100}, make([]byte, 10)...))
+	stream.Close()
+	if _, err := io.ReadAll(stream); err == nil {
+		t.Error("a short stream was answered")
+	}
+	if resp, err := queryQUIC(conn, "printer.home.arpa.", dns.TypeA, 0); err != nil || len(resp.Answer) != 2 {
+		t.Errorf("the connection after a short stream: %v, %v", resp, err)
+	}
+
+	conn = dialQUIC(t, ca, address)
+	stream, err = conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := new(dns.Msg)
+	response.SetQuestion("printer.home.arpa.", dns.TypeA)
+	response.Id, response.Response = 0, true
+	wire, _ := response.Pack()
+	stream.Write(append(binary.BigEndian.AppendUint16(nil, uint16(len(wire))), wire...))
+	stream.Close()
+	select {
+	case <-conn.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("the connection is still open after a response")
+	}
+	var appErr *quic.ApplicationError
+	if err := context.Cause(conn.Context()); !errors.As(err, &appErr) || appErr.ErrorCode != quic.ApplicationErrorCode(doqProtocolError) {
+		t.Errorf("closed with %v, want the protocol error of DNS over QUIC", err)
+	}
+}
+
+// A resolver without upstream servers, which the configuration doesn't allow, still answers a
+// name not its own: SERVFAIL, over every transport, rather than nothing.
+func TestServeWithoutUpstream(t *testing.T) {
+	ca := newTestCA(t)
+	s := start(t, encryptedConfig(t, ca))
+	if _, answer := queryHTTPS(t, ca, addressOf(t, s, TransportHTTPS), http.MethodPost, "elsewhere.example.", dns.TypeA); answer.Rcode != dns.RcodeServerFailure {
+		t.Errorf("DNS over HTTPS: %s", dns.RcodeToString[answer.Rcode])
+	}
+	if resp := query(t, s, "udp", "elsewhere.example.", dns.TypeA, nil); resp.Rcode != dns.RcodeServerFailure {
+		t.Errorf("plain DNS: %s", dns.RcodeToString[resp.Rcode])
+	}
+}

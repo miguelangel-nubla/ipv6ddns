@@ -731,6 +731,7 @@ func TestCertificateACME(t *testing.T) {
       credential: public`), "certificates.home: give both certificate and key"},
 		{"neither files nor acme", certificates(`
     key: key.pem`), "certificates.home: give certificate and key"},
+		{"an entry of nothing", lan + "\ncertificates:\n  home:", "the configuration is not valid:\n- certificates.home: Invalid type. Expected: object, given: null"},
 		{"a key that isn't the certificate's", certificates(`
     certificate: ` + certFile + `
     key: ` + certFile), "certificates.home: "},
