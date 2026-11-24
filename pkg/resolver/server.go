@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/quic-go/quic-go"
 )
@@ -74,8 +73,6 @@ type Server struct {
 
 	mutex   sync.Mutex
 	servers []*dns.Server
-	// The certificate of the encrypted transports: nil without them.
-	cert *certfile.Certificate
 	// The servers of DNS over HTTPS, and the listeners of DNS over QUIC, with their connections.
 	https     []*http.Server
 	quic      []*quic.Listener
@@ -237,11 +234,9 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("%s.listen: %w", s.config.Path, err)
 	}
-	var cert *certfile.Certificate
-	if len(s.config.Encrypted) > 0 {
-		if cert, err = certfile.Load(s.config.CertFile, s.config.KeyFile, s.config.CertManaged, s.errorf); err != nil {
-			return fmt.Errorf("%s.tls: %w", s.config.Path, err)
-		}
+	cert := s.config.Certificate
+	if len(s.config.Encrypted) > 0 && cert == nil {
+		return fmt.Errorf("%s.tls: no certificate", s.config.Path)
 	}
 	for _, srv := range s.upstreams {
 		srv.open(s)
@@ -311,7 +306,7 @@ func (s *Server) Start() error {
 			NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
 	s.mutex.Lock()
-	s.servers, s.listening, s.allow, s.serving, s.cert = servers, listening, allow, true, cert
+	s.servers, s.listening, s.allow, s.serving = servers, listening, allow, true
 	s.mutex.Unlock()
 	started.Add(len(servers))
 	for _, srv := range servers {
@@ -726,8 +721,8 @@ type Status struct {
 	// The answers in the cache; and how many it holds, 0 for no cache.
 	CacheEntries int `json:"cache_entries"`
 	CacheSize    int `json:"cache_size"`
-	// The certificate of the encrypted transports, once started with them.
-	Certificate *CertificateStatus `json:"certificate,omitempty"`
+	// The certificate of the encrypted transports, of certificates, by its name: none without them.
+	Certificate string `json:"certificate,omitempty"`
 }
 
 func (s *Server) Status() Status {
@@ -778,8 +773,8 @@ func (s *Server) Status() Status {
 		}
 		n.mutex.Unlock()
 	}
-	if s.cert != nil {
-		status.Certificate = s.cert.Status()
+	if len(s.config.Encrypted) > 0 {
+		status.Certificate = s.config.CertificateName
 	}
 	return status
 }

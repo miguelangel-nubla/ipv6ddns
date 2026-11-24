@@ -61,19 +61,20 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		{Name: "lan", Listening: []string{"192.168.1.2:53"}, Allow: []string{"192.168.1.0/24"}, Zones: []string{"lan.example.com"}, ZoneNames: map[string]int{"lan.example.com": 1},
 			Serving: true, Upstreams: []string{"192.168.1.1", "tls://1.1.1.1"}, UpstreamFailures: map[string]uint64{"tls://1.1.1.1": 3}, Queries: map[string]uint64{resolver.Local: 7}, CacheSize: 10000, CacheEntries: 12},
 		{Name: "guests", Error: "listen udp 192.168.2.1:53: bind: address already in use", Upstreams: []string{"192.168.1.1"}},
-		// A certificate of each state: valid, ending soon, ended, and of files that don't read.
-		{Name: "dot", Listening: []string{"tls://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
-			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(60 * 24 * time.Hour)}},
-		{Name: "doh", Listening: []string{"https://192.168.1.2:443"}, Serving: true, Upstreams: []string{"192.168.1.1"},
-			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com", "192.168.1.2"}, NotAfter: time.Now().Add(5 * 24 * time.Hour), Error: "open /ssl/privkey.pem: permission denied"}},
-		{Name: "doq", Listening: []string{"quic://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
-			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(-time.Hour)}},
-		// Of ACME: none yet, its attempt failed; and one, whose renewal failed.
-		{Name: "acme", Listening: []string{"tls://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
-			Certificate: &resolver.CertificateStatus{Managed: true, Renewal: "the check: 403 unauthorized", NextAttempt: time.Now().Add(time.Hour)}},
-		{Name: "renewed", Listening: []string{"tls://192.168.1.3:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
-			Certificate: &resolver.CertificateStatus{Managed: true, Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(20 * 24 * time.Hour), Renewal: "ordering: 429 rate limited"}},
+		// Of encrypted DNS, with its certificate.
+		{Name: "dot", Listening: []string{"tls://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"}, Certificate: "home"},
 	})
+
+	// A certificate of each state: valid, ending soon, ended, and of files that don't read; of ACME,
+	// none yet, its attempt failed; and one, whose renewal failed.
+	used := []string{"resolvers.dot", "webserver"}
+	certificates := certificatesPage("", []CertificateStatus{
+		{Name: "home", UsedBy: used, Status: &certfile.Status{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(60 * 24 * time.Hour)}},
+		{Name: "soon", UsedBy: used, Status: &certfile.Status{Names: []string{"dns.lan.example.com", "192.168.1.2"}, NotAfter: time.Now().Add(5 * 24 * time.Hour), Error: "open /ssl/privkey.pem: permission denied"}},
+		{Name: "ended", UsedBy: used, Status: &certfile.Status{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(-time.Hour)}},
+		{Name: "acme", UsedBy: used, Status: &certfile.Status{Managed: true, Renewal: "the check: 403 unauthorized", NextAttempt: time.Now().Add(time.Hour)}},
+		{Name: "renewed", UsedBy: used, Status: &certfile.Status{Managed: true, Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(20 * 24 * time.Hour), Renewal: "ordering: 429 rate limited"}},
+	}, time.Now())
 
 	// And the resolvers when all serve.
 	one := resolversPage("", []resolver.Status{{Name: "lan", Listening: []string{"192.168.1.2:53"}, Serving: true, Upstreams: []string{"192.168.1.1"}}})
@@ -90,9 +91,11 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		page := append(state.Page("", hide), pretty.Line{})
 		page = append(page, resolvers...)
 		page = append(page, pretty.Line{})
+		page = append(page, certificates...)
+		page = append(page, pretty.Line{})
 		page = append(page, disc.Page("")...)
 		text := page.String()
-		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 7, 6 serving", "none yet", "(getting it failed: the check: 403 unauthorized; again at ", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
+		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 3, 2 serving", "Certificates:\n    home (resolver dot, webserver): dns.lan.example.com, until ", "none yet", "(getting it failed: the check: 403 unauthorized; again at ", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
 			if !strings.Contains(text, has) {
 				t.Fatalf("the page of the test has no %q:\n%s", has, text)
 			}
@@ -128,23 +131,4 @@ func roles(line pretty.Line) string {
 		}
 	}
 	return b.String()
-}
-
-// The web server's section, of its certificate in each state, has the program's roles in the
-// picture too.
-func TestReportPictureHasTheRolesOfTheWebserver(t *testing.T) {
-	for _, c := range []*certfile.Status{
-		{Names: []string{"web.lan.example.com"}, NotAfter: time.Now().Add(60 * 24 * time.Hour)},
-		{Names: []string{"web.lan.example.com"}, NotAfter: time.Now().Add(3 * 24 * time.Hour), Renewal: "ordering: 429 rate limited"},
-		{Managed: true, Renewal: "the check: 403 unauthorized", NextAttempt: time.Now().Add(time.Hour)},
-	} {
-		var page pretty.Page
-		page.Add(pretty.As(pretty.Heading, "Webserver:"))
-		page.Add(certificateLine("    ", c, time.Now())...)
-		for i, line := range reportpic.Roles(page.String()) {
-			if want, have := roles(page[i]), roles(line); want != have {
-				t.Errorf("the roles of %q:\n%s the program's\n%s the picture's", page[i].String(), want, have)
-			}
-		}
-	}
 }

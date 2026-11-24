@@ -13,6 +13,7 @@ package resolver
 
 import (
 	"fmt"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"maps"
 	"net/netip"
 	"slices"
@@ -39,12 +40,11 @@ type Config struct {
 	// Where it answers over the encrypted transports, each entry with its transport and its text:
 	// DNS over TLS, over HTTPS and over QUIC.
 	Encrypted []EncryptedListen
-	// The files of the certificate and its key, in PEM, which the encrypted transports show: read
-	// again when they change. Required with Encrypted.
-	CertFile, KeyFile string
-	// Whether something else writes them, as ACME: until it does, there are none, and the
-	// encrypted transports refuse their connections.
-	CertManaged bool
+	// The certificate the encrypted transports show, read again when its files change: of
+	// certificates, by its name. Required with Encrypted; while it has none, as before ACME got
+	// it, they refuse their connections.
+	Certificate     *certfile.Certificate
+	CertificateName string
 	// The networks of the clients it answers. None: the networks of the machine's addresses it
 	// listens on, read when it starts.
 	Allow []netip.Prefix

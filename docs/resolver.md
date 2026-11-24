@@ -174,11 +174,14 @@ resolvers:
       - tls://192.168.1.0/24    # DNS over TLS, port 853
       - https://192.168.1.0/24  # DNS over HTTPS, port 443
       - quic://192.168.1.0/24   # DNS over QUIC, port 853
-    tls:
-      certificate: /etc/ssl/dns/fullchain.pem
-      key: /etc/ssl/dns/privkey.pem
+    tls: home                   # the certificate, of certificates
     upstream:
       - 192.168.1.1
+
+certificates:
+  home:
+    certificate: /etc/ssl/dns/fullchain.pem
+    key: /etc/ssl/dns/privkey.pem
 
 credentials:
   home:
@@ -193,17 +196,19 @@ Everything else is the same on every transport: the same answers, the same [`all
 
 ### The certificate it shows
 
-The encrypted transports show a certificate, which `tls` gives: `certificate` and `key`, the files of the certificate with its chain, and of its private key, in PEM, relative to the configuration's folder unless absolute. Let's Encrypt names them `fullchain.pem` and `privkey.pem`. Both are required with an encrypted entry, and ipv6ddns doesn't start if they don't read as a pair.
+The encrypted transports show a certificate of the top-level `certificates`, which `tls` names. Each certificate has a name of your choice, and either `certificate` and `key`, the files of the certificate with its chain, and of its private key, in PEM, relative to the configuration's folder unless absolute, or [`acme`](#a-certificate-from-lets-encrypt). Let's Encrypt names the files `fullchain.pem` and `privkey.pem`. ipv6ddns doesn't start if they don't read as a pair.
+
+Several servers can show one certificate: resolvers, and the web server's [HTTPS](installation.md#over-https), each with the same `tls`. It is read once, and with `acme` got and renewed once, for all of them, so give it every name the clients use. Two certificates can't share a file, and a certificate that no server shows stops the start, so a mistyped name doesn't go unnoticed.
 
 Clients check the certificate. Most of them only accept one that a public authority signed, for the name they were told to use. So pick a name in a domain you own, such as `dns.lan.example.com`, and give it this machine's address, as the record `dns A 192.168.1.2` above: the clients look this name up, and the certificate is for it. Then either let ipv6ddns get the certificate, as [below](#a-certificate-from-lets-encrypt), or get it yourself: with certbot, acme.sh, or the Home Assistant app of Let's Encrypt, by the DNS challenge, which works for a name that the internet can't reach. When a renewal writes new files, the resolver takes them within seconds, without a restart.
 
 A name in `home.arpa`, or a certificate you signed yourself, only works with clients you can give your own authority to, such as `dig` and `kdig` on Linux.
 
-The report shows the certificate under its resolver: its names, and until when, in amber two weeks before it expires, and in red once it has. If a renewed file doesn't read, the resolver keeps showing the certificate it had, and the report and the log say why.
+The report names the certificate under its resolver, and has a `Certificates:` section: each certificate, the servers that show it, its names, and until when, in amber two weeks before it expires, and in red once it has. If a renewed file doesn't read, the servers keep showing the certificate they had, and the report and the log say why. `/status.json` has them as `certificates`.
 
 ### A certificate from Let's Encrypt
 
-With `tls.acme`, ipv6ddns gets the certificate itself, from Let's Encrypt, and renews it. It proves the name is yours by the DNS challenge: it writes a TXT record, `_acme-challenge.dns.lan.example.com`, at the DNS provider of your public domain, which Let's Encrypt reads, and removes it after. The name needs no address on the internet.
+With `acme`, ipv6ddns gets the certificate itself, from Let's Encrypt, and renews it. It proves the name is yours by the DNS challenge: it writes a TXT record, `_acme-challenge.dns.lan.example.com`, at the DNS provider of your public domain, which Let's Encrypt reads, and removes it after. The name needs no address on the internet.
 
 ```yaml
 resolvers:
@@ -211,13 +216,16 @@ resolvers:
     listen:
       - 192.168.1.0/24
       - tls://192.168.1.0/24
-    tls:
-      acme:
-        names:
-          - dns.lan                # dns.lan.example.com, in the zone of the credential
-        credential: public
+    tls: home
     upstream:
       - 192.168.1.1
+
+certificates:
+  home:
+    acme:
+      names:
+        - dns.lan                  # dns.lan.example.com, in the zone of the credential
+      credential: public
 
 credentials:
   public:                          # your public domain, at its DNS provider
@@ -240,9 +248,9 @@ credentials:
 - **`email`** is an address Let's Encrypt may write to about the account. It no longer sends mail about certificates that end. Optional.
 - **`directory`** is the authority, Let's Encrypt by default. Its staging directory, `https://acme-staging-v02.api.letsencrypt.org/directory`, has no limits but signs certificates that no client trusts: use it to try the setup.
 
-The certificate and its key go to `tls.certificate` and `tls.key`, by default `tls/<resolver>/fullchain.pem` and `privkey.pem` in the configuration's folder, with the account's key, `acme-account.key`, beside them. Keep that folder across restarts and updates: a certificate is got again only when it's due.
+The certificate and its key go to the certificate's `certificate` and `key`, by default `tls/<name>/fullchain.pem` and `privkey.pem` in the configuration's folder, as `tls/home/`, with the account's key, `acme-account.key`, beside them. Keep that folder across restarts and updates: a certificate is got again only when it's due.
 
-- **At the first start** there is no certificate yet. The resolver answers plain DNS at once, and refuses the encrypted connections for the minute or so it takes. The report says `Certificate: none yet`.
+- **At the first start** there is no certificate yet. The resolver answers plain DNS at once, and refuses the encrypted connections for the minute or so it takes. The report says `home (resolver lan): none yet`.
 - **Renewal** comes once two thirds of the certificate's lifetime have passed, 30 days before the end of one of 90 days, without a restart.
 - **A failed attempt** is tried again an hour later. The report and the log say why, and the resolver keeps showing the certificate it has meanwhile.
 
@@ -516,7 +524,7 @@ An address already taken by another program, or by another instance, isn't caugh
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/resolvers-dark.svg">
-  <img src="images/resolvers-light.svg" alt="The resolvers in the report. One resolver, lan, is serving, in green. It listens on 192.168.1.2 port 53, and over DNS over TLS and over QUIC on port 853, answers the LAN, and has the zone lan.example.com with 23 names. Of its two upstream servers, one has 3 failed queries, in amber. Then its queries by kind, its cache, 1274 of 10000, and its certificate, for dns.lan.example.com.">
+  <img src="images/resolvers-light.svg" alt="The resolvers in the report. One resolver, lan, is serving, in green. It listens on 192.168.1.2 port 53, and over DNS over TLS and over QUIC on port 853, answers the LAN, and has the zone lan.example.com with 23 names. Of its two upstream servers, one has 3 failed queries, in amber. Then its queries by kind, its cache, 1274 of 10000, and its certificate, home; and, under Certificates, home, which resolver lan shows, for dns.lan.example.com.">
 </picture>
 
 A resolver that isn't serving is in red, with the reason. An upstream server with failed queries is in amber.

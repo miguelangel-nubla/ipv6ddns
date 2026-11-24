@@ -212,7 +212,7 @@ func TestDocExamples(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			// The files of a resolver's certificate and key: a pair of the test's, in their place.
+			// The files of a certificate and its key: a pair of the test's, in their place.
 			if certificateFile.MatchString(block) {
 				certFile, keyFile := certificatePair(t)
 				block = certificateFile.ReplaceAllString(block, "${1}"+certFile+"${2}"+keyFile)
@@ -307,8 +307,8 @@ func dedent(block string) string {
 	return strings.Join(lines, "\n")
 }
 
-// A resolver's tls block, of its certificate and then its key, with the file each names.
-var certificateFile = regexp.MustCompile(`(?m)^(\s+tls:\n\s+certificate:\s*)\S+(\n\s+key:\s*)\S+`)
+// A certificate of certificates, of its file and then its key's, with the file each names.
+var certificateFile = regexp.MustCompile(`(?m)^(\s+certificate:\s*)\S+(\n\s+key:\s*)\S+`)
 
 // certificatePair writes a certificate signed by itself and its key, as PEM files, for the
 // examples that name such files.

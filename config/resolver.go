@@ -1,7 +1,6 @@
 package config
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -26,9 +25,9 @@ type Resolver struct {
 	// Required. Where it answers, as listen takes it; without a port, 53. An entry that starts with
 	// tls://, https:// or quic:// answers over that encrypted transport, on its port by default.
 	Listen StringList `json:"listen,omitempty"`
-	// The certificate the encrypted transports show. Required with an encrypted entry, and only
-	// then.
-	TLS *TLS `json:"tls,omitempty"`
+	// The certificate the encrypted transports show: the name of one of certificates. Required
+	// with an encrypted entry, and only then.
+	TLS string `json:"tls,omitempty"`
 	// The networks, or addresses, of the clients it answers; any other is refused. Default: the
 	// networks of the machine's addresses it listens on.
 	Allow StringList `json:"allow,omitempty"`
@@ -51,44 +50,6 @@ type Resolver struct {
 	// The resolver, checked, with its zones.
 	Spec resolver.Config `json:"-"`
 }
-
-// TLS is the certificate of a resolver's encrypted transports, or of the web server's HTTPS.
-type TLS struct {
-	// The files of the certificate, in PEM, with its chain, and of its key: relative to the
-	// configuration's folder, unless absolute. With ACME, where it writes them, by default
-	// tls/<resolver>/fullchain.pem and privkey.pem.
-	Certificate string `json:"certificate,omitempty"`
-	Key         string `json:"key,omitempty"`
-	// The certificate from an ACME authority, as Let's Encrypt, by its DNS challenge: kept and
-	// renewed by ipv6ddns.
-	ACME *ACME `json:"acme,omitempty"`
-
-	// The files, read: in the configuration's folder; and, with ACME, the account's key, beside
-	// the certificate.
-	CertFile, KeyFile, AccountKeyFile string `json:"-"`
-}
-
-// ACME is a certificate an ACME authority signs.
-type ACME struct {
-	// The names it is for, relative to the credential's zone, as an endpoint's: dns.lan of
-	// example.com is dns.lan.example.com. A full name is taken as it is.
-	Names StringList `json:"names,omitempty"`
-	// The credential that writes the TXT records of the DNS challenge: of the public zone of the
-	// names.
-	Credential string `json:"credential,omitempty"`
-	// The address the authority can write to about the account: none by default.
-	Email string `json:"email,omitempty"`
-	// The authority's directory: Let's Encrypt's by default.
-	Directory string `json:"directory,omitempty"`
-}
-
-// The files of an ACME certificate, in the configuration's folder by default.
-const (
-	acmeFolder      = "tls"
-	acmeCertificate = "fullchain.pem"
-	acmeKey         = "privkey.pem"
-	acmeAccountKey  = "acme-account.key"
-)
 
 // ResolverProvider is the provider of a zone a resolver answers.
 const ResolverProvider = "resolver"
@@ -157,12 +118,10 @@ func (c *Config) setUpResolvers() error {
 				spec.ListenLines = append(spec.ListenLines, strings.TrimSpace(line))
 			}
 		}
-		if err := c.checkCertificate(path, name, r.TLS, len(spec.Encrypted) > 0); err != nil {
+		if err := c.useCertificate(path, r.TLS, len(spec.Encrypted) > 0); err != nil {
 			return err
 		}
-		if r.TLS != nil {
-			spec.CertFile, spec.KeyFile, spec.CertManaged = r.TLS.CertFile, r.TLS.KeyFile, r.TLS.ACME != nil
-		}
+		spec.CertificateName = r.TLS
 		// By protocol: plain DNS has UDP and TCP, DNS over TLS and over HTTPS TCP, over QUIC UDP.
 		claim := func(protocol, shown string, e fmt.Stringer) error {
 			key := protocol + " " + e.String()
@@ -432,54 +391,6 @@ func listenTransport(line string) (transport, rest string) {
 		}
 	}
 	return "", line
-}
-
-// checkCertificate tells of a resolver that has encrypted entries and no certificate, or one
-// without the other, or a certificate and its key that don't read as a pair; or, with ACME, no
-// name, or a credential that isn't there to write its challenge. It sets the files of t.
-func (c *Config) checkCertificate(path, name string, t *TLS, encrypted bool) error {
-	schemes, example := "tls://, https:// or quic://", "tls://192.168.1.0/24"
-	if path == "webserver" {
-		schemes, example = "https://", "https://192.168.1.2"
-	}
-	switch {
-	case encrypted && t == nil:
-		return fmt.Errorf("%s.tls is missing: an entry of listen is encrypted, %s, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM, or tls.acme, for ipv6ddns to get one", path, schemes)
-	case !encrypted && t != nil:
-		return fmt.Errorf("%s.tls is for the encrypted entries of listen, and there is none: add one, as %s, or leave tls out", path, example)
-	case !encrypted:
-		return nil
-	}
-	if t.ACME == nil {
-		if t.Certificate == "" || t.Key == "" {
-			return fmt.Errorf("%s.tls: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM, or tls.acme, for ipv6ddns to get one", path)
-		}
-		t.CertFile, t.KeyFile = inFolder(c.BaseDir, t.Certificate), inFolder(c.BaseDir, t.Key)
-		if _, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile); err != nil {
-			return fmt.Errorf("%s.tls: %s and %s: %w", path, t.CertFile, t.KeyFile, err)
-		}
-		return nil
-	}
-	a := t.ACME
-	switch credential, ok := c.Credentials[a.Credential]; {
-	case len(a.Names) == 0:
-		return fmt.Errorf("%s.tls.acme.names is missing: give the names the clients use, relative to the zone of the credential, as dns.lan", path)
-	case a.Credential == "":
-		return fmt.Errorf("%s.tls.acme.credential is missing: give the credential of the public zone of the names, which writes the TXT record that the authority checks", path)
-	case !ok:
-		return fmt.Errorf("%s.tls.acme.credential: there is no credential %s", path, a.Credential)
-	case credential.Provider == ResolverProvider:
-		return fmt.Errorf("%s.tls.acme.credential: %s is a zone of the resolver, which the authority can't ask: give the credential of the public zone of the names", path, a.Credential)
-	case (t.Certificate == "") != (t.Key == ""):
-		return fmt.Errorf("%s.tls: give both certificate and key, where ipv6ddns writes them, or neither, for %s/%s/", path, acmeFolder, name)
-	}
-	certificate, key := t.Certificate, t.Key
-	if certificate == "" {
-		certificate, key = filepath.Join(acmeFolder, name, acmeCertificate), filepath.Join(acmeFolder, name, acmeKey)
-	}
-	t.CertFile, t.KeyFile = inFolder(c.BaseDir, certificate), inFolder(c.BaseDir, key)
-	t.AccountKeyFile = filepath.Join(filepath.Dir(t.CertFile), acmeAccountKey)
-	return nil
 }
 
 // inFolder is the path of a file, relative to the folder unless absolute.

@@ -3,7 +3,7 @@
 package ipv6ddns
 
 // The program, as the configuration has it, gets the certificate of a resolver's encrypted
-// transports from a real authority, Pebble, whose challenge it writes at a real DNS server, BIND:
+// transports, and of the web server, from a real authority, Pebble, whose challenge it writes at a real DNS server, BIND:
 // tools/live-providers.sh starts both, and runs this.
 
 import (
@@ -15,6 +15,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,9 +34,10 @@ func liveEnv(t *testing.T, name string) string {
 	return v
 }
 
-// A resolver with tls.acme: it starts without a certificate, its encrypted transport refusing,
-// gets one for the name in the zone of an rfc2136 credential, and answers over TLS with it; the
-// report tells it, and its files are where the configuration's folder has them by default.
+// One certificate of acme, home, which a resolver and the web server both give as their tls: it
+// starts without a certificate, its encrypted transport refusing, gets one, of one manager, for
+// both names in the zone of an rfc2136 credential, and both servers show it; the report tells it,
+// and its files are where the configuration's folder has them by default.
 func TestLiveACME(t *testing.T) {
 	var settings map[string]any
 	if err := json.Unmarshal([]byte(liveEnv(t, "IPV6DDNS_LIVE_RFC2136")), &settings); err != nil {
@@ -64,22 +67,22 @@ func TestLiveACME(t *testing.T) {
 	cfg := loadConfig(t, fmt.Sprintf(`
 webserver:
   listen: "https://127.0.0.1:%d"
-  tls:
-    acme:
-      names: web
-      credential: public
-      directory: %s
+  tls: home
 resolvers:
   lan:
     listen:
       - 127.0.0.1:%d
       - "tls://127.0.0.1:%d"
     upstream: 192.0.2.1
-    tls:
-      acme:
-        names: dot
-        credential: public
-        directory: %s
+    tls: home
+certificates:
+  home:
+    acme:
+      names:
+        - dot
+        - web
+      credential: public
+      directory: %s
 credentials:
   public:
     provider: rfc2136
@@ -97,7 +100,7 @@ credentials:
       records:
         - printer A 192.0.2.20
 tasks: {}
-`, free(), directory, free(), free(), directory, settings["server"], zone, settings["tsig_key"], settings["tsig_secret"]))
+`, free(), free(), free(), directory, settings["server"], zone, settings["tsig_key"], settings["tsig_secret"]))
 	w, err := NewWorker(zaptest.NewLogger(t).Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -150,23 +153,29 @@ tasks: {}
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("no certificate after 2 minutes: %v; the status: %+v", err, w.resolverStatus(w.resolvers[0]).Certificate)
+			t.Fatalf("no certificate after 2 minutes: %v; the status: %+v", err, w.certificateStatuses())
 		}
 		time.Sleep(time.Second)
 	}
-	st := w.resolverStatus(w.resolvers[0]).Certificate
-	if st == nil || !st.Managed || len(st.Names) != 1 || st.Names[0] != name || st.Renewal != "" {
-		t.Errorf("the status: %+v", st)
+	// One certificate, of one manager, for both servers.
+	web := "web." + zone
+	statuses := w.certificateStatuses()
+	if len(statuses) != 1 {
+		t.Fatalf("the certificates: %+v", statuses)
 	}
-	if _, err := os.Stat(cfg.Resolvers["lan"].TLS.AccountKeyFile); err != nil || !strings.HasPrefix(cfg.Resolvers["lan"].TLS.CertFile, cfg.BaseDir) {
-		t.Errorf("the files: %+v, %v", cfg.Resolvers["lan"].TLS, err)
+	st := statuses[0]
+	if !st.Managed || !slices.Equal(slices.Sorted(slices.Values(st.Names)), []string{name, web}) || st.Renewal != "" || !slices.Equal(st.UsedBy, []string{"resolvers.lan", "webserver"}) {
+		t.Errorf("the status: %+v, %+v", st, st.Status)
 	}
-	if page := w.Page("", false).String(); !strings.Contains(page, "Certificate: "+name+", until ") {
+	home := cfg.Certificates["home"]
+	if _, err := os.Stat(home.AccountKeyFile); err != nil || home.CertFile != filepath.Join(cfg.BaseDir, "tls", "home", "fullchain.pem") {
+		t.Errorf("the files: %+v, %v", home, err)
+	}
+	if page := w.Page("", false).String(); !strings.Contains(page, "Certificates:\n    home (resolver lan, webserver): ") || !strings.Contains(page, "        Certificate: home\n") {
 		t.Errorf("the report:\n%s", page)
 	}
 
-	// The web server's own, of tls.acme too: its TLS shows it, once got.
-	web := "web." + zone
+	// The web server shows the same one.
 	l, err := tls.Listen("tcp", "127.0.0.1:0", w.WebserverTLS("http/1.1"))
 	if err != nil {
 		t.Fatal(err)
@@ -193,10 +202,7 @@ tasks: {}
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("no certificate of the web server after 2 minutes: %v; the status: %+v", err, w.webserverCertificate())
+			t.Fatalf("no certificate of the web server after 2 minutes: %v", err)
 		}
-	}
-	if page := w.Page("", false).String(); !strings.Contains(page, "Webserver:\n    Certificate: "+web+", until ") {
-		t.Errorf("the report of the web server:\n%s", page)
 	}
 }

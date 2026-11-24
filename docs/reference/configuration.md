@@ -11,6 +11,7 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 | `tasks` | object | **Required.** The DNS names to keep up to date, by task name. Each task takes the addresses its filters match, and those of the sources it lists, and gives them to the names under its endpoints. |
 | `credentials` | object | **Required.** The DNS providers to update, by credential name. Tasks name them under endpoints. |
 | `resolvers` | object | DNS servers for the clients on a network, by name. Each answers the zones of its resolver credentials, with the addresses the tasks give their names and with its own records, and asks its upstream servers everything else. See the [resolver](../resolver.md). |
+| `certificates` | object | The certificates the resolvers' encrypted entries and the web server's HTTPS ones show, by name: each server gives one as its tls, and two servers can show one. Each has files of its own, and is shown by at least one server. |
 | `discovery` | object | How hosts are found: on the local links, by the protocols turned on, and by plugins that read routers' tables. Every key is optional: a key left out has its default. |
 | `sources` | object | Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. |
 | `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | How much the log says. Default: info. |
@@ -91,7 +92,7 @@ DNS servers for the clients on a network, by name. Each answers the zones of its
 | Key | Takes | Default | |
 |---|---|---|---|
 | `listen` | list, or comma separated | - | **Required.** Where it answers: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Plain DNS, over UDP and TCP, port 53 by default. An entry that starts with tls://, https:// or quic:// answers over that encrypted transport instead: DNS over TLS, port 853 by default, as tls://192.168.1.0/24; DNS over HTTPS, port 443, at /dns-query, as https://192.168.1.0/24; DNS over QUIC, UDP port 853, as quic://192.168.1.0/24. The encrypted ones need tls. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port over the same protocol, however each writes it. |
-| `tls` | [tls](#tls) | - | The certificate the encrypted entries of listen show. Required with an encrypted entry, and only then. |
+| `tls` | string | - | The certificate the encrypted entries of listen show: the name of one of certificates, as home. Required with an encrypted entry, and only then. |
 | `allow` | list, or comma separated | - | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. Default: the networks of the addresses it listens on. |
 | `upstream` | list, or comma separated | - | **Required.** The servers it asks about names that aren't its own, in order, giving each 2s. Plain DNS, over UDP, and over TCP when the answer doesn't fit: 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, port 53 by default. DNS over TLS: tls://1.1.1.1 or tls://dns.example.net, port 853 by default. DNS over HTTPS: https://dns.example.net/dns-query, port 443 by default. An encrypted server's certificate is checked against the system's certificate authorities, for the host given, and its connections are reused. A host name needs bootstrap. When none answers, the client gets SERVFAIL. |
 | `bootstrap` | list, or comma separated | - | Only for upstream servers given by host name, plain or encrypted: the servers that look up their addresses, and nothing else. Addresses, with or without a port, asked in order over plain DNS. The system's resolver isn't used, since it may be this one. The addresses found are kept for their TTL, between a minute and an hour, and for as long as these servers don't answer. |
@@ -129,23 +130,23 @@ The web server, with the status page, /status.json and /metrics. See [the web re
 | Key | Takes | |
 |---|---|---|
 | `listen` | list, or comma separated | Where to serve: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it. An entry that starts with https:// serves HTTPS there, with the certificate of tls, on port 8443 without one: as https://192.168.1.2. The plain ones stay HTTP, as the Home Assistant app's page needs. |
-| `tls` | [tls](#tls) | The certificate of the HTTPS entries of listen. Required with one, and only then. |
+| `tls` | string | The certificate of the HTTPS entries of listen: the name of one of certificates, as home. Required with one, and only then. |
 
-## TLS
+## Certificates
 
-`resolvers.<name>.tls`, `webserver.tls`
+`certificates.<name>`
 
-A certificate that TLS servers show: its files, or acme, for ipv6ddns to get it from an authority, as Let's Encrypt, and renew it. See [encrypted DNS for the clients](../resolver.md#encrypted-dns-for-the-clients).
+The certificates the resolvers' encrypted entries and the web server's HTTPS ones show, by name: each server gives one as its tls, and two servers can show one. Each has files of its own, and is shown by at least one server. A certificate that the resolvers' encrypted entries and the web server's HTTPS ones show, those that give its name as their tls: its files, or acme, for ipv6ddns to get it from an authority, as Let's Encrypt, and renew it. A server shows it whatever names its listen has: for clients to take it, it must be for the names they use. See [encrypted DNS for the clients](../resolver.md#encrypted-dns-for-the-clients).
 
 | Key | Takes | |
 |---|---|---|
-| `certificate` | string | The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<resolver>/fullchain.pem, or tls/webserver/fullchain.pem. |
-| `key` | string | The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<resolver>/privkey.pem, or tls/webserver/privkey.pem. |
+| `certificate` | string | The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<name>/fullchain.pem. |
+| `key` | string | The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<name>/privkey.pem. |
 | `acme` | object | A certificate that ipv6ddns gets from an ACME authority, Let's Encrypt by default, by its DNS challenge: it writes the TXT record the authority checks through a credential of the names' public zone, and renews the certificate once two thirds of its lifetime have passed. The names need no address on the internet. It is written to certificate and key, with the account's key, acme-account.key, beside them. Until there is one, the encrypted entries refuse their connections, and the report says why. |
 
 ### acme
 
-`tls.acme`
+`certificates.<name>.acme`
 
 A certificate that ipv6ddns gets from an ACME authority, Let's Encrypt by default, by its DNS challenge: it writes the TXT record the authority checks through a credential of the names' public zone, and renews the certificate once two thirds of its lifetime have passed. The names need no address on the internet. It is written to certificate and key, with the account's key, acme-account.key, beside them. Until there is one, the encrypted entries refuse their connections, and the report says why.
 

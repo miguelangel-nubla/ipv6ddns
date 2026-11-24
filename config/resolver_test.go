@@ -530,12 +530,17 @@ func writeTestCertificate(t *testing.T) (certFile, keyFile string) {
 	return certFile, keyFile
 }
 
+// filesCertificate is a certificates block of one certificate, home, of its files.
+func filesCertificate(certFile, keyFile string) string {
+	return "\ncertificates:\n  home:\n    certificate: " + certFile + "\n    key: " + keyFile
+}
+
 // An entry of listen that starts with tls://, https:// or quic:// answers over that encrypted
 // transport, on its port by default; https:// takes the path /dns-query, where it answers. They
-// need the certificate and its key, which must read as a pair; and these are for them alone.
+// need a certificate, of certificates; and it is for them alone.
 func TestResolverConfigEncryptedListen(t *testing.T) {
 	certFile, keyFile := writeTestCertificate(t)
-	files := "\n    tls:\n      certificate: " + certFile + "\n      key: " + keyFile
+	certificates := filesCertificate(certFile, keyFile)
 	cfg, err := resolverConfig(t, `
   lan:
     listen:
@@ -543,7 +548,8 @@ func TestResolverConfigEncryptedListen(t *testing.T) {
       - "tls://192.168.1.0/24"
       - "HTTPS://192.168.1.2/dns-query"
       - "quic://[fd00::2]:8853"
-    upstream: 192.168.1.1`+files, homeCredential, nasTask)
+    upstream: 192.168.1.1
+    tls: home`+certificates, homeCredential, nasTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,8 +563,11 @@ func TestResolverConfigEncryptedListen(t *testing.T) {
 		"https 192.168.1.2:443 HTTPS://192.168.1.2/dns-query",
 		"quic [fd00::2]:8853 quic://[fd00::2]:8853",
 	}
-	if len(spec.Listen) != 1 || !slices.Equal(got, want) || spec.CertFile != certFile || spec.KeyFile != keyFile {
+	if len(spec.Listen) != 1 || !slices.Equal(got, want) || spec.CertificateName != "home" {
 		t.Errorf("listen %v, encrypted:\n%q\nwant\n%q", spec.Listen, got, want)
+	}
+	if home := cfg.Certificates["home"]; home.CertFile != certFile || home.KeyFile != keyFile || !slices.Equal(home.UsedBy, []string{"resolvers.lan"}) {
+		t.Errorf("the certificate: %+v", home)
 	}
 
 	for _, c := range []struct {
@@ -567,25 +576,26 @@ func TestResolverConfigEncryptedListen(t *testing.T) {
 		{"an encrypted entry without a certificate", `
   lan:
     listen: "tls://192.168.1.0/24"
-    upstream: 192.168.1.1`, "resolvers.lan.tls is missing: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM, or tls.acme, for ipv6ddns to get one"},
+    upstream: 192.168.1.1`, "resolvers.lan.tls is missing: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give the name of one of certificates, as tls: home"},
 		{"a certificate without an encrypted entry", `
   lan:
     listen: 192.168.1.0/24
-    upstream: 192.168.1.1` + files, "resolvers.lan.tls is for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave tls out"},
-		{"a key that isn't the certificate's", `
-  lan:
-    listen: "quic://192.168.1.0/24"
     upstream: 192.168.1.1
-    tls:
-      certificate: ` + certFile + `
-      key: ` + certFile, "resolvers.lan.tls: "},
+    tls: home` + certificates, "resolvers.lan.tls is for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave tls out"},
+		{"a certificate that isn't there", `
+  lan:
+    listen: "tls://192.168.1.0/24"
+    upstream: 192.168.1.1
+    tls: hom` + certificates, "resolvers.lan.tls: there is no certificate hom: add it under certificates, or fix its name"},
 		{"two resolvers on one address over TLS", `
   lan:
     listen: "tls://192.168.1.2"
-    upstream: 192.168.1.1` + files + `
+    upstream: 192.168.1.1
+    tls: home
   lab:
     listen: "tls://192.168.1.2:853"
-    upstream: 192.168.1.1` + files, "resolvers lab and lan both listen on "},
+    upstream: 192.168.1.1
+    tls: home` + certificates, "resolvers lab and lan both listen on "},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := resolverConfig(t, c.resolvers, homeCredential, nasTask)
@@ -595,20 +605,28 @@ func TestResolverConfigEncryptedListen(t *testing.T) {
 		})
 	}
 
-	// Over TLS and over QUIC, one port is two: TCP and UDP.
-	if _, err := resolverConfig(t, `
+	// Over TLS and over QUIC, one port is two: TCP and UDP. And two resolvers show one
+	// certificate.
+	cfg, err = resolverConfig(t, `
   lan:
     listen: "tls://192.168.1.2"
-    upstream: 192.168.1.1`+files+`
+    upstream: 192.168.1.1
+    tls: home
   lab:
     listen: "quic://192.168.1.2"
-    upstream: 192.168.1.1`+files, strings.Replace(homeCredential, "zone: home.arpa", "resolver: lan\n      zone: home.arpa", 1), nasTask); err != nil {
-		t.Errorf("TLS and QUIC on port 853: %v", err)
+    upstream: 192.168.1.1
+    tls: home`+certificates, strings.Replace(homeCredential, "zone: home.arpa", "resolver: lan\n      zone: home.arpa", 1), nasTask)
+	if err != nil {
+		t.Fatalf("TLS and QUIC on port 853: %v", err)
+	}
+	if used := cfg.Certificates["home"].UsedBy; !slices.Equal(used, []string{"resolvers.lab", "resolvers.lan"}) {
+		t.Errorf("used by %v", used)
 	}
 }
 
-// The files of tls, relative, are in the configuration's folder, wherever the program runs.
-func TestResolverConfigTLSRelative(t *testing.T) {
+// The files of a certificate, relative, are in the configuration's folder, wherever the program
+// runs.
+func TestCertificateRelative(t *testing.T) {
 	certFile, keyFile := writeTestCertificate(t)
 	dir := t.TempDir()
 	for from, to := range map[string]string{certFile: "certs/fullchain.pem", keyFile: "certs/privkey.pem"} {
@@ -622,7 +640,7 @@ func TestResolverConfigTLSRelative(t *testing.T) {
 		}
 	}
 	path := filepath.Join(dir, "config.yaml")
-	text := "resolvers:\n  lan:\n    listen: \"tls://192.168.1.0/24\"\n    upstream: 192.168.1.1\n    tls:\n      certificate: certs/fullchain.pem\n      key: certs/privkey.pem\ncredentials:\n" + homeCredential + "\ntasks:\n" + nasTask + "\n"
+	text := "resolvers:\n  lan:\n    listen: \"tls://192.168.1.0/24\"\n    upstream: 192.168.1.1\n    tls: home\ncertificates:\n  home:\n    certificate: certs/fullchain.pem\n    key: certs/privkey.pem\ncredentials:\n" + homeCredential + "\ntasks:\n" + nasTask + "\n"
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -630,16 +648,17 @@ func TestResolverConfigTLSRelative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec := cfg.Resolvers["lan"].Spec
-	if spec.CertFile != filepath.Join(dir, "certs/fullchain.pem") || spec.KeyFile != filepath.Join(dir, "certs/privkey.pem") {
-		t.Errorf("the files: %s, %s", spec.CertFile, spec.KeyFile)
+	if home := cfg.Certificates["home"]; home.CertFile != filepath.Join(dir, "certs/fullchain.pem") || home.KeyFile != filepath.Join(dir, "certs/privkey.pem") {
+		t.Errorf("the files: %s, %s", home.CertFile, home.KeyFile)
 	}
 }
 
-// tls.acme: names relative to the zone of the credential, which writes the challenge, and the
-// files where ipv6ddns writes the certificate, by default in tls/<resolver>/ of the
-// configuration's folder, the account's key beside them. Each mistake is told.
-func TestResolverConfigACME(t *testing.T) {
+// acme: names relative to the zone of the credential, which writes the challenge, and the files
+// where ipv6ddns writes the certificate, by default in tls/<name>/ of the configuration's folder,
+// the account's key beside them. Each mistake is told; and a certificate no server shows, or two
+// of the same files.
+func TestCertificateACME(t *testing.T) {
+	certFile, keyFile := writeTestCertificate(t)
 	public := homeCredential + `
   public:
     provider: cloudflare
@@ -648,71 +667,86 @@ func TestResolverConfigACME(t *testing.T) {
       zone: example.com
       ttl: 5m
       proxied: false`
-	acmeBlock := func(rest string) string {
-		return `
+	lan := `
   lan:
     listen: "tls://192.168.1.0/24"
     upstream: 192.168.1.1
-    tls:` + rest
-	}
-	cfg, err := resolverConfig(t, acmeBlock(`
-      acme:
-        names: dns.lan
-        credential: public`), public, nasTask)
+    tls: home`
+	certificates := func(home string) string { return lan + "\ncertificates:\n  home:" + home }
+	cfg, err := resolverConfig(t, certificates(`
+    acme:
+      names: dns.lan
+      credential: public`), public, nasTask)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := cfg.Resolvers["lan"]
+	home := cfg.Certificates["home"]
 	dir := cfg.BaseDir
-	if r.TLS.CertFile != filepath.Join(dir, "tls", "lan", "fullchain.pem") || r.TLS.KeyFile != filepath.Join(dir, "tls", "lan", "privkey.pem") ||
-		r.TLS.AccountKeyFile != filepath.Join(dir, "tls", "lan", "acme-account.key") || !r.Spec.CertManaged || r.Spec.CertFile != r.TLS.CertFile {
-		t.Errorf("the files: %+v, managed %v", r.TLS, r.Spec.CertManaged)
+	if home.CertFile != filepath.Join(dir, "tls", "home", "fullchain.pem") || home.KeyFile != filepath.Join(dir, "tls", "home", "privkey.pem") ||
+		home.AccountKeyFile != filepath.Join(dir, "tls", "home", "acme-account.key") {
+		t.Errorf("the files: %+v", home)
 	}
-	if !slices.Equal(r.TLS.ACME.Names, []string{"dns.lan"}) {
-		t.Errorf("the names: %v", r.TLS.ACME.Names)
+	if !slices.Equal(home.ACME.Names, []string{"dns.lan"}) {
+		t.Errorf("the names: %v", home.ACME.Names)
 	}
-	cfg, err = resolverConfig(t, acmeBlock(`
-      certificate: /var/lib/ipv6ddns/cert.pem
-      key: keys/key.pem
-      acme:
-        names:
-          - dns.lan
-          - "*.lan"
-        credential: public
-        email: me@example.com`), public, nasTask)
+	cfg, err = resolverConfig(t, certificates(`
+    certificate: /var/lib/ipv6ddns/cert.pem
+    key: keys/key.pem
+    acme:
+      names:
+        - dns.lan
+        - "*.lan"
+      credential: public
+      email: me@example.com`), public, nasTask)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r = cfg.Resolvers["lan"]
-	if r.TLS.CertFile != "/var/lib/ipv6ddns/cert.pem" || r.TLS.KeyFile != filepath.Join(cfg.BaseDir, "keys/key.pem") || r.TLS.AccountKeyFile != "/var/lib/ipv6ddns/acme-account.key" {
-		t.Errorf("the files given: %+v", r.TLS)
+	home = cfg.Certificates["home"]
+	if home.CertFile != "/var/lib/ipv6ddns/cert.pem" || home.KeyFile != filepath.Join(cfg.BaseDir, "keys/key.pem") || home.AccountKeyFile != "/var/lib/ipv6ddns/acme-account.key" {
+		t.Errorf("the files given: %+v", home)
 	}
 
-	for _, c := range []struct{ name, tls, want string }{
-		{"no names", `
-      acme:
-        credential: public`, "resolvers.lan.tls.acme.names is missing"},
-		{"no credential", `
-      acme:
-        names: dns.lan`, "resolvers.lan.tls.acme.credential is missing"},
-		{"a credential that isn't there", `
-      acme:
-        names: dns.lan
-        credential: nope`, "resolvers.lan.tls.acme.credential: there is no credential nope"},
-		{"the resolver's zone", `
-      acme:
-        names: dns.lan
-        credential: home`, "resolvers.lan.tls.acme.credential: home is a zone of the resolver"},
-		{"a certificate without its key", `
-      certificate: cert.pem
-      acme:
-        names: dns.lan
-        credential: public`, "resolvers.lan.tls: give both certificate and key"},
-		{"neither files nor acme", `
-      key: key.pem`, "resolvers.lan.tls: give tls.certificate and tls.key"},
+	acmeOf := func(certificate, key string) string {
+		return "\n    certificate: " + certificate + "\n    key: " + key + "\n    acme:\n      names: dns.lan\n      credential: public"
+	}
+	for _, c := range []struct{ name, resolvers, want string }{
+		{"no names", certificates(`
+    acme:
+      credential: public`), "certificates.home.acme.names is missing"},
+		{"no credential", certificates(`
+    acme:
+      names: dns.lan`), "certificates.home.acme.credential is missing"},
+		{"a credential that isn't there", certificates(`
+    acme:
+      names: dns.lan
+      credential: nope`), "certificates.home.acme.credential: there is no credential nope"},
+		{"the resolver's zone", certificates(`
+    acme:
+      names: dns.lan
+      credential: home`), "certificates.home.acme.credential: home is a zone of the resolver"},
+		{"a certificate without its key", certificates(`
+    certificate: cert.pem
+    acme:
+      names: dns.lan
+      credential: public`), "certificates.home: give both certificate and key"},
+		{"neither files nor acme", certificates(`
+    key: key.pem`), "certificates.home: give certificate and key"},
+		{"a key that isn't the certificate's", certificates(`
+    certificate: ` + certFile + `
+    key: ` + certFile), "certificates.home: "},
+		{"a certificate no server shows", certificates(acmeOf("a/cert.pem", "a/key.pem")) + `
+  spare:` + acmeOf("b/cert.pem", "b/key.pem"), "certificates.spare: no server shows it"},
+		{"two certificates of one file", certificates(acmeOf("a/cert.pem", "a/key.pem")) + `
+  other:` + acmeOf("a/cert.pem", "b/key.pem"), "certificates home and other both use the file "},
+		{"two certificates of one folder, and so one account key", certificates(acmeOf("a/cert.pem", "a/key.pem")) + `
+  other:` + acmeOf("a/other.pem", "a/otherkey.pem"), "certificates home and other both use the file "},
+		{"a certificate's file that acme writes", certificates(acmeOf(certFile, keyFile)) + `
+  other:
+    certificate: ` + certFile + `
+    key: ` + keyFile, "certificates home and other both use the file "},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := resolverConfig(t, acmeBlock(c.tls), public, nasTask)
+			_, err := resolverConfig(t, c.resolvers, public, nasTask)
 			if err == nil || !strings.HasPrefix(err.Error(), c.want) {
 				t.Errorf("got %v\nwant %s", err, c.want)
 			}
@@ -720,24 +754,29 @@ func TestResolverConfigACME(t *testing.T) {
 	}
 }
 
-// The web server's https:// entries serve HTTPS, on port 8443 without one, with webserver.tls,
-// files or acme, which its plain entries don't need; and each mistake is told.
+// The web server's https:// entries serve HTTPS, on port 8443 without one, with a certificate of
+// certificates, which its plain entries don't need; one a resolver shows too; and each mistake is
+// told.
 func TestWebserverTLS(t *testing.T) {
 	certFile, keyFile := writeTestCertificate(t)
-	load := func(webserver, credentials string) (Config, error) {
+	load := func(text string) (Config, error) {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "config.yaml")
-		os.WriteFile(path, []byte("webserver:"+webserver+"\ncredentials:"+credentials+"\ntasks: {}\n"), 0o600)
+		os.WriteFile(path, []byte(text+"\ncredentials:\n"+homeCredential+"\ntasks:\n"+nasTask+"\n"), 0o600)
 		return NewConfig(path)
 	}
-	cfg, err := load(`
+	certificates := filesCertificate(certFile, keyFile)
+	cfg, err := load(`webserver:
   listen:
     - 172.30.32.1:8053
     - "https://192.168.1.2"
     - "HTTPS://192.168.1.3:9443"
-  tls:
-    certificate: `+certFile+`
-    key: `+keyFile, " {}")
+  tls: home
+resolvers:
+  lan:
+    listen: "tls://192.168.1.0/24"
+    upstream: 192.168.1.1
+    tls: home` + certificates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -748,46 +787,25 @@ func TestWebserverTLS(t *testing.T) {
 	for _, e := range cfg.Webserver.HTTPS {
 		https = append(https, e.String())
 	}
-	if !slices.Equal(plain, []string{"172.30.32.1:8053"}) || !slices.Equal(https, []string{"192.168.1.2:8443", "192.168.1.3:9443"}) || cfg.Webserver.TLS.CertFile != certFile {
-		t.Errorf("plain %v, https %v, tls %+v", plain, https, cfg.Webserver.TLS)
+	if !slices.Equal(plain, []string{"172.30.32.1:8053"}) || !slices.Equal(https, []string{"192.168.1.2:8443", "192.168.1.3:9443"}) || cfg.Webserver.TLS != "home" {
+		t.Errorf("plain %v, https %v, tls %q", plain, https, cfg.Webserver.TLS)
+	}
+	if used := cfg.Certificates["home"].UsedBy; !slices.Equal(used, []string{"resolvers.lan", "webserver"}) {
+		t.Errorf("used by %v", used)
 	}
 
-	cfg, err = load(`
-  listen: "https://192.168.1.2"
-  tls:
-    acme:
-      names: web.lan
-      credential: public`, `
-  public:
-    provider: cloudflare
-    settings:
-      api_token: token
-      zone: example.com
-      ttl: 5m
-      proxied: false`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(cfg.BaseDir, "tls", "webserver", "fullchain.pem"); cfg.Webserver.TLS.CertFile != want || cfg.Webserver.TLS.AccountKeyFile != filepath.Join(cfg.BaseDir, "tls", "webserver", "acme-account.key") {
-		t.Errorf("the files of acme: %+v", cfg.Webserver.TLS)
-	}
-
-	for _, c := range []struct{ name, webserver, want string }{
-		{"an https entry without tls", `
+	for _, c := range []struct{ name, text, want string }{
+		{"an https entry without tls", `webserver:
   listen: "https://192.168.1.2"`, "webserver.tls is missing: an entry of listen is encrypted, https://"},
-		{"tls without an https entry", `
+		{"tls without an https entry", `webserver:
   listen: 192.168.1.2
-  tls:
-    certificate: ` + certFile + `
-    key: ` + keyFile, "webserver.tls is for the encrypted entries of listen, and there is none: add one, as https://192.168.1.2"},
-		{"a bad https entry", `
+  tls: home` + certificates, "webserver.tls is for the encrypted entries of listen, and there is none: add one, as https://192.168.1.2"},
+		{"a bad https entry", `webserver:
   listen: "https://192.168.1.0/33"
-  tls:
-    certificate: ` + certFile + `
-    key: ` + keyFile, "webserver.listen: "},
+  tls: home` + certificates, "webserver.listen: "},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if _, err := load(c.webserver, " {}"); err == nil || !strings.HasPrefix(err.Error(), c.want) {
+			if _, err := load(c.text + "\nresolvers:" + lanResolver); err == nil || !strings.HasPrefix(err.Error(), c.want) {
 				t.Errorf("got %v\nwant %s", err, c.want)
 			}
 		})

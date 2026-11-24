@@ -104,11 +104,13 @@ resolvers:
       - "tls://%[1]s"
       - "https://%[1]s"
       - "quic://%[1]s"
-    tls:
-      certificate: %[2]s
-      key: %[3]s
+    tls: home
     # Nothing is forwarded in this test: a server that doesn't answer.
     upstream: 192.0.2.1
+certificates:
+  home:
+    certificate: %[2]s
+    key: %[3]s
 credentials:
   home:
     provider: resolver
@@ -164,7 +166,7 @@ tasks:
 	}
 
 	report := one.page("/status.txt")
-	for _, has := range []string{"tls://" + address + ":853", "https://" + address + ":443", "quic://" + address + ":853", "Certificate: " + encryptedHost + ", until "} {
+	for _, has := range []string{"tls://" + address + ":853", "https://" + address + ":443", "quic://" + address + ":853", "        Certificate: home\n", "home (resolver lan): " + encryptedHost + ", until "} {
 		if !strings.Contains(report, has) {
 			t.Errorf("the report has no %q:\n%s", has, report)
 		}

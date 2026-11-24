@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -25,8 +24,8 @@ type Status struct {
 	Protocols []string          `json:"protocols"`
 	Sources   []source.Status   `json:"sources"`
 	Resolvers []resolver.Status `json:"resolvers"`
-	// The certificate of the web server's HTTPS: none without it.
-	WebserverCertificate *certfile.Status `json:"webserver_certificate,omitempty"`
+	// The certificates of the configuration, by name.
+	Certificates []CertificateStatus `json:"certificates,omitempty"`
 	// The program itself: its goroutines, its memory, its open files.
 	Process ProcessStatus `json:"process"`
 }
@@ -134,10 +133,10 @@ func (w *Worker) Status(hideSensible bool) Status {
 	status.Process = processStatus()
 
 	for _, r := range w.resolvers {
-		status.Resolvers = append(status.Resolvers, w.resolverStatus(r))
+		status.Resolvers = append(status.Resolvers, r.Status())
 	}
-	if c := w.webserverCertificate(); c != nil {
-		status.WebserverCertificate = c
+	if len(w.certs) > 0 {
+		status.Certificates = w.certificateStatuses()
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {

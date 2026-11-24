@@ -10,6 +10,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -152,7 +153,7 @@ func (m *Manager) Check(ctx context.Context) time.Duration {
 }
 
 // due is when the certificate in the files is to be renewed, and why: now, for none, or one that
-// isn't for every name.
+// isn't for every name, or isn't of its key.
 func (m *Manager) due() (time.Time, string) {
 	data, err := os.ReadFile(m.config.CertFile)
 	if err != nil {
@@ -168,6 +169,9 @@ func (m *Manager) due() (time.Time, string) {
 	}
 	if _, err := os.Stat(m.config.KeyFile); err != nil {
 		return m.now(), "its key is missing"
+	}
+	if _, err := tls.LoadX509KeyPair(m.config.CertFile, m.config.KeyFile); err != nil {
+		return m.now(), "its key isn't the certificate's"
 	}
 	for _, name := range m.config.Names {
 		if cert.VerifyHostname(name) != nil {

@@ -359,6 +359,3 @@ func (s *Server) shutdownEncrypted(ctx context.Context) {
 		_ = c.CloseWithError(doqNoError, "")
 	}
 }
-
-// CertificateStatus is the certificate the encrypted transports show: certfile's.
-type CertificateStatus = certfile.Status

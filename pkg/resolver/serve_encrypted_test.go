@@ -54,8 +54,20 @@ func encryptedConfig(t *testing.T, ca *testCA) Config {
 	for _, transport := range []string{TransportTLS, TransportHTTPS, TransportQUIC} {
 		cfg.Encrypted = append(cfg.Encrypted, EncryptedListen{Transport: transport, Entry: listen.Entry{Host: "127.0.0.1", Port: "0"}, Line: transport + "://127.0.0.1:0"})
 	}
-	cfg.CertFile, cfg.KeyFile = writeCertificate(t, t.TempDir(), ca.leaf(t, []string{encryptedName}))
+	certFile, keyFile := writeCertificate(t, t.TempDir(), ca.leaf(t, []string{encryptedName}))
+	setCertificate(t, &cfg, t.Errorf, false, certFile, keyFile)
 	return cfg
+}
+
+// setCertificate gives cfg the certificate of the files, as the program loads one of its
+// certificates: of something else's, as ACME, with managed.
+func setCertificate(t *testing.T, cfg *Config, errorf func(string, ...any), managed bool, certFile, keyFile string) {
+	t.Helper()
+	cert, err := certfile.Load(certFile, keyFile, managed, errorf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Certificate, cfg.CertificateName = cert, "home"
 }
 
 // addressOf is the address s listens on over transport, host:port, without its scheme.
@@ -224,8 +236,8 @@ func TestServeEncrypted(t *testing.T) {
 			t.Errorf("the status listens on %v, without %s", st.Listening, transport)
 		}
 	}
-	if st.Certificate == nil || !slices.Equal(st.Certificate.Names, []string{encryptedName}) || st.Certificate.NotAfter.Before(time.Now()) {
-		t.Errorf("the certificate in the status: %+v", st.Certificate)
+	if st.Certificate != "home" {
+		t.Errorf("the certificate in the status: %q", st.Certificate)
 	}
 	if n := st.Queries[Local]; n < 5 {
 		t.Errorf("%d local answers counted, want the 5 of the encrypted transports at least", n)
@@ -329,14 +341,17 @@ func TestEncryptedCertificateReload(t *testing.T) {
 	cfg := encryptedConfig(t, ca)
 	var mutex sync.Mutex
 	var logged []string
+	logf := func(format string, args ...any) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		logged = append(logged, format)
+	}
+	certFile, keyFile := writeCertificate(t, t.TempDir(), ca.leaf(t, []string{encryptedName}))
+	setCertificate(t, &cfg, logf, false, certFile, keyFile)
 	var s *Server
 	for try := 0; ; try++ {
 		var err error
-		s, err = New(cfg, func(format string, args ...any) {
-			mutex.Lock()
-			defer mutex.Unlock()
-			logged = append(logged, format)
-		})
+		s, err = New(cfg, logf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -363,20 +378,20 @@ func TestEncryptedCertificateReload(t *testing.T) {
 	}
 
 	renewed := ca.leaf(t, []string{"renewed.home.arpa"})
-	writeCertificate(t, filepath.Dir(cfg.CertFile), renewed)
+	writeCertificate(t, filepath.Dir(certFile), renewed)
 	later := time.Now().Add(time.Second)
-	os.Chtimes(cfg.CertFile, later, later)
+	os.Chtimes(certFile, later, later)
 	time.Sleep(30 * time.Millisecond)
 	if got := shown("renewed.home.arpa"); !slices.Equal(got, []string{"renewed.home.arpa"}) {
 		t.Fatalf("after renewal, shown %v", got)
 	}
-	if st := s.Status().Certificate; st == nil || !slices.Equal(st.Names, []string{"renewed.home.arpa"}) {
+	if st := cfg.Certificate.Status(); !slices.Equal(st.Names, []string{"renewed.home.arpa"}) {
 		t.Errorf("the status: %+v", st)
 	}
 
-	os.WriteFile(cfg.CertFile, []byte("not a certificate"), 0o600)
+	os.WriteFile(certFile, []byte("not a certificate"), 0o600)
 	later = later.Add(time.Second)
-	os.Chtimes(cfg.CertFile, later, later)
+	os.Chtimes(certFile, later, later)
 	for range 3 {
 		time.Sleep(30 * time.Millisecond)
 		if got := shown("renewed.home.arpa"); !slices.Equal(got, []string{"renewed.home.arpa"}) {
@@ -388,15 +403,15 @@ func TestEncryptedCertificateReload(t *testing.T) {
 	if len(logged) != 1 || !strings.Contains(logged[0], "doesn't read again") {
 		t.Errorf("logged %q, want once", logged)
 	}
-	if st := s.Status().Certificate; st == nil || st.Error == "" {
+	if st := cfg.Certificate.Status(); st.Error == "" {
 		t.Errorf("the status doesn't tell the error: %+v", st)
 	}
 }
 
-// A certificate that doesn't read stops the start, with the setting to fix.
+// Encrypted entries without a certificate stop the start, with the setting to fix.
 func TestEncryptedStartWithoutCertificate(t *testing.T) {
 	cfg := encryptedConfig(t, newTestCA(t))
-	cfg.CertFile = filepath.Join(t.TempDir(), "missing.pem")
+	cfg.Certificate = nil
 	s, err := New(cfg, t.Errorf)
 	if err != nil {
 		t.Fatal(err)
@@ -453,7 +468,8 @@ func TestCheckListenProtocols(t *testing.T) {
 func TestServeEncryptedAsUpstream(t *testing.T) {
 	ca := newTestCA(t)
 	cfg := encryptedConfig(t, ca)
-	cfg.CertFile, cfg.KeyFile = writeCertificate(t, t.TempDir(), ca.leaf(t, []string{encryptedName}, net.ParseIP("127.0.0.1")))
+	certFile, keyFile := writeCertificate(t, t.TempDir(), ca.leaf(t, []string{encryptedName}, net.ParseIP("127.0.0.1")))
+	setCertificate(t, &cfg, t.Errorf, false, certFile, keyFile)
 	upstream := start(t, cfg)
 	for _, via := range []string{
 		"tls://" + addressOf(t, upstream, TransportTLS),
@@ -481,13 +497,13 @@ func TestEncryptedManagedCertificate(t *testing.T) {
 	ca := newTestCA(t)
 	cfg := encryptedConfig(t, ca)
 	dir := t.TempDir()
-	cfg.CertFile, cfg.KeyFile, cfg.CertManaged = filepath.Join(dir, "fullchain.pem"), filepath.Join(dir, "privkey.pem"), true
+	setCertificate(t, &cfg, t.Errorf, true, filepath.Join(dir, "fullchain.pem"), filepath.Join(dir, "privkey.pem"))
 	s := start(t, cfg)
 	address := addressOf(t, s, TransportTLS)
 	if _, err := queryTLS(t, ca, address, "printer.home.arpa.", dns.TypeA); err == nil {
 		t.Fatal("answered over TLS without a certificate")
 	}
-	if st := s.Status().Certificate; st == nil || !st.Managed || len(st.Names) != 0 || st.Error != "" {
+	if st := cfg.Certificate.Status(); !st.Managed || len(st.Names) != 0 || st.Error != "" {
 		t.Errorf("the status without a certificate: %+v", st)
 	}
 	writeCertificate(t, dir, ca.leaf(t, []string{encryptedName}))
@@ -495,7 +511,7 @@ func TestEncryptedManagedCertificate(t *testing.T) {
 	if resp, err := queryTLS(t, ca, address, "printer.home.arpa.", dns.TypeA); err != nil || len(resp.Answer) != 2 {
 		t.Fatalf("once written: %v, %v", resp, err)
 	}
-	if st := s.Status().Certificate; st == nil || !slices.Equal(st.Names, []string{encryptedName}) {
+	if st := cfg.Certificate.Status(); !slices.Equal(st.Names, []string{encryptedName}) {
 		t.Errorf("the status once written: %+v", st)
 	}
 }

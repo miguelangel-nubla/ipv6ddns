@@ -109,8 +109,6 @@ func typeOf(n *node, defs map[string]*node) string {
 		return "list, or comma separated"
 	case "#/$defs/discoveryPlugin":
 		return "[plugin](#discovery-plugins)"
-	case "#/$defs/tls":
-		return "[tls](#tls)"
 	}
 	if len(n.Enum) > 0 {
 		var values []string
@@ -238,12 +236,12 @@ func Configuration() (string, error) {
 	webserver := root.Properties["webserver"]
 	section("Web server", "webserver", webserver.Description+" See [the web report](../installation.md#the-web-report).", webserver, "properties", "webserver", "properties")
 
-	// The certificate of the resolvers' encrypted entries and of the web server's HTTPS ones.
+	// The certificates of the resolvers' encrypted entries and of the web server's HTTPS ones.
 	tlsDef := defs["tls"]
-	fmt.Fprintf(&b, "## TLS\n\n`resolvers.<name>.tls`, `webserver.tls`\n\n%s See [encrypted DNS for the clients](../resolver.md#encrypted-dns-for-the-clients).\n\n", tlsDef.Description)
+	fmt.Fprintf(&b, "## Certificates\n\n`certificates.<name>`\n\n%s %s See [encrypted DNS for the clients](../resolver.md#encrypted-dns-for-the-clients).\n\n", root.Properties["certificates"].Description, tlsDef.Description)
 	table(&b, tlsDef, order(raw, "$defs", "tls", "properties"), defs)
 	acmeDef := tlsDef.Properties["acme"]
-	fmt.Fprintf(&b, "### acme\n\n`tls.acme`\n\n%s\n\n", acmeDef.Description)
+	fmt.Fprintf(&b, "### acme\n\n`certificates.<name>.acme`\n\n%s\n\n", acmeDef.Description)
 	table(&b, acmeDef, order(raw, "$defs", "tls", "properties", "acme", "properties"), defs)
 
 	ha := root.Properties["homeassistant"]

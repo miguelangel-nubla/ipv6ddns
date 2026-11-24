@@ -35,6 +35,9 @@ type Config struct {
 	// DNS servers for the network's clients, by name, which answer the zones of the resolver
 	// credentials.
 	Resolvers map[string]Resolver `json:"resolvers,omitempty"`
+	// The certificates that the resolvers' encrypted entries, and the web server's HTTPS ones,
+	// show, by name: each server gives one as its tls.
+	Certificates map[string]*TLS `json:"certificates,omitempty"`
 
 	// The level of the log: info without it.
 	LogLevel  string    `json:"log_level,omitempty"`
@@ -348,9 +351,6 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := config.setUpHomeAssistant(); err != nil {
 		return config, err
 	}
-	if err := config.setUpWebserver(); err != nil {
-		return config, err
-	}
 	for _, name := range slices.Sorted(maps.Keys(config.Credentials)) {
 		// A failing provider is tried again at every retry: with none it would be without a pause.
 		if retry := config.Credentials[name].Retry; retry.Duration < MinRetry {
@@ -379,7 +379,17 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 
+	// The certificates, then the servers that show them.
+	if err := config.setUpCertificates(); err != nil {
+		return config, err
+	}
 	if err := config.setUpResolvers(); err != nil {
+		return config, err
+	}
+	if err := config.setUpWebserver(); err != nil {
+		return config, err
+	}
+	if err := config.checkCertificatesUsed(); err != nil {
 		return config, err
 	}
 

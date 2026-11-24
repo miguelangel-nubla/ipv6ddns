@@ -32,7 +32,8 @@ func writeCert(t *testing.T, dir string, names []string, notBefore, notAfter tim
 	return certFile, keyFile
 }
 
-// A certificate is due when there is none, its key is missing, it isn't for every name, or two
+// A certificate is due when there is none, its key is missing or another's, it isn't for every
+// name, or two
 // thirds of its lifetime have passed; or RenewBefore its end, when given.
 func TestDue(t *testing.T) {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -44,19 +45,27 @@ func TestDue(t *testing.T) {
 		renewBefore time.Duration
 		want        time.Time
 		removeKey   bool
+		otherKey    bool
 	}{
-		{"90 days, 10 in", []string{"dns.example.com"}, now.Add(-10 * day), now.Add(80 * day), 0, now.Add(50 * day), false},
-		{"6 days", []string{"dns.example.com"}, now, now.Add(6 * day), 0, now.Add(4 * day), false},
-		{"RenewBefore", []string{"dns.example.com"}, now, now.Add(90 * day), 7 * day, now.Add(83 * day), false},
-		{"another name", []string{"other.example.com"}, now, now.Add(90 * day), 0, now, false},
-		{"a wildcard of the name", []string{"*.example.com"}, now, now.Add(90 * day), 0, now.Add(60 * day), false},
-		{"no key", []string{"dns.example.com"}, now, now.Add(90 * day), 0, now, true},
+		{"90 days, 10 in", []string{"dns.example.com"}, now.Add(-10 * day), now.Add(80 * day), 0, now.Add(50 * day), false, false},
+		{"6 days", []string{"dns.example.com"}, now, now.Add(6 * day), 0, now.Add(4 * day), false, false},
+		{"RenewBefore", []string{"dns.example.com"}, now, now.Add(90 * day), 7 * day, now.Add(83 * day), false, false},
+		{"another name", []string{"other.example.com"}, now, now.Add(90 * day), 0, now, false, false},
+		{"a wildcard of the name", []string{"*.example.com"}, now, now.Add(90 * day), 0, now.Add(60 * day), false, false},
+		{"no key", []string{"dns.example.com"}, now, now.Add(90 * day), 0, now, true, false},
+		{"the key of another", []string{"dns.example.com"}, now, now.Add(90 * day), 0, now, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			certFile, keyFile := writeCert(t, dir, tc.names, tc.from, tc.to)
 			if tc.removeKey {
 				os.Remove(keyFile)
+			}
+			if tc.otherKey {
+				// Another certificate's key, written over this one's: as two writers would leave it.
+				_, other := writeCert(t, t.TempDir(), tc.names, tc.from, tc.to)
+				data, _ := os.ReadFile(other)
+				os.WriteFile(keyFile, data, 0o600)
 			}
 			m := New(Config{Names: []string{"dns.example.com"}, CertFile: certFile, KeyFile: keyFile, RenewBefore: tc.renewBefore})
 			m.now = func() time.Time { return now }

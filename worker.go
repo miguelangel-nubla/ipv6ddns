@@ -45,7 +45,7 @@ type Worker struct {
 	running sync.WaitGroup
 	// The resolvers, by name's order.
 	resolvers []*resolver.Server
-	// The certificates of the resolvers, and of the web server, that an ACME authority signs.
+	// The certificates of the configuration, by name's order.
 	certs []*certificate
 	// The certificate of the web server's HTTPS entries: nil without them.
 	webCert *certfile.Certificate
@@ -198,6 +198,16 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		w.homeAssistant.addEntities(names, w.updateNow)
 	}
 
+	// The certificates, each loaded once, for every server that shows it.
+	certs, err := w.certificates()
+	if err != nil {
+		return nil, err
+	}
+	w.certs = certs
+	if len(cfg.Webserver.HTTPS) > 0 {
+		w.webCert = w.certificate(cfg.Webserver.TLS)
+	}
+
 	// The resolvers, each with the addresses of its zones' endpoints: a zone no task names has its
 	// records still.
 	for _, name := range slices.Sorted(maps.Keys(cfg.Resolvers)) {
@@ -214,22 +224,14 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 			}
 			spec.Zones[i].Addresses = service.Addresses()
 		}
+		if len(spec.Encrypted) > 0 {
+			spec.Certificate = w.certificate(spec.CertificateName)
+		}
 		server, err := resolver.New(spec, logger.Errorf)
 		if err != nil {
 			return nil, err
 		}
 		w.resolvers = append(w.resolvers, server)
-	}
-
-	certs, err := w.certificates()
-	if err != nil {
-		return nil, err
-	}
-	w.certs = certs
-	if t := cfg.Webserver.TLS; t != nil && len(cfg.Webserver.HTTPS) > 0 {
-		if w.webCert, err = certfile.Load(t.CertFile, t.KeyFile, t.ACME != nil, logger.Errorf); err != nil {
-			return nil, fmt.Errorf("webserver.tls: %w", err)
-		}
 	}
 
 	w.config.Warnings = append(slices.Clone(cfg.Warnings), w.zoneLaterWarnings()...)
@@ -376,7 +378,9 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.logger.Infof("resolver %s listening on %s", r.Status().Name, strings.Join(r.Addresses(), ", "))
 	}
 	for _, c := range w.certs {
-		w.running.Go(func() { c.run(ctx) })
+		if c.acme != nil {
+			w.running.Go(func() { c.run(ctx) })
+		}
 	}
 	w.stopped = ctx.Done()
 	// A start that fails past them leaves none listening.
@@ -667,7 +671,7 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 	for _, section := range []pretty.Page{
 		w.State.Page(prefix, hideSensible),
 		w.resolversPage(prefix),
-		w.webserverPage(prefix),
+		w.certificatesPage(prefix),
 		append(w.discWorker.State.Page(prefix), w.discWorker.StatsPage(prefix)...),
 		w.config.Page(prefix, hideSensible),
 	} {
@@ -687,7 +691,7 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 func (w *Worker) resolversPage(prefix string) pretty.Page {
 	statuses := make([]resolver.Status, 0, len(w.resolvers))
 	for _, r := range w.resolvers {
-		statuses = append(statuses, w.resolverStatus(r))
+		statuses = append(statuses, r.Status())
 	}
 	return resolversPage(prefix, statuses)
 }
@@ -755,8 +759,8 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 			cached = fmt.Sprintf("%d of %d", s.CacheEntries, s.CacheSize)
 		}
 		detail("        Cache: %s", cached)
-		if c := s.Certificate; c != nil {
-			page.Add(certificateLine(prefix+"        ", c, time.Now())...)
+		if s.Certificate != "" {
+			plain("        Certificate: %s", s.Certificate)
 		}
 	}
 	return page
@@ -766,16 +770,16 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 // come a month before, so one this close is no longer renewed.
 const certificateWarning = 14 * 24 * time.Hour
 
-// certificateLine tells of the certificate of a resolver's encrypted transports: its names, and
-// until when, in amber when it ends within two weeks, in red once it ended; and, in amber, files
-// that don't read again, while it is still shown.
-func certificateLine(indent string, c *resolver.CertificateStatus, now time.Time) pretty.Line {
+// certificateLine tells of a certificate, after its label: its names, and until when, in amber
+// when it ends within two weeks, in red once it ended; and, in amber, files that don't read
+// again, while it is still shown.
+func certificateLine(indent, label string, c *certfile.Status, now time.Time) pretty.Line {
 	if c.NotAfter.IsZero() {
-		line := pretty.Line{{Text: indent + "Certificate: "}, pretty.As(pretty.Warn, "none yet")}
+		line := pretty.Line{{Text: indent + label + ": "}, pretty.As(pretty.Warn, "none yet")}
 		return append(line, renewalSpans(c)...)
 	}
 	until := c.NotAfter.UTC().Format(time.DateOnly)
-	line := pretty.Line{{Text: indent + "Certificate: " + strings.Join(c.Names, ", ") + ", "}}
+	line := pretty.Line{{Text: indent + label + ": " + strings.Join(c.Names, ", ") + ", "}}
 	switch left := c.NotAfter.Sub(now); {
 	case left <= 0:
 		line = append(line, pretty.As(pretty.Error, "expired on "+until))
@@ -792,7 +796,7 @@ func certificateLine(indent string, c *resolver.CertificateStatus, now time.Time
 
 // renewalSpans tell, in amber, why the last attempt to get the certificate failed, and when the
 // next is: nothing, of one that didn't fail.
-func renewalSpans(c *resolver.CertificateStatus) pretty.Line {
+func renewalSpans(c *certfile.Status) pretty.Line {
 	if c.Renewal == "" {
 		return nil
 	}
@@ -823,14 +827,28 @@ func (w *Worker) PushSource(name string) (*source.Source, bool) {
 // Logger is the worker's logger.
 func (w *Worker) Logger() *zap.SugaredLogger { return w.logger }
 
-// webserverPage tells of the certificate of the web server's HTTPS: nothing without it.
-func (w *Worker) webserverPage(prefix string) pretty.Page {
-	c := w.webserverCertificate()
-	if c == nil {
+// certificatesPage tells, of each certificate, what shows it, the names it is for, and until
+// when: nothing without certificates.
+func (w *Worker) certificatesPage(prefix string) pretty.Page {
+	return certificatesPage(prefix, w.certificateStatuses(), time.Now())
+}
+
+// certificatesPage is the page of the certificates of those statuses.
+func certificatesPage(prefix string, statuses []CertificateStatus, now time.Time) pretty.Page {
+	if len(statuses) == 0 {
 		return nil
 	}
 	var page pretty.Page
-	page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, "Webserver:"))
-	page.Add(certificateLine(prefix+"    ", c, time.Now())...)
+	page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, "Certificates:"))
+	for _, c := range statuses {
+		var users []string
+		for _, u := range c.UsedBy {
+			if name, ok := strings.CutPrefix(u, "resolvers."); ok {
+				u = "resolver " + name
+			}
+			users = append(users, u)
+		}
+		page.Add(certificateLine(prefix+"    ", c.Name+" ("+strings.Join(users, ", ")+")", c.Status, now)...)
+	}
 	return page
 }

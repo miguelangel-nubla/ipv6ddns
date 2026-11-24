@@ -13,8 +13,9 @@ type Webserver struct {
 	// takes them; without a port, 8053. An entry that starts with https:// serves HTTPS there,
 	// with the certificate of tls, on port 8443 without one. None: no web server.
 	Listen StringList `json:"listen,omitempty"`
-	// The certificate of the HTTPS entries. Required with one, and only then.
-	TLS *TLS `json:"tls,omitempty"`
+	// The certificate of the HTTPS entries: the name of one of certificates. Required with one,
+	// and only then.
+	TLS string `json:"tls,omitempty"`
 
 	// The entries, read: of HTTP, and of HTTPS.
 	Plain, HTTPS []listen.Entry `json:"-"`
@@ -45,7 +46,7 @@ func (c *Config) setUpWebserver() error {
 		}
 		c.Webserver.Plain = append(c.Webserver.Plain, entries...)
 	}
-	return c.checkCertificate("webserver", "webserver", c.Webserver.TLS, len(c.Webserver.HTTPS) > 0)
+	return c.useCertificate("webserver", c.Webserver.TLS, len(c.Webserver.HTTPS) > 0)
 }
 
 // cutScheme is the entry after its scheme, if it has it, whatever its letters' case.

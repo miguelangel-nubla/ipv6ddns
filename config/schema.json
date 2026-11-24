@@ -199,8 +199,9 @@
                         "description": "Where it answers: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Plain DNS, over UDP and TCP, port 53 by default. An entry that starts with tls://, https:// or quic:// answers over that encrypted transport instead: DNS over TLS, port 853 by default, as tls://192.168.1.0/24; DNS over HTTPS, port 443, at /dns-query, as https://192.168.1.0/24; DNS over QUIC, UDP port 853, as quic://192.168.1.0/24. The encrypted ones need tls. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port over the same protocol, however each writes it."
                     },
                     "tls": {
-                        "$ref": "#/$defs/tls",
-                        "description": "The certificate the encrypted entries of listen show. Required with an encrypted entry, and only then."
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The certificate the encrypted entries of listen show: the name of one of certificates, as home. Required with an encrypted entry, and only then."
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
@@ -236,6 +237,13 @@
                     "listen",
                     "upstream"
                 ]
+            }
+        },
+        "certificates": {
+            "type": "object",
+            "description": "The certificates the resolvers' encrypted entries and the web server's HTTPS ones show, by name: each server gives one as its tls, and two servers can show one. Each has files of its own, and is shown by at least one server.",
+            "additionalProperties": {
+                "$ref": "#/$defs/tls"
             }
         },
         "discovery": {
@@ -648,8 +656,9 @@
                     "description": "Where to serve: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it. An entry that starts with https:// serves HTTPS there, with the certificate of tls, on port 8443 without one: as https://192.168.1.2. The plain ones stay HTTP, as the Home Assistant app's page needs."
                 },
                 "tls": {
-                    "$ref": "#/$defs/tls",
-                    "description": "The certificate of the HTTPS entries of listen. Required with one, and only then."
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The certificate of the HTTPS entries of listen: the name of one of certificates, as home. Required with one, and only then."
                 }
             }
         },
@@ -853,17 +862,17 @@
         "tls": {
             "type": "object",
             "additionalProperties": false,
-            "description": "A certificate that TLS servers show: its files, or acme, for ipv6ddns to get it from an authority, as Let's Encrypt, and renew it.",
+            "description": "A certificate that the resolvers' encrypted entries and the web server's HTTPS ones show, those that give its name as their tls: its files, or acme, for ipv6ddns to get it from an authority, as Let's Encrypt, and renew it. A server shows it whatever names its listen has: for clients to take it, it must be for the names they use.",
             "properties": {
                 "certificate": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<resolver>/fullchain.pem, or tls/webserver/fullchain.pem."
+                    "description": "The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<name>/fullchain.pem."
                 },
                 "key": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<resolver>/privkey.pem, or tls/webserver/privkey.pem."
+                    "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<name>/privkey.pem."
                 },
                 "acme": {
                     "type": "object",

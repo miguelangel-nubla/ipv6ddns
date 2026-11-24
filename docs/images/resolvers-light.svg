@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 843.2 199" width="843.2" height="199" role="img" aria-label="The report of ipv6ddns, with its colors">
-<rect x="0.5" y="0.5" width="842.2" height="198" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 843.2 256" width="843.2" height="256" role="img" aria-label="The report of ipv6ddns, with its colors">
+<rect x="0.5" y="0.5" width="842.2" height="255" rx="6" fill="#ffffff" stroke="#d0d7de"/>
 <g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#1d2530">
 <text x="16" y="28" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#1d2530" font-weight="600">Resolvers:</text>
 <text x="101.8" y="28" textLength="15.6" lengthAdjust="spacingAndGlyphs">1,</text>
@@ -16,6 +16,8 @@
 <text x="452.8" y="123" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8a5200">(3 failed)</text>
 <text x="78.4" y="142" textLength="655.2" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
 <text x="78.4" y="161" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Cache: 1274 of 10000</text>
-<text x="78.4" y="180" textLength="390" lengthAdjust="spacingAndGlyphs">Certificate: dns.lan.example.com, until 2027-02-21</text>
+<text x="78.4" y="180" textLength="132.6" lengthAdjust="spacingAndGlyphs">Certificate: home</text>
+<text x="16" y="218" textLength="101.4" lengthAdjust="spacingAndGlyphs" fill="#1d2530" font-weight="600">Certificates:</text>
+<text x="47.2" y="237" textLength="452.4" lengthAdjust="spacingAndGlyphs">home (resolver lan): dns.lan.example.com, until 2027-02-21</text>
 </g>
 </svg>

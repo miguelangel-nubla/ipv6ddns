@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	section  = regexp.MustCompile(`^(DNS|Resolvers|Webserver|Discovery|Config):`)
+	section  = regexp.MustCompile(`^(DNS|Resolvers|Certificates|Discovery|Config):`)
 	counts   = regexp.MustCompile(`^ (\d+ names?, )(\d+) with addresses, (\d+) without; (\d+) failing$`)
 	nameLine = regexp.MustCompile(`^( +[^ ]+)(:)(.*)$`)
 	note     = regexp.MustCompile(` \([^()]*(\([^()]*\)[^()]*)*\)`)
@@ -40,8 +40,8 @@ func Roles(text string) pretty.Page {
 			page = append(page, dnsLine(line, body, indent))
 		case "Resolvers":
 			page = append(page, resolverLine(line, body, indent))
-		case "Webserver":
-			if strings.HasPrefix(body, "Certificate: ") {
+		case "Certificates":
+			if indent == 4 {
 				page = append(page, certificateLine(line))
 			} else {
 				page.Add(pretty.Span{Text: line})
@@ -144,8 +144,6 @@ func resolverLine(line, body string, indent int) pretty.Line {
 		return pretty.Line{pretty.As(pretty.Name, name), {Text: ": "}, pretty.As(role, state)}
 	case strings.HasPrefix(body, "Queries: "), strings.HasPrefix(body, "Cache: "):
 		return pretty.Line{pretty.As(pretty.Detail, line)}
-	case strings.HasPrefix(body, "Certificate: "):
-		return certificateLine(line)
 	case strings.HasPrefix(body, "Upstream: "):
 		var out pretty.Line
 		last := 0
@@ -278,7 +276,7 @@ func num(tenths int) string {
 	return strconv.Itoa(tenths/10) + "." + strconv.Itoa(tenths%10)
 }
 
-// certificateLine is the certificate of a resolver: until when, in amber within two weeks of its
+// certificateLine is a certificate: until when, in amber within two weeks of its
 // end and in red after it, and its files in amber when they don't read again.
 func certificateLine(line string) (out pretty.Line) {
 	line, renewal, hasRenewal := strings.Cut(line, " (getting it failed: ")
