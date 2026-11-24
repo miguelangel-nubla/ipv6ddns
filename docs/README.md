@@ -7,7 +7,7 @@ New here? The [README](../README.md) explains what ipv6ddns does. Each [guide](g
 ## Getting started
 
 - [Installation and running](installation.md): binaries, Docker, what discovery needs, flags, the web report, health and metrics, several instances at once.
-- [Guides](guides/README.md): complete common setups, such as [every machine on the network by name](guides/network-wide-names.md).
+- [Guides](guides/README.md): complete common setups, such as [every machine on the network by name](guides/network-wide-names.md) and [a public name for any device, over IPv6](guides/public-ipv6-names.md).
 - [Guides for the Home Assistant app](guides/home-assistant/README.md): what changes in each guide when ipv6ddns runs as the app.
 
 ## Configuring

@@ -23,5 +23,6 @@ The steps below cover those three things, for every guide. Each guide for the ap
 | You want | Start here |
 |---|---|
 | Every machine on the network by name, `nas.lan.example.com`, from every device | [Network-wide names, the app's side](network-wide-names.md) |
+| A public name for a device, or for Home Assistant, that follows it when the ISP changes the IPv6 prefix | [A public name over IPv6, the app's side](public-ipv6-names.md) |
 
 To give Home Assistant itself a public name, such as `ha.example.com`, see the app's own documentation: [publishing Home Assistant itself](../../../homeassistant/addon/DOCS.md#publishing-home-assistant-itself).

@@ -180,10 +180,14 @@ func TestDocExamples(t *testing.T) {
 				if strings.HasSuffix(ref[1], "_KEY") {
 					value = esphome.GenerateKey()
 				}
+				if ref[1] == "duckdns_token" {
+					value = "01234567-89ab-cdef-0123-456789abcdef"
+				}
 				t.Setenv(ref[1], value)
 			}
 			// A file a ${file:...} names: beside the configuration when relative, with a key in a
-			// key's, as the add-on makes it; an absolute one, a value.
+			// key's, as the add-on makes it, and a token of DuckDNS's form in DuckDNS's; an absolute
+			// one, a value.
 			dir := t.TempDir()
 			for _, ref := range regexp.MustCompile(`\$\{file:([^}]*)\}`).FindAllStringSubmatch(block, -1) {
 				if filepath.IsAbs(ref[1]) {
@@ -193,6 +197,9 @@ func TestDocExamples(t *testing.T) {
 				value := "example"
 				if strings.HasSuffix(ref[1], ".key") {
 					value = esphome.GenerateKey()
+				}
+				if ref[1] == "duckdns_token" {
+					value = "01234567-89ab-cdef-0123-456789abcdef"
 				}
 				if err := os.WriteFile(filepath.Join(dir, ref[1]), []byte(value+"\n"), 0o600); err != nil {
 					t.Fatal(err)
