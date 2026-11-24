@@ -150,8 +150,9 @@ resolvers:
     listen:
       - 192.168.1.0/24
       - tls://192.168.1.0/24
-    tls_certificate: /ssl/fullchain.pem
-    tls_key: /ssl/privkey.pem
+    tls:
+      certificate: /ssl/fullchain.pem
+      key: /ssl/privkey.pem
     upstream:
       - 192.168.1.1
 ```

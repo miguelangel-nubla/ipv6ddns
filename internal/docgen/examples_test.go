@@ -215,8 +215,7 @@ func TestDocExamples(t *testing.T) {
 			// The files of a resolver's certificate and key: a pair of the test's, in their place.
 			if certificateFile.MatchString(block) {
 				certFile, keyFile := certificatePair(t)
-				block = certificateFile.ReplaceAllString(block, "${1}"+certFile)
-				block = tlsKeyFile.ReplaceAllString(block, "${1}"+keyFile)
+				block = certificateFile.ReplaceAllString(block, "${1}"+certFile+"${2}"+keyFile)
 			}
 			path := filepath.Join(dir, "config.yaml")
 			if err := os.WriteFile(path, []byte(block), 0o600); err != nil {
@@ -308,11 +307,8 @@ func dedent(block string) string {
 	return strings.Join(lines, "\n")
 }
 
-// The settings of a resolver's certificate and its key, with the file each names.
-var (
-	certificateFile = regexp.MustCompile(`(?m)^(\s*tls_certificate:\s*)\S+`)
-	tlsKeyFile      = regexp.MustCompile(`(?m)^(\s*tls_key:\s*)\S+`)
-)
+// A resolver's tls block, of its certificate and then its key, with the file each names.
+var certificateFile = regexp.MustCompile(`(?m)^(\s+tls:\n\s+certificate:\s*)\S+(\n\s+key:\s*)\S+`)
 
 // certificatePair writes a certificate signed by itself and its key, as PEM files, for the
 // examples that name such files.

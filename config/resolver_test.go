@@ -535,7 +535,7 @@ func writeTestCertificate(t *testing.T) (certFile, keyFile string) {
 // need the certificate and its key, which must read as a pair; and these are for them alone.
 func TestResolverConfigEncryptedListen(t *testing.T) {
 	certFile, keyFile := writeTestCertificate(t)
-	files := "\n    tls_certificate: " + certFile + "\n    tls_key: " + keyFile
+	files := "\n    tls:\n      certificate: " + certFile + "\n      key: " + keyFile
 	cfg, err := resolverConfig(t, `
   lan:
     listen:
@@ -567,17 +567,18 @@ func TestResolverConfigEncryptedListen(t *testing.T) {
 		{"an encrypted entry without a certificate", `
   lan:
     listen: "tls://192.168.1.0/24"
-    upstream: 192.168.1.1`, "resolvers.lan: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls_certificate and tls_key, the files of the certificate and of its key, in PEM"},
+    upstream: 192.168.1.1`, "resolvers.lan.tls: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM"},
 		{"a certificate without an encrypted entry", `
   lan:
     listen: 192.168.1.0/24
-    upstream: 192.168.1.1` + files, "resolvers.lan: tls_certificate and tls_key are for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave them out"},
+    upstream: 192.168.1.1` + files, "resolvers.lan.tls is for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave tls out"},
 		{"a key that isn't the certificate's", `
   lan:
     listen: "quic://192.168.1.0/24"
     upstream: 192.168.1.1
-    tls_certificate: ` + certFile + `
-    tls_key: ` + certFile, "resolvers.lan.tls_certificate: "},
+    tls:
+      certificate: ` + certFile + `
+      key: ` + certFile, "resolvers.lan.tls: "},
 		{"two resolvers on one address over TLS", `
   lan:
     listen: "tls://192.168.1.2"
@@ -603,5 +604,34 @@ func TestResolverConfigEncryptedListen(t *testing.T) {
     listen: "quic://192.168.1.2"
     upstream: 192.168.1.1`+files, strings.Replace(homeCredential, "zone: home.arpa", "resolver: lan\n      zone: home.arpa", 1), nasTask); err != nil {
 		t.Errorf("TLS and QUIC on port 853: %v", err)
+	}
+}
+
+// The files of tls, relative, are in the configuration's folder, wherever the program runs.
+func TestResolverConfigTLSRelative(t *testing.T) {
+	certFile, keyFile := writeTestCertificate(t)
+	dir := t.TempDir()
+	for from, to := range map[string]string{certFile: "certs/fullchain.pem", keyFile: "certs/privkey.pem"} {
+		data, err := os.ReadFile(from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.MkdirAll(filepath.Join(dir, "certs"), 0o700)
+		if err := os.WriteFile(filepath.Join(dir, to), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(dir, "config.yaml")
+	text := "resolvers:\n  lan:\n    listen: \"tls://192.168.1.0/24\"\n    upstream: 192.168.1.1\n    tls:\n      certificate: certs/fullchain.pem\n      key: certs/privkey.pem\ncredentials:\n" + homeCredential + "\ntasks:\n" + nasTask + "\n"
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := cfg.Resolvers["lan"].Spec
+	if spec.CertFile != filepath.Join(dir, "certs/fullchain.pem") || spec.KeyFile != filepath.Join(dir, "certs/privkey.pem") {
+		t.Errorf("the files: %s, %s", spec.CertFile, spec.KeyFile)
 	}
 }

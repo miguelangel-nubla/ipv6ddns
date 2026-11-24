@@ -376,11 +376,12 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 
+	// Before the resolvers, whose files are relative to it.
+	config.BaseDir = filepath.Dir(filename)
+
 	if err := config.setUpResolvers(); err != nil {
 		return config, err
 	}
-
-	config.BaseDir = filepath.Dir(filename)
 
 	return config, nil
 }

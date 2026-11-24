@@ -174,8 +174,9 @@ resolvers:
       - tls://192.168.1.0/24    # DNS over TLS, port 853
       - https://192.168.1.0/24  # DNS over HTTPS, port 443
       - quic://192.168.1.0/24   # DNS over QUIC, port 853
-    tls_certificate: /etc/ssl/dns/fullchain.pem
-    tls_key: /etc/ssl/dns/privkey.pem
+    tls:
+      certificate: /etc/ssl/dns/fullchain.pem
+      key: /etc/ssl/dns/privkey.pem
     upstream:
       - 192.168.1.1
 
@@ -192,7 +193,7 @@ Everything else is the same on every transport: the same answers, the same [`all
 
 ### The certificate it shows
 
-The encrypted transports show a certificate, which `tls_certificate` and `tls_key` give: the files of the certificate with its chain, and of its private key, in PEM. Let's Encrypt names them `fullchain.pem` and `privkey.pem`. Both are required with an encrypted entry, and ipv6ddns doesn't start if they don't read as a pair.
+The encrypted transports show a certificate, which `tls` gives: `certificate` and `key`, the files of the certificate with its chain, and of its private key, in PEM, relative to the configuration's folder unless absolute. Let's Encrypt names them `fullchain.pem` and `privkey.pem`. Both are required with an encrypted entry, and ipv6ddns doesn't start if they don't read as a pair.
 
 Clients check the certificate. Most of them only accept one that a public authority signed, for the name they were told to use. So:
 

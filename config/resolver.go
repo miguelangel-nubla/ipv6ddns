@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,10 +26,9 @@ type Resolver struct {
 	// Required. Where it answers, as listen takes it; without a port, 53. An entry that starts with
 	// tls://, https:// or quic:// answers over that encrypted transport, on its port by default.
 	Listen StringList `json:"listen,omitempty"`
-	// The files of the certificate, in PEM, with its chain, and of its key, which the encrypted
-	// transports show. Required with an encrypted entry, and only then.
-	TLSCertificate string `json:"tls_certificate,omitempty"`
-	TLSKey         string `json:"tls_key,omitempty"`
+	// The certificate the encrypted transports show. Required with an encrypted entry, and only
+	// then.
+	TLS *ResolverTLS `json:"tls,omitempty"`
 	// The networks, or addresses, of the clients it answers; any other is refused. Default: the
 	// networks of the machine's addresses it listens on.
 	Allow StringList `json:"allow,omitempty"`
@@ -50,6 +50,14 @@ type Resolver struct {
 
 	// The resolver, checked, with its zones.
 	Spec resolver.Config `json:"-"`
+}
+
+// ResolverTLS is the certificate of a resolver's encrypted transports.
+type ResolverTLS struct {
+	// The files of the certificate, in PEM, with its chain, and of its key: relative to the
+	// configuration's folder, unless absolute.
+	Certificate string `json:"certificate,omitempty"`
+	Key         string `json:"key,omitempty"`
 }
 
 // ResolverProvider is the provider of a zone a resolver answers.
@@ -119,10 +127,12 @@ func (c *Config) setUpResolvers() error {
 				spec.ListenLines = append(spec.ListenLines, strings.TrimSpace(line))
 			}
 		}
-		if err := checkCertificate(path, r, len(spec.Encrypted) > 0); err != nil {
+		if err := checkCertificate(path, r.TLS, c.BaseDir, len(spec.Encrypted) > 0); err != nil {
 			return err
 		}
-		spec.CertFile, spec.KeyFile = r.TLSCertificate, r.TLSKey
+		if r.TLS != nil {
+			spec.CertFile, spec.KeyFile = inFolder(c.BaseDir, r.TLS.Certificate), inFolder(c.BaseDir, r.TLS.Key)
+		}
 		// By protocol: plain DNS has UDP and TCP, DNS over TLS and over HTTPS TCP, over QUIC UDP.
 		claim := func(protocol, shown string, e fmt.Stringer) error {
 			key := protocol + " " + e.String()
@@ -396,17 +406,26 @@ func listenTransport(line string) (transport, rest string) {
 
 // checkCertificate tells of a resolver that has encrypted entries and no certificate, or one
 // without the other, or a certificate and its key that don't read as a pair.
-func checkCertificate(path string, r Resolver, encrypted bool) error {
+func checkCertificate(path string, t *ResolverTLS, base string, encrypted bool) error {
 	switch {
-	case encrypted && (r.TLSCertificate == "" || r.TLSKey == ""):
-		return fmt.Errorf("%s: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls_certificate and tls_key, the files of the certificate and of its key, in PEM", path)
-	case !encrypted && (r.TLSCertificate != "" || r.TLSKey != ""):
-		return fmt.Errorf("%s: tls_certificate and tls_key are for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave them out", path)
+	case encrypted && (t == nil || t.Certificate == "" || t.Key == ""):
+		return fmt.Errorf("%s.tls: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM", path)
+	case !encrypted && t != nil:
+		return fmt.Errorf("%s.tls is for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave tls out", path)
 	case !encrypted:
 		return nil
 	}
-	if _, err := tls.LoadX509KeyPair(r.TLSCertificate, r.TLSKey); err != nil {
-		return fmt.Errorf("%s.tls_certificate: %s and %s: %w", path, r.TLSCertificate, r.TLSKey, err)
+	certFile, keyFile := inFolder(base, t.Certificate), inFolder(base, t.Key)
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+		return fmt.Errorf("%s.tls: %s and %s: %w", path, certFile, keyFile, err)
 	}
 	return nil
+}
+
+// inFolder is the path of a file, relative to the folder unless absolute.
+func inFolder(folder, file string) string {
+	if file == "" || filepath.IsAbs(file) {
+		return file
+	}
+	return filepath.Join(folder, file)
 }

@@ -191,17 +191,28 @@
                 "properties": {
                     "listen": {
                         "$ref": "#/$defs/stringList",
-                        "description": "Where it answers: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Plain DNS, over UDP and TCP, port 53 by default. An entry that starts with tls://, https:// or quic:// answers over that encrypted transport instead: DNS over TLS, port 853 by default, as tls://192.168.1.0/24; DNS over HTTPS, port 443, at /dns-query, as https://192.168.1.0/24; DNS over QUIC, UDP port 853, as quic://192.168.1.0/24. The encrypted ones need tls_certificate and tls_key. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port over the same protocol, however each writes it."
+                        "description": "Where it answers: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Plain DNS, over UDP and TCP, port 53 by default. An entry that starts with tls://, https:// or quic:// answers over that encrypted transport instead: DNS over TLS, port 853 by default, as tls://192.168.1.0/24; DNS over HTTPS, port 443, at /dns-query, as https://192.168.1.0/24; DNS over QUIC, UDP port 853, as quic://192.168.1.0/24. The encrypted ones need tls. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port over the same protocol, however each writes it."
                     },
-                    "tls_certificate": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "The file of the certificate the encrypted entries of listen show, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Required with an encrypted entry, and only then."
-                    },
-                    "tls_key": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Required with tls_certificate."
+                    "tls": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "The certificate the encrypted entries of listen show. Required with an encrypted entry, and only then.",
+                        "properties": {
+                            "certificate": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute."
+                            },
+                            "key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute."
+                            }
+                        },
+                        "required": [
+                            "certificate",
+                            "key"
+                        ]
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",

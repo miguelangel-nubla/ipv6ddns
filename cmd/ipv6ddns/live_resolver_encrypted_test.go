@@ -104,8 +104,9 @@ resolvers:
       - "tls://%[1]s"
       - "https://%[1]s"
       - "quic://%[1]s"
-    tls_certificate: %[2]s
-    tls_key: %[3]s
+    tls:
+      certificate: %[2]s
+      key: %[3]s
     # Nothing is forwarded in this test: a server that doesn't answer.
     upstream: 192.0.2.1
 credentials:
