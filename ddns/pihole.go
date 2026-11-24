@@ -109,13 +109,13 @@ func (p *PiHole) call(client *http.Client, method, path string, out any) error {
 		return err
 	}
 	if p.Password == "" {
-		return errors.New("Pi-hole asks for a password: give password, the one of its web interface or an application password")
+		return errors.New("a password is needed: give password, the one of Pi-hole's web interface or an application password")
 	}
 	if err := p.login(client); err != nil {
 		return err
 	}
 	if err := p.request(client, method, path, nil, out); errors.Is(err, errPiHoleSession) {
-		return errors.New("Pi-hole refuses the session it just gave")
+		return errors.New("the session Pi-hole just gave is refused")
 	} else {
 		return err
 	}

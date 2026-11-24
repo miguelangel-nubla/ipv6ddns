@@ -157,7 +157,7 @@ func TestPiHoleErrors(t *testing.T) {
 		t.Errorf("the error has the password: %v", err)
 	}
 	err = (&PiHole{Address: server.URL, Zone: "example.com"}).Update("nas", desired())
-	if err == nil || !strings.Contains(err.Error(), "Pi-hole asks for a password") {
+	if err == nil || !strings.Contains(err.Error(), "a password is needed") {
 		t.Errorf("no password: %v", err)
 	}
 
