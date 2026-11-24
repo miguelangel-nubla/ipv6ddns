@@ -92,6 +92,10 @@ func TestPushHandler(t *testing.T) {
 		{"no hostname", "GET", "/nic/update?myip=203.0.113.12", "x", "secret", 400, "notfqdn"},
 		{"not an address", "GET", "/nic/update?hostname=wan&myip=nonsense", "x", "secret", 400, "911"},
 		{"no address, from a private one", "GET", "/nic/update?hostname=wan", "x", "secret", 400, "911"},
+		{"a Fritz!Box's prefix, with its length", "GET", "/nic/update?hostname=lab&myip=203.0.113.20&ip6lanprefix=2001:db8:1:2::/64", "x", "other", 200, "good 203.0.113.20"},
+		{"a prefix without its length, alone", "GET", "/nic/update?hostname=lab&ip6lanprefix=2001:db8:1:3::", "x", "other", 200, "good 203.0.113.20"},
+		{"the same prefix again", "GET", "/nic/update?hostname=lab&ip6lanprefix=2001:db8:1:3::/64", "x", "other", 200, "nochg 203.0.113.20"},
+		{"not a prefix", "GET", "/nic/update?hostname=lab&ip6lanprefix=192.168.1.0/24", "x", "other", 400, "911"},
 	} {
 		code, body := ask(tc.method, tc.target, tc.user, tc.password)
 		if code != tc.status || body != tc.body {
@@ -101,8 +105,12 @@ func TestPushHandler(t *testing.T) {
 	if got := addresses("wan"); !slices.Equal(got, []string{"2001:db8::10", "203.0.113.10"}) {
 		t.Errorf("wan has %v after the refused ones", got)
 	}
-	if got := addresses("lab"); len(got) != 0 {
+	if got := addresses("lab"); !slices.Equal(got, []string{"203.0.113.20"}) {
 		t.Errorf("lab has %v", got)
+	}
+	lab, _ := w.PushSource("lab")
+	if p, ok := lab.Prefix(); !ok || p.String() != "2001:db8:1:3::/64" {
+		t.Errorf("lab's prefix: %s, %v", p, ok)
 	}
 
 	// Without myip, the address it comes from, when public: as from a router on the internet.
@@ -112,6 +120,7 @@ func TestPushHandler(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
 	if body := strings.TrimSpace(resp.Body.String()); resp.Code != 200 || body != "good 198.51.100.7" {
+		// lab had 203.0.113.20: the address it comes from replaces it.
 		t.Errorf("from a public address: %d %q", resp.Code, body)
 	}
 	// A refusal says how to log in.

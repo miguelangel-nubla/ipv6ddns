@@ -215,6 +215,11 @@ func (c *Config) setUpSources() error {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {
+		for _, f := range c.Tasks[name].Filters {
+			if p := f.IP.PrefixSource; p != "" && c.Sources[p].Type != SourcePush {
+				return fmt.Errorf("task %s: ip.prefix_source %s is no push source: give the push source whose router sends the IPv6 prefix", name, p)
+			}
+		}
 		for _, source := range c.Tasks[name].Sources {
 			if _, ok := c.Sources[source]; !ok {
 				return fmt.Errorf("task %s: there's no source %s under sources", name, source)

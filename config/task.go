@@ -46,6 +46,12 @@ type IPFilters struct {
 	// of any rule of NotSeen.
 	Seen    []Seen `json:"seen,omitempty"`
 	NotSeen []Seen `json:"not_seen,omitempty"`
+	// A push source: an IPv6 address must be in the IPv6 prefix its router sent last, as a
+	// Fritz!Box sends the prefix of its LAN. IPv4 addresses pass. Until the router sent one, every
+	// address passes.
+	PrefixSource string `json:"prefix_source,omitempty"`
+	// What tells a source's prefix, set by the program: nil, no prefix.
+	SourcePrefix func(source string) (netip.Prefix, bool) `json:"-"`
 }
 
 // Match tells whether any of the task's filters matches the address.
@@ -68,7 +74,21 @@ func (f Filters) Match(addr *ipv6disc.Addr) bool {
 		filter.CheckIPType(addr, f.IP.Type) &&
 		filter.CheckPrefix(addr.Addr, f.IP.Prefix) &&
 		filter.CheckMask(addr.Addr, f.IP.Mask) &&
+		f.IP.checkPrefixSource(addr.Addr) &&
 		f.IP.checkSeen(addr)
+}
+
+// checkPrefixSource tells whether an IPv6 address is in the prefix of PrefixSource: every address
+// is, without the rule, without a prefix yet, or of IPv4.
+func (f IPFilters) checkPrefixSource(ip netip.Addr) bool {
+	if f.PrefixSource == "" || f.SourcePrefix == nil || !ip.Is6() || ip.Is4In6() {
+		return true
+	}
+	prefix, ok := f.SourcePrefix(f.PrefixSource)
+	if !ok {
+		return true
+	}
+	return prefix.Contains(ip.WithZone(""))
 }
 
 // checkSeen tells whether the address's records are as the rules say: one for each of Seen, and

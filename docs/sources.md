@@ -129,7 +129,7 @@ On the router, the hostname is the source's name, `wan`, and the password the so
 | Router | Where | What |
 |---|---|---|
 | UniFi | *Settings → Internet → Dynamic DNS*, service *custom* | Server `192.168.1.2:8053/nic/update?hostname=%h&myip=%i`, Hostname `wan`, Username anything, Password the source's |
-| Fritz!Box | *Internet → Permit Access → DynDNS*, provider *user-defined* | Update URL `http://192.168.1.2:8053/nic/update?hostname=<domain>&myip=<ipaddr>&myipv6=<ip6addr>&password=<pass>`, Domain name `wan`, Username anything, Password the source's |
+| Fritz!Box | *Internet → Permit Access → DynDNS*, provider *user-defined* | Update URL `http://192.168.1.2:8053/nic/update?hostname=<domain>&myip=<ipaddr>&myipv6=<ip6addr>&ip6lanprefix=<ip6lanprefix>&password=<pass>`, Domain name `wan`, Username anything, Password the source's |
 | OPNsense | *Services → Dynamic DNS*, service *Custom*, protocol *DynDNS 2* | Server `192.168.1.2:8053`, Hostname `wan`, Username anything, Password the source's, without SSL |
 | pfSense | *Services → Dynamic DNS*, type *Custom* | Update URL `http://192.168.1.2:8053/nic/update?hostname=wan&myip=%IP%`, Username anything, Password the source's |
 | OpenWrt | ddns-scripts, a custom update URL | `http://[USERNAME]:[PASSWORD]@192.168.1.2:8053/nic/update?hostname=[DOMAIN]&myip=[IP]` |
@@ -141,6 +141,27 @@ On the router, the hostname is the source's name, `wan`, and the password the so
 - **The answer** is dyndns2's: `good` and the addresses, or `nochg` when they didn't change, with HTTP 200; and on an error, `badauth` with 401, `nohost` with 404 for a hostname that is no push source, or `911` with 400 for an update that has no address it can take. Some routers read the status alone, so an error never comes with 200.
 - **The addresses stay until the next update**, however far: routers send when the address changes, and some only every few weeks otherwise. With `lifetime`, they go if no update comes within it.
 - **A restart keeps them.** They are written to `state_file`, by default `push-<source>.json` in the configuration's folder.
+
+### The prefix of the LAN
+
+A Fritz!Box also sends the IPv6 prefix of its LAN, as `ip6lanprefix` in the URL above, with its length, or a /64 without one. When the ISP changes it, the devices keep their addresses of the prefix before for a while, and discovery keeps them for their lifetime, an hour by default: so a name would have the old address and the new one together. A filter with `ip.prefix_source` takes only the IPv6 addresses in the prefix the source's router sent last, so the old ones leave the name as soon as the router sends the new prefix:
+
+```yaml
+# Added to the configuration above: the server's addresses of the LAN's prefix alone.
+tasks:
+  web:
+    filter:
+      - mac:
+          address: "00:11:22:33:44:55"
+        ip:
+          type:
+            - global
+          prefix_source: wan
+```
+
+- IPv4 addresses pass the rule, as does every address until the router has sent a prefix.
+- A unique local address, `fd00::/8`, is in no prefix the ISP gives: a filter with the rule leaves it out. Give it a filter set of its own, if a name is to have it.
+- The prefix is kept with the addresses, in the source's file, and shown in `/status.json`.
 
 The web server has no other authentication, so give it an address of the LAN, not one the internet reaches. UniFi's dynamic DNS sends IPv4 alone; the IPv6 addresses of the devices come from discovery anyway.
 

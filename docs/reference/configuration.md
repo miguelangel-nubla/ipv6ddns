@@ -67,6 +67,7 @@ Rules on the address itself.
 | `family` | list of `4`, `6` | 4, 6 or both. Default: 6. |
 | `seen` | list of  | How the address must have been seen: a list of records, all of which it must have, each still current. A record is a protocol and how it saw the address, as protocol: mdns with way: announced; or reported, from a table of a plugin or of the kernel. |
 | `not_seen` | list of  | Records the address must have none of, written as for seen. For example, not_seen with reported: {} keeps the addresses the host showed itself, and never one that only a table reports. |
+| `prefix_source` | string | A push source: an IPv6 address must be in the IPv6 prefix of the LAN that its router sent last, as a Fritz!Box sends it with ip6lanprefix. When the ISP changes the prefix, the addresses of the one before leave the names as soon as the router sends the new one, rather than when they expire. IPv4 addresses pass, as does every address until the router has sent a prefix. |
 
 ## Credentials
 

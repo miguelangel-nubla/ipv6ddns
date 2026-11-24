@@ -78,7 +78,20 @@ func pushHandler(worker *ipv6ddns.Worker) http.Handler {
 				addrs = append(addrs, ip.Unmap())
 			}
 		}
-		if len(addrs) == 0 {
+		// The IPv6 prefix of the router's LAN, as a Fritz!Box sends it, with its length or a /64.
+		var prefix netip.Prefix
+		if v := strings.TrimSpace(r.Form.Get("ip6lanprefix")); v != "" {
+			if !strings.Contains(v, "/") {
+				v += "/64"
+			}
+			p, err := netip.ParsePrefix(v)
+			if err != nil || !p.Addr().Is6() || p.Addr().Is4In6() {
+				fail(http.StatusBadRequest, "911", fmt.Sprintf("ip6lanprefix=%q is not an IPv6 prefix", r.Form.Get("ip6lanprefix")))
+				return
+			}
+			prefix = p.Masked()
+		}
+		if len(addrs) == 0 && !prefix.IsValid() {
 			host, _, _ := net.SplitHostPort(r.RemoteAddr)
 			ip, err := netip.ParseAddr(host)
 			if err != nil || !ip.IsGlobalUnicast() || ip.IsPrivate() {
@@ -106,14 +119,18 @@ func pushHandler(worker *ipv6ddns.Worker) http.Handler {
 		var answer []string
 		for i, s := range sources {
 			h := hosts[i]
-			changed, err := s.Push(addrs)
+			changed, err := s.Push(addrs, prefix)
 			if err != nil {
 				logger.Errorf("%s", err)
 			}
 			word := "nochg"
 			if changed {
 				word = "good"
-				logger.Infof("source %s: %v, pushed from %s", h, s.Addresses().Strings(), r.RemoteAddr)
+				pushed := s.Addresses().Strings()
+				if p, ok := s.Prefix(); ok {
+					pushed = append(pushed, "prefix "+p.String())
+				}
+				logger.Infof("source %s: %v, pushed from %s", h, pushed, r.RemoteAddr)
 			}
 			answer = append(answer, word+" "+strings.Join(sortedAddresses(s.Addresses().Strings()), ","))
 		}

@@ -47,23 +47,23 @@ func TestPush(t *testing.T) {
 			t.Errorf("addresses %v, want %v", got, want)
 		}
 	}
-	if changed, err := s.Push(pushed("203.0.113.9", "2001:db8::9")); !changed || err != nil {
+	if changed, err := s.Push(pushed("203.0.113.9", "2001:db8::9"), netip.Prefix{}); !changed || err != nil {
 		t.Fatalf("the first push: %v, %v", changed, err)
 	}
 	have("203.0.113.9", "2001:db8::9")
-	if changed, _ := s.Push(pushed("203.0.113.9")); changed {
+	if changed, _ := s.Push(pushed("203.0.113.9"), netip.Prefix{}); changed {
 		t.Error("the same IPv4 again changed something")
 	}
 	have("203.0.113.9", "2001:db8::9")
-	if changed, _ := s.Push(pushed("2001:db8::10")); !changed {
+	if changed, _ := s.Push(pushed("2001:db8::10"), netip.Prefix{}); !changed {
 		t.Error("a new IPv6 changed nothing")
 	}
 	have("203.0.113.9", "2001:db8::10")
-	if changed, _ := s.Push(pushed("::ffff:203.0.113.10")); !changed {
+	if changed, _ := s.Push(pushed("::ffff:203.0.113.10"), netip.Prefix{}); !changed {
 		t.Error("a new IPv4, mapped, changed nothing")
 	}
 	have("203.0.113.10", "2001:db8::10")
-	if _, err := s.Push(nil); err == nil {
+	if _, err := s.Push(nil, netip.Prefix{}); err == nil {
 		t.Error("a push of nothing")
 	}
 	if rematched != 4 {
@@ -82,7 +82,7 @@ func TestPush(t *testing.T) {
 func TestPushKeptAcrossARestart(t *testing.T) {
 	dir := t.TempDir()
 	s := pushSource(t, dir, time.Hour)
-	if _, err := s.Push(pushed("203.0.113.9", "2001:db8::9")); err != nil {
+	if _, err := s.Push(pushed("203.0.113.9", "2001:db8::9"), netip.Prefix{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "push-wan.json")); err != nil {
@@ -121,5 +121,37 @@ func TestPushFile(t *testing.T) {
 		if got := pushFile("wan", config.Source{StateFile: tc.stateFile}, "/etc/ipv6ddns"); got != tc.want {
 			t.Errorf("%q: %s, want %s", tc.stateFile, got, tc.want)
 		}
+	}
+}
+
+// The prefix a router sends replaces the one before, counts as a change, is kept in the file, and
+// stays when an update sends none; one alone is an update too.
+func TestPushPrefix(t *testing.T) {
+	dir := t.TempDir()
+	s := pushSource(t, dir, 0)
+	if _, ok := s.Prefix(); ok {
+		t.Fatal("a prefix before any push")
+	}
+	if changed, err := s.Push(pushed("203.0.113.9"), netip.MustParsePrefix("2001:db8:1:2::1/64")); !changed || err != nil {
+		t.Fatalf("%v, %v", changed, err)
+	}
+	if p, _ := s.Prefix(); p.String() != "2001:db8:1:2::/64" {
+		t.Errorf("the prefix: %s", p)
+	}
+	if changed, _ := s.Push(pushed("203.0.113.9"), netip.Prefix{}); changed {
+		t.Error("an update without a prefix changed it")
+	}
+	if changed, err := s.Push(nil, netip.MustParsePrefix("2001:db8:9::/56")); !changed || err != nil {
+		t.Errorf("a prefix alone: %v, %v", changed, err)
+	}
+	if st := s.Status(false); st.Prefix != "2001:db8:9::/56" {
+		t.Errorf("the status: %+v", st)
+	}
+	again := pushSource(t, dir, 0)
+	if p, ok := again.Prefix(); !ok || p.String() != "2001:db8:9::/56" {
+		t.Errorf("after a restart: %s, %v", p, ok)
+	}
+	if got := again.Addresses().Strings(); !slices.Equal(got, []string{"203.0.113.9"}) {
+		t.Errorf("the addresses after a restart: %v", got)
 	}
 }

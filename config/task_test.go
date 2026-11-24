@@ -232,3 +232,27 @@ func TestMACAddressForms(t *testing.T) {
 		t.Errorf("unquoted: %v, %+v", err, cfg.Tasks["web"].Filters)
 	}
 }
+
+// prefix_source: an IPv6 address in the prefix the push source has passes, one of another prefix
+// doesn't, and IPv4 passes; without a prefix yet, everything does.
+func TestPrefixSource(t *testing.T) {
+	prefix, known := netip.MustParsePrefix("2001:db8:1:2::/64"), true
+	f := Filters{IP: IPFilters{Family: []int{4, 6}, PrefixSource: "wan", SourcePrefix: func(name string) (netip.Prefix, bool) {
+		if name != "wan" {
+			t.Errorf("asked the prefix of %s", name)
+		}
+		return prefix, known
+	}}}
+	addr := func(ip string) *ipv6disc.Addr {
+		return ipv6disc.NewAddr(net.HardwareAddr{0, 0x11, 0x22, 0x33, 0x44, 0x55}, netip.MustParseAddr(ip), "test", time.Hour, nil)
+	}
+	for ip, want := range map[string]bool{"2001:db8:1:2::5": true, "2001:db8:1:3::5": false, "fd00::5": false, "192.168.1.5": true} {
+		if got := f.Match(addr(ip)); got != want {
+			t.Errorf("%s: %v, want %v", ip, got, want)
+		}
+	}
+	known = false
+	if !f.Match(addr("2001:db8:1:3::5")) {
+		t.Error("without a prefix yet, an address is left out")
+	}
+}

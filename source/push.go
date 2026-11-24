@@ -18,6 +18,7 @@ import (
 // pushState is what a push source keeps in its file: the addresses the router sent last, and when.
 type pushState struct {
 	Addresses []string  `json:"addresses"`
+	Prefix    string    `json:"prefix,omitempty"`
 	At        time.Time `json:"at"`
 }
 
@@ -43,13 +44,22 @@ func (s *Source) Accepts(password string) bool {
 	return subtle.ConstantTimeCompare([]byte(password), []byte(s.config.Password)) == 1
 }
 
-// Push takes the addresses a router sent. Each family they have replaces the source's of that
-// family, and the other family's stay: a router that sends IPv4 and IPv6 apart doesn't take one
-// away with the other. They are kept for the source's lifetime, written to its file, and the
-// tasks match again. It tells whether they changed.
-func (s *Source) Push(addrs []netip.Addr) (bool, error) {
-	if len(addrs) == 0 {
-		return false, errors.New("no address")
+// Push takes the addresses a router sent, and the IPv6 prefix of its LAN, if valid. Each family
+// the addresses have replaces the source's of that family, and the other family's stay: a router
+// that sends IPv4 and IPv6 apart doesn't take one away with the other. The prefix replaces the
+// one before; without one, that one stays. They are kept for the source's lifetime, written to
+// its file, and the tasks match again. It tells whether they changed.
+func (s *Source) Push(addrs []netip.Addr, prefix netip.Prefix) (bool, error) {
+	if len(addrs) == 0 && !prefix.IsValid() {
+		return false, errors.New("no address, nor prefix")
+	}
+	prefixChanged := false
+	if prefix.IsValid() {
+		prefix = prefix.Masked()
+		s.mutex.Lock()
+		prefixChanged = s.prefix != prefix
+		s.prefix = prefix
+		s.mutex.Unlock()
 	}
 	families := map[int]bool{}
 	sent := map[netip.Addr]bool{}
@@ -81,7 +91,14 @@ func (s *Source) Push(addrs []netip.Addr) (bool, error) {
 	if ran != nil {
 		ran()
 	}
-	return !slices.Equal(before, after), err
+	return prefixChanged || !slices.Equal(before, after), err
+}
+
+// Prefix is the IPv6 prefix of its LAN that the router sent last, if it sent one.
+func (s *Source) Prefix() (netip.Prefix, bool) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.prefix, s.prefix.IsValid()
 }
 
 // familyOf is 4 or 6.
@@ -92,9 +109,14 @@ func familyOf(ip netip.Addr) int {
 	return 6
 }
 
-// save writes the addresses to the source's file, through a file beside it, renamed.
+// save writes the addresses, and the prefix, to the source's file, through a file beside it,
+// renamed.
 func (s *Source) save(addrs []string, at time.Time) error {
-	data, err := json.Marshal(pushState{Addresses: addrs, At: at.UTC()})
+	state := pushState{Addresses: addrs, At: at.UTC()}
+	if p, ok := s.Prefix(); ok {
+		state.Prefix = p.String()
+	}
+	data, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
@@ -128,6 +150,13 @@ func (s *Source) load() error {
 	left := s.config.Lifetime.Duration - time.Since(state.At)
 	if left <= 0 {
 		return nil
+	}
+	if state.Prefix != "" {
+		prefix, err := netip.ParsePrefix(state.Prefix)
+		if err != nil {
+			return fmt.Errorf("source %s: %s has the prefix %q: %w", s.name, s.pushFile, state.Prefix, err)
+		}
+		s.prefix = prefix
 	}
 	for _, a := range state.Addresses {
 		ip, err := netip.ParseAddr(a)

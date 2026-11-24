@@ -108,8 +108,13 @@ wan
 	expect("ddclient's IPv4 and IPv6", "203.0.113.10", "2001:db8::10")
 
 	// A Fritz!Box's URL, with the password in it, and no IPv6 this time: the IPv6 stays.
-	run("curl", "-fsS", "http://"+server+"/nic/update?hostname=wan&myip=203.0.113.11&myipv6=&password=secret")
+	run("curl", "-fsS", "http://"+server+"/nic/update?hostname=wan&myip=203.0.113.11&myipv6=&ip6lanprefix=2001:db8:5:6::/64&password=secret")
 	expect("a Fritz!Box's IPv4", "203.0.113.11", "2001:db8::10")
+	for _, s := range one.status().Sources {
+		if s.Name == "wan" && s.Prefix != "2001:db8:5:6::/64" {
+			t.Errorf("the prefix of the LAN: %q", s.Prefix)
+		}
+	}
 
 	// A wrong password changes nothing.
 	run("curl", "-sS", "-u", "router:wrong", "http://"+server+"/nic/update?hostname=wan&myip=203.0.113.99")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -88,11 +89,29 @@ type target struct {
 // lifetime left zero is an hour; a rediscovery interval, a third of the shortest lifetime of the
 // families on.
 func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
+	// The tasks' filters ask the push sources for their prefix: copies, not the caller's.
+	tasks := make(map[string]config.Task, len(cfg.Tasks))
+	var w *Worker
+	sourcePrefix := func(name string) (netip.Prefix, bool) {
+		if s, ok := w.sources[name]; ok {
+			return s.Prefix()
+		}
+		return netip.Prefix{}, false
+	}
+	for name, task := range cfg.Tasks {
+		task.Filters = slices.Clone(task.Filters)
+		for i := range task.Filters {
+			task.Filters[i].IP.SourcePrefix = sourcePrefix
+		}
+		tasks[name] = task
+	}
+	cfg.Tasks = tasks
+
 	discovery := cfg.Discovery.Config()
 	if discovery.Lifetime == 0 {
 		discovery.Lifetime = config.DefaultLifetime
 	}
-	w := &Worker{
+	w = &Worker{
 		State:      NewState(),
 		discWorker: ipv6disc.NewWorker(logger, discovery),
 		logger:     logger,

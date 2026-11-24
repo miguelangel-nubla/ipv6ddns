@@ -43,6 +43,8 @@ type Source struct {
 	// change.
 	pushFile string
 	ran      func()
+	// The IPv6 prefix of its LAN the router sent last: none, the zero one.
+	prefix netip.Prefix
 }
 
 // HomeAssistantStates are the states of Home Assistant's entities that homeassistant sources read:
@@ -224,6 +226,8 @@ type Status struct {
 	LastError   string     `json:"last_error,omitempty"`
 	Runs        int        `json:"runs"`
 	Failures    int        `json:"failures"`
+	// Of a push source: the IPv6 prefix of its LAN the router sent last.
+	Prefix string `json:"prefix,omitempty"`
 }
 
 // Status returns the state of the source. hideSensible hides the error, which can tell a command's
@@ -237,6 +241,9 @@ func (s *Source) Status(hideSensible bool) Status {
 		Addresses: s.Addresses().Strings(),
 		Runs:      s.runs,
 		Failures:  s.failures,
+	}
+	if s.prefix.IsValid() {
+		status.Prefix = s.prefix.String()
 	}
 	if !s.lastRun.IsZero() {
 		lastRun := s.lastRun
