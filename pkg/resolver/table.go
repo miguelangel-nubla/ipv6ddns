@@ -77,24 +77,58 @@ type Zone struct {
 // Addresses are the addresses of a zone's names, as the tasks give them. Safe for concurrent use.
 type Addresses struct {
 	mutex sync.RWMutex
-	names map[string][]netip.Addr
+	names map[string][]Address
+}
+
+// Address is an address of a name, with when it expires. Expires is asked as the resolver
+// answers, since a sighting moves it later without the name being set again; nil, or a zero
+// time, is never.
+type Address struct {
+	Addr    netip.Addr
+	Expires func() time.Time
 }
 
 func NewAddresses() *Addresses {
-	return &Addresses{names: make(map[string][]netip.Addr)}
+	return &Addresses{names: make(map[string][]Address)}
 }
 
-// Set makes addrs the addresses of name, absolute: none removes them.
+// Set makes addrs the addresses of name, absolute, never expiring: none removes them.
 func (a *Addresses) Set(name string, addrs []netip.Addr) {
+	all := make([]Address, len(addrs))
+	for i, addr := range addrs {
+		all[i] = Address{Addr: addr}
+	}
+	a.SetExpiring(name, all)
+}
+
+// SetExpiring makes addrs the addresses of name, absolute: none removes them. An address given
+// twice, as with a zone and without, expires with the later.
+func (a *Addresses) SetExpiring(name string, addrs []Address) {
 	name = strings.ToLower(dns.Fqdn(name))
-	var kept []netip.Addr
+	var kept []Address
 	for _, addr := range addrs {
-		addr = addr.WithZone("").Unmap()
-		if addr.IsValid() && !slices.Contains(kept, addr) {
+		addr.Addr = addr.Addr.WithZone("").Unmap()
+		if !addr.Addr.IsValid() {
+			continue
+		}
+		i := slices.IndexFunc(kept, func(k Address) bool { return k.Addr == addr.Addr })
+		if i < 0 {
 			kept = append(kept, addr)
+			continue
+		}
+		if first, second := kept[i].Expires, addr.Expires; first == nil || second == nil {
+			kept[i].Expires = nil
+		} else {
+			kept[i].Expires = func() time.Time {
+				x, y := first(), second()
+				if x.IsZero() || y.IsZero() {
+					return time.Time{}
+				}
+				return later(x, y)
+			}
 		}
 	}
-	slices.SortFunc(kept, netip.Addr.Compare)
+	slices.SortFunc(kept, func(x, y Address) int { return x.Addr.Compare(y.Addr) })
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 	if len(kept) == 0 {
@@ -104,14 +138,43 @@ func (a *Addresses) Set(name string, addrs []netip.Addr) {
 	a.names[name] = kept
 }
 
+func later(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
 // Get returns the addresses of name, absolute.
 func (a *Addresses) Get(name string) []netip.Addr {
+	var addrs []netip.Addr
+	for _, addr := range a.expiring(name) {
+		addrs = append(addrs, addr.Addr)
+	}
+	return addrs
+}
+
+func (a *Addresses) expiring(name string) []Address {
 	if a == nil {
 		return nil
 	}
 	a.mutex.RLock()
 	defer a.mutex.RUnlock()
 	return a.names[strings.ToLower(dns.Fqdn(name))]
+}
+
+// capTTL is ttl, or less: no longer than the soonest of expires is from now, so that a client
+// keeps no address past when the resolver gives it up; 1s at least, as an address goes. Seconds.
+func capTTL(ttl time.Duration, expires []func() time.Time, now time.Time) uint32 {
+	for _, e := range expires {
+		if e == nil {
+			continue
+		}
+		if t := e(); !t.IsZero() {
+			ttl = min(ttl, t.Sub(now))
+		}
+	}
+	return uint32(max(ttl/time.Second, 1))
 }
 
 // Names returns the names that have addresses now, absolute.
@@ -244,9 +307,12 @@ func (t *table) lookup(asked string, qtype uint16) lookup {
 	}
 	var records []dns.RR
 	if _, ok := n.tasks[owner]; ok || given {
-		ttl := uint32(n.zone.TTL.Seconds())
-		for _, addr := range n.zone.Addresses.Get(owner) {
-			header := dns.RR_Header{Name: asked, Class: dns.ClassINET, Ttl: ttl}
+		// One TTL for the records, as an RRset has (RFC 2181 5.2): the zone's, or less, to when
+		// the first of them expires.
+		var expires []func() time.Time
+		for _, a := range n.zone.Addresses.expiring(owner) {
+			addr := a.Addr
+			header := dns.RR_Header{Name: asked, Class: dns.ClassINET}
 			switch {
 			case addr.Is4() && (qtype == dns.TypeA || qtype == dns.TypeANY):
 				header.Rrtype = dns.TypeA
@@ -254,7 +320,14 @@ func (t *table) lookup(asked string, qtype uint16) lookup {
 			case addr.Is6() && (qtype == dns.TypeAAAA || qtype == dns.TypeANY):
 				header.Rrtype = dns.TypeAAAA
 				records = append(records, &dns.AAAA{Hdr: header, AAAA: addr.AsSlice()})
+			default:
+				continue
 			}
+			expires = append(expires, a.Expires)
+		}
+		ttl := capTTL(n.zone.TTL, expires, time.Now())
+		for _, rr := range records {
+			rr.Header().Ttl = ttl
 		}
 	} else {
 		all := n.records[owner]

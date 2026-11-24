@@ -161,7 +161,7 @@ A credential with the provider `resolver` is a zone that a resolver answers. Its
 - **`zone`** is the zone's name.
 - **`resolver`** is the name of the resolver that answers it. You can leave it out when there's only one resolver.
 - **`records`** are records for the zone's other names, the ones no task publishes. Write each name relative to the zone, or in full within it, such as `printer.lan.example.com.`.
-- **`ttl`** is the TTL of a name's addresses, and of the zone's records that don't give their own. It is `1m` by default.
+- **`ttl`** is the TTL of a name's addresses, and of the zone's records that don't give their own. It is `1m` by default. An answer never outlasts its addresses: when one of them expires sooner than `ttl`, the answer has the time it has left, so clients drop it when the resolver does.
 
 The names in the zone come from the tasks' endpoints, as for any provider: `nas` is `nas.lan.example.com`, `""` is `lan.example.com` itself, and `"*.nas"` is a wildcard.
 

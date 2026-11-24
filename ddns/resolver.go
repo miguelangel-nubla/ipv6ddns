@@ -2,7 +2,6 @@ package ddns
 
 import (
 	"encoding/json"
-	"net/netip"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
@@ -35,13 +34,14 @@ func NewResolver(settings json.RawMessage) (Service, error) {
 }
 
 // Update makes addresses those the resolver answers hostname with, at once and all together: it
-// needs no network, and never fails. None leaves the name without addresses.
+// needs no network, and never fails. None leaves the name without addresses. Each is answered
+// with no TTL past when it expires, which the resolver asks the address itself, as it answers.
 func (r *Resolver) Update(hostname string, addresses *ipv6disc.AddrCollection) error {
-	var addrs []netip.Addr
+	var addrs []resolver.Address
 	for _, addr := range addresses.Get() {
-		addrs = append(addrs, addr.Addr)
+		addrs = append(addrs, resolver.Address{Addr: addr.Addr, Expires: addr.GetExpiration})
 	}
-	r.addresses.Set(resolver.Name(hostname, r.Zone), addrs)
+	r.addresses.SetExpiring(resolver.Name(hostname, r.Zone), addrs)
 	return nil
 }
 
