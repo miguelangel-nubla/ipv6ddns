@@ -199,47 +199,8 @@
                         "description": "Where it answers: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Plain DNS, over UDP and TCP, port 53 by default. An entry that starts with tls://, https:// or quic:// answers over that encrypted transport instead: DNS over TLS, port 853 by default, as tls://192.168.1.0/24; DNS over HTTPS, port 443, at /dns-query, as https://192.168.1.0/24; DNS over QUIC, UDP port 853, as quic://192.168.1.0/24. The encrypted ones need tls. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port over the same protocol, however each writes it."
                     },
                     "tls": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "description": "The certificate the encrypted entries of listen show: its files, or acme, for ipv6ddns to get it from an authority, as Let's Encrypt, and renew it. Required with an encrypted entry, and only then.",
-                        "properties": {
-                            "certificate": {
-                                "type": "string",
-                                "minLength": 1,
-                                "description": "The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<resolver>/fullchain.pem."
-                            },
-                            "key": {
-                                "type": "string",
-                                "minLength": 1,
-                                "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<resolver>/privkey.pem."
-                            },
-                            "acme": {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "description": "A certificate that ipv6ddns gets from an ACME authority, Let's Encrypt by default, by its DNS challenge: it writes the TXT record the authority checks through a credential of the names' public zone, and renews the certificate once two thirds of its lifetime have passed. The names need no address on the internet. It is written to certificate and key, with the account's key, acme-account.key, beside them. Until there is one, the encrypted entries refuse their connections, and the report says why.",
-                                "properties": {
-                                    "names": {
-                                        "$ref": "#/$defs/stringList",
-                                        "description": "The names the certificate is for, relative to the zone of credential, as an endpoint's names are: dns.lan, of the zone example.com, is dns.lan.example.com. A wildcard, as *.lan, is one too. The clients are given one of them, which must have this machine's address, as a record of the resolver's zone."
-                                    },
-                                    "credential": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "The credential of the names' public zone, which writes the TXT record of the challenge: of cloudflare, route53, rfc2136 or duckdns."
-                                    },
-                                    "email": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "An address the authority may write to about the account. Let's Encrypt sends no more mail about certificates that end. Default: none."
-                                    },
-                                    "directory": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "The authority's directory: Let's Encrypt's, https://acme-v02.api.letsencrypt.org/directory, by default. Its staging one, https://acme-staging-v02.api.letsencrypt.org/directory, signs certificates that no client trusts, without its limits, to try the setup with."
-                                    }
-                                }
-                            }
-                        }
+                        "$ref": "#/$defs/tls",
+                        "description": "The certificate the encrypted entries of listen show. Required with an encrypted entry, and only then."
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
@@ -684,7 +645,11 @@
             "properties": {
                 "listen": {
                     "$ref": "#/$defs/stringList",
-                    "description": "Where to serve: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it."
+                    "description": "Where to serve: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it. An entry that starts with https:// serves HTTPS there, with the certificate of tls, on port 8443 without one: as https://192.168.1.2. The plain ones stay HTTP, as the Home Assistant app's page needs."
+                },
+                "tls": {
+                    "$ref": "#/$defs/tls",
+                    "description": "The certificate of the HTTPS entries of listen. Required with one, and only then."
                 }
             }
         },
@@ -884,6 +849,49 @@
                 }
             ],
             "description": "A record the address has: a protocol and how it saw the address, or a report. Give protocol or reported, not both."
+        },
+        "tls": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "A certificate that TLS servers show: its files, or acme, for ipv6ddns to get it from an authority, as Let's Encrypt, and renew it.",
+            "properties": {
+                "certificate": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<resolver>/fullchain.pem, or tls/webserver/fullchain.pem."
+                },
+                "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<resolver>/privkey.pem, or tls/webserver/privkey.pem."
+                },
+                "acme": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "A certificate that ipv6ddns gets from an ACME authority, Let's Encrypt by default, by its DNS challenge: it writes the TXT record the authority checks through a credential of the names' public zone, and renews the certificate once two thirds of its lifetime have passed. The names need no address on the internet. It is written to certificate and key, with the account's key, acme-account.key, beside them. Until there is one, the encrypted entries refuse their connections, and the report says why.",
+                    "properties": {
+                        "names": {
+                            "$ref": "#/$defs/stringList",
+                            "description": "The names the certificate is for, relative to the zone of credential, as an endpoint's names are: dns.lan, of the zone example.com, is dns.lan.example.com. A wildcard, as *.lan, is one too. The clients are given one of them, which must have this machine's address, as a record of the resolver's zone."
+                        },
+                        "credential": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The credential of the names' public zone, which writes the TXT record of the challenge: of cloudflare, route53, rfc2136 or duckdns."
+                        },
+                        "email": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "An address the authority may write to about the account. Let's Encrypt sends no more mail about certificates that end. Default: none."
+                        },
+                        "directory": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The authority's directory: Let's Encrypt's, https://acme-v02.api.letsencrypt.org/directory, by default. Its staging one, https://acme-staging-v02.api.letsencrypt.org/directory, signs certificates that no client trusts, without its limits, to try the setup with."
+                        }
+                    }
+                }
+            }
         },
         "discoveryDuration": {
             "description": "A duration, as 90s, 1m30s or 4h, or a number of seconds.",

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/quic-go/quic-go"
 )
@@ -74,7 +75,7 @@ type Server struct {
 	mutex   sync.Mutex
 	servers []*dns.Server
 	// The certificate of the encrypted transports: nil without them.
-	cert *certificate
+	cert *certfile.Certificate
 	// The servers of DNS over HTTPS, and the listeners of DNS over QUIC, with their connections.
 	https     []*http.Server
 	quic      []*quic.Listener
@@ -236,9 +237,9 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("%s.listen: %w", s.config.Path, err)
 	}
-	var cert *certificate
+	var cert *certfile.Certificate
 	if len(s.config.Encrypted) > 0 {
-		if cert, err = loadCertificate(s.config.CertFile, s.config.KeyFile, s.config.CertManaged, s.errorf); err != nil {
+		if cert, err = certfile.Load(s.config.CertFile, s.config.KeyFile, s.config.CertManaged, s.errorf); err != nil {
 			return fmt.Errorf("%s.tls: %w", s.config.Path, err)
 		}
 	}
@@ -306,7 +307,7 @@ func (s *Server) Start() error {
 				ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
 	for _, l := range enc.tls {
-		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, cert.config(alpnTLS)), Net: "tcp-tls", Handler: s,
+		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, cert.Config(alpnTLS)), Net: "tcp-tls", Handler: s,
 			NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
 	s.mutex.Lock()
@@ -778,7 +779,7 @@ func (s *Server) Status() Status {
 		n.mutex.Unlock()
 	}
 	if s.cert != nil {
-		status.Certificate = s.cert.status()
+		status.Certificate = s.cert.Status()
 	}
 	return status
 }

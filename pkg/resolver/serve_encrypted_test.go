@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/quic-go/quic-go"
 )
@@ -321,9 +322,9 @@ func TestFreshness(t *testing.T) {
 // A renewed certificate, written over the files, is shown to the next client without a restart.
 // Files that don't read keep the one before, and the log says it once.
 func TestEncryptedCertificateReload(t *testing.T) {
-	saved := certificateCheck
-	certificateCheck = 10 * time.Millisecond
-	t.Cleanup(func() { certificateCheck = saved })
+	saved := certfile.CheckInterval
+	certfile.CheckInterval = 10 * time.Millisecond
+	t.Cleanup(func() { certfile.CheckInterval = saved })
 	ca := newTestCA(t)
 	cfg := encryptedConfig(t, ca)
 	var mutex sync.Mutex
@@ -474,9 +475,9 @@ func TestServeEncryptedAsUpstream(t *testing.T) {
 // A certificate that something else writes, as ACME: the resolver starts without it, refusing
 // the encrypted connections, and shows it once its files are written.
 func TestEncryptedManagedCertificate(t *testing.T) {
-	saved := certificateCheck
-	certificateCheck = 10 * time.Millisecond
-	t.Cleanup(func() { certificateCheck = saved })
+	saved := certfile.CheckInterval
+	certfile.CheckInterval = 10 * time.Millisecond
+	t.Cleanup(func() { certfile.CheckInterval = saved })
 	ca := newTestCA(t)
 	cfg := encryptedConfig(t, ca)
 	dir := t.TempDir()

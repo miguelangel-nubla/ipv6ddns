@@ -7,9 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -164,29 +166,49 @@ func main() {
 		sugar.Fatalf("can't start worker: %s", err)
 	}
 
+	// The web server: of HTTP on its plain entries, and of HTTPS, HTTP/1.1 and HTTP/2, with the
+	// certificate of webserver.tls, on its https:// ones.
 	var servers []*http.Server
-	if len(config.Webserver.Listen) > 0 {
-		entries, err := listen.Parse(config.Webserver.Listen, webserverPort)
-		if err != nil {
-			closeTerminal()
-			sugar.Fatalf("webserver.listen: %s", err)
+	var listeners, httpsListeners []net.Listener
+	for _, entries := range []struct {
+		entries []listen.Entry
+		https   bool
+	}{{config.Webserver.Plain, false}, {config.Webserver.HTTPS, true}} {
+		if len(entries.entries) == 0 {
+			continue
 		}
-		listeners, err := listen.Listen(entries)
+		opened, err := listen.Listen(entries.entries)
 		if err != nil {
 			closeTerminal()
 			sugar.Fatalf("web server failed: %s", err)
 		}
-		for _, listener := range listeners {
-			server := &http.Server{Handler: webHandler(worker), ReadHeaderTimeout: 10 * time.Second}
-			servers = append(servers, server)
-			go func() {
-				sugar.Infof("Starting web server on %s", listener.Addr())
-				if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					closeTerminal()
-					sugar.Fatalf("web server failed: %s", err)
-				}
-			}()
+		if entries.https {
+			httpsListeners = append(httpsListeners, opened...)
+		} else {
+			listeners = append(listeners, opened...)
 		}
+	}
+	for _, listener := range slices.Concat(listeners, httpsListeners) {
+		https := slices.Contains(httpsListeners, listener)
+		server := &http.Server{Handler: webHandler(worker), ReadHeaderTimeout: 10 * time.Second}
+		if https {
+			server.TLSConfig = worker.WebserverTLS("h2", "http/1.1")
+		}
+		servers = append(servers, server)
+		go func() {
+			var err error
+			if https {
+				sugar.Infof("Starting web server on https://%s", listener.Addr())
+				err = server.ServeTLS(listener, "", "")
+			} else {
+				sugar.Infof("Starting web server on %s", listener.Addr())
+				err = server.Serve(listener)
+			}
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				closeTerminal()
+				sugar.Fatalf("web server failed: %s", err)
+			}
+		}()
 	}
 
 	if live {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -44,8 +45,10 @@ type Worker struct {
 	running sync.WaitGroup
 	// The resolvers, by name's order.
 	resolvers []*resolver.Server
-	// The certificates of the resolvers that an ACME authority signs.
+	// The certificates of the resolvers, and of the web server, that an ACME authority signs.
 	certs []*certificate
+	// The certificate of the web server's HTTPS entries: nil without them.
+	webCert *certfile.Certificate
 	// Start was called: a second one would run every source and the matching twice.
 	started atomic.Bool
 	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has.
@@ -223,6 +226,11 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		return nil, err
 	}
 	w.certs = certs
+	if t := cfg.Webserver.TLS; t != nil && len(cfg.Webserver.HTTPS) > 0 {
+		if w.webCert, err = certfile.Load(t.CertFile, t.KeyFile, t.ACME != nil, logger.Errorf); err != nil {
+			return nil, fmt.Errorf("webserver.tls: %w", err)
+		}
+	}
 
 	w.config.Warnings = append(slices.Clone(cfg.Warnings), w.zoneLaterWarnings()...)
 
@@ -659,6 +667,7 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 	for _, section := range []pretty.Page{
 		w.State.Page(prefix, hideSensible),
 		w.resolversPage(prefix),
+		w.webserverPage(prefix),
 		append(w.discWorker.State.Page(prefix), w.discWorker.StatsPage(prefix)...),
 		w.config.Page(prefix, hideSensible),
 	} {
@@ -813,3 +822,15 @@ func (w *Worker) PushSource(name string) (*source.Source, bool) {
 
 // Logger is the worker's logger.
 func (w *Worker) Logger() *zap.SugaredLogger { return w.logger }
+
+// webserverPage tells of the certificate of the web server's HTTPS: nothing without it.
+func (w *Worker) webserverPage(prefix string) pretty.Page {
+	c := w.webserverCertificate()
+	if c == nil {
+		return nil
+	}
+	var page pretty.Page
+	page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, "Webserver:"))
+	page.Add(certificateLine(prefix+"    ", c, time.Now())...)
+	return page
+}

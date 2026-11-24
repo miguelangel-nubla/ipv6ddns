@@ -10,6 +10,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/internal/reportpic"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
@@ -127,4 +128,23 @@ func roles(line pretty.Line) string {
 		}
 	}
 	return b.String()
+}
+
+// The web server's section, of its certificate in each state, has the program's roles in the
+// picture too.
+func TestReportPictureHasTheRolesOfTheWebserver(t *testing.T) {
+	for _, c := range []*certfile.Status{
+		{Names: []string{"web.lan.example.com"}, NotAfter: time.Now().Add(60 * 24 * time.Hour)},
+		{Names: []string{"web.lan.example.com"}, NotAfter: time.Now().Add(3 * 24 * time.Hour), Renewal: "ordering: 429 rate limited"},
+		{Managed: true, Renewal: "the check: 403 unauthorized", NextAttempt: time.Now().Add(time.Hour)},
+	} {
+		var page pretty.Page
+		page.Add(pretty.As(pretty.Heading, "Webserver:"))
+		page.Add(certificateLine("    ", c, time.Now())...)
+		for i, line := range reportpic.Roles(page.String()) {
+			if want, have := roles(page[i]), roles(line); want != have {
+				t.Errorf("the roles of %q:\n%s the program's\n%s the picture's", page[i].String(), want, have)
+			}
+		}
+	}
 }

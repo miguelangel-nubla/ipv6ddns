@@ -204,6 +204,39 @@ Networks and host names are resolved once, at start:
 
 The report has no authentication. If you put it behind a reverse proxy, listen only on an address the proxy reaches.
 
+### Over HTTPS
+
+An entry that starts with `https://` serves HTTPS there, HTTP/1.1 and HTTP/2, on port 8443 when it gives none. The plain entries stay HTTP, so one web server can serve both, for example HTTP on the address the Home Assistant app's page reaches and HTTPS on the LAN. The certificate is `webserver.tls`, as for a resolver's [encrypted DNS](resolver.md#the-certificate-it-shows): files you give, or one ipv6ddns gets from Let's Encrypt by the DNS challenge and renews.
+
+```yaml
+webserver:
+  listen:
+    - 172.30.32.1:8053
+    - https://192.168.1.0/24
+  tls:
+    acme:
+      names:
+        - status.lan               # status.lan.example.com, in the zone of the credential
+      credential: public
+
+credentials:
+  public:                          # your public domain, at its DNS provider
+    provider: cloudflare
+    settings:
+      api_token: ${file:cloudflare_token}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+```
+
+The settings of `acme` are those of [a resolver's](resolver.md#a-certificate-from-lets-encrypt).
+
+- With `acme`, the certificate and its key are written to `tls/webserver/` in the configuration's folder, unless `tls.certificate` and `tls.key` say elsewhere. Until the first one is got, the HTTPS entries refuse their connections, and the report says why.
+- A certificate written over its files, by ipv6ddns or anything else, is shown to the next client without a restart.
+- Browsers check the certificate is for the name in the address: open `https://status.lan.example.com:8443`, with a [record](resolver.md#records) or a task that gives the name the server's address, not the address itself.
+- The report has a `Webserver:` section with the certificate's names and when it ends, amber within two weeks and red once ended; `/status.json` has it as `webserver_certificate`.
+- [Push sources](sources.md#a-routers-updates) can take their updates over HTTPS too, if the router's client checks the certificate.
+
 The report hides:
 
 - the credentials;

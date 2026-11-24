@@ -339,6 +339,9 @@ func NewConfig(filename string) (config Config, err error) {
 	// Read, and valid, by checkDiscovery: its warnings.
 	discoveryWarnings, _ := config.Discovery.validate()
 	config.Warnings = slices.Concat(familyWarnings(byteValue), discoveryWarnings)
+	// Before the web server and the resolvers, whose files are relative to it.
+	config.BaseDir = filepath.Dir(filename)
+
 	if err := config.setUpSources(); err != nil {
 		return config, err
 	}
@@ -375,9 +378,6 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := config.checkTemplates(); err != nil {
 		return config, err
 	}
-
-	// Before the resolvers, whose files are relative to it.
-	config.BaseDir = filepath.Dir(filename)
 
 	if err := config.setUpResolvers(); err != nil {
 		return config, err

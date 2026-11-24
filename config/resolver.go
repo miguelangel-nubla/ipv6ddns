@@ -28,7 +28,7 @@ type Resolver struct {
 	Listen StringList `json:"listen,omitempty"`
 	// The certificate the encrypted transports show. Required with an encrypted entry, and only
 	// then.
-	TLS *ResolverTLS `json:"tls,omitempty"`
+	TLS *TLS `json:"tls,omitempty"`
 	// The networks, or addresses, of the clients it answers; any other is refused. Default: the
 	// networks of the machine's addresses it listens on.
 	Allow StringList `json:"allow,omitempty"`
@@ -52,8 +52,8 @@ type Resolver struct {
 	Spec resolver.Config `json:"-"`
 }
 
-// ResolverTLS is the certificate of a resolver's encrypted transports.
-type ResolverTLS struct {
+// TLS is the certificate of a resolver's encrypted transports, or of the web server's HTTPS.
+type TLS struct {
 	// The files of the certificate, in PEM, with its chain, and of its key: relative to the
 	// configuration's folder, unless absolute. With ACME, where it writes them, by default
 	// tls/<resolver>/fullchain.pem and privkey.pem.
@@ -61,15 +61,15 @@ type ResolverTLS struct {
 	Key         string `json:"key,omitempty"`
 	// The certificate from an ACME authority, as Let's Encrypt, by its DNS challenge: kept and
 	// renewed by ipv6ddns.
-	ACME *ResolverACME `json:"acme,omitempty"`
+	ACME *ACME `json:"acme,omitempty"`
 
 	// The files, read: in the configuration's folder; and, with ACME, the account's key, beside
 	// the certificate.
 	CertFile, KeyFile, AccountKeyFile string `json:"-"`
 }
 
-// ResolverACME is a certificate an ACME authority signs.
-type ResolverACME struct {
+// ACME is a certificate an ACME authority signs.
+type ACME struct {
 	// The names it is for, relative to the credential's zone, as an endpoint's: dns.lan of
 	// example.com is dns.lan.example.com. A full name is taken as it is.
 	Names StringList `json:"names,omitempty"`
@@ -437,12 +437,16 @@ func listenTransport(line string) (transport, rest string) {
 // checkCertificate tells of a resolver that has encrypted entries and no certificate, or one
 // without the other, or a certificate and its key that don't read as a pair; or, with ACME, no
 // name, or a credential that isn't there to write its challenge. It sets the files of t.
-func (c *Config) checkCertificate(path, name string, t *ResolverTLS, encrypted bool) error {
+func (c *Config) checkCertificate(path, name string, t *TLS, encrypted bool) error {
+	schemes, example := "tls://, https:// or quic://", "tls://192.168.1.0/24"
+	if path == "webserver" {
+		schemes, example = "https://", "https://192.168.1.2"
+	}
 	switch {
 	case encrypted && t == nil:
-		return fmt.Errorf("%s.tls is missing: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM, or tls.acme, for ipv6ddns to get one", path)
+		return fmt.Errorf("%s.tls is missing: an entry of listen is encrypted, %s, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM, or tls.acme, for ipv6ddns to get one", path, schemes)
 	case !encrypted && t != nil:
-		return fmt.Errorf("%s.tls is for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave tls out", path)
+		return fmt.Errorf("%s.tls is for the encrypted entries of listen, and there is none: add one, as %s, or leave tls out", path, example)
 	case !encrypted:
 		return nil
 	}

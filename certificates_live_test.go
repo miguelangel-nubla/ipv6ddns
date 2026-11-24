@@ -35,7 +35,7 @@ func liveEnv(t *testing.T, name string) string {
 // A resolver with tls.acme: it starts without a certificate, its encrypted transport refusing,
 // gets one for the name in the zone of an rfc2136 credential, and answers over TLS with it; the
 // report tells it, and its files are where the configuration's folder has them by default.
-func TestLiveResolverACME(t *testing.T) {
+func TestLiveACME(t *testing.T) {
 	var settings map[string]any
 	if err := json.Unmarshal([]byte(liveEnv(t, "IPV6DDNS_LIVE_RFC2136")), &settings); err != nil {
 		t.Fatal(err)
@@ -62,6 +62,13 @@ func TestLiveResolverACME(t *testing.T) {
 		return l.Addr().(*net.TCPAddr).Port
 	}
 	cfg := loadConfig(t, fmt.Sprintf(`
+webserver:
+  listen: "https://127.0.0.1:%d"
+  tls:
+    acme:
+      names: web
+      credential: public
+      directory: %s
 resolvers:
   lan:
     listen:
@@ -90,7 +97,7 @@ credentials:
       records:
         - printer A 192.0.2.20
 tasks: {}
-`, free(), free(), directory, settings["server"], zone, settings["tsig_key"], settings["tsig_secret"]))
+`, free(), directory, free(), free(), directory, settings["server"], zone, settings["tsig_key"], settings["tsig_secret"]))
 	w, err := NewWorker(zaptest.NewLogger(t).Sugar(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -156,5 +163,40 @@ tasks: {}
 	}
 	if page := w.Page("", false).String(); !strings.Contains(page, "Certificate: "+name+", until ") {
 		t.Errorf("the report:\n%s", page)
+	}
+
+	// The web server's own, of tls.acme too: its TLS shows it, once got.
+	web := "web." + zone
+	l, err := tls.Listen("tcp", "127.0.0.1:0", w.WebserverTLS("http/1.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.(*tls.Conn).Handshake()
+			c.Close()
+		}
+	}()
+	for deadline := time.Now().Add(2 * time.Minute); ; time.Sleep(time.Second) {
+		conn, err := tls.Dial("tcp", l.Addr().String(), &tls.Config{ServerName: web, InsecureSkipVerify: true})
+		if err == nil {
+			leaf := conn.ConnectionState().PeerCertificates[0]
+			conn.Close()
+			if leaf.VerifyHostname(web) != nil {
+				t.Fatalf("the web server's certificate is for %v", leaf.DNSNames)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no certificate of the web server after 2 minutes: %v; the status: %+v", err, w.webserverCertificate())
+		}
+	}
+	if page := w.Page("", false).String(); !strings.Contains(page, "Webserver:\n    Certificate: "+web+", until ") {
+		t.Errorf("the report of the web server:\n%s", page)
 	}
 }

@@ -719,3 +719,77 @@ func TestResolverConfigACME(t *testing.T) {
 		})
 	}
 }
+
+// The web server's https:// entries serve HTTPS, on port 8443 without one, with webserver.tls,
+// files or acme, which its plain entries don't need; and each mistake is told.
+func TestWebserverTLS(t *testing.T) {
+	certFile, keyFile := writeTestCertificate(t)
+	load := func(webserver, credentials string) (Config, error) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		os.WriteFile(path, []byte("webserver:"+webserver+"\ncredentials:"+credentials+"\ntasks: {}\n"), 0o600)
+		return NewConfig(path)
+	}
+	cfg, err := load(`
+  listen:
+    - 172.30.32.1:8053
+    - "https://192.168.1.2"
+    - "HTTPS://192.168.1.3:9443"
+  tls:
+    certificate: `+certFile+`
+    key: `+keyFile, " {}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plain, https []string
+	for _, e := range cfg.Webserver.Plain {
+		plain = append(plain, e.String())
+	}
+	for _, e := range cfg.Webserver.HTTPS {
+		https = append(https, e.String())
+	}
+	if !slices.Equal(plain, []string{"172.30.32.1:8053"}) || !slices.Equal(https, []string{"192.168.1.2:8443", "192.168.1.3:9443"}) || cfg.Webserver.TLS.CertFile != certFile {
+		t.Errorf("plain %v, https %v, tls %+v", plain, https, cfg.Webserver.TLS)
+	}
+
+	cfg, err = load(`
+  listen: "https://192.168.1.2"
+  tls:
+    acme:
+      names: web.lan
+      credential: public`, `
+  public:
+    provider: cloudflare
+    settings:
+      api_token: token
+      zone: example.com
+      ttl: 5m
+      proxied: false`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(cfg.BaseDir, "tls", "webserver", "fullchain.pem"); cfg.Webserver.TLS.CertFile != want || cfg.Webserver.TLS.AccountKeyFile != filepath.Join(cfg.BaseDir, "tls", "webserver", "acme-account.key") {
+		t.Errorf("the files of acme: %+v", cfg.Webserver.TLS)
+	}
+
+	for _, c := range []struct{ name, webserver, want string }{
+		{"an https entry without tls", `
+  listen: "https://192.168.1.2"`, "webserver.tls is missing: an entry of listen is encrypted, https://"},
+		{"tls without an https entry", `
+  listen: 192.168.1.2
+  tls:
+    certificate: ` + certFile + `
+    key: ` + keyFile, "webserver.tls is for the encrypted entries of listen, and there is none: add one, as https://192.168.1.2"},
+		{"a bad https entry", `
+  listen: "https://192.168.1.0/33"
+  tls:
+    certificate: ` + certFile + `
+    key: ` + keyFile, "webserver.listen: "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := load(c.webserver, " {}"); err == nil || !strings.HasPrefix(err.Error(), c.want) {
+				t.Errorf("got %v\nwant %s", err, c.want)
+			}
+		})
+	}
+}

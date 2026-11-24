@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	section  = regexp.MustCompile(`^(DNS|Resolvers|Discovery|Config):`)
+	section  = regexp.MustCompile(`^(DNS|Resolvers|Webserver|Discovery|Config):`)
 	counts   = regexp.MustCompile(`^ (\d+ names?, )(\d+) with addresses, (\d+) without; (\d+) failing$`)
 	nameLine = regexp.MustCompile(`^( +[^ ]+)(:)(.*)$`)
 	note     = regexp.MustCompile(` \([^()]*(\([^()]*\)[^()]*)*\)`)
@@ -40,6 +40,12 @@ func Roles(text string) pretty.Page {
 			page = append(page, dnsLine(line, body, indent))
 		case "Resolvers":
 			page = append(page, resolverLine(line, body, indent))
+		case "Webserver":
+			if strings.HasPrefix(body, "Certificate: ") {
+				page = append(page, certificateLine(line))
+			} else {
+				page.Add(pretty.Span{Text: line})
+			}
 		case "Discovery":
 			switch {
 			case indent == 8 && strings.HasSuffix(body, ":"):

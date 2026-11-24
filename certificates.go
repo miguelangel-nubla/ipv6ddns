@@ -2,6 +2,7 @@ package ipv6ddns
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"maps"
 	"net/http"
@@ -9,20 +10,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/acme"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"go.uber.org/zap"
 )
 
-// certificate is the certificate of a resolver's encrypted transports that an ACME authority
-// signs, which ipv6ddns keeps: it writes the challenge's TXT records through a credential's
-// provider, and the certificate to the files the resolver reads.
+// certificate is the certificate of a resolver's encrypted transports, or of the web server's
+// HTTPS, that an ACME authority signs, which ipv6ddns keeps: it writes the challenge's TXT
+// records through a credential's provider, and the certificate to the files the server reads.
 type certificate struct {
-	resolver string
-	tls      acmeSettings
-	writer   ddns.TXTWriter
-	logger   *zap.SugaredLogger
+	// The resolver's name, or webserver; and where its settings are, for the log.
+	owner, path string
+	tls         acmeSettings
+	writer      ddns.TXTWriter
+	logger      *zap.SugaredLogger
 
 	mutex sync.Mutex
 	// Its manager, once the names are known; until then, why they aren't.
@@ -37,12 +41,21 @@ type acmeSettings struct {
 	certFile, keyFile, accountKeyFile string
 }
 
-// certificates are the certificates of the resolvers with tls.acme, each with the provider of its
-// credential, which must write TXT records.
+// certificates are the certificates of tls.acme, of the resolvers and of the web server, each
+// with the provider of its credential, which must write TXT records.
 func (w *Worker) certificates() ([]*certificate, error) {
-	var out []*certificate
+	type owned struct {
+		owner, path string
+		tls         *config.TLS
+	}
+	var all []owned
 	for _, name := range slices.Sorted(maps.Keys(w.config.Resolvers)) {
-		t := w.config.Resolvers[name].TLS
+		all = append(all, owned{name, "resolvers." + name, w.config.Resolvers[name].TLS})
+	}
+	all = append(all, owned{"webserver", "webserver", w.config.Webserver.TLS})
+	var out []*certificate
+	for _, o := range all {
+		t := o.tls
 		if t == nil || t.ACME == nil {
 			continue
 		}
@@ -52,9 +65,9 @@ func (w *Worker) certificates() ([]*certificate, error) {
 		}
 		writer, ok := endpoint.Service.(ddns.TXTWriter)
 		if !ok {
-			return nil, fmt.Errorf("resolvers.%s.tls.acme.credential: the provider of %s, %s, can't write the TXT records of the DNS challenge: give a credential of cloudflare, route53, rfc2136 or duckdns", name, t.ACME.Credential, w.config.Credentials[t.ACME.Credential].Provider)
+			return nil, fmt.Errorf("%s.tls.acme.credential: the provider of %s, %s, can't write the TXT records of the DNS challenge: give a credential of cloudflare, route53, rfc2136 or duckdns", o.path, t.ACME.Credential, w.config.Credentials[t.ACME.Credential].Provider)
 		}
-		out = append(out, &certificate{resolver: name, writer: writer, logger: w.logger, tls: acmeSettings{
+		out = append(out, &certificate{owner: o.owner, path: o.path, writer: writer, logger: w.logger, tls: acmeSettings{
 			names: t.ACME.Names, credential: t.ACME.Credential, email: t.ACME.Email, directory: t.ACME.Directory,
 			certFile: t.CertFile, keyFile: t.KeyFile, accountKeyFile: t.AccountKeyFile,
 		}})
@@ -81,7 +94,7 @@ func (c *certificate) run(ctx context.Context) {
 		c.mutex.Lock()
 		c.namesErr = err.Error()
 		c.mutex.Unlock()
-		c.logger.Errorf("resolver %s: the names of its certificate: %s", c.resolver, err)
+		c.logger.Errorf("%s: the names of its certificate: %s", c.label(), err)
 		select {
 		case <-ctx.Done():
 			return
@@ -92,8 +105,8 @@ func (c *certificate) run(ctx context.Context) {
 		Directory: c.tls.directory, Email: c.tls.email, Names: names,
 		CertFile: c.tls.certFile, KeyFile: c.tls.keyFile, AccountKeyFile: c.tls.accountKeyFile,
 		Challenge: c.writer, HTTPClient: acmeHTTPClient,
-		Logf:   func(f string, args ...any) { c.logger.Infof("resolver "+c.resolver+": "+f, args...) },
-		Errorf: func(f string, args ...any) { c.logger.Errorf("resolver "+c.resolver+": "+f, args...) },
+		Logf:   func(f string, args ...any) { c.logger.Infof(c.label()+": "+f, args...) },
+		Errorf: func(f string, args ...any) { c.logger.Errorf(c.label()+": "+f, args...) },
 	})
 	c.mutex.Lock()
 	c.manager, c.namesErr = m, ""
@@ -114,9 +127,17 @@ func (c *certificate) fullNames() ([]string, error) {
 	return names, nil
 }
 
-// fill tells, in the status of its resolver's certificate, why the last attempt failed, and when
+// label is what the log calls the certificate's server: resolver lan, or webserver.
+func (c *certificate) label() string {
+	if c.owner == "webserver" {
+		return "webserver"
+	}
+	return "resolver " + c.owner
+}
+
+// fill tells, in the status of its server's certificate, why the last attempt failed, and when
 // the next is.
-func (c *certificate) fill(st *resolver.CertificateStatus) {
+func (c *certificate) fill(st *certfile.Status) {
 	c.mutex.Lock()
 	m, namesErr := c.manager, c.namesErr
 	c.mutex.Unlock()
@@ -135,8 +156,32 @@ func (w *Worker) resolverStatus(r *resolver.Server) resolver.Status {
 		return st
 	}
 	for _, c := range w.certs {
-		if c.resolver == st.Name {
+		if c.owner == st.Name && c.path != "webserver" {
 			c.fill(st.Certificate)
+		}
+	}
+	return st
+}
+
+// WebserverTLS is the TLS of the web server's HTTPS entries, which speak the protocols given:
+// nil without them.
+func (w *Worker) WebserverTLS(protocols ...string) *tls.Config {
+	if w.webCert == nil {
+		return nil
+	}
+	return w.webCert.Config(protocols...)
+}
+
+// webserverCertificate is the status of the web server's certificate, with what its manager did:
+// nil without HTTPS entries.
+func (w *Worker) webserverCertificate() *certfile.Status {
+	if w.webCert == nil {
+		return nil
+	}
+	st := w.webCert.Status()
+	for _, c := range w.certs {
+		if c.path == "webserver" {
+			c.fill(st)
 		}
 	}
 	return st
