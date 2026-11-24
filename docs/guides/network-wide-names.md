@@ -8,7 +8,7 @@ The setup is the same on a homelab server, a Raspberry Pi, or a Home Assistant m
 
 ## What you need
 
-- **A machine on the LAN that is always on**, to run ipv6ddns. [Install it](../installation.md) as a binary, in Docker on the host's network, or as the Home Assistant app. ipv6ddns answers DNS on port 53, so nothing else on that machine may hold port 53 on its LAN address. Pi-hole and AdGuard Home do.
+- **A machine on the LAN that is always on**, to run ipv6ddns. [Install it](../installation.md) as a binary, in Docker on the host's network, or as the Home Assistant app. ipv6ddns answers DNS on port 53, so nothing else on that machine may hold port 53 on its LAN address. Pi-hole and AdGuard Home do: with one of them, have ipv6ddns write the names into it instead, as the guides for [AdGuard Home](adguard-home.md) and [Pi-hole](pi-hole.md) show.
 - **Access to your router's DHCP settings**, to give the devices that machine as their DNS server.
 
 The examples use `192.168.1.0/24` for the LAN, `192.168.1.1` for the router, and `192.168.1.2` for the machine that runs ipv6ddns. Use your own.
@@ -120,7 +120,7 @@ A written name also names a device that says no name at all. The web report show
 
 ## Common problems
 
-- **`address already in use` at the start.** Another DNS server has port 53 on this machine: Pi-hole, AdGuard Home, or dnsmasq. systemd-resolved doesn't get in the way, because it only listens on `127.0.0.53`. See [port 53](../resolver.md#port-53).
+- **`address already in use` at the start.** Another DNS server has port 53 on this machine: Pi-hole, AdGuard Home, or dnsmasq. For the first two, see the guides for [AdGuard Home](adguard-home.md) and [Pi-hole](pi-hole.md). systemd-resolved doesn't get in the way, because it only listens on `127.0.0.53`. See [port 53](../resolver.md#port-53).
 - **A device has no name.** The device says no name, or none that discovery hears. The web report lists every host found, with the names it has. A host with no name there needs a [plugin](../discovery.md#plugins) that reads the router's leases, or a [written name](#a-name-that-matters).
 - **The names answer with `dig @192.168.1.2` but not without.** The device still uses the router for DNS. Check the device's DNS servers with `resolvectl status`, `ipconfig /all`, or its network settings, and renew its lease.
 - **Two devices called the same.** Both are under `printer`. Each also has a name of its own, `1.printer` and `2.printer`, in the order of their MACs. Rename one of the devices, or [write a name](#a-name-that-matters) for the one that matters.

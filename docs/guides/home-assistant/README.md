@@ -24,5 +24,8 @@ The steps below cover those three things, for every guide. Each guide for the ap
 |---|---|
 | Every machine on the network by name, `nas.lan.example.com`, from every device | [Network-wide names, the app's side](network-wide-names.md) |
 | A public name for a device, or for Home Assistant, that follows it when the ISP changes the IPv6 prefix | [A public name over IPv6, the app's side](public-ipv6-names.md) |
+| Every device by name, in the AdGuard Home app you already run | [AdGuard Home, the app's side](adguard-home.md) |
+
+For a Pi-hole on another machine, follow [every device by name, in Pi-hole](../pi-hole.md). In the app, the password's file there is `${file:/config/pihole_password}`.
 
 To give Home Assistant itself a public name, such as `ha.example.com`, see the app's own documentation: [publishing Home Assistant itself](../../../homeassistant/addon/DOCS.md#publishing-home-assistant-itself).
