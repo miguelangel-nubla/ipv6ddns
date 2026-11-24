@@ -1,12 +1,19 @@
 package docgen
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
@@ -205,6 +212,12 @@ func TestDocExamples(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			// The files of a resolver's certificate and key: a pair of the test's, in their place.
+			if certificateFile.MatchString(block) {
+				certFile, keyFile := certificatePair(t)
+				block = certificateFile.ReplaceAllString(block, "${1}"+certFile)
+				block = tlsKeyFile.ReplaceAllString(block, "${1}"+keyFile)
+			}
 			path := filepath.Join(dir, "config.yaml")
 			if err := os.WriteFile(path, []byte(block), 0o600); err != nil {
 				t.Fatal(err)
@@ -293,4 +306,32 @@ func dedent(block string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// The settings of a resolver's certificate and its key, with the file each names.
+var (
+	certificateFile = regexp.MustCompile(`(?m)^(\s*tls_certificate:\s*)\S+`)
+	tlsKeyFile      = regexp.MustCompile(`(?m)^(\s*tls_key:\s*)\S+`)
+)
+
+// certificatePair writes a certificate signed by itself and its key, as PEM files, for the
+// examples that name such files.
+func certificatePair(t *testing.T) (certFile, keyFile string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"dns.lan.example.com"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, _ := x509.MarshalPKCS8PrivateKey(key)
+	dir := t.TempDir()
+	certFile, keyFile = filepath.Join(dir, "fullchain.pem"), filepath.Join(dir, "privkey.pem")
+	os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600)
+	os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600)
+	return certFile, keyFile
 }

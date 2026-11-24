@@ -1,6 +1,12 @@
 package config
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
@@ -499,5 +505,103 @@ func TestResolverConfigHostNames(t *testing.T) {
 	}
 	if want := "9.9.9.9:53 [2620:fe::fe]:53"; strings.Join(spec.Bootstrap, " ") != want {
 		t.Errorf("bootstrap: %v, want %s", spec.Bootstrap, want)
+	}
+}
+
+// writeTestCertificate writes a self-signed certificate and its key, in PEM, and returns their
+// paths.
+func writeTestCertificate(t *testing.T) (certFile, keyFile string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"dns.home.arpa"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, _ := x509.MarshalPKCS8PrivateKey(key)
+	dir := t.TempDir()
+	certFile, keyFile = filepath.Join(dir, "fullchain.pem"), filepath.Join(dir, "privkey.pem")
+	os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600)
+	os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600)
+	return certFile, keyFile
+}
+
+// An entry of listen that starts with tls://, https:// or quic:// answers over that encrypted
+// transport, on its port by default; https:// takes the path /dns-query, where it answers. They
+// need the certificate and its key, which must read as a pair; and these are for them alone.
+func TestResolverConfigEncryptedListen(t *testing.T) {
+	certFile, keyFile := writeTestCertificate(t)
+	files := "\n    tls_certificate: " + certFile + "\n    tls_key: " + keyFile
+	cfg, err := resolverConfig(t, `
+  lan:
+    listen:
+      - 192.168.1.0/24
+      - "tls://192.168.1.0/24"
+      - "HTTPS://192.168.1.2/dns-query"
+      - "quic://[fd00::2]:8853"
+    upstream: 192.168.1.1`+files, homeCredential, nasTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := cfg.Resolvers["lan"].Spec
+	var got []string
+	for _, e := range spec.Encrypted {
+		got = append(got, e.Transport+" "+e.Entry.String()+" "+e.Line)
+	}
+	want := []string{
+		"tls 192.168.1.0/24 port 853 tls://192.168.1.0/24",
+		"https 192.168.1.2:443 HTTPS://192.168.1.2/dns-query",
+		"quic [fd00::2]:8853 quic://[fd00::2]:8853",
+	}
+	if len(spec.Listen) != 1 || !slices.Equal(got, want) || spec.CertFile != certFile || spec.KeyFile != keyFile {
+		t.Errorf("listen %v, encrypted:\n%q\nwant\n%q", spec.Listen, got, want)
+	}
+
+	for _, c := range []struct {
+		name, resolvers, want string
+	}{
+		{"an encrypted entry without a certificate", `
+  lan:
+    listen: "tls://192.168.1.0/24"
+    upstream: 192.168.1.1`, "resolvers.lan: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls_certificate and tls_key, the files of the certificate and of its key, in PEM"},
+		{"a certificate without an encrypted entry", `
+  lan:
+    listen: 192.168.1.0/24
+    upstream: 192.168.1.1` + files, "resolvers.lan: tls_certificate and tls_key are for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave them out"},
+		{"a key that isn't the certificate's", `
+  lan:
+    listen: "quic://192.168.1.0/24"
+    upstream: 192.168.1.1
+    tls_certificate: ` + certFile + `
+    tls_key: ` + certFile, "resolvers.lan.tls_certificate: "},
+		{"two resolvers on one address over TLS", `
+  lan:
+    listen: "tls://192.168.1.2"
+    upstream: 192.168.1.1` + files + `
+  lab:
+    listen: "tls://192.168.1.2:853"
+    upstream: 192.168.1.1` + files, "resolvers lab and lan both listen on "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := resolverConfig(t, c.resolvers, homeCredential, nasTask)
+			if err == nil || !strings.HasPrefix(err.Error(), c.want) {
+				t.Errorf("got %v\nwant %s", err, c.want)
+			}
+		})
+	}
+
+	// Over TLS and over QUIC, one port is two: TCP and UDP.
+	if _, err := resolverConfig(t, `
+  lan:
+    listen: "tls://192.168.1.2"
+    upstream: 192.168.1.1`+files+`
+  lab:
+    listen: "quic://192.168.1.2"
+    upstream: 192.168.1.1`+files, strings.Replace(homeCredential, "zone: home.arpa", "resolver: lan\n      zone: home.arpa", 1), nasTask); err != nil {
+		t.Errorf("TLS and QUIC on port 853: %v", err)
 	}
 }

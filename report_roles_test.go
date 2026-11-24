@@ -60,6 +60,13 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		{Name: "lan", Listening: []string{"192.168.1.2:53"}, Allow: []string{"192.168.1.0/24"}, Zones: []string{"lan.example.com"}, ZoneNames: map[string]int{"lan.example.com": 1},
 			Serving: true, Upstreams: []string{"192.168.1.1", "tls://1.1.1.1"}, UpstreamFailures: map[string]uint64{"tls://1.1.1.1": 3}, Queries: map[string]uint64{resolver.Local: 7}, CacheSize: 10000, CacheEntries: 12},
 		{Name: "guests", Error: "listen udp 192.168.2.1:53: bind: address already in use", Upstreams: []string{"192.168.1.1"}},
+		// A certificate of each state: valid, ending soon, ended, and of files that don't read.
+		{Name: "dot", Listening: []string{"tls://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
+			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(60 * 24 * time.Hour)}},
+		{Name: "doh", Listening: []string{"https://192.168.1.2:443"}, Serving: true, Upstreams: []string{"192.168.1.1"},
+			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com", "192.168.1.2"}, NotAfter: time.Now().Add(5 * 24 * time.Hour), Error: "open /ssl/privkey.pem: permission denied"}},
+		{Name: "doq", Listening: []string{"quic://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
+			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(-time.Hour)}},
 	})
 
 	// And the resolvers when all serve.
@@ -79,7 +86,7 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		page = append(page, pretty.Line{})
 		page = append(page, disc.Page("")...)
 		text := page.String()
-		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 2, 1 serving", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
+		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 5, 4 serving", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
 			if !strings.Contains(text, has) {
 				t.Fatalf("the page of the test has no %q:\n%s", has, text)
 			}

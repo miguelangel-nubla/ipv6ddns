@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 )
@@ -15,6 +16,17 @@ type bound struct {
 	entry string
 	// host:port: the host "" for every address, of both families.
 	address string
+	// The protocols it listens over: plain DNS's are UDP and TCP.
+	protocols []string
+}
+
+// Protocol is the protocol of IP a transport listens over: TCP for DNS over TLS and over HTTPS,
+// UDP for DNS over QUIC.
+func Protocol(transport string) string {
+	if transport == TransportQUIC {
+		return "udp"
+	}
+	return "tcp"
 }
 
 // overlap is the address that a and b both listen on, host:port, or "" for none: of the same port,
@@ -60,11 +72,7 @@ func overlap(a, b string) string {
 func CheckListen(servers []*Server) error {
 	var all []bound
 	for _, s := range servers {
-		for i, e := range s.config.Listen {
-			text := e.String()
-			if i < len(s.config.ListenLines) {
-				text = s.config.ListenLines[i]
-			}
+		add := func(e listen.Entry, text string, protocols ...string) error {
 			addresses, err := listen.Addresses([]listen.Entry{e})
 			if err != nil {
 				return fmt.Errorf("%s.listen: %w", s.config.Path, err)
@@ -74,13 +82,28 @@ func CheckListen(servers []*Server) error {
 				if _, port, _ := net.SplitHostPort(a); port == "0" {
 					continue
 				}
-				all = append(all, bound{resolver: s.config.Name, entry: text, address: a})
+				all = append(all, bound{resolver: s.config.Name, entry: text, address: a, protocols: protocols})
+			}
+			return nil
+		}
+		for i, e := range s.config.Listen {
+			text := e.String()
+			if i < len(s.config.ListenLines) {
+				text = s.config.ListenLines[i]
+			}
+			if err := add(e, text, "udp", "tcp"); err != nil {
+				return err
+			}
+		}
+		for _, e := range s.config.Encrypted {
+			if err := add(e.Entry, e.Line, Protocol(e.Transport)); err != nil {
+				return err
 			}
 		}
 	}
 	for i, a := range all {
 		for _, b := range all[i+1:] {
-			if a.resolver == b.resolver {
+			if a.resolver == b.resolver || !slices.ContainsFunc(a.protocols, func(p string) bool { return slices.Contains(b.protocols, p) }) {
 				continue
 			}
 			if at := overlap(a.address, b.address); at != "" {

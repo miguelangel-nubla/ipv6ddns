@@ -716,6 +716,41 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 			cached = fmt.Sprintf("%d of %d", s.CacheEntries, s.CacheSize)
 		}
 		detail("        Cache: %s", cached)
+		if c := s.Certificate; c != nil {
+			page.Add(certificateLine(prefix+"        ", c, time.Now())...)
+		}
 	}
 	return page
+}
+
+// certificateWarning is how long before its end a certificate is said to expire soon: renewals
+// come a month before, so one this close is no longer renewed.
+const certificateWarning = 14 * 24 * time.Hour
+
+// certificateLine tells of the certificate of a resolver's encrypted transports: its names, and
+// until when, in amber when it ends within two weeks, in red once it ended; and, in amber, files
+// that don't read again, while it is still shown.
+func certificateLine(indent string, c *resolver.CertificateStatus, now time.Time) pretty.Line {
+	until := c.NotAfter.UTC().Format(time.DateOnly)
+	line := pretty.Line{{Text: indent + "Certificate: " + strings.Join(c.Names, ", ") + ", "}}
+	switch left := c.NotAfter.Sub(now); {
+	case left <= 0:
+		line = append(line, pretty.As(pretty.Error, "expired on "+until))
+	case left < certificateWarning:
+		line = append(line, pretty.As(pretty.Warn, fmt.Sprintf("until %s, in %s", until, countDays(int(left.Hours()/24)))))
+	default:
+		line = append(line, pretty.Span{Text: "until " + until})
+	}
+	if c.Error != "" {
+		line = append(line, pretty.Span{Text: " "}, pretty.As(pretty.Warn, "(its files don't read again: "+c.Error+")"))
+	}
+	return line
+}
+
+// countDays is n days, or 1 day.
+func countDays(n int) string {
+	if n == 1 {
+		return "1 day"
+	}
+	return fmt.Sprintf("%d days", n)
 }

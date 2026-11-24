@@ -83,7 +83,7 @@ jobs:
         run: |
           # dig asks the resolver, as its clients do; avahi-daemon tells a host's name by mDNS,
           # run by the tests on a machine of theirs: not the runner's own, which the package starts.
-          sudo apt-get update -qq && sudo apt-get install -yqq --no-install-recommends bind9-dnsutils avahi-daemon udhcpc
+          sudo apt-get update -qq && sudo apt-get install -yqq --no-install-recommends bind9-dnsutils knot-dnsutils avahi-daemon udhcpc
           sudo systemctl disable --now avahi-daemon.socket avahi-daemon.service || true
           go vet -tags integration ./...
           go build -race -o "$RUNNER_TEMP/ipv6ddns" ./cmd/ipv6ddns

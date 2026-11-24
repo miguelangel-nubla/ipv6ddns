@@ -1,9 +1,9 @@
 #!/bin/sh
 # The tests as CI runs them, and the live ones, on Linux as root, from any system with Docker: in
 # a container that is thrown away, privileged for its network namespaces. With dig, which asks the
-# resolver as a client does, avahi-daemon, which the tests run on a machine of theirs to tell its
-# name by mDNS, and Home Assistant's
-# library for ESPHome devices, at CI's version, and CI's interfaces for mDNS: nothing is skipped.
+# resolver as a client does, kdig, which also asks it over QUIC, avahi-daemon, which the tests run
+# on a machine of theirs to tell its name by mDNS, and Home Assistant's library for ESPHome
+# devices, at CI's version, and CI's interfaces for mDNS: nothing is skipped.
 # Arguments go to the live tests:
 #
 #	tools/live-test.sh -run '^TestLiveListenFamilies$' ./pkg/listen
@@ -16,7 +16,7 @@ aioesphomeapi=$(grep -o 'aioesphomeapi==[0-9.]*' .github/workflows/ci.yaml)
 inside='
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update -qq >/dev/null
-	apt-get install -yqq --no-install-recommends iproute2 procps python3-venv bind9-dnsutils avahi-daemon udhcpc >/dev/null
+	apt-get install -yqq --no-install-recommends iproute2 procps python3-venv bind9-dnsutils knot-dnsutils avahi-daemon udhcpc >/dev/null
 	python3 -m venv /venv
 	/venv/bin/pip install -q --disable-pip-version-check "$AIOESPHOMEAPI"
 	if [ -n "${GOWORK:-}" ]; then

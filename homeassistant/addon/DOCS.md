@@ -135,3 +135,29 @@ can read your routers' tables as well.
 The starting configuration leaves out the bridges of Home Assistant's own
 containers, `hassio`, `docker0` and `veth*`, with
 `discovery.exclude_interfaces`. Keep that setting.
+
+## Encrypted DNS
+
+The resolver can answer the network over DNS over TLS, HTTPS and QUIC, with a
+certificate:
+[encrypted DNS for the clients](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/resolver.md#encrypted-dns-for-the-clients).
+The app reads Home Assistant's `ssl` folder, where the Let's Encrypt app
+writes its certificates, at `/ssl`:
+
+```yaml
+resolvers:
+  lan:
+    listen:
+      - 192.168.1.0/24
+      - tls://192.168.1.0/24
+    tls_certificate: /ssl/fullchain.pem
+    tls_key: /ssl/privkey.pem
+    upstream:
+      - 192.168.1.1
+```
+
+The certificate must be for the name the clients use, such as
+`dns.lan.example.com`: ask the Let's Encrypt app for it with its DNS
+challenge. Port 443 may be taken on the Home Assistant machine, by an app
+such as NGINX: give DNS over HTTPS another port, as
+`https://192.168.1.2:8443`, the machine's address with the port.

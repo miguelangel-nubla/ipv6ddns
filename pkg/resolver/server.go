@@ -2,10 +2,12 @@ package resolver
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"slices"
 	"strings"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
+	"github.com/quic-go/quic-go"
 )
 
 // DefaultPort is the port of the listen entries that give none.
@@ -68,8 +71,14 @@ type Server struct {
 	// The reverse zones of the private networks it answers itself: absolute, in lower case.
 	private []string
 
-	mutex     sync.Mutex
-	servers   []*dns.Server
+	mutex   sync.Mutex
+	servers []*dns.Server
+	// The certificate of the encrypted transports: nil without them.
+	cert *certificate
+	// The servers of DNS over HTTPS, and the listeners of DNS over QUIC, with their connections.
+	https     []*http.Server
+	quic      []*quic.Listener
+	quicConns map[*quic.Conn]struct{}
 	listening []string
 	allow     []netip.Prefix
 	serving   bool
@@ -219,13 +228,19 @@ func (s *Server) lookUp(host string) ([]string, time.Duration) {
 	return addresses, ttl
 }
 
-// Start listens on every address of the configuration, over UDP and TCP, and answers there until
-// Shutdown. An address it can't listen on stops it, closing the others: no resolver serves half
-// of its addresses.
+// Start listens on every address of the configuration, over UDP and TCP, and over the encrypted
+// transports on theirs, and answers there until Shutdown. An address it can't listen on stops it,
+// closing the others: no resolver serves half of its addresses.
 func (s *Server) Start() error {
 	addresses, err := listen.Addresses(s.config.Listen)
 	if err != nil {
 		return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+	}
+	var cert *certificate
+	if len(s.config.Encrypted) > 0 {
+		if cert, err = loadCertificate(s.config.CertFile, s.config.KeyFile, s.errorf); err != nil {
+			return fmt.Errorf("%s.tls_certificate: %w", s.config.Path, err)
+		}
 	}
 	for _, srv := range s.upstreams {
 		srv.open(s)
@@ -233,6 +248,7 @@ func (s *Server) Start() error {
 	var (
 		conns     []net.PacketConn
 		listeners []net.Listener
+		enc       encryptedListeners
 	)
 	closeAll := func() {
 		for _, c := range conns {
@@ -241,8 +257,10 @@ func (s *Server) Start() error {
 		for _, l := range listeners {
 			l.Close()
 		}
+		enc.close()
 	}
 	var listening []string
+	var listened []net.Addr
 	for _, a := range addresses {
 		udp, tcp := networks(a)
 		c, err := net.ListenPacket(udp, a)
@@ -260,10 +278,19 @@ func (s *Server) Start() error {
 		}
 		listeners = append(listeners, l)
 		listening = append(listening, a)
+		listened = append(listened, c.LocalAddr())
 	}
+	for _, e := range s.config.Encrypted {
+		if err := enc.open(e); err != nil {
+			closeAll()
+			return fmt.Errorf("%s.listen: %s: %w", s.config.Path, e.Line, err)
+		}
+	}
+	listening = append(listening, enc.listening...)
+	listened = append(listened, enc.listened...)
 	allow := s.config.Allow
 	if len(allow) == 0 {
-		allow, err = listenedNetworks(conns)
+		allow, err = listenedNetworks(listened)
 		if err != nil {
 			closeAll()
 			return fmt.Errorf("%s.allow: the networks listened on: %w", s.config.Path, err)
@@ -278,27 +305,38 @@ func (s *Server) Start() error {
 			&dns.Server{Listener: listeners[i], Handler: s, NotifyStartedFunc: started.Done,
 				ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
+	for _, l := range enc.tls {
+		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, cert.config(alpnTLS)), Net: "tcp-tls", Handler: s,
+			NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
+	}
 	s.mutex.Lock()
-	s.servers, s.listening, s.allow, s.serving = servers, listening, allow, true
+	s.servers, s.listening, s.allow, s.serving, s.cert = servers, listening, allow, true, cert
 	s.mutex.Unlock()
 	started.Add(len(servers))
 	for _, srv := range servers {
 		go func() {
-			err := srv.ActivateAndServe()
-			s.mutex.Lock()
-			defer s.mutex.Unlock()
-			if s.stopping {
-				return
-			}
-			if err == nil {
-				err = errors.New("stopped")
-			}
-			s.serving, s.err = false, err
-			s.errorf("resolver %s: %s", s.config.Name, err)
+			s.stopped(srv.ActivateAndServe())
 		}()
 	}
 	started.Wait()
+	s.serveHTTPS(enc.https, cert)
+	s.serveQUIC(enc.quic, cert)
 	return nil
+}
+
+// stopped is for a listener that returned: the resolver stops serving, and says why, unless it
+// is shutting down.
+func (s *Server) stopped(err error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.stopping {
+		return
+	}
+	if err == nil {
+		err = errors.New("stopped")
+	}
+	s.serving, s.err = false, err
+	s.errorf("resolver %s: %s", s.config.Name, err)
 }
 
 // Shutdown stops answering, and closes the addresses: it waits for the answers being made, until
@@ -321,6 +359,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}()
 	}
 	wg.Wait()
+	s.shutdownEncrypted(ctx)
 	s.cancel()
 	for _, srv := range s.upstreams {
 		srv.close()
@@ -350,9 +389,10 @@ func networks(address string) (udp, tcp string) {
 	}
 }
 
-// listenedNetworks are the networks of the machine's addresses that conns listen on: each one's,
-// or every network of its family, for an address that is all of them.
-func listenedNetworks(conns []net.PacketConn) ([]netip.Prefix, error) {
+// listenedNetworks are the networks of the machine's addresses that the addresses listened on
+// are in, UDP or TCP: each one's, or every network of its family, for an address that is all of
+// them.
+func listenedNetworks(listened []net.Addr) ([]netip.Prefix, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
@@ -373,14 +413,18 @@ func listenedNetworks(conns []net.PacketConn) ([]netip.Prefix, error) {
 			result = append(result, p)
 		}
 	}
-	for _, c := range conns {
-		udp, ok := c.LocalAddr().(*net.UDPAddr)
-		if !ok {
+	for _, a := range listened {
+		var ip netip.Addr
+		switch a := a.(type) {
+		case *net.UDPAddr:
+			ip, _ = netip.AddrFromSlice(a.IP)
+		case *net.TCPAddr:
+			ip, _ = netip.AddrFromSlice(a.IP)
+		default:
 			continue
 		}
-		ip, _ := netip.AddrFromSlice(udp.IP)
 		ip = ip.Unmap()
-		network, _ := networks(c.LocalAddr().String())
+		network, _ := networks(a.String())
 		for _, p := range machine {
 			switch {
 			case !ip.IsUnspecified():
@@ -421,13 +465,10 @@ func (s *Server) allowed(addr net.Addr) bool {
 	return slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Contains(ip) })
 }
 
-// ServeDNS answers a query.
+// ServeDNS answers a query over plain DNS, or over TLS.
 func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	_, overUDP := w.RemoteAddr().(*net.UDPAddr)
-	resp, kind := s.answer(req, w.RemoteAddr())
-	if kind != "" {
-		s.queries[kind].Add(1)
-	}
+	resp := s.respond(req, w.RemoteAddr())
 	if resp == nil {
 		return
 	}
@@ -441,6 +482,16 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	resp.Truncate(size)
 	// A client gone, or a connection closed: nothing to do.
 	_ = w.WriteMsg(resp)
+}
+
+// respond makes the response to req, from a client at remote, of any transport, and counts it:
+// nil for a message that is no query. The transport fits it to its size, if it has one.
+func (s *Server) respond(req *dns.Msg, remote net.Addr) *dns.Msg {
+	resp, kind := s.answer(req, remote)
+	if kind != "" {
+		s.queries[kind].Add(1)
+	}
+	return resp
 }
 
 // answer makes the response to req, from a client at remote, and tells its kind.
@@ -674,6 +725,8 @@ type Status struct {
 	// The answers in the cache; and how many it holds, 0 for no cache.
 	CacheEntries int `json:"cache_entries"`
 	CacheSize    int `json:"cache_size"`
+	// The certificate of the encrypted transports, once started with them.
+	Certificate *CertificateStatus `json:"certificate,omitempty"`
 }
 
 func (s *Server) Status() Status {
@@ -723,6 +776,9 @@ func (s *Server) Status() Status {
 			status.UpstreamAddresses[upstream] = append([]string{}, n.addresses...)
 		}
 		n.mutex.Unlock()
+	}
+	if s.cert != nil {
+		status.Certificate = s.cert.status()
 	}
 	return status
 }

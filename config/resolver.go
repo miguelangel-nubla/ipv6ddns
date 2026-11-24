@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -21,8 +22,13 @@ import (
 // Resolver is a DNS server for the clients of a network: it answers the zones of its resolver
 // credentials and its own records, and asks its upstream servers the rest. See docs/resolver.md.
 type Resolver struct {
-	// Required. Where it answers, as listen takes it; without a port, 53.
+	// Required. Where it answers, as listen takes it; without a port, 53. An entry that starts with
+	// tls://, https:// or quic:// answers over that encrypted transport, on its port by default.
 	Listen StringList `json:"listen,omitempty"`
+	// The files of the certificate, in PEM, with its chain, and of its key, which the encrypted
+	// transports show. Required with an encrypted entry, and only then.
+	TLSCertificate string `json:"tls_certificate,omitempty"`
+	TLSKey         string `json:"tls_key,omitempty"`
 	// The networks, or addresses, of the clients it answers; any other is refused. Default: the
 	// networks of the machine's addresses it listens on.
 	Allow StringList `json:"allow,omitempty"`
@@ -95,20 +101,48 @@ func (c *Config) setUpResolvers() error {
 		}
 		// One by one: each entry with its text, as written, which the errors at start quote.
 		for _, line := range r.Listen {
-			entries, err := listen.Parse([]string{line}, resolver.DefaultPort)
+			transport, rest := listenTransport(line)
+			entries, err := listen.Parse([]string{rest}, resolver.DefaultPortOf(transport))
 			if err != nil {
 				return fmt.Errorf("%s.listen: %w", path, err)
 			}
-			if e := entries[0]; !slices.Contains(spec.Listen, e) {
+			e := entries[0]
+			if transport != "" {
+				enc := resolver.EncryptedListen{Transport: transport, Entry: e, Line: strings.TrimSpace(line)}
+				if !slices.ContainsFunc(spec.Encrypted, func(o resolver.EncryptedListen) bool { return o.Transport == transport && o.Entry == e }) {
+					spec.Encrypted = append(spec.Encrypted, enc)
+				}
+				continue
+			}
+			if !slices.Contains(spec.Listen, e) {
 				spec.Listen = append(spec.Listen, e)
 				spec.ListenLines = append(spec.ListenLines, strings.TrimSpace(line))
 			}
 		}
-		for _, e := range spec.Listen {
-			if other, ok := listening[e.String()]; ok {
-				return fmt.Errorf("resolvers %s and %s both listen on %s: an address and port can belong to only one resolver", other, name, e)
+		if err := checkCertificate(path, r, len(spec.Encrypted) > 0); err != nil {
+			return err
+		}
+		spec.CertFile, spec.KeyFile = r.TLSCertificate, r.TLSKey
+		// By protocol: plain DNS has UDP and TCP, DNS over TLS and over HTTPS TCP, over QUIC UDP.
+		claim := func(protocol, shown string, e fmt.Stringer) error {
+			key := protocol + " " + e.String()
+			if other, ok := listening[key]; ok && other != name {
+				return fmt.Errorf("resolvers %s and %s both listen on %s: an address and port can belong to only one resolver", other, name, shown)
 			}
-			listening[e.String()] = name
+			listening[key] = name
+			return nil
+		}
+		for _, e := range spec.Listen {
+			for _, protocol := range []string{"udp", "tcp"} {
+				if err := claim(protocol, e.String(), e); err != nil {
+					return err
+				}
+			}
+		}
+		for _, e := range spec.Encrypted {
+			if err := claim(resolver.Protocol(e.Transport), e.Line, e.Entry); err != nil {
+				return err
+			}
 		}
 		spec.CacheSize = resolver.DefaultCacheSize
 		if r.CacheSize != nil {
@@ -342,3 +376,37 @@ func parseServerAddress(s string) (string, error) {
 // DefaultResolverDebounce is the debounce of a resolver credential that gives none: nothing is
 // sent anywhere, so a change is answered at once.
 const DefaultResolverDebounce = time.Duration(0)
+
+// listenTransport reads the scheme of a listen entry: tls://, https:// or quic://, the encrypted
+// transport it answers over, and the rest of the entry; none, for plain DNS. A path after an
+// https:// entry can only be /dns-query, where DNS over HTTPS answers.
+func listenTransport(line string) (transport, rest string) {
+	line = strings.TrimSpace(line)
+	for _, t := range []string{resolver.TransportTLS, resolver.TransportHTTPS, resolver.TransportQUIC} {
+		if after, ok := strings.CutPrefix(strings.ToLower(line), t+"://"); ok {
+			rest = line[len(line)-len(after):]
+			if t == resolver.TransportHTTPS {
+				rest = strings.TrimSuffix(rest, resolver.DoHPath)
+			}
+			return t, rest
+		}
+	}
+	return "", line
+}
+
+// checkCertificate tells of a resolver that has encrypted entries and no certificate, or one
+// without the other, or a certificate and its key that don't read as a pair.
+func checkCertificate(path string, r Resolver, encrypted bool) error {
+	switch {
+	case encrypted && (r.TLSCertificate == "" || r.TLSKey == ""):
+		return fmt.Errorf("%s: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls_certificate and tls_key, the files of the certificate and of its key, in PEM", path)
+	case !encrypted && (r.TLSCertificate != "" || r.TLSKey != ""):
+		return fmt.Errorf("%s: tls_certificate and tls_key are for the encrypted entries of listen, and there is none: add one, as tls://192.168.1.0/24, or leave them out", path)
+	case !encrypted:
+		return nil
+	}
+	if _, err := tls.LoadX509KeyPair(r.TLSCertificate, r.TLSKey); err != nil {
+		return fmt.Errorf("%s.tls_certificate: %s and %s: %w", path, r.TLSCertificate, r.TLSKey, err)
+	}
+	return nil
+}

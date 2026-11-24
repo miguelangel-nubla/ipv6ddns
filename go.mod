@@ -16,6 +16,7 @@ require (
 	github.com/miguelangel-nubla/ipv6disc v0.25.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.2
 	github.com/oapi-codegen/runtime v1.9.0
+	github.com/quic-go/quic-go v0.65.0
 	github.com/xeipuuv/gojsonschema v1.2.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.59.0

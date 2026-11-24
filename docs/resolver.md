@@ -64,6 +64,8 @@ Without a port, the port is 53.
 
 On a router, a port alone includes the router's public address. Give the clients' network there instead.
 
+An entry that starts with `tls://`, `https://` or `quic://` answers over that encrypted transport instead of plain DNS: see [encrypted DNS for the clients](#encrypted-dns-for-the-clients).
+
 ### `allow`
 
 The networks or addresses of the clients the resolver answers. Any other client gets `REFUSED`.
@@ -153,6 +155,71 @@ Connections are kept and reused:
 Encrypted queries are padded to a multiple of 128 bytes, as [RFC 8467](https://www.rfc-editor.org/rfc/rfc8467) recommends, so their size says less about the name asked.
 
 Everything else works as for any upstream: each server gets 2 seconds, then the next one is asked, and the client gets `SERVFAIL` when none answers. The status and the metrics name an encrypted upstream as you wrote it.
+
+## Encrypted DNS for the clients
+
+The resolver can also answer the clients over an encrypted connection, so that nobody on the LAN, such as another device on the Wi-Fi, can read the names asked or change the answers. Phones, computers and browsers can be set to use it, as [below](#setting-up-the-clients).
+
+Each transport is a `listen` entry with its scheme. It takes the same forms as a plain entry, and has its own default port:
+
+- **`tls://`** is DNS over TLS ([RFC 7858](https://www.rfc-editor.org/rfc/rfc7858)), TCP port 853.
+- **`https://`** is DNS over HTTPS ([RFC 8484](https://www.rfc-editor.org/rfc/rfc8484)), TCP port 443, at the path `/dns-query`, by `GET` and by `POST`, over HTTP/1.1 and HTTP/2.
+- **`quic://`** is DNS over QUIC ([RFC 9250](https://www.rfc-editor.org/rfc/rfc9250)), UDP port 853.
+
+```yaml
+resolvers:
+  lan:
+    listen:
+      - 192.168.1.0/24          # plain DNS, port 53
+      - tls://192.168.1.0/24    # DNS over TLS, port 853
+      - https://192.168.1.0/24  # DNS over HTTPS, port 443
+      - quic://192.168.1.0/24   # DNS over QUIC, port 853
+    tls_certificate: /etc/ssl/dns/fullchain.pem
+    tls_key: /etc/ssl/dns/privkey.pem
+    upstream:
+      - 192.168.1.1
+
+credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: lan.example.com
+      records:
+        - dns A 192.168.1.2     # the name in the certificate, at this machine
+```
+
+Everything else is the same on every transport: the same answers, the same [`allow`](#allow), the same counts in the status and the metrics. The status lists each encrypted address with its scheme, as `tls://192.168.1.2:853`.
+
+### The certificate it shows
+
+The encrypted transports show a certificate, which `tls_certificate` and `tls_key` give: the files of the certificate with its chain, and of its private key, in PEM. Let's Encrypt names them `fullchain.pem` and `privkey.pem`. Both are required with an encrypted entry, and ipv6ddns doesn't start if they don't read as a pair.
+
+Clients check the certificate. Most of them only accept one that a public authority signed, for the name they were told to use. So:
+
+1. **Pick a name in a domain you own**, such as `dns.lan.example.com`, and give it this machine's address, as the record `dns A 192.168.1.2` above. The clients look this name up, and the certificate is for it.
+2. **Get a certificate for that name from Let's Encrypt**, with the DNS challenge, which works for a name that the internet can't reach: certbot, acme.sh, or the Home Assistant app of Let's Encrypt, with your DNS provider's plugin.
+3. **Give its files to the resolver.** When a renewal writes new files, the resolver takes them within seconds, without a restart.
+
+A name in `home.arpa`, or a certificate you signed yourself, only works with clients you can give your own authority to, such as `dig` and `kdig` on Linux.
+
+The report shows the certificate under its resolver: its names, and until when, in amber two weeks before it expires, and in red once it has. If a renewed file doesn't read, the resolver keeps showing the certificate it had, and the report and the log say why.
+
+### Setting up the clients
+
+| Client | Transport | Where |
+|---|---|---|
+| Android 9 and later | TLS | *Settings → Network → Private DNS*: the name, `dns.lan.example.com` |
+| iPhone, iPad and Mac | TLS or HTTPS | A configuration profile of DNS settings, with the name or the URL |
+| Windows 11 | HTTPS | *Settings → Network → DNS server assignment*: the address, with DNS over HTTPS on and the template `https://dns.lan.example.com/dns-query` |
+| Firefox and Chrome | HTTPS | Their secure DNS setting, with a custom provider: `https://dns.lan.example.com/dns-query` |
+| Linux with systemd-resolved | TLS | `DNS=192.168.1.2#dns.lan.example.com` and `DNSOverTLS=yes` |
+| AdGuard's apps, dnsproxy | QUIC | `quic://dns.lan.example.com` |
+
+A client that uses the name finds it through the DNS it has already, so the name needs its record in the resolver's zone, or at your DNS provider.
+
+### Ports
+
+Port 443 is often taken already, by a reverse proxy or a web interface. Give DNS over HTTPS another port, as `https://192.168.1.2:8443`, or another address, and write that port in the clients' URL. DNS over TLS and DNS over QUIC can share port 853, one over TCP and the other over UDP.
 
 ## A zone
 
@@ -407,7 +474,7 @@ An address already taken by another program, or by another instance, isn't caugh
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/resolvers-dark.svg">
-  <img src="images/resolvers-light.svg" alt="The resolvers in the report. One resolver, lan, is serving, in green. It listens on 192.168.1.2 port 53, answers the LAN, and has the zone lan.example.com with 23 names. Of its two upstream servers, one has 3 failed queries, in amber. Then its queries by kind, and its cache, 1274 of 10000.">
+  <img src="images/resolvers-light.svg" alt="The resolvers in the report. One resolver, lan, is serving, in green. It listens on 192.168.1.2 port 53, and over DNS over TLS and over QUIC on port 853, answers the LAN, and has the zone lan.example.com with 23 names. Of its two upstream servers, one has 3 failed queries, in amber. Then its queries by kind, its cache, 1274 of 10000, and its certificate, for dns.lan.example.com.">
 </picture>
 
 A resolver that isn't serving is in red, with the reason. An upstream server with failed queries is in amber.
@@ -450,5 +517,5 @@ The instances can differ in two cases, and a client may ask either one meanwhile
 
 - **Allow:** a resolver only answers the clients in `allow`, which by default is the networks it listens on. A resolver that answers anyone, on an address the internet reaches, is an open resolver. It relays any query upstream. Its answers are also larger than the queries, so an attacker can fake a victim's address in the queries and aim the answers at the victim: an amplification attack. Don't widen `allow` to everyone, and don't listen on a public address. On a router, a port alone does listen on one.
 - **DNSSEC:** local answers aren't signed. If you give a different answer here to a name in a publicly signed zone, such as `www.example.com` in a signed `example.com`, the name fails on a client that validates DNSSEC itself. That includes every name of a zone such as `lan.example.com`, when `example.com` is signed. Put such names in a zone that isn't signed, such as `home.arpa`, or in a domain of your own that you don't sign. Forwarded answers are relayed as they are. They include their signatures when the client's DO bit asks for them, and are cached separately from the answers asked without it.
-- **Upstream:** over plain DNS, the names asked and the answers cross the network unencrypted. Anyone on the path can read the questions and change the answers. An [encrypted upstream](#encrypted-upstream-servers) protects that path up to the server, which still sees every name. The clients' own queries to the resolver are plain DNS, on the LAN.
+- **Upstream:** over plain DNS, the names asked and the answers cross the network unencrypted. Anyone on the path can read the questions and change the answers. An [encrypted upstream](#encrypted-upstream-servers) protects that path up to the server, which still sees every name. The clients' own queries to the resolver are plain DNS, on the LAN, unless they use the [encrypted transports](#encrypted-dns-for-the-clients).
 - **Cache:** an upstream answer is served to every client for its TTL, including a wrong answer, as with any caching resolver. Nothing is kept for more than a day, or across a restart. With `cache_size: 0`, the resolver asks every time.

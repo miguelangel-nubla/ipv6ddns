@@ -17,9 +17,11 @@ host_network: true
 privileged:
   - NET_RAW
 # config.yaml, and the files it names, in addon_configs/<id>_ipv6ddns (app_configs in recent
-# versions).
+# versions); and, read only, Home Assistant's certificates, which the resolver's encrypted
+# transports can show.
 map:
   - addon_config:rw
+  - ssl
 # The report, on the app's page: at the port the starting config.yaml serves it,
 # webserver.listen.
 ingress: true

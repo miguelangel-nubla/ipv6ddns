@@ -36,6 +36,12 @@ type Config struct {
 	Listen []listen.Entry
 	// The text of each listen entry, as written, for errors: or none.
 	ListenLines []string
+	// Where it answers over the encrypted transports, each entry with its transport and its text:
+	// DNS over TLS, over HTTPS and over QUIC.
+	Encrypted []EncryptedListen
+	// The files of the certificate and its key, in PEM, which the encrypted transports show: read
+	// again when they change. Required with Encrypted.
+	CertFile, KeyFile string
 	// The networks of the clients it answers. None: the networks of the machine's addresses it
 	// listens on, read when it starts.
 	Allow []netip.Prefix

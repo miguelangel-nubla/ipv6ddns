@@ -138,6 +138,8 @@ func resolverLine(line, body string, indent int) pretty.Line {
 		return pretty.Line{pretty.As(pretty.Name, name), {Text: ": "}, pretty.As(role, state)}
 	case strings.HasPrefix(body, "Queries: "), strings.HasPrefix(body, "Cache: "):
 		return pretty.Line{pretty.As(pretty.Detail, line)}
+	case strings.HasPrefix(body, "Certificate: "):
+		return certificateLine(line)
 	case strings.HasPrefix(body, "Upstream: "):
 		var out pretty.Line
 		last := 0
@@ -269,3 +271,27 @@ func num(tenths int) string {
 	}
 	return strconv.Itoa(tenths/10) + "." + strconv.Itoa(tenths%10)
 }
+
+// certificateLine is the certificate of a resolver: until when, in amber within two weeks of its
+// end and in red after it, and its files in amber when they don't read again.
+func certificateLine(line string) pretty.Line {
+	var out pretty.Line
+	rest, unread, hasUnread := strings.Cut(line, " (its files don't read again: ")
+	switch {
+	case strings.Contains(rest, ", expired on "):
+		i := strings.LastIndex(rest, "expired on ")
+		out = pretty.Line{{Text: rest[:i]}, pretty.As(pretty.Error, rest[i:])}
+	case soon.MatchString(rest):
+		i := strings.LastIndex(rest, "until ")
+		out = pretty.Line{{Text: rest[:i]}, pretty.As(pretty.Warn, rest[i:])}
+	default:
+		out = pretty.Line{{Text: rest}}
+	}
+	if hasUnread {
+		out = append(out, pretty.Span{Text: " "}, pretty.As(pretty.Warn, "(its files don't read again: "+unread))
+	}
+	return out
+}
+
+// soon is the end of a certificate within two weeks, as the report says it.
+var soon = regexp.MustCompile(`until \d{4}-\d{2}-\d{2}, in \d+ days?$`)
