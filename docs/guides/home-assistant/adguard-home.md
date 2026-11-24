@@ -76,7 +76,7 @@ In the AdGuard Home app, open *Filters → DNS rewrites*. Each name is there, on
 
 From any device on the network, run the plain guide's [checks](../adguard-home.md#check-that-it-works): `dig printer.lan.example.com`.
 
-Home Assistant itself resolves these names when it uses AdGuard Home for DNS. Write the whole name, `printer.lan.example.com`, because Home Assistant doesn't look up a short name such as `printer`.
+Home Assistant itself resolves these names when it uses AdGuard Home for DNS. To have it do so, in the *Terminal & SSH* app, run `ha dns options --servers dns://172.30.32.1`, the AdGuard Home app's address on Home Assistant's internal network. `ha dns reset` undoes it. The other way, and what to know about both, is in [point Home Assistant at it](network-wide-names.md#point-home-assistant-at-it). Write the whole name, `printer.lan.example.com`, because Home Assistant doesn't look up a short name such as `printer`.
 
 ## More
 
