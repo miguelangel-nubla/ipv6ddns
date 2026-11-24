@@ -78,7 +78,7 @@ func kdig(t *testing.T, m *livetest.Machine, server string, args ...string) (str
 
 // A machine runs ipv6ddns with a resolver that answers over plain DNS, and over TLS, HTTPS and
 // QUIC, with a certificate of the test's authority. A client asks a name of its zone over each,
-// with dig and with kdig, trusting that authority, and gets its address; a client that expects
+// with dig and with kdig, the latter trusting that authority, and gets its address; a client that expects
 // another name is refused the connection; and the report tells the transports and the
 // certificate.
 func TestLiveResolverServesEncrypted(t *testing.T) {
@@ -134,10 +134,13 @@ tasks:
 	if plain.status != "NOERROR" || len(plain.answers) != 1 || !strings.HasSuffix(plain.answers[0], want) {
 		t.Errorf("plain DNS: %s", plain.output)
 	}
+	// dig as a second client of TLS and HTTPS, which doesn't check the certificate: BIND 9.18's,
+	// of CI's Ubuntu, says its TLS context can't be created when given +tls-ca there, though not
+	// in a container of the same Ubuntu. kdig, below, checks it, over every transport.
 	for name, args := range map[string][]string{
-		"dig, over TLS":         append([]string{"+tls", "-p", "853"}, trust...),
-		"dig, over HTTPS":       append([]string{"+https"}, trust...),
-		"dig, over HTTPS (GET)": append([]string{"+https-get"}, trust...),
+		"dig, over TLS":         {"+tls", "-p", "853"},
+		"dig, over HTTPS":       {"+https"},
+		"dig, over HTTPS (GET)": {"+https-get"},
 	} {
 		d := dig(t, client, address, append(args, "printer.home.arpa", "A")...)
 		if d.status != "NOERROR" || len(d.answers) != 1 || !strings.HasSuffix(d.answers[0], want) {

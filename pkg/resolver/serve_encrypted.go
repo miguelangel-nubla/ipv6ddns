@@ -207,7 +207,8 @@ func (s *Server) answerHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/dns-message")
 	w.Header().Set("Cache-Control", "max-age="+strconv.Itoa(int(freshness(resp))))
-	w.Write(packed)
+	// A client gone: nothing to do.
+	_, _ = w.Write(packed)
 }
 
 // trimPadding drops the padding of a base64 text.
@@ -278,7 +279,7 @@ func (s *Server) serveQUICConn(conn *quic.Conn) {
 	s.mutex.Lock()
 	if s.stopping {
 		s.mutex.Unlock()
-		conn.CloseWithError(doqNoError, "")
+		_ = conn.CloseWithError(doqNoError, "")
 		return
 	}
 	if s.quicConns == nil {
@@ -304,7 +305,8 @@ func (s *Server) serveQUICConn(conn *quic.Conn) {
 // ID 0. A stream that breaks the protocol closes its connection, as RFC 9250 has it.
 func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream) {
 	defer stream.Close()
-	stream.SetDeadline(time.Now().Add(encryptedTimeout))
+	// A stream that can't have one is one already gone, which the reads then say.
+	_ = stream.SetDeadline(time.Now().Add(encryptedTimeout))
 	var length [2]byte
 	if _, err := io.ReadFull(stream, length[:]); err != nil {
 		stream.CancelRead(quic.StreamErrorCode(doqProtocolError))
@@ -317,12 +319,12 @@ func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream) {
 	}
 	req := new(dns.Msg)
 	if req.Unpack(wire) != nil || req.Id != 0 {
-		conn.CloseWithError(doqProtocolError, "a message that is no query of DNS over QUIC")
+		_ = conn.CloseWithError(doqProtocolError, "a message that is no query of DNS over QUIC")
 		return
 	}
 	resp := s.respond(req, conn.RemoteAddr())
 	if resp == nil {
-		conn.CloseWithError(doqProtocolError, "not a query")
+		_ = conn.CloseWithError(doqProtocolError, "not a query")
 		return
 	}
 	packed, err := resp.Pack()
@@ -332,7 +334,8 @@ func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream) {
 	}
 	out := make([]byte, 2, 2+len(packed))
 	binary.BigEndian.PutUint16(out, uint16(len(packed)))
-	stream.Write(append(out, packed...))
+	// A client gone, or a stream it reset: nothing to do.
+	_, _ = stream.Write(append(out, packed...))
 }
 
 // shutdownEncrypted stops answering over HTTPS and QUIC: the answers being made over HTTPS are
@@ -347,14 +350,15 @@ func (s *Server) shutdownEncrypted(ctx context.Context) {
 	s.mutex.Unlock()
 	var wg sync.WaitGroup
 	for _, srv := range https {
-		wg.Go(func() { srv.Shutdown(ctx) })
+		// Its time over, the connections left are closed with the program: nothing to do.
+		wg.Go(func() { _ = srv.Shutdown(ctx) })
 	}
 	wg.Wait()
 	for _, l := range listeners {
 		l.Close()
 	}
 	for _, c := range conns {
-		c.CloseWithError(doqNoError, "")
+		_ = c.CloseWithError(doqNoError, "")
 	}
 }
 
