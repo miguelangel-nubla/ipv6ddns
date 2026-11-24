@@ -94,6 +94,7 @@ func TestUpdatesTimeOut(t *testing.T) {
 		"pfsense":                        &PfsenseRestapiUnbound{Address: "http://" + silent, Key: "k", Zone: "lan"},
 		"adguardhome":                    &AdGuardHome{Address: "http://" + silent, Username: "u", Password: "p", Zone: "lan"},
 		"pihole":                         &PiHole{Address: "http://" + silent, Password: "p", Zone: "lan"},
+		"rfc2136":                        &RFC2136{Server: silent, Zone: "example.com"},
 		"gravity":                        &Gravity{Server: "http://" + silent, APIKey: "k", Zone: "lan."},
 		"duckdns":                        &DuckDNS{APIToken: duckToken, updateURL: "http://" + silent},
 	} {

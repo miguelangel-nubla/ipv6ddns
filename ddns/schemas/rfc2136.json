@@ -1,0 +1,42 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "A DNS server that takes dynamic updates, RFC 2136, as BIND, Knot and PowerDNS do, and Windows DNS where it allows nonsecure updates: the primary of the zone. Each update replaces the name's A and AAAA records in one step, over TCP, and leaves its records of other types. Without a TSIG key, the server must take updates from the address of the machine ipv6ddns runs on. Give ipv6ddns a zone of its own, not one a DHCP server registers its clients in: both would write the same names.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "server": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The primary server of the zone, as 192.168.1.2 or ns1.example.com:53. Without a port, 53."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The zone, as lan.example.com."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL, as 5m or 1h."
+        },
+        "tsig_key": {
+            "type": "string",
+            "description": "The name of the TSIG key the updates are signed with, as ipv6ddns. Leave it out for a server that takes updates by address."
+        },
+        "tsig_secret": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+            "description": "The key's secret, in base64, as tsig-keygen gives it."
+        },
+        "tsig_algorithm": {
+            "type": "string",
+            "enum": ["hmac-sha1", "hmac-sha224", "hmac-sha256", "hmac-sha384", "hmac-sha512"],
+            "description": "The key's algorithm. Default: hmac-sha256."
+        }
+    },
+    "required": [
+        "server",
+        "zone",
+        "ttl"
+    ]
+}

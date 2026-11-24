@@ -128,7 +128,7 @@ A written name also names a device that says no name at all. The web report show
 
 ## Your router's DNS instead
 
-Instead of answering the names itself, ipv6ddns can put them in your router's own DNS: MikroTik, OpenWrt, OPNsense or pfSense, among the [providers](../reference/providers.md). Then there's no new DNS server to give the devices, and you skip [pointing the network at it](#point-the-network-at-it).
+Instead of answering the names itself, ipv6ddns can put them in your router's own DNS: MikroTik, OpenWrt, OPNsense or pfSense, among the [providers](../reference/providers.md). A DNS server that takes dynamic updates, such as BIND, works the same way, with the [`rfc2136`](../reference/providers.md#rfc2136) provider. Then there's no new DNS server to give the devices, and you skip [pointing the network at it](#point-the-network-at-it).
 
 The task is the same. The router's credential replaces the resolver's, and there's no `resolvers` block. This example is for MikroTik, with the password in a file `mikrotik_password` beside the configuration:
 

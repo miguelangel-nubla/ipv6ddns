@@ -14,6 +14,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`pfsense_restapi_unbound`](#pfsense_restapi_unbound)
 - [`pihole`](#pihole)
 - [`resolver`](#resolver)
+- [`rfc2136`](#rfc2136)
 - [`route53`](#route53)
 - [`technitium`](#technitium)
 - [`windows`](#windows)
@@ -134,6 +135,19 @@ A zone that one of ipv6ddns's resolvers answers from memory, for the clients on 
 | `zone` | string | **Required.** The zone: a subdomain of a domain you own, such as lan.example.com, or home.arpa. |
 | `records` | list of string | Records of names in the zone that no task publishes, one per entry, in zone file syntax, relative to the zone or absolute within it: printer A 192.168.1.20, files CNAME nas, _ipp._tcp SRV 0 0 631 printer. A record without a TTL gets the zone's. |
 | `ttl` | string | The TTL of the names' addresses, and of the records that give none, as 5m or 1h. Default: 1m. An address that expires sooner is answered with the time it has left. |
+
+## rfc2136
+
+A DNS server that takes dynamic updates, RFC 2136, as BIND, Knot and PowerDNS do, and Windows DNS where it allows nonsecure updates: the primary of the zone. Each update replaces the name's A and AAAA records in one step, over TCP, and leaves its records of other types. Without a TSIG key, the server must take updates from the address of the machine ipv6ddns runs on. Give ipv6ddns a zone of its own, not one a DHCP server registers its clients in: both would write the same names.
+
+| Key | Takes | |
+|---|---|---|
+| `server` | string | **Required.** The primary server of the zone, as 192.168.1.2 or ns1.example.com:53. Without a port, 53. |
+| `zone` | string | **Required.** The zone, as lan.example.com. |
+| `ttl` | string | **Required.** The records' TTL, as 5m or 1h. |
+| `tsig_key` | string | The name of the TSIG key the updates are signed with, as ipv6ddns. Leave it out for a server that takes updates by address. |
+| `tsig_secret` | string | The key's secret, in base64, as tsig-keygen gives it. |
+| `tsig_algorithm` | `hmac-sha1`, `hmac-sha224`, `hmac-sha256`, `hmac-sha384`, `hmac-sha512` | The key's algorithm. Default: hmac-sha256. |
 
 ## route53
 

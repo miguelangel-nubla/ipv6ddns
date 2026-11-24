@@ -479,6 +479,95 @@ func TestLivePiHole(t *testing.T) {
 	t.Run("zone", func(t *testing.T) { s.run(t, s.zone, zoneSpellings("", s.zone)...) })
 }
 
+// A server of RFC 2136, BIND: IPV6DDNS_LIVE_RFC2136 has the settings, with the TSIG key the zone
+// takes updates signed with, and IPV6DDNS_LIVE_RFC2136_DNS the address of its DNS server. The
+// changes are counted by a proxy of the TCP connections that carry an update; the queries that
+// read the records go through it too.
+func TestLiveRFC2136(t *testing.T) {
+	s := &liveServer{provider: "rfc2136", settings: liveSettings(t, "IPV6DDNS_LIVE_RFC2136"), ttls: []string{"10m", "1m30s"}}
+	s.zone = fmt.Sprint(s.settings["zone"])
+	s.records = dnsRecords(liveEnv(t, "IPV6DDNS_LIVE_RFC2136_DNS"))
+	s.service = func(t *testing.T, raw json.RawMessage) (Service, func() int) {
+		t.Helper()
+		var settings map[string]any
+		json.Unmarshal(raw, &settings)
+		proxied, updates := countingDNSUpdates(t, fmt.Sprint(settings["server"]))
+		settings["server"] = proxied
+		raw, _ = json.Marshal(settings)
+		service, err := NewService(s.provider, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return service, updates
+	}
+	s.fixtures = s.dnsFixtures("live."+s.zone, s.zone)
+
+	t.Run("name", func(t *testing.T) { s.run(t, "live."+s.zone, zoneSpellings("live", s.zone)...) })
+	t.Run("zone", func(t *testing.T) { s.run(t, s.zone, zoneSpellings("", s.zone)...) })
+
+	// A key the server doesn't take: the update fails, and says why.
+	t.Run("a wrong key", func(t *testing.T) {
+		wrong := s.with("tsig_secret", "d3Jvbmctc2VjcmV0LXdyb25nLXNlY3JldC13cm9uZyE=")
+		service, err := NewService(s.provider, wrong)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = service.Update("live", collectionWith("2001:db8::1"))
+		if err == nil || !strings.Contains(err.Error(), "live-key") {
+			t.Errorf("a wrong secret: %v", err)
+		}
+		s.fixtures(t)
+	})
+}
+
+// countingDNSUpdates stands between a provider and a DNS server over TCP at target, and counts the
+// updates: the messages whose opcode is UPDATE.
+func countingDNSUpdates(t *testing.T, target string) (string, func() int) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	var updates atomic.Int64
+	go func() {
+		for {
+			client, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer client.Close()
+				server, err := net.Dial("tcp", target)
+				if err != nil {
+					return
+				}
+				defer server.Close()
+				go io.Copy(client, server)
+				reader := bufio.NewReader(client)
+				for {
+					var length [2]byte
+					if _, err := io.ReadFull(reader, length[:]); err != nil {
+						return
+					}
+					message := make([]byte, int(length[0])<<8|int(length[1]))
+					if _, err := io.ReadFull(reader, message); err != nil {
+						return
+					}
+					// The opcode is bits 1 to 4 of the third byte: 5 is UPDATE.
+					if len(message) > 2 && message[2]>>3&0xf == 5 {
+						updates.Add(1)
+					}
+					if _, err := server.Write(append(length[:], message...)); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	return listener.Addr().String(), func() int { return int(updates.Load()) }
+}
+
 // Gravity: IPV6DDNS_LIVE_GRAVITY has the settings, with the zone, and IPV6DDNS_LIVE_GRAVITY_DNS
 // the address of its DNS server.
 func TestLiveGravity(t *testing.T) {

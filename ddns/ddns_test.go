@@ -26,6 +26,7 @@ var validSettings = map[string]string{
 	"gravity":                 `{"server": "http://gravity", "api_key": "k", "zone": "example.com.", "ttl": "5m"}`,
 	"mikrotik":                `{"address": "192.0.2.1", "username": "u", "password": "p", "zone": "lan", "ttl": "5m"}`,
 	"openwrt":                 `{"address": "192.0.2.1", "username": "root", "password": "p", "zone": "lan", "ttl": "5m"}`,
+	"rfc2136":                 `{"server": "192.0.2.53", "zone": "example.com", "ttl": "5m", "tsig_key": "ipv6ddns", "tsig_secret": "c2VjcmV0", "tsig_algorithm": "hmac-sha512"}`,
 	"resolver":                `{"zone": "home.arpa", "records": ["printer A 192.168.1.20"], "ttl": "1m"}`,
 	"route53":                 `{"access_key_id": "a", "secret_access_key": "s", "region": "eu-west-1", "hosted_zone_id": "Z1", "ttl": "5m"}`,
 	"technitium":              `{"address": "https://dns", "token": "t", "zone": "example.com", "ttl": "5m"}`,

@@ -103,7 +103,7 @@ To test a change to the formula, use a container, `docker run --rm -it homebrew/
 
 A provider's fake API is written by the same person who wrote the provider, so the two always agree. The providers therefore also have live tests against the real server, wherever that server runs in a container.
 
-`tools/live-providers.sh` starts Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, OpenWrt and MikroTik RouterOS (a CHR under QEMU). It gives each one a zone, a credential, and some records that must be left alone. Then it runs the `TestLive` tests of `ddns/`, built with the `live` tag. Every change goes through `Update`, under each spelling of the name, and is checked with a DNS query to the server.
+`tools/live-providers.sh` starts Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, BIND, OpenWrt and MikroTik RouterOS (a CHR under QEMU). It gives each one a zone, a credential, and some records that must be left alone. Then it runs the `TestLive` tests of `ddns/`, built with the `live` tag. Every change goes through `Update`, under each spelling of the name, and is checked with a DNS query to the server.
 
 - It needs Docker, Go, curl and OpenSSH, and takes under a minute. CI runs it.
 - The servers are pinned to the versions in the script, so a failing run points at the code and not at whatever was released that day. Moving to a newer version of a server is a change to the script.

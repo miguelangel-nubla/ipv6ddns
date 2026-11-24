@@ -1,7 +1,7 @@
 #!/bin/sh
 # The live tests of the DNS providers, ddns/live_test.go, against the real servers that run in a
-# container: Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, OpenWrt, and Mikrotik RouterOS, a
-# CHR under QEMU. It
+# container: Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, BIND, OpenWrt, and Mikrotik
+# RouterOS, a CHR under QEMU. It
 # starts them, provisions each with a zone, a credential and the records the tests must leave
 # alone, runs the tests and removes them. It needs Docker, Go, curl and OpenSSH's ssh-keygen and
 # ssh-keyscan. The RouterOS image stays, in the Docker volume ipv6ddns-live-routeros: it is
@@ -21,6 +21,8 @@ TECHNITIUM_IMAGE=${TECHNITIUM_IMAGE:-technitium/dns-server:15.6.2}
 GRAVITY_IMAGE=${GRAVITY_IMAGE:-ghcr.io/beryju/gravity:v0.34.0}
 ADGUARDHOME_IMAGE=${ADGUARDHOME_IMAGE:-adguard/adguardhome:v1.0.0}
 PIHOLE_IMAGE=${PIHOLE_IMAGE:-pihole/pihole:2026.11.0}
+# ISC's image is of amd64 alone: BIND 9.20.31.
+BIND_IMAGE=${BIND_IMAGE:-internetsystemsconsortium/bind9:9.20@sha256:978201d91548ec63c3b1c1befd5e6a3c9fa127f79f9058fd82d8e3493fe90ce1}
 OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
 case $(docker version --format '{{.Server.Arch}}') in
 arm64 | aarch64) openwrt_target=armsr-armv8 openwrt_platform=linux/aarch64_generic ;;
@@ -34,7 +36,7 @@ password=live-$$
 prefix=ipv6ddns-live-$$
 work=$(mktemp -d)
 cleanup() {
-	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-adguardhome" "$prefix-pihole" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
+	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-adguardhome" "$prefix-pihole" "$prefix-bind" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
 	rm -rf "$work"
 }
 trap cleanup EXIT
@@ -105,6 +107,43 @@ docker run -d --name "$prefix-pihole" $publish -p 127.0.0.1::80/tcp \
 	-e FTLCONF_webserver_api_password="$password" -e FTLCONF_dns_listeningMode=all \
 	-e FTLCONF_misc_dnsmasq_lines="txt-record=live.$zone,keep;txt-record=$zone,keep" "$PIHOLE_IMAGE" >/dev/null
 
+# BIND: the primary of the zone, which takes the updates a TSIG key signs, with the records the
+# tests must leave alone. Its zone file is copied where BIND can write its journal.
+bind_secret=$(head -c 32 /dev/urandom | base64)
+mkdir -p "$work/bind"
+cat >"$work/bind/named.conf" <<EOF
+options {
+	directory "/var/cache/bind";
+	listen-on { any; };
+	listen-on-v6 { none; };
+	recursion no;
+	allow-query { any; };
+	dnssec-validation no;
+};
+key "live-key." {
+	algorithm hmac-sha256;
+	secret "$bind_secret";
+};
+zone "$zone" {
+	type primary;
+	file "/var/lib/bind/$zone.zone";
+	update-policy { grant live-key. zonesub ANY; };
+};
+EOF
+cat >"$work/bind/$zone.zone" <<EOF
+\$TTL 300
+@	IN SOA ns.$zone. hostmaster.$zone. 1 3600 600 86400 60
+@	IN NS ns.$zone.
+@	IN TXT "keep"
+ns	IN A 127.0.0.1
+other	IN AAAA 2001:db8::f
+live	IN TXT "keep"
+EOF
+chmod -R a+rX "$work/bind"
+docker run -d --name "$prefix-bind" --platform linux/amd64 $publish -v "$work/bind:/etc/bind/live:ro" --entrypoint sh "$BIND_IMAGE" -c "
+	cp /etc/bind/live/$zone.zone /var/lib/bind/ && chown bind:bind /var/lib/bind/$zone.zone
+	exec named -u bind -g -c /etc/bind/live/named.conf" >/dev/null
+
 # OpenWrt boots as on a router, with procd, which a reload of dnsmasq goes through: its lan is the
 # container's interface, with the address Docker gave it, and the firewall, which has no zone for
 # the host, stays off. The TXT record is dnsmasq's own, and the host section a static lease of the
@@ -165,6 +204,8 @@ wait_seconds=120 wait_for Pi-hole curl -fs -H 'Content-Type: application/json' "
 pihole_sid=$(curl -fs -H 'Content-Type: application/json' "$pihole/api/auth" -d "{\"password\":\"$password\"}" | json_field sid)
 curl -fs -X PUT -H "X-FTL-SID: $pihole_sid" "$pihole/api/config/dns/hosts/2001:db8::f%20other.$zone" >/dev/null
 curl -fs -X DELETE -H "X-FTL-SID: $pihole_sid" "$pihole/api/auth" >/dev/null
+
+wait_for BIND docker exec "$prefix-bind" dig +short +tcp @127.0.0.1 "$zone" SOA
 
 # Technitium: an API token, a primary zone and the records.
 technitium=http://127.0.0.1:$(port technitium 5380/tcp)
@@ -235,7 +276,7 @@ routeros_api ip/service/set -d '{".id":"api-ssl","certificate":"live"}' >/dev/nu
 routeros_fingerprint=$(routeros_api 'certificate?name=live' | json_field fingerprint)
 routeros_version=$(routeros_api system/resource | json_field version)
 
-echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), AdGuard Home ($ADGUARDHOME_IMAGE), Pi-hole ($PIHOLE_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
+echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), AdGuard Home ($ADGUARDHOME_IMAGE), Pi-hole ($PIHOLE_IMAGE), BIND ($BIND_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
 
 export IPV6DDNS_LIVE_TECHNITIUM="{\"address\":\"$technitium\",\"token\":\"$technitium_token\",\"zone\":\"$zone\",\"ttl\":\"5m\"}"
 export IPV6DDNS_LIVE_TECHNITIUM_DNS="127.0.0.1:$(port technitium 53/udp)"
@@ -245,6 +286,8 @@ export IPV6DDNS_LIVE_ADGUARDHOME="{\"address\":\"$adguardhome\",\"username\":\"a
 export IPV6DDNS_LIVE_ADGUARDHOME_DNS="127.0.0.1:$(port adguardhome 53/udp)"
 export IPV6DDNS_LIVE_PIHOLE="{\"address\":\"$pihole\",\"password\":\"$password\",\"zone\":\"$zone\"}"
 export IPV6DDNS_LIVE_PIHOLE_DNS="127.0.0.1:$(port pihole 53/udp)"
+export IPV6DDNS_LIVE_RFC2136="{\"server\":\"127.0.0.1:$(port bind 53/tcp)\",\"zone\":\"$zone\",\"ttl\":\"5m\",\"tsig_key\":\"live-key\",\"tsig_secret\":\"$bind_secret\"}"
+export IPV6DDNS_LIVE_RFC2136_DNS="127.0.0.1:$(port bind 53/udp)"
 export IPV6DDNS_LIVE_OPENWRT="{\"address\":\"127.0.0.1:$openwrt_ssh\",\"username\":\"root\",\"ssh_key\":\"$work/key\",\"host_key\":\"${openwrt_host_keys%% *}\",\"zone\":\"lan\"}"
 export IPV6DDNS_LIVE_OPENWRT_DNS="127.0.0.1:$(port openwrt 53/udp)"
 export IPV6DDNS_LIVE_OPENWRT_HOST_KEYS="$openwrt_host_keys"
