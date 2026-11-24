@@ -32,7 +32,7 @@ The web report, or `--live` in a terminal, shows each name, with its addresses a
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/report-dark.svg">
-  <img src="docs/images/report-light.svg" alt="The report: the names with their addresses, then the built-in DNS server, then the hosts found with their names. A name that fails is in red, one that waits or has no address in amber, and the DNS server that is serving in green.">
+  <img src="docs/images/report-light.svg" alt="The report: every name with its addresses and its last update, then the built-in DNS server, then the hosts found with their names. The count of names and the serving DNS server are in green.">
 </picture>
 
 The two times on each line are how long the address has left before it expires, and how long it has been seen. In a browser and in a terminal the report has colors: red for what fails, amber for what waits or has no address, green for what works. The words say the same without them. The same state is served as JSON at `/status.json`, and as Prometheus metrics at `/metrics`.

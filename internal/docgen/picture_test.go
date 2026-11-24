@@ -21,7 +21,8 @@ func TestReportPicturesUpToDate(t *testing.T) {
 		// The roles the picture has: one of a single color would say nothing.
 		roles []pretty.Role
 	}{
-		{"report", "README.md", "docs/images/", []pretty.Role{pretty.Heading, pretty.Name, pretty.Warn, pretty.Error, pretty.Detail}},
+		// The README shows a report where everything works: in green, not red.
+		{"report", "README.md", "docs/images/", []pretty.Role{pretty.Heading, pretty.Name, pretty.OK, pretty.Detail}},
 		{"resolvers", "docs/resolver.md", "images/", []pretty.Role{pretty.Heading, pretty.Name, pretty.OK, pretty.Warn, pretty.Detail}},
 	} {
 		text, err := os.ReadFile(filepath.Join(root, "docs", "images", picture.name+".txt"))

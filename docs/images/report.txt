@@ -1,8 +1,7 @@
-DNS: 4 names, 3 with addresses, 1 without; 1 failing
+DNS: 4 names, 4 with addresses, 0 without; 0 failing
     Provider: cloudflare
         Endpoint: cloudflare
-            vpn.example.com: (next update: 42s, retrying after the error)
-                (last update error: failed to list DNS records for vpn: context deadline exceeded)
+            vpn.example.com: (last update: 2026-01-25T01:47:12Z)
                 [2001:db8:1234:5678::1]                    1h12m40s   31d 1h        12:34:56:78:90:ab  eth0
             www.example.com: (last update: 2026-01-25T01:49:35Z)
                 [2001:db8:1234:5678:abcd:ef01:2345:6789]     35m15s    2d 5h        12:34:56:78:90:cd  eth0, router
@@ -10,8 +9,8 @@ DNS: 4 names, 3 with addresses, 1 without; 1 failing
     Provider: resolver
         Endpoint: home
             laptop.lan.example.com: (last update: 2026-01-24T22:37:41Z)
-                (no address: the last one went 3h12m ago)
-            nas.lan.example.com: (next update: 7s, waiting for the 10s debounce)
+                192.168.1.60                                  5m12s   3d 2h         00:11:22:33:44:66  wlan0
+            nas.lan.example.com: (last update: 2026-01-25T01:51:03Z)
                 192.168.1.50                                  2m51s   12d           00:11:22:33:44:55  eth0
                 [fd12:3456:789a::50]                         41m37s   12d           00:11:22:33:44:55  eth0
 
@@ -24,7 +23,7 @@ Resolvers: 1, 1 serving
         Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0
         Cache: 1274 of 10000
 
-Discovery: 2 hosts, 1 named, 3 addresses
+Discovery: 4 hosts, 2 named, 5 addresses
     00:11:22:33:44:55
         names:
             nas                                      3h59m12s   12d
