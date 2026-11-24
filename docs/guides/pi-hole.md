@@ -81,7 +81,7 @@ To make a bare `printer` work too, set your router's local domain, or DHCP's dom
 - **Your own records stay.** ipv6ddns only touches a record of a name it keeps, written as one address and that name. A record you wrote with several names on its line is left alone.
 - **Reverse names work.** Pi-hole answers an address back to its name from these records.
 - **One session.** ipv6ddns logs in once and keeps the session, so it uses one of the sessions Pi-hole's API allows at a time.
-- **A device that left keeps its name for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. A host that leaves while ipv6ddns isn't running keeps its records until you remove them: see [when a host leaves](../hostnames.md#when-a-host-leaves).
+- **A device that left keeps its name for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. If another device takes its address meanwhile, the old name loses that address at once. A host that leaves while ipv6ddns isn't running keeps its records until you remove them: see [when a host leaves](../hostnames.md#when-a-host-leaves).
 
 ## Common problems
 

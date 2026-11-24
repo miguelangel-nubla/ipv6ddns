@@ -82,7 +82,7 @@ To make a bare `printer` work too, set your router's local domain, or DHCP's dom
 - **A name with a rewrite answers nothing else.** That is how AdGuard Home works: once a name has a rewrite, AdGuard Home no longer asks upstream for it. Choose a domain for these names that has no records of its own elsewhere.
 - **No reverse names.** AdGuard Home doesn't answer an address back to its name from a rewrite.
 - **The TTL is AdGuard Home's.** It answers a rewrite with its own short TTL, so a change is seen within seconds.
-- **A device that left keeps its name for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. A host that leaves while ipv6ddns isn't running keeps its rewrites until you remove them: see [when a host leaves](../hostnames.md#when-a-host-leaves).
+- **A device that left keeps its name for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. If another device takes its address meanwhile, the old name loses that address at once. A host that leaves while ipv6ddns isn't running keeps its rewrites until you remove them: see [when a host leaves](../hostnames.md#when-a-host-leaves).
 
 ## Common problems
 

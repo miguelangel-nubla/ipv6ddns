@@ -124,7 +124,7 @@ A written name also names a device that says no name at all. The web report show
 - **A device has no name.** The device says no name, or none that discovery hears. The web report lists every host found, with the names it has. A host with no name there needs a [plugin](../discovery.md#plugins) that reads the router's leases, or a [written name](#a-name-that-matters).
 - **The names answer with `dig @192.168.1.2` but not without.** The device still uses the router for DNS. Check the device's DNS servers with `resolvectl status`, `ipconfig /all`, or its network settings, and renew its lease.
 - **Two devices called the same.** Both are under `printer`. Each also has a name of its own, `1.printer` and `2.printer`, in the order of their MACs. Rename one of the devices, or [write a name](#a-name-that-matters) for the one that matters.
-- **A device's old name still answers for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. Discovery can't tell a host that left from a host that is quiet.
+- **A device's old name still answers for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. If another device takes its address meanwhile, the old name loses that address at once. Discovery can't tell a host that left from a host that is quiet.
 
 ## Your router's DNS instead
 

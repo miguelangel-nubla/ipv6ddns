@@ -224,7 +224,9 @@ discovery:
     lifetime: 3m        # a device that leaves loses its A record within minutes
 ```
 
-This machine's own addresses, the ones a [`self`](filtering.md) filter takes, are the exception. The interfaces are checked every minute. When an interface has lost an address, for example because a prefix went away or a temporary address was replaced, the address goes at that check.
+An address that another device takes is the exception: on one link an address belongs to one MAC at a time, so when another device shows it, by answering for it, announcing it or using it, the device that had it loses it at once. Its names no longer give the address of the device that took it. A device made again with a new MAC, as a container, has its address and name at the new MAC within seconds. Two devices given the same address make it move back and forth, and the log warns of it.
+
+This machine's own addresses, the ones a [`self`](filtering.md) filter takes, are the other exception. The interfaces are checked every minute. When an interface has lost an address, for example because a prefix went away or a temporary address was replaced, the address goes at that check.
 
 A name's records are not touched before its first address is found. After a start, they stay as they are until then. Once the name has had addresses and the last one goes, its records are removed.
 
