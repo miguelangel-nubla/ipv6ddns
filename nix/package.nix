@@ -29,7 +29,7 @@ buildGoModule {
 
   # The hash of the modules go.sum names: tools/nix-test.sh --update writes it, after a change
   # of them, and nix flake check fails while it is behind.
-  vendorHash = "sha256-vjMxKNQ33rFpmrL5BXrl3hhf27Ah2FiSh4qUH2eleaA=";
+  vendorHash = "sha256-eYUSAI6RhFp0WFplmP1tM406MQGpY97hA0XHl2OfRj8=";
 
   subPackages = [ "cmd/ipv6ddns" ];
 
