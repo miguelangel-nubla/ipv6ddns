@@ -56,6 +56,10 @@ func TestAnswerTTLCappedByExpiry(t *testing.T) {
 	if got := ttls(dns.TypeAAAA); len(got) != 1 || got[0] < 8 || got[0] > 10 {
 		t.Errorf("AAAA: %v, want 9 or so", got)
 	}
+	// ANY has both families' addresses: the soonest of all of them.
+	if got := ttls(dns.TypeANY); len(got) != 3 || got[0] != got[1] || got[1] != got[2] || got[0] < 8 || got[0] > 10 {
+		t.Errorf("ANY: %v, want 9 or so for all three", got)
+	}
 	v4 = time.Now().Add(time.Hour)
 	if got := ttls(dns.TypeA); len(got) != 2 || got[0] != 30 || got[1] != 30 {
 		t.Errorf("A, seen again: %v, want the zone's, 30", got)
