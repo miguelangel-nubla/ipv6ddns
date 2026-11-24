@@ -4,6 +4,7 @@
 
 A credential's `provider` is one of these, and its `settings` are those of the provider. An unknown setting is an error. A `ttl` is a duration string, as `5m`. Adding a provider: see [CONTRIBUTING](../../CONTRIBUTING.md).
 
+- [`adguardhome`](#adguardhome)
 - [`cloudflare`](#cloudflare)
 - [`duckdns`](#duckdns)
 - [`gravity`](#gravity)
@@ -11,10 +12,23 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`openwrt`](#openwrt)
 - [`opnsense_unbound`](#opnsense_unbound)
 - [`pfsense_restapi_unbound`](#pfsense_restapi_unbound)
+- [`pihole`](#pihole)
 - [`resolver`](#resolver)
 - [`route53`](#route53)
 - [`technitium`](#technitium)
 - [`windows`](#windows)
+
+## adguardhome
+
+AdGuard Home, through its API: the names are DNS rewrites, one for each address. AdGuard Home answers them with a TTL of its own, and gives them no reverse names. A rewrite of the name that you disabled, or whose answer is not an address, is left as it is.
+
+| Key | Takes | |
+|---|---|---|
+| `address` | string | **Required.** The address of its web interface, as http://192.168.1.2:3000. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `username` | string | The user of the web interface. Leave it out where AdGuard Home has no users. |
+| `password` | string | Its password. |
+| `zone` | string | **Required.** The domain the names are under, as lan.example.com. AdGuard Home has no zones: it is only what a name written alone, as nas, is completed with. |
 
 ## cloudflare
 
@@ -98,6 +112,17 @@ pfSense's Unbound host overrides, through the REST API package.
 | `key` | string | **Required.** An API key. |
 | `zone` | string | **Required.** The zone of the names. |
 | `ttl` | string | Not used: pfSense's host overrides have no TTL of their own. Accepted so that configurations that set it still load. |
+
+## pihole
+
+Pi-hole, version 6 and later, through its API: the names are its local DNS records, one for each address. Pi-hole answers their reverse names too, and gives them the TTL of its own local records. A record you wrote with several names on its line is left as it is.
+
+| Key | Takes | |
+|---|---|---|
+| `address` | string | **Required.** The address of its web interface, as http://192.168.1.2. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `password` | string | The password of the web interface, or an application password, which two-factor authentication requires. Leave it out where Pi-hole has no password. |
+| `zone` | string | **Required.** The domain the names are under, as lan.example.com. Pi-hole has no zones: it is only what a name written alone, as nas, is completed with. |
 
 ## resolver
 

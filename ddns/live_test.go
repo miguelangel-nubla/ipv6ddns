@@ -450,6 +450,35 @@ func TestLiveTechnitium(t *testing.T) {
 	t.Run("zone", func(t *testing.T) { s.run(t, s.zone, zoneSpellings("", s.zone)...) })
 }
 
+// AdGuard Home: IPV6DDNS_LIVE_ADGUARDHOME has the settings, and IPV6DDNS_LIVE_ADGUARDHOME_DNS the
+// address of its DNS server. A name with a rewrite answers nothing of another type, so the only
+// record to leave alone is the other name's.
+func TestLiveAdGuardHome(t *testing.T) {
+	s := &liveServer{provider: "adguardhome", settings: liveSettings(t, "IPV6DDNS_LIVE_ADGUARDHOME")}
+	s.zone = fmt.Sprint(s.settings["zone"])
+	s.records = dnsRecords(liveEnv(t, "IPV6DDNS_LIVE_ADGUARDHOME_DNS"))
+	s.service = s.httpService("address", func(r *http.Request) bool { return r.Method != http.MethodGet })
+	s.fixtures = s.dnsFixtures()
+
+	t.Run("name", func(t *testing.T) { s.run(t, "live."+s.zone, zoneSpellings("live", s.zone)...) })
+	t.Run("zone", func(t *testing.T) { s.run(t, s.zone, zoneSpellings("", s.zone)...) })
+}
+
+// Pi-hole: IPV6DDNS_LIVE_PIHOLE has the settings, and IPV6DDNS_LIVE_PIHOLE_DNS the address of its
+// DNS server. A session is no change.
+func TestLivePiHole(t *testing.T) {
+	s := &liveServer{provider: "pihole", settings: liveSettings(t, "IPV6DDNS_LIVE_PIHOLE")}
+	s.zone = fmt.Sprint(s.settings["zone"])
+	s.records = dnsRecords(liveEnv(t, "IPV6DDNS_LIVE_PIHOLE_DNS"))
+	s.service = s.httpService("address", func(r *http.Request) bool {
+		return r.Method != http.MethodGet && !strings.HasSuffix(r.URL.Path, "/api/auth")
+	})
+	s.fixtures = s.dnsFixtures("live."+s.zone, s.zone)
+
+	t.Run("name", func(t *testing.T) { s.run(t, "live."+s.zone, zoneSpellings("live", s.zone)...) })
+	t.Run("zone", func(t *testing.T) { s.run(t, s.zone, zoneSpellings("", s.zone)...) })
+}
+
 // Gravity: IPV6DDNS_LIVE_GRAVITY has the settings, with the zone, and IPV6DDNS_LIVE_GRAVITY_DNS
 // the address of its DNS server.
 func TestLiveGravity(t *testing.T) {

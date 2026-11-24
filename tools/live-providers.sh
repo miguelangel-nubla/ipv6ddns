@@ -1,6 +1,7 @@
 #!/bin/sh
 # The live tests of the DNS providers, ddns/live_test.go, against the real servers that run in a
-# container: Technitium DNS Server, Gravity, OpenWrt, and Mikrotik RouterOS, a CHR under QEMU. It
+# container: Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, OpenWrt, and Mikrotik RouterOS, a
+# CHR under QEMU. It
 # starts them, provisions each with a zone, a credential and the records the tests must leave
 # alone, runs the tests and removes them. It needs Docker, Go, curl and OpenSSH's ssh-keygen and
 # ssh-keyscan. The RouterOS image stays, in the Docker volume ipv6ddns-live-routeros: it is
@@ -18,6 +19,8 @@ cd "$(dirname "$0")/.."
 
 TECHNITIUM_IMAGE=${TECHNITIUM_IMAGE:-technitium/dns-server:15.6.2}
 GRAVITY_IMAGE=${GRAVITY_IMAGE:-ghcr.io/beryju/gravity:v0.34.0}
+ADGUARDHOME_IMAGE=${ADGUARDHOME_IMAGE:-adguard/adguardhome:v1.0.0}
+PIHOLE_IMAGE=${PIHOLE_IMAGE:-pihole/pihole:2026.11.0}
 OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
 case $(docker version --format '{{.Server.Arch}}') in
 arm64 | aarch64) openwrt_target=armsr-armv8 openwrt_platform=linux/aarch64_generic ;;
@@ -31,7 +34,7 @@ password=live-$$
 prefix=ipv6ddns-live-$$
 work=$(mktemp -d)
 cleanup() {
-	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
+	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-adguardhome" "$prefix-pihole" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
 	rm -rf "$work"
 }
 trap cleanup EXIT
@@ -94,6 +97,13 @@ docker run -d --name "$prefix-technitium" $publish -p 127.0.0.1::5380/tcp \
 	-e DNS_SERVER_ADMIN_PASSWORD="$password" "$TECHNITIUM_IMAGE" >/dev/null
 docker run -d --name "$prefix-gravity" $publish -p 127.0.0.1::8008/tcp \
 	-e ADMIN_PASSWORD="$password" -e ADMIN_TOKEN="$password" "$GRAVITY_IMAGE" >/dev/null
+# AdGuard Home starts with its setup, on port 3000, and has its web interface on 80 once set up.
+docker run -d --name "$prefix-adguardhome" $publish -p 127.0.0.1::3000/tcp -p 127.0.0.1::80/tcp "$ADGUARDHOME_IMAGE" >/dev/null
+# Pi-hole answers the host, which is not of its network, and has the TXT records as lines of
+# dnsmasq's: what the environment sets, the API can't change, so the other record is added later.
+docker run -d --name "$prefix-pihole" $publish -p 127.0.0.1::80/tcp \
+	-e FTLCONF_webserver_api_password="$password" -e FTLCONF_dns_listeningMode=all \
+	-e FTLCONF_misc_dnsmasq_lines="txt-record=live.$zone,keep;txt-record=$zone,keep" "$PIHOLE_IMAGE" >/dev/null
 
 # OpenWrt boots as on a router, with procd, which a reload of dnsmasq goes through: its lan is the
 # container's interface, with the address Docker gave it, and the firewall, which has no zone for
@@ -133,6 +143,28 @@ EOF
 		echo "$PUBKEY" >/etc/dropbear/authorized_keys
 		chmod 600 /etc/dropbear/authorized_keys
 		exec /sbin/init' >/dev/null
+
+# AdGuard Home: a user, and the rewrite the tests must leave alone. A name with a rewrite answers
+# nothing of another type, so there is no TXT record to keep beside one. A name without one is
+# asked upstream, which the test has none for: a rule answers that the zone's names don't exist,
+# and a rewrite comes before it.
+adguardhome_setup=http://127.0.0.1:$(port adguardhome 3000/tcp)
+adguardhome=http://127.0.0.1:$(port adguardhome 80/tcp)
+wait_for 'AdGuard Home' curl -fs "$adguardhome_setup/control/install/get_addresses"
+curl -fs -H 'Content-Type: application/json' "$adguardhome_setup/control/install/configure" \
+	-d "{\"web\":{\"ip\":\"0.0.0.0\",\"port\":80},\"dns\":{\"ip\":\"0.0.0.0\",\"port\":53},\"username\":\"admin\",\"password\":\"$password\"}" >/dev/null
+wait_for 'AdGuard Home, set up' curl -fs -u "admin:$password" "$adguardhome/control/rewrite/list"
+curl -fs -u "admin:$password" -H 'Content-Type: application/json' "$adguardhome/control/rewrite/add" \
+	-d "{\"domain\":\"other.$zone\",\"answer\":\"2001:db8::f\"}" >/dev/null
+curl -fs -u "admin:$password" -H 'Content-Type: application/json' "$adguardhome/control/filtering/set_rules" \
+	-d "{\"rules\":[\"||$zone^\$dnsrewrite=NXDOMAIN;;\"]}" >/dev/null
+
+# Pi-hole: the record the tests must leave alone, with a session of its own.
+pihole=http://127.0.0.1:$(port pihole 80/tcp)
+wait_seconds=120 wait_for Pi-hole curl -fs -H 'Content-Type: application/json' "$pihole/api/auth" -d "{\"password\":\"$password\"}"
+pihole_sid=$(curl -fs -H 'Content-Type: application/json' "$pihole/api/auth" -d "{\"password\":\"$password\"}" | json_field sid)
+curl -fs -X PUT -H "X-FTL-SID: $pihole_sid" "$pihole/api/config/dns/hosts/2001:db8::f%20other.$zone" >/dev/null
+curl -fs -X DELETE -H "X-FTL-SID: $pihole_sid" "$pihole/api/auth" >/dev/null
 
 # Technitium: an API token, a primary zone and the records.
 technitium=http://127.0.0.1:$(port technitium 5380/tcp)
@@ -203,12 +235,16 @@ routeros_api ip/service/set -d '{".id":"api-ssl","certificate":"live"}' >/dev/nu
 routeros_fingerprint=$(routeros_api 'certificate?name=live' | json_field fingerprint)
 routeros_version=$(routeros_api system/resource | json_field version)
 
-echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
+echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), AdGuard Home ($ADGUARDHOME_IMAGE), Pi-hole ($PIHOLE_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
 
 export IPV6DDNS_LIVE_TECHNITIUM="{\"address\":\"$technitium\",\"token\":\"$technitium_token\",\"zone\":\"$zone\",\"ttl\":\"5m\"}"
 export IPV6DDNS_LIVE_TECHNITIUM_DNS="127.0.0.1:$(port technitium 53/udp)"
 export IPV6DDNS_LIVE_GRAVITY="{\"server\":\"$gravity\",\"api_key\":\"$password\",\"zone\":\"$zone.\",\"ttl\":\"5m\"}"
 export IPV6DDNS_LIVE_GRAVITY_DNS="127.0.0.1:$(port gravity 53/udp)"
+export IPV6DDNS_LIVE_ADGUARDHOME="{\"address\":\"$adguardhome\",\"username\":\"admin\",\"password\":\"$password\",\"zone\":\"$zone\"}"
+export IPV6DDNS_LIVE_ADGUARDHOME_DNS="127.0.0.1:$(port adguardhome 53/udp)"
+export IPV6DDNS_LIVE_PIHOLE="{\"address\":\"$pihole\",\"password\":\"$password\",\"zone\":\"$zone\"}"
+export IPV6DDNS_LIVE_PIHOLE_DNS="127.0.0.1:$(port pihole 53/udp)"
 export IPV6DDNS_LIVE_OPENWRT="{\"address\":\"127.0.0.1:$openwrt_ssh\",\"username\":\"root\",\"ssh_key\":\"$work/key\",\"host_key\":\"${openwrt_host_keys%% *}\",\"zone\":\"lan\"}"
 export IPV6DDNS_LIVE_OPENWRT_DNS="127.0.0.1:$(port openwrt 53/udp)"
 export IPV6DDNS_LIVE_OPENWRT_HOST_KEYS="$openwrt_host_keys"

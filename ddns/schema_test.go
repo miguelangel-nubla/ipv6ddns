@@ -12,7 +12,9 @@ func TestSettingsSchemasMatchProviders(t *testing.T) {
 		schema string
 		value  any
 	}{
+		"adguardhome":             {"adguardhome", AdGuardHome{}},
 		"cloudflare":              {"cloudflare", Cloudflare{}},
+		"pihole":                  {"pihole", PiHole{}},
 		"duckdns":                 {"duckdns", DuckDNS{}},
 		"gravity":                 {"gravity", Gravity{}},
 		"mikrotik":                {"mikrotik", Mikrotik{}},

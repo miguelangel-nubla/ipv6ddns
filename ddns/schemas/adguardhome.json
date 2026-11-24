@@ -1,0 +1,35 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "AdGuard Home, through its API: the names are DNS rewrites, one for each address. AdGuard Home answers them with a TTL of its own, and gives them no reverse names. A rewrite of the name that you disabled, or whose answer is not an address, is left as it is.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "address": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The address of its web interface, as http://192.168.1.2:3000."
+        },
+        "tls_fingerprint": {
+            "type": "string",
+            "pattern": "^([a-fA-F0-9]{64})?$",
+            "description": "The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid."
+        },
+        "username": {
+            "type": "string",
+            "description": "The user of the web interface. Leave it out where AdGuard Home has no users."
+        },
+        "password": {
+            "type": "string",
+            "description": "Its password."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The domain the names are under, as lan.example.com. AdGuard Home has no zones: it is only what a name written alone, as nas, is completed with."
+        }
+    },
+    "required": [
+        "address",
+        "zone"
+    ]
+}

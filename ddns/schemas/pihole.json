@@ -1,0 +1,31 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "Pi-hole, version 6 and later, through its API: the names are its local DNS records, one for each address. Pi-hole answers their reverse names too, and gives them the TTL of its own local records. A record you wrote with several names on its line is left as it is.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "address": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The address of its web interface, as http://192.168.1.2."
+        },
+        "tls_fingerprint": {
+            "type": "string",
+            "pattern": "^([a-fA-F0-9]{64})?$",
+            "description": "The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid."
+        },
+        "password": {
+            "type": "string",
+            "description": "The password of the web interface, or an application password, which two-factor authentication requires. Leave it out where Pi-hole has no password."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The domain the names are under, as lan.example.com. Pi-hole has no zones: it is only what a name written alone, as nas, is completed with."
+        }
+    },
+    "required": [
+        "address",
+        "zone"
+    ]
+}

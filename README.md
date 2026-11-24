@@ -43,7 +43,7 @@ The two times on each line are how long the address has left before it expires, 
 2. **Tasks** give names their addresses. A task's filters choose which addresses it takes: this MAC, only global addresses, only the stable one. A task's name can also be a template, such as `{hostname}`, which makes a name for every host the task matches.
 3. **Sources** add addresses that have no MAC: the network's public IPv4, a command's output, or a Home Assistant entity.
 4. **The names are kept up to date** wherever you choose, as the addresses change:
-   - at a DNS provider or a router: Cloudflare, Route 53, DuckDNS, MikroTik, OpenWrt, pfSense, OPNsense, Technitium, Windows DNS, Gravity;
+   - at a DNS provider, a router or the DNS server you already run: Cloudflare, Route 53, DuckDNS, MikroTik, OpenWrt, pfSense, OPNsense, AdGuard Home, Pi-hole, Technitium, Windows DNS, Gravity;
    - or in a zone of ipv6ddns's own [resolver](docs/resolver.md), which the LAN's devices query.
 
 [How it works](docs/how-it-works.md) explains the problem with DDNS on IPv6, why ipv6ddns is designed this way, and what else it can do, such as following several ISPs at once.
