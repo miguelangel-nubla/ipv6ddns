@@ -582,9 +582,10 @@
                             "dns",
                             "command",
                             "static",
-                            "homeassistant"
+                            "homeassistant",
+                            "push"
                         ],
-                        "description": "Where the addresses come from. dns: the public address, as OpenDNS's or Google's resolvers see it. http: echo services over HTTPS, or the urls given. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block."
+                        "description": "Where the addresses come from. dns: the public address, as OpenDNS's or Google's resolvers see it. http: echo services over HTTPS, or the urls given. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block. push: the addresses a router sends, as to a DynDNS service, through the web server at /nic/update."
                     },
                     "family": {
                         "type": "array",
@@ -603,7 +604,7 @@
                     },
                     "lifetime": {
                         "$ref": "#/$defs/duration",
-                        "description": "How long an address stays after the last run that gave it. Default: 3 intervals."
+                        "description": "How long an address stays after the last run that gave it. Default: 3 intervals. Of a push source: after the last update that sent it; by default, until the next update, however far."
                     },
                     "urls": {
                         "type": "array",
@@ -640,6 +641,16 @@
                         "type": "string",
                         "minLength": 1,
                         "description": "For homeassistant: an attribute of the entity to read instead of its state."
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "push: the password the router sends with its updates, as the HTTP basic password or as password in the URL. Required."
+                    },
+                    "state_file": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "push: the file the addresses sent last are kept in, so that a restart doesn't lose them until the router's next update. Relative to the configuration's folder, unless absolute. Default: push-<source>.json."
                     }
                 },
                 "required": [

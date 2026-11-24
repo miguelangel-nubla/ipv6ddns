@@ -26,7 +26,14 @@ const (
 	// SourceHomeAssistant is the state of a Home Assistant entity, or of its attribute: the
 	// addresses in it. It needs the homeassistant block, through which Home Assistant sends it.
 	SourceHomeAssistant = "homeassistant"
+	// SourcePush is the addresses a router sends, as to a DynDNS service: through the web
+	// server, at /nic/update, with its password.
+	SourcePush = "push"
 )
+
+// PushForever is the lifetime of the addresses of a push source that gives none: until the next
+// push, however far.
+const PushForever = 100 * 365 * 24 * time.Hour
 
 // Source is a named source of addresses that have no MAC, for the tasks that name it: the public
 // address of the network, the output of a command, a fixed list. The addresses it gives are kept
@@ -49,6 +56,11 @@ type Source struct {
 	// homeassistant: the entity, as "sensor.wan_ip", and its attribute, or its state when empty.
 	Entity    string `json:"entity,omitempty"`
 	Attribute string `json:"attribute,omitempty"`
+	// push: the password a router sends with its updates; and the file the addresses it sent last
+	// are kept in, for a restart: relative to the configuration's folder, by default
+	// push-<source>.json.
+	Password  string `json:"password,omitempty"`
+	StateFile string `json:"state_file,omitempty"`
 }
 
 const (
@@ -91,8 +103,24 @@ func (s Source) withDefaults() (Source, error) {
 		if s.Entity == "" {
 			return s, fmt.Errorf("a homeassistant source needs an entity")
 		}
+	case SourcePush:
+		if s.Password == "" {
+			return s, fmt.Errorf("a push source needs a password, which the router sends with its updates")
+		}
+		if len(s.Family) > 0 || s.Interval.Duration != 0 {
+			return s, fmt.Errorf("a push source has no family nor interval: it has the addresses the router sends, when it sends them")
+		}
+		// It runs when the router sends: its addresses stay until then, unless it has a lifetime.
+		if s.Lifetime.Duration == 0 {
+			s.Lifetime.Duration = PushForever
+		}
+		s.Interval.Duration = s.Lifetime.Duration
+		return s, nil
 	default:
 		return s, fmt.Errorf("unknown source type %q", s.Type)
+	}
+	if s.Password != "" || s.StateFile != "" {
+		return s, fmt.Errorf("password and state_file are only for push sources")
 	}
 	if s.Type != SourceHTTP && s.Type != SourceDNS && len(s.Family) > 0 {
 		return s, fmt.Errorf("family is only for http and dns sources: a %s source gives whatever addresses it has", s.Type)
@@ -146,6 +174,14 @@ func (s Source) describe(hideSensible bool) string {
 	case SourceStatic:
 		b.WriteString(": " + strings.Join(s.Addresses, ", "))
 		return b.String()
+	case SourcePush:
+		b.WriteString(", at /nic/update")
+		if s.Lifetime.Duration == PushForever {
+			b.WriteString(", kept until the next push")
+		} else {
+			fmt.Fprintf(&b, ", kept %s", s.Lifetime)
+		}
+		return b.String()
 	}
 	fmt.Fprintf(&b, ", every %s, kept %s", s.Interval, s.Lifetime)
 	return b.String()
@@ -172,6 +208,11 @@ func (c *Config) setUpSources() error {
 			return fmt.Errorf("source %s: %w", name, err)
 		}
 		c.Sources[name] = source
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
+		if c.Sources[name].Type == SourcePush && len(c.Webserver.Listen) == 0 {
+			return fmt.Errorf("source %s: a router pushes its addresses through the web server, at /nic/update: give webserver.listen", name)
+		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {
 		for _, source := range c.Tasks[name].Sources {

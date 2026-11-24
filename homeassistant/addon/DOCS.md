@@ -164,3 +164,18 @@ challenge. Or let ipv6ddns get it and renew it itself, with
 it then keeps it in the app's folder. Port 443 may be taken on the Home Assistant machine, by an app
 such as NGINX: give DNS over HTTPS another port, as
 `https://192.168.1.2:8443`, the machine's address with the port.
+
+## A router's updates
+
+A [push source](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/sources.md#a-routers-updates)
+takes the addresses your router sends, as to a DynDNS service, through the
+web server. The starting configuration serves the web server to Home
+Assistant alone: add the machine's address on the LAN, for the router to
+reach it.
+
+```yaml
+webserver:
+  listen:
+    - 172.30.32.1:8053
+    - 192.168.1.2:8053
+```

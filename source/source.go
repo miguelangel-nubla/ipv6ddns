@@ -38,6 +38,11 @@ type Source struct {
 	running sync.WaitGroup
 	// A value runs the source now, rather than at its next interval.
 	trigger chan struct{}
+
+	// push: the file of the addresses the router sent, and what Start was told to call after a
+	// change.
+	pushFile string
+	ran      func()
 }
 
 // HomeAssistantStates are the states of Home Assistant's entities that homeassistant sources read:
@@ -70,6 +75,12 @@ func New(name string, cfg config.Source, baseDir string, states HomeAssistantSta
 			return nil, fmt.Errorf("source %s: a homeassistant source needs Home Assistant", name)
 		}
 		s.fetch = homeAssistantFetcher(states, cfg.Entity, cfg.Attribute)
+	case config.SourcePush:
+		// Nothing runs: the router sends. What it sent before a restart is kept.
+		s.pushFile = pushFile(name, cfg, baseDir)
+		if err := s.load(); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("source %s: unknown type %q", name, cfg.Type)
 	}
@@ -81,6 +92,13 @@ func (s *Source) Name() string { return s.name }
 // Start runs the source now and at every interval, until ctx is done; Wait waits for it. ran,
 // which can be nil, is called after each run.
 func (s *Source) Start(ctx context.Context, logger *zap.SugaredLogger, ran func()) {
+	if s.IsPush() {
+		// Nothing runs: a push matches again.
+		s.mutex.Lock()
+		s.ran = ran
+		s.mutex.Unlock()
+		return
+	}
 	s.running.Add(1)
 	go func() {
 		defer s.running.Done()

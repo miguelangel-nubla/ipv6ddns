@@ -782,3 +782,15 @@ func countDays(n int) string {
 	}
 	return fmt.Sprintf("%d days", n)
 }
+
+// PushSource is the source of that name that a router pushes to: none of another type.
+func (w *Worker) PushSource(name string) (*source.Source, bool) {
+	s, ok := w.sources[name]
+	if !ok || !s.IsPush() {
+		return nil, false
+	}
+	return s, true
+}
+
+// Logger is the worker's logger.
+func (w *Worker) Logger() *zap.SugaredLogger { return w.logger }

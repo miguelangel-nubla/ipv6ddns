@@ -106,16 +106,18 @@ Sources of addresses that have no MAC, such as the network's public IPv4, by nam
 
 | Key | Takes | |
 |---|---|---|
-| `type` | `http`, `dns`, `command`, `static`, `homeassistant` | **Required.** Where the addresses come from. dns: the public address, as OpenDNS's or Google's resolvers see it. http: echo services over HTTPS, or the urls given. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block. |
+| `type` | `http`, `dns`, `command`, `static`, `homeassistant`, `push` | **Required.** Where the addresses come from. dns: the public address, as OpenDNS's or Google's resolvers see it. http: echo services over HTTPS, or the urls given. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block. push: the addresses a router sends, as to a DynDNS service, through the web server at /nic/update. |
 | `family` | list of `4`, `6` | For http and dns: the families to find. Default: 4. |
 | `interval` | duration | How often it runs. Default: 5m. |
-| `lifetime` | duration | How long an address stays after the last run that gave it. Default: 3 intervals. |
+| `lifetime` | duration | How long an address stays after the last run that gave it. Default: 3 intervals. Of a push source: after the last update that sent it; by default, until the next update, however far. |
 | `urls` | list of string | For http: the echo services to ask, in order. |
 | `command` | string | For command: the program to run, from the configuration's folder. |
 | `args` | list of string | For command: its arguments. |
 | `addresses` | list of string | For static: the addresses. |
 | `entity` | string | For homeassistant: the entity, as sensor.wan_ip. |
 | `attribute` | string | For homeassistant: an attribute of the entity to read instead of its state. |
+| `password` | string | push: the password the router sends with its updates, as the HTTP basic password or as password in the URL. Required. |
+| `state_file` | string | push: the file the addresses sent last are kept in, so that a restart doesn't lose them until the router's next update. Relative to the configuration's folder, unless absolute. Default: push-<source>.json. |
 
 ## Web server
 

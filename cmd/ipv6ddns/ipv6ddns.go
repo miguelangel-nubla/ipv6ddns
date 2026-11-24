@@ -251,6 +251,8 @@ func webHandler(worker *ipv6ddns.Worker) http.Handler {
 		encoder.SetIndent("", "  ")
 		_ = encoder.Encode(worker.Status(true))
 	})
+	// Of any method: a router may send its update as a POST.
+	mux.Handle(pushPath, pushHandler(worker))
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		_ = worker.Status(true).WriteMetrics(w)

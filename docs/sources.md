@@ -42,6 +42,7 @@ credentials:
 | `command` | The addresses that a `command`, run with its `args`, prints one per line. The command runs in the configuration's directory |
 | `static` | The `addresses` you list. Use it for an address that doesn't change, or that discovery can't reach |
 | `homeassistant` | The addresses in the state of a Home Assistant `entity`, or of its `attribute`: see the [Home Assistant integration](home-assistant-integration.md#an-entitys-addresses) |
+| `push` | The addresses your router sends, as it would to a DynDNS service: see [a router's updates](#a-routers-updates) |
 
 A `dns` or `http` source asks its services in order until one answers. Each service gets its share of the run's time. So a service that hangs doesn't stop the next one from being asked, and one family doesn't hold up the other.
 
@@ -84,6 +85,64 @@ A static source always gives its `addresses`. A static source without any is ref
 A command that can't tell what the addresses are, for example because the service it asks is down, should exit non-zero. That's a failure, which keeps the addresses. Printing nothing means there are none.
 
 `/status.json` shows each source's runs and failures, and the log shows its errors.
+
+## A router's updates
+
+A router's dynamic DNS can send its public addresses to ipv6ddns, as it would to a DynDNS service, as soon as they change. A `push` source takes them, through the [web server](installation.md#the-web-report), at `/nic/update`, in the dyndns2 protocol that most routers speak:
+
+```yaml
+webserver:
+  listen:
+    - 192.168.1.2:8053        # the router must reach it
+
+sources:
+  wan:
+    type: push
+    password: ${file:wan_push_password}
+
+tasks:
+  web:
+    filter:
+      - mac:
+          address: "00:11:22:33:44:55"
+        ip:
+          type:
+            - global
+    sources:
+      - wan
+    endpoints:
+      cloudflare:
+        - www
+
+credentials:
+  cloudflare:
+    provider: cloudflare
+    settings:
+      api_token: ${file:cloudflare_token}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+```
+
+On the router, the hostname is the source's name, `wan`, and the password the source's:
+
+| Router | Where | What |
+|---|---|---|
+| UniFi | *Settings → Internet → Dynamic DNS*, service *custom* | Server `192.168.1.2:8053/nic/update?hostname=%h&myip=%i`, Hostname `wan`, Username anything, Password the source's |
+| Fritz!Box | *Internet → Permit Access → DynDNS*, provider *user-defined* | Update URL `http://192.168.1.2:8053/nic/update?hostname=<domain>&myip=<ipaddr>&myipv6=<ip6addr>&password=<pass>`, Domain name `wan`, Username anything, Password the source's |
+| OPNsense | *Services → Dynamic DNS*, service *Custom*, protocol *DynDNS 2* | Server `192.168.1.2:8053`, Hostname `wan`, Username anything, Password the source's, without SSL |
+| pfSense | *Services → Dynamic DNS*, type *Custom* | Update URL `http://192.168.1.2:8053/nic/update?hostname=wan&myip=%IP%`, Username anything, Password the source's |
+| OpenWrt | ddns-scripts, a custom update URL | `http://[USERNAME]:[PASSWORD]@192.168.1.2:8053/nic/update?hostname=[DOMAIN]&myip=[IP]` |
+| ddclient | `protocol=dyndns2` | `server=192.168.1.2:8053`, `ssl=no`, the hostname `wan` |
+
+- **Each update replaces the addresses of the families it has.** An IPv4 address replaces the IPv4 one, and the IPv6 address stays: routers that send each family apart, as OPNsense, pfSense and OpenWrt do, don't take one away with the other. `myip` takes one address or two, separated by a comma, as ddclient sends them; `myipv6`, the IPv6 one apart, and an empty value is no address.
+- **Without `myip`,** the address the update came from, when it is public, as from a router on the internet. From the LAN, an update without `myip` is refused.
+- **The password** is the HTTP basic one, or `password` in the URL, for the routers that write it there. The username is not checked. A refused password waits a second for its answer.
+- **The answer** is dyndns2's: `good` and the addresses, or `nochg` when they didn't change, with HTTP 200; and on an error, `badauth` with 401, `nohost` with 404 for a hostname that is no push source, or `911` with 400 for an update that has no address it can take. Some routers read the status alone, so an error never comes with 200.
+- **The addresses stay until the next update**, however far: routers send when the address changes, and some only every few weeks otherwise. With `lifetime`, they go if no update comes within it.
+- **A restart keeps them.** They are written to `state_file`, by default `push-<source>.json` in the configuration's folder.
+
+The web server has no other authentication, so give it an address of the LAN, not one the internet reaches. UniFi's dynamic DNS sends IPv4 alone; the IPv6 addresses of the devices come from discovery anyway.
 
 ## A script of yours
 
