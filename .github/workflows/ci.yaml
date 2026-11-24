@@ -190,7 +190,12 @@ jobs:
   # 64-bit atomic operations need an alignment 32-bit platforms don't give by themselves.
   # macOS, with its own sockets, its own mDNS responder beside the program's, and no netlink: the
   # tests that need Linux skip there. The BSDs are built and vetted only.
+  #
+  # Only on main, weekly, and when someone starts CI by hand: not on dev, nor on the run CI starts
+  # for its own commit of the hash for Nix. GitHub's macOS runners are often short, and a job it
+  # finds none for fails the run, with nothing tested.
   test-macos:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.actor != 'github-actions[bot]')
     runs-on: macos-latest
     steps:
       -
