@@ -195,15 +195,56 @@ Everything else is the same on every transport: the same answers, the same [`all
 
 The encrypted transports show a certificate, which `tls` gives: `certificate` and `key`, the files of the certificate with its chain, and of its private key, in PEM, relative to the configuration's folder unless absolute. Let's Encrypt names them `fullchain.pem` and `privkey.pem`. Both are required with an encrypted entry, and ipv6ddns doesn't start if they don't read as a pair.
 
-Clients check the certificate. Most of them only accept one that a public authority signed, for the name they were told to use. So:
-
-1. **Pick a name in a domain you own**, such as `dns.lan.example.com`, and give it this machine's address, as the record `dns A 192.168.1.2` above. The clients look this name up, and the certificate is for it.
-2. **Get a certificate for that name from Let's Encrypt**, with the DNS challenge, which works for a name that the internet can't reach: certbot, acme.sh, or the Home Assistant app of Let's Encrypt, with your DNS provider's plugin.
-3. **Give its files to the resolver.** When a renewal writes new files, the resolver takes them within seconds, without a restart.
+Clients check the certificate. Most of them only accept one that a public authority signed, for the name they were told to use. So pick a name in a domain you own, such as `dns.lan.example.com`, and give it this machine's address, as the record `dns A 192.168.1.2` above: the clients look this name up, and the certificate is for it. Then either let ipv6ddns get the certificate, as [below](#a-certificate-from-lets-encrypt), or get it yourself: with certbot, acme.sh, or the Home Assistant app of Let's Encrypt, by the DNS challenge, which works for a name that the internet can't reach. When a renewal writes new files, the resolver takes them within seconds, without a restart.
 
 A name in `home.arpa`, or a certificate you signed yourself, only works with clients you can give your own authority to, such as `dig` and `kdig` on Linux.
 
 The report shows the certificate under its resolver: its names, and until when, in amber two weeks before it expires, and in red once it has. If a renewed file doesn't read, the resolver keeps showing the certificate it had, and the report and the log say why.
+
+### A certificate from Let's Encrypt
+
+With `tls.acme`, ipv6ddns gets the certificate itself, from Let's Encrypt, and renews it. It proves the name is yours by the DNS challenge: it writes a TXT record, `_acme-challenge.dns.lan.example.com`, at the DNS provider of your public domain, which Let's Encrypt reads, and removes it after. The name needs no address on the internet.
+
+```yaml
+resolvers:
+  lan:
+    listen:
+      - 192.168.1.0/24
+      - tls://192.168.1.0/24
+    tls:
+      acme:
+        names:
+          - dns.lan                # dns.lan.example.com, in the zone of the credential
+        credential: public
+    upstream:
+      - 192.168.1.1
+
+credentials:
+  public:                          # your public domain, at its DNS provider
+    provider: cloudflare
+    settings:
+      api_token: ${file:cloudflare_token}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+  home:
+    provider: resolver
+    settings:
+      zone: lan.example.com
+      records:
+        - dns A 192.168.1.2        # the name in the certificate, at this machine
+```
+
+- **`names`** are the names the certificate is for, relative to the zone of `credential`, as an endpoint's names are. A wildcard, as `*.lan`, is one too.
+- **`credential`** is the credential of your public zone, which writes the challenge's record. Its provider must be `cloudflare`, `route53`, `rfc2136` or `duckdns`. A DuckDNS name has one TXT record, so its certificate can only be for that name.
+- **`email`** is an address Let's Encrypt may write to about the account. It no longer sends mail about certificates that end. Optional.
+- **`directory`** is the authority, Let's Encrypt by default. Its staging directory, `https://acme-staging-v02.api.letsencrypt.org/directory`, has no limits but signs certificates that no client trusts: use it to try the setup.
+
+The certificate and its key go to `tls.certificate` and `tls.key`, by default `tls/<resolver>/fullchain.pem` and `privkey.pem` in the configuration's folder, with the account's key, `acme-account.key`, beside them. Keep that folder across restarts and updates: a certificate is got again only when it's due.
+
+- **At the first start** there is no certificate yet. The resolver answers plain DNS at once, and refuses the encrypted connections for the minute or so it takes. The report says `Certificate: none yet`.
+- **Renewal** comes once two thirds of the certificate's lifetime have passed, 30 days before the end of one of 90 days, without a restart.
+- **A failed attempt** is tried again an hour later. The report and the log say why, and the resolver keeps showing the certificate it has meanwhile.
 
 ### Setting up the clients
 

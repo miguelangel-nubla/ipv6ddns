@@ -274,8 +274,17 @@ func num(tenths int) string {
 
 // certificateLine is the certificate of a resolver: until when, in amber within two weeks of its
 // end and in red after it, and its files in amber when they don't read again.
-func certificateLine(line string) pretty.Line {
-	var out pretty.Line
+func certificateLine(line string) (out pretty.Line) {
+	line, renewal, hasRenewal := strings.Cut(line, " (getting it failed: ")
+	defer func() {
+		if hasRenewal {
+			out = append(out, pretty.Span{Text: " "}, pretty.As(pretty.Warn, "(getting it failed: "+renewal))
+		}
+	}()
+	if before, ok := strings.CutSuffix(line, "none yet"); ok {
+		out = pretty.Line{{Text: before}, pretty.As(pretty.Warn, "none yet")}
+		return out
+	}
 	rest, unread, hasUnread := strings.Cut(line, " (its files don't read again: ")
 	switch {
 	case strings.Contains(rest, ", expired on "):

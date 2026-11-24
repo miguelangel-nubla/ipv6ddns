@@ -368,6 +368,9 @@ func (s *Server) shutdownEncrypted(ctx context.Context) {
 type certificate struct {
 	certFile, keyFile string
 	errorf            func(string, ...any)
+	// Whether something else writes the files, as ACME: until it does, there is no certificate,
+	// and that is no error.
+	managed bool
 
 	mutex           sync.Mutex
 	cert            *tls.Certificate
@@ -379,14 +382,18 @@ type certificate struct {
 // certificateCheck is how often the files are looked at, at most: when a client connects.
 var certificateCheck = 5 * time.Second
 
-// loadCertificate reads the certificate and its key, which must be a pair.
-func loadCertificate(certFile, keyFile string, errorf func(string, ...any)) (*certificate, error) {
-	c := &certificate{certFile: certFile, keyFile: keyFile, errorf: errorf}
-	if err := c.load(); err != nil {
+// loadCertificate reads the certificate and its key, which must be a pair: of managed files,
+// there may be none yet.
+func loadCertificate(certFile, keyFile string, managed bool, errorf func(string, ...any)) (*certificate, error) {
+	c := &certificate{certFile: certFile, keyFile: keyFile, errorf: errorf, managed: managed}
+	if err := c.load(); err != nil && !managed {
 		return nil, err
 	}
 	return c, nil
 }
+
+// errNoCertificate is the handshake's error while managed files aren't written yet.
+var errNoCertificate = errors.New("no certificate yet")
 
 // load reads the files, with the mutex held or before anything else has the certificate.
 func (c *certificate) load() error {
@@ -425,6 +432,10 @@ func (c *certificate) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 		if err == nil && (!certMod.Equal(c.certMod) || !keyMod.Equal(c.keyMod)) {
 			err = c.load()
 		}
+		if err != nil && c.managed && c.cert == nil && errors.Is(err, os.ErrNotExist) {
+			// Not written yet: the status says so, and the manager why.
+			err = nil
+		}
 		if err != nil {
 			if err.Error() != c.failed {
 				c.failed = err.Error()
@@ -433,6 +444,9 @@ func (c *certificate) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 		} else {
 			c.failed = ""
 		}
+	}
+	if c.cert == nil {
+		return nil, errNoCertificate
 	}
 	return c.cert, nil
 }
@@ -449,13 +463,21 @@ type CertificateStatus struct {
 	NotAfter time.Time `json:"not_after"`
 	// Why the files didn't read again, while the one before is shown.
 	Error string `json:"error,omitempty"`
+	// Whether an ACME authority signs it, which ipv6ddns asks: and, then, why the last attempt
+	// to get one failed, and when the next is.
+	Managed     bool      `json:"acme,omitempty"`
+	Renewal     string    `json:"renewal_error,omitempty"`
+	NextAttempt time.Time `json:"next_attempt,omitzero"`
 }
 
 // status is the certificate's status.
 func (c *certificate) status() *CertificateStatus {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	st := &CertificateStatus{Error: c.failed}
+	st := &CertificateStatus{Error: c.failed, Managed: c.managed}
+	if c.cert == nil {
+		return st
+	}
 	leaf := c.cert.Leaf
 	if leaf == nil && len(c.cert.Certificate) > 0 {
 		leaf, _ = x509.ParseCertificate(c.cert.Certificate[0])

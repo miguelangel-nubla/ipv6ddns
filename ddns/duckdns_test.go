@@ -18,6 +18,7 @@ const duckToken = "01234567-89ab-cdef-0123-456789abcdef"
 type fakeDuckDNS struct {
 	mutex      sync.Mutex
 	ipv4, ipv6 string
+	txt        string
 	requests   []url.Values
 	refuse     bool
 }
@@ -34,6 +35,12 @@ func (f *fakeDuckDNS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case q.Has("txt"):
+		// The TXT record alone, cleared or given.
+		f.txt = q.Get("txt")
+		if q.Get("clear") == "true" {
+			f.txt = ""
+		}
 	case q.Get("clear") == "true":
 		f.ipv4, f.ipv6 = "", ""
 	default:

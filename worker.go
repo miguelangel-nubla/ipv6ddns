@@ -43,6 +43,8 @@ type Worker struct {
 	running sync.WaitGroup
 	// The resolvers, by name's order.
 	resolvers []*resolver.Server
+	// The certificates of the resolvers that an ACME authority signs.
+	certs []*certificate
 	// Start was called: a second one would run every source and the matching twice.
 	started atomic.Bool
 	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has.
@@ -197,6 +199,12 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		w.resolvers = append(w.resolvers, server)
 	}
 
+	certs, err := w.certificates()
+	if err != nil {
+		return nil, err
+	}
+	w.certs = certs
+
 	w.config.Warnings = append(slices.Clone(cfg.Warnings), w.zoneLaterWarnings()...)
 
 	// The credentials no task names are checked too: a mistake shows at the start.
@@ -339,6 +347,9 @@ func (w *Worker) Start(ctx context.Context) error {
 			return err
 		}
 		w.logger.Infof("resolver %s listening on %s", r.Status().Name, strings.Join(r.Addresses(), ", "))
+	}
+	for _, c := range w.certs {
+		w.running.Go(func() { c.run(ctx) })
 	}
 	w.stopped = ctx.Done()
 	// A start that fails past them leaves none listening.
@@ -648,7 +659,7 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 func (w *Worker) resolversPage(prefix string) pretty.Page {
 	statuses := make([]resolver.Status, 0, len(w.resolvers))
 	for _, r := range w.resolvers {
-		statuses = append(statuses, r.Status())
+		statuses = append(statuses, w.resolverStatus(r))
 	}
 	return resolversPage(prefix, statuses)
 }
@@ -731,6 +742,10 @@ const certificateWarning = 14 * 24 * time.Hour
 // until when, in amber when it ends within two weeks, in red once it ended; and, in amber, files
 // that don't read again, while it is still shown.
 func certificateLine(indent string, c *resolver.CertificateStatus, now time.Time) pretty.Line {
+	if c.NotAfter.IsZero() {
+		line := pretty.Line{{Text: indent + "Certificate: "}, pretty.As(pretty.Warn, "none yet")}
+		return append(line, renewalSpans(c)...)
+	}
 	until := c.NotAfter.UTC().Format(time.DateOnly)
 	line := pretty.Line{{Text: indent + "Certificate: " + strings.Join(c.Names, ", ") + ", "}}
 	switch left := c.NotAfter.Sub(now); {
@@ -744,7 +759,20 @@ func certificateLine(indent string, c *resolver.CertificateStatus, now time.Time
 	if c.Error != "" {
 		line = append(line, pretty.Span{Text: " "}, pretty.As(pretty.Warn, "(its files don't read again: "+c.Error+")"))
 	}
-	return line
+	return append(line, renewalSpans(c)...)
+}
+
+// renewalSpans tell, in amber, why the last attempt to get the certificate failed, and when the
+// next is: nothing, of one that didn't fail.
+func renewalSpans(c *resolver.CertificateStatus) pretty.Line {
+	if c.Renewal == "" {
+		return nil
+	}
+	text := "(getting it failed: " + c.Renewal
+	if !c.NextAttempt.IsZero() {
+		text += "; again at " + c.NextAttempt.UTC().Format("2006-01-02 15:04") + " UTC"
+	}
+	return pretty.Line{{Text: " "}, pretty.As(pretty.Warn, text+")")}
 }
 
 // countDays is n days, or 1 day.

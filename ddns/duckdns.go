@@ -123,3 +123,25 @@ func (d *DuckDNS) request(hostname string, params url.Values) (duckDNSRecords, e
 func (d *DuckDNS) Domain(hostname string) string {
 	return FQDN(hostname, "duckdns.org")
 }
+
+// SetTXT keeps the TXT record of a DuckDNS name: DuckDNS has one, of the name itself, which it
+// answers for every name under it too, as _acme-challenge.nas.duckdns.org. So the name given can
+// be that, and one value at most is kept.
+func (d *DuckDNS) SetTXT(hostname string, values []string) error {
+	name := strings.TrimPrefix(RelativeName(hostname, "duckdns.org"), "_acme-challenge.")
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		name = name[i+1:]
+	}
+	switch len(values) {
+	case 0:
+		_, err := d.request(name, url.Values{"txt": {"removed"}, "clear": {"true"}})
+		return err
+	case 1:
+		_, err := d.request(name, url.Values{"txt": {values[0]}})
+		return err
+	}
+	return fmt.Errorf("DuckDNS keeps one TXT record of a name, and %s would need %d", name, len(values))
+}
+
+// FullName is the name under duckdns.org.
+func (d *DuckDNS) FullName(hostname string) (string, error) { return d.Domain(hostname), nil }

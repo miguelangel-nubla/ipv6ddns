@@ -29,6 +29,22 @@ type Service interface {
 	Domain(hostname string) string
 }
 
+// TXTWriter is a Service that also keeps the TXT records of a name, as the DNS challenge of ACME
+// needs, by which Let's Encrypt checks that the name is yours.
+type TXTWriter interface {
+	Service
+	// SetTXT makes the TXT records of name, a name of the zone as Update takes it, the values:
+	// none removes them. Its other records stay. As Update, it returns once the server answers
+	// with them.
+	SetTXT(name string, values []string) error
+	// FullName is the name of the zone that name is, without the final dot, as Domain, but
+	// asking the provider for the zone's name if it must: Route 53 learns it from AWS.
+	FullName(name string) (string, error)
+}
+
+// txtTTL is the TTL of the TXT records SetTXT writes: short, as they are there for minutes.
+const txtTTL = 60
+
 // Warner is a Service with warnings to log, about its settings: an SSH host key it didn't
 // verify. Warnings returns each once.
 type Warner interface {

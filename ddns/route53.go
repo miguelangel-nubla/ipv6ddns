@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -197,4 +198,72 @@ func (r *Route53) Domain(hostname string) string {
 	r.zoneMutex.Lock()
 	defer r.zoneMutex.Unlock()
 	return FQDN(hostname, r.zone)
+}
+
+// SetTXT makes the TXT records of hostname the values, in one change, and returns once Route 53
+// says its servers have it, as it does within a minute or so.
+func (r *Route53) SetTXT(hostname string, values []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+	client, zone, err := r.client(ctx)
+	if err != nil {
+		return err
+	}
+	dnsName := route53Name(FQDN(hostname, zone))
+	output, err := client.ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
+		HostedZoneId:    aws.String(r.HostedZoneID),
+		StartRecordName: aws.String(dnsName),
+		StartRecordType: types.RRTypeTxt,
+		MaxItems:        aws.Int32(1),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list record sets: %w", err)
+	}
+	var existing *types.ResourceRecordSet
+	for _, rs := range output.ResourceRecordSets {
+		if route53Name(aws.ToString(rs.Name)) == dnsName && rs.Type == types.RRTypeTxt {
+			existing = &rs
+		}
+	}
+	var change types.Change
+	switch {
+	case len(values) == 0 && existing == nil:
+		return nil
+	case len(values) == 0:
+		change = types.Change{Action: types.ChangeActionDelete, ResourceRecordSet: existing}
+	default:
+		var records []types.ResourceRecord
+		for _, v := range values {
+			records = append(records, types.ResourceRecord{Value: aws.String(`"` + v + `"`)})
+		}
+		change = types.Change{Action: types.ChangeActionUpsert, ResourceRecordSet: &types.ResourceRecordSet{
+			Name: aws.String(dnsName), Type: types.RRTypeTxt, TTL: aws.Int64(txtTTL), ResourceRecords: records,
+		}}
+	}
+	out, err := client.ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
+		HostedZoneId: aws.String(r.HostedZoneID),
+		ChangeBatch:  &types.ChangeBatch{Changes: []types.Change{change}},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to change the TXT records of %s: %w", dnsName, err)
+	}
+	if out.ChangeInfo == nil || out.ChangeInfo.Status == types.ChangeStatusInsync {
+		return nil
+	}
+	deadline, _ := ctx.Deadline()
+	waiter := route53.NewResourceRecordSetsChangedWaiter(client)
+	if err := waiter.Wait(ctx, &route53.GetChangeInput{Id: out.ChangeInfo.Id}, time.Until(deadline)); err != nil {
+		return fmt.Errorf("the TXT records of %s were changed, but Route 53 doesn't say its servers have them: %w", dnsName, err)
+	}
+	return nil
+}
+
+// FullName is the name in the hosted zone, whose name AWS is asked for if it isn't known yet.
+func (r *Route53) FullName(hostname string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+	if _, _, err := r.client(ctx); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(r.Domain(hostname), "."), nil
 }

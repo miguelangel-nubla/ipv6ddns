@@ -67,6 +67,11 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com", "192.168.1.2"}, NotAfter: time.Now().Add(5 * 24 * time.Hour), Error: "open /ssl/privkey.pem: permission denied"}},
 		{Name: "doq", Listening: []string{"quic://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
 			Certificate: &resolver.CertificateStatus{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(-time.Hour)}},
+		// Of ACME: none yet, its attempt failed; and one, whose renewal failed.
+		{Name: "acme", Listening: []string{"tls://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
+			Certificate: &resolver.CertificateStatus{Managed: true, Renewal: "the check: 403 unauthorized", NextAttempt: time.Now().Add(time.Hour)}},
+		{Name: "renewed", Listening: []string{"tls://192.168.1.3:853"}, Serving: true, Upstreams: []string{"192.168.1.1"},
+			Certificate: &resolver.CertificateStatus{Managed: true, Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(20 * 24 * time.Hour), Renewal: "ordering: 429 rate limited"}},
 	})
 
 	// And the resolvers when all serve.
@@ -86,7 +91,7 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		page = append(page, pretty.Line{})
 		page = append(page, disc.Page("")...)
 		text := page.String()
-		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 5, 4 serving", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
+		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 7, 6 serving", "none yet", "(getting it failed: the check: 403 unauthorized; again at ", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
 			if !strings.Contains(text, has) {
 				t.Fatalf("the page of the test has no %q:\n%s", has, text)
 			}

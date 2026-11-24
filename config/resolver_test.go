@@ -567,7 +567,7 @@ func TestResolverConfigEncryptedListen(t *testing.T) {
 		{"an encrypted entry without a certificate", `
   lan:
     listen: "tls://192.168.1.0/24"
-    upstream: 192.168.1.1`, "resolvers.lan.tls: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM"},
+    upstream: 192.168.1.1`, "resolvers.lan.tls is missing: an entry of listen is encrypted, tls://, https:// or quic://, and the clients must be shown a certificate: give tls.certificate and tls.key, the files of the certificate and of its key, in PEM, or tls.acme, for ipv6ddns to get one"},
 		{"a certificate without an encrypted entry", `
   lan:
     listen: 192.168.1.0/24
@@ -633,5 +633,89 @@ func TestResolverConfigTLSRelative(t *testing.T) {
 	spec := cfg.Resolvers["lan"].Spec
 	if spec.CertFile != filepath.Join(dir, "certs/fullchain.pem") || spec.KeyFile != filepath.Join(dir, "certs/privkey.pem") {
 		t.Errorf("the files: %s, %s", spec.CertFile, spec.KeyFile)
+	}
+}
+
+// tls.acme: names relative to the zone of the credential, which writes the challenge, and the
+// files where ipv6ddns writes the certificate, by default in tls/<resolver>/ of the
+// configuration's folder, the account's key beside them. Each mistake is told.
+func TestResolverConfigACME(t *testing.T) {
+	public := homeCredential + `
+  public:
+    provider: cloudflare
+    settings:
+      api_token: token
+      zone: example.com
+      ttl: 5m
+      proxied: false`
+	acmeBlock := func(rest string) string {
+		return `
+  lan:
+    listen: "tls://192.168.1.0/24"
+    upstream: 192.168.1.1
+    tls:` + rest
+	}
+	cfg, err := resolverConfig(t, acmeBlock(`
+      acme:
+        names: dns.lan
+        credential: public`), public, nasTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Resolvers["lan"]
+	dir := cfg.BaseDir
+	if r.TLS.CertFile != filepath.Join(dir, "tls", "lan", "fullchain.pem") || r.TLS.KeyFile != filepath.Join(dir, "tls", "lan", "privkey.pem") ||
+		r.TLS.AccountKeyFile != filepath.Join(dir, "tls", "lan", "acme-account.key") || !r.Spec.CertManaged || r.Spec.CertFile != r.TLS.CertFile {
+		t.Errorf("the files: %+v, managed %v", r.TLS, r.Spec.CertManaged)
+	}
+	if !slices.Equal(r.TLS.ACME.Names, []string{"dns.lan"}) {
+		t.Errorf("the names: %v", r.TLS.ACME.Names)
+	}
+	cfg, err = resolverConfig(t, acmeBlock(`
+      certificate: /var/lib/ipv6ddns/cert.pem
+      key: keys/key.pem
+      acme:
+        names:
+          - dns.lan
+          - "*.lan"
+        credential: public
+        email: me@example.com`), public, nasTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = cfg.Resolvers["lan"]
+	if r.TLS.CertFile != "/var/lib/ipv6ddns/cert.pem" || r.TLS.KeyFile != filepath.Join(cfg.BaseDir, "keys/key.pem") || r.TLS.AccountKeyFile != "/var/lib/ipv6ddns/acme-account.key" {
+		t.Errorf("the files given: %+v", r.TLS)
+	}
+
+	for _, c := range []struct{ name, tls, want string }{
+		{"no names", `
+      acme:
+        credential: public`, "resolvers.lan.tls.acme.names is missing"},
+		{"no credential", `
+      acme:
+        names: dns.lan`, "resolvers.lan.tls.acme.credential is missing"},
+		{"a credential that isn't there", `
+      acme:
+        names: dns.lan
+        credential: nope`, "resolvers.lan.tls.acme.credential: there is no credential nope"},
+		{"the resolver's zone", `
+      acme:
+        names: dns.lan
+        credential: home`, "resolvers.lan.tls.acme.credential: home is a zone of the resolver"},
+		{"a certificate without its key", `
+      certificate: cert.pem
+      acme:
+        names: dns.lan
+        credential: public`, "resolvers.lan.tls: give both certificate and key"},
+		{"neither files nor acme", `
+      key: key.pem`, "resolvers.lan.tls: give tls.certificate and tls.key"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := resolverConfig(t, acmeBlock(c.tls), public, nasTask)
+			if err == nil || !strings.HasPrefix(err.Error(), c.want) {
+				t.Errorf("got %v\nwant %s", err, c.want)
+			}
+		})
 	}
 }

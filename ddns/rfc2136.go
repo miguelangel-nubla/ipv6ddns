@@ -215,3 +215,63 @@ func rfc2136Same(current map[string]rfc2136Record, desired map[string]string, tt
 func (r *RFC2136) Domain(hostname string) string {
 	return lowerASCII(FQDN(hostname, r.Zone))
 }
+
+// SetTXT makes the TXT records of hostname the values, in one update, as Update does its
+// addresses.
+func (r *RFC2136) SetTXT(hostname string, values []string) error {
+	server := withDefaultPort(r.Server, "53")
+	name := dns.Fqdn(r.Domain(hostname))
+	update := new(dns.Msg)
+	update.SetUpdate(dns.Fqdn(r.Zone))
+	header := dns.RR_Header{Name: name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: txtTTL}
+	update.RemoveRRset([]dns.RR{&dns.TXT{Hdr: header}})
+	var inserts []dns.RR
+	for _, v := range values {
+		inserts = append(inserts, &dns.TXT{Hdr: header, Txt: []string{v}})
+	}
+	if len(inserts) > 0 {
+		update.Insert(inserts)
+	}
+	reply, err := r.exchange(update, server)
+	if err != nil {
+		return fmt.Errorf("failed to update the TXT records of %s: %w", name, err)
+	}
+	if reply.Rcode != dns.RcodeSuccess {
+		return fmt.Errorf("failed to update the TXT records of %s: %s", name, rfc2136Refusal(reply.Rcode, r.Zone, r.TSIGKey != ""))
+	}
+	want := slices.Sorted(slices.Values(values))
+	deadline := time.Now().Add(rfc2136Served)
+	for {
+		got, err := r.txt(server, name)
+		if err == nil && slices.Equal(got, want) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the TXT records of %s were updated, but after %s the server answers with %v: is it the primary of %s?", name, rfc2136Served, got, r.Zone)
+		}
+		time.Sleep(rfc2136ServedInterval)
+	}
+}
+
+// txt are the TXT records of name, as the server answers them, sorted: each the text of its
+// strings, joined.
+func (r *RFC2136) txt(server, name string) ([]string, error) {
+	query := new(dns.Msg)
+	query.SetQuestion(name, dns.TypeTXT)
+	query.RecursionDesired = false
+	reply, err := r.exchange(query, server)
+	if err != nil {
+		return nil, err
+	}
+	var values []string
+	for _, rr := range reply.Answer {
+		if t, ok := rr.(*dns.TXT); ok && strings.EqualFold(t.Hdr.Name, name) {
+			values = append(values, strings.Join(t.Txt, ""))
+		}
+	}
+	slices.Sort(values)
+	return values, nil
+}
+
+// FullName is Domain: the zone is known.
+func (r *RFC2136) FullName(hostname string) (string, error) { return r.Domain(hostname), nil }

@@ -505,6 +505,35 @@ func TestLiveRFC2136(t *testing.T) {
 	t.Run("name", func(t *testing.T) { s.run(t, "live."+s.zone, zoneSpellings("live", s.zone)...) })
 	t.Run("zone", func(t *testing.T) { s.run(t, s.zone, zoneSpellings("", s.zone)...) })
 
+	// The TXT records of the DNS challenge: set, as BIND answers them, and removed; the
+	// records the test leaves alone are left.
+	t.Run("txt", func(t *testing.T) {
+		service, err := NewService(s.provider, s.with("", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer := service.(TXTWriter)
+		name := "_acme-challenge.live." + s.zone
+		if err := writer.SetTXT("_acme-challenge.live", []string{"one", "two"}); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, r := range s.records(t, name, "TXT") {
+			got = append(got, r.data)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, []string{"one", "two"}) {
+			t.Errorf("%s has %q", name, got)
+		}
+		if err := writer.SetTXT(name, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := s.records(t, name, "TXT"); len(got) != 0 {
+			t.Errorf("%s has %v after removing", name, got)
+		}
+		s.fixtures(t)
+	})
+
 	// A key the server doesn't take: the update fails, and says why.
 	t.Run("a wrong key", func(t *testing.T) {
 		wrong := s.with("tsig_secret", "d3Jvbmctc2VjcmV0LXdyb25nLXNlY3JldC13cm9uZyE=")

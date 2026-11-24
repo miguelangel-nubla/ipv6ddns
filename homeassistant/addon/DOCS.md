@@ -159,6 +159,8 @@ resolvers:
 
 The certificate must be for the name the clients use, such as
 `dns.lan.example.com`: ask the Let's Encrypt app for it with its DNS
-challenge. Port 443 may be taken on the Home Assistant machine, by an app
+challenge. Or let ipv6ddns get it and renew it itself, with
+[`tls.acme`](https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/resolver.md#a-certificate-from-lets-encrypt):
+it then keeps it in the app's folder. Port 443 may be taken on the Home Assistant machine, by an app
 such as NGINX: give DNS over HTTPS another port, as
 `https://192.168.1.2:8443`, the machine's address with the port.

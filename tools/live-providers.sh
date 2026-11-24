@@ -22,6 +22,8 @@ GRAVITY_IMAGE=${GRAVITY_IMAGE:-ghcr.io/beryju/gravity:v0.34.0}
 ADGUARDHOME_IMAGE=${ADGUARDHOME_IMAGE:-adguard/adguardhome:v1.0.0}
 PIHOLE_IMAGE=${PIHOLE_IMAGE:-pihole/pihole:2026.11.0}
 # ISC's image is of amd64 alone: BIND 9.20.31.
+# Let's Encrypt's test authority, of ACME, 2.7.0.
+PEBBLE_IMAGE=${PEBBLE_IMAGE:-ghcr.io/letsencrypt/pebble@sha256:c156cabea562e43ed0060bddc03539c07de40e311b52c6b0e5ea710a496e56b8}
 BIND_IMAGE=${BIND_IMAGE:-internetsystemsconsortium/bind9:9.20@sha256:978201d91548ec63c3b1c1befd5e6a3c9fa127f79f9058fd82d8e3493fe90ce1}
 OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
 case $(docker version --format '{{.Server.Arch}}') in
@@ -36,7 +38,7 @@ password=live-$$
 prefix=ipv6ddns-live-$$
 work=$(mktemp -d)
 cleanup() {
-	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-adguardhome" "$prefix-pihole" "$prefix-bind" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
+	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-adguardhome" "$prefix-pihole" "$prefix-bind" "$prefix-pebble" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
 	rm -rf "$work"
 }
 trap cleanup EXIT
@@ -140,7 +142,9 @@ other	IN AAAA 2001:db8::f
 live	IN TXT "keep"
 EOF
 chmod -R a+rX "$work/bind"
-docker run -d --name "$prefix-bind" --platform linux/amd64 $publish -v "$work/bind:/etc/bind/live:ro" --entrypoint sh "$BIND_IMAGE" -c "
+# BIND's network is Pebble's too, which checks the challenges at BIND, 127.0.0.1:53: its ports,
+# of ACME and of its management, are published with BIND's.
+docker run -d --name "$prefix-bind" --platform linux/amd64 $publish -p 127.0.0.1::14000/tcp -p 127.0.0.1::15000/tcp -v "$work/bind:/etc/bind/live:ro" --entrypoint sh "$BIND_IMAGE" -c "
 	cp /etc/bind/live/$zone.zone /var/lib/bind/ && chown bind:bind /var/lib/bind/$zone.zone
 	exec named -u bind -g -c /etc/bind/live/named.conf" >/dev/null
 
@@ -206,6 +210,11 @@ curl -fs -X PUT -H "X-FTL-SID: $pihole_sid" "$pihole/api/config/dns/hosts/2001:d
 curl -fs -X DELETE -H "X-FTL-SID: $pihole_sid" "$pihole/api/auth" >/dev/null
 
 wait_for BIND docker exec "$prefix-bind" dig +short +tcp @127.0.0.1 "$zone" SOA
+docker run -d --name "$prefix-pebble" --network "container:$prefix-bind" -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
+	"$PEBBLE_IMAGE" -config test/config/pebble-config.json -dnsserver 127.0.0.1:53 >/dev/null
+docker cp -q "$prefix-pebble:/test/certs/pebble.minica.pem" "$work/pebble-ca.pem"
+pebble=https://127.0.0.1:$(port bind 14000/tcp)
+wait_for Pebble curl -fs --cacert "$work/pebble-ca.pem" "$pebble/dir"
 
 # Technitium: an API token, a primary zone and the records.
 technitium=http://127.0.0.1:$(port technitium 5380/tcp)
@@ -276,7 +285,7 @@ routeros_api ip/service/set -d '{".id":"api-ssl","certificate":"live"}' >/dev/nu
 routeros_fingerprint=$(routeros_api 'certificate?name=live' | json_field fingerprint)
 routeros_version=$(routeros_api system/resource | json_field version)
 
-echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), AdGuard Home ($ADGUARDHOME_IMAGE), Pi-hole ($PIHOLE_IMAGE), BIND ($BIND_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
+echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), AdGuard Home ($ADGUARDHOME_IMAGE), Pi-hole ($PIHOLE_IMAGE), BIND ($BIND_IMAGE), Pebble ($PEBBLE_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
 
 export IPV6DDNS_LIVE_TECHNITIUM="{\"address\":\"$technitium\",\"token\":\"$technitium_token\",\"zone\":\"$zone\",\"ttl\":\"5m\"}"
 export IPV6DDNS_LIVE_TECHNITIUM_DNS="127.0.0.1:$(port technitium 53/udp)"
@@ -288,6 +297,9 @@ export IPV6DDNS_LIVE_PIHOLE="{\"address\":\"$pihole\",\"password\":\"$password\"
 export IPV6DDNS_LIVE_PIHOLE_DNS="127.0.0.1:$(port pihole 53/udp)"
 export IPV6DDNS_LIVE_RFC2136="{\"server\":\"127.0.0.1:$(port bind 53/tcp)\",\"zone\":\"$zone\",\"ttl\":\"5m\",\"tsig_key\":\"live-key\",\"tsig_secret\":\"$bind_secret\"}"
 export IPV6DDNS_LIVE_RFC2136_DNS="127.0.0.1:$(port bind 53/udp)"
+export IPV6DDNS_LIVE_PEBBLE="$pebble/dir"
+export IPV6DDNS_LIVE_PEBBLE_MANAGEMENT="https://127.0.0.1:$(port bind 15000/tcp)"
+export IPV6DDNS_LIVE_PEBBLE_CA="$work/pebble-ca.pem"
 export IPV6DDNS_LIVE_OPENWRT="{\"address\":\"127.0.0.1:$openwrt_ssh\",\"username\":\"root\",\"ssh_key\":\"$work/key\",\"host_key\":\"${openwrt_host_keys%% *}\",\"zone\":\"lan\"}"
 export IPV6DDNS_LIVE_OPENWRT_DNS="127.0.0.1:$(port openwrt 53/udp)"
 export IPV6DDNS_LIVE_OPENWRT_HOST_KEYS="$openwrt_host_keys"
@@ -296,7 +308,15 @@ export IPV6DDNS_LIVE_MIKROTIK="{\"address\":\"127.0.0.1:$(port routeros 8728/tcp
 export IPV6DDNS_LIVE_MIKROTIK_TLS="{\"address\":\"127.0.0.1:$(port routeros 8729/tcp)\",\"use_tls\":true,\"tls_fingerprint\":\"$routeros_fingerprint\",$routeros_settings}"
 export IPV6DDNS_LIVE_MIKROTIK_DNS="127.0.0.1:$(port routeros 53/udp)"
 
-go test -tags live -count=1 -v -run '^TestLive' "$@" ./ddns
+# One package at a time: they share the servers, and their zones. What the authority and its DNS
+# server said, when a test failed: of the containers that are gone after.
+if ! go test -tags live -count=1 -p 1 -v -run '^TestLive' "$@" ./ddns ./pkg/acme .; then
+	for c in pebble bind; do
+		echo "live-providers: the last of $c's log:" >&2
+		docker logs --tail 60 "$prefix-$c" 2>&1 | sed "s/^/  $c: /" >&2
+	done
+	exit 1
+fi
 
 # What no DNS query shows: the static lease of the name the updates were of is still OpenWrt's.
 if [ "$(docker exec "$prefix-openwrt" uci get dhcp.fixture_host.ip)" != 192.0.2.99 ]; then

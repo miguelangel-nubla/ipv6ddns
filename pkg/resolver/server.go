@@ -238,7 +238,7 @@ func (s *Server) Start() error {
 	}
 	var cert *certificate
 	if len(s.config.Encrypted) > 0 {
-		if cert, err = loadCertificate(s.config.CertFile, s.config.KeyFile, s.errorf); err != nil {
+		if cert, err = loadCertificate(s.config.CertFile, s.config.KeyFile, s.config.CertManaged, s.errorf); err != nil {
 			return fmt.Errorf("%s.tls: %w", s.config.Path, err)
 		}
 	}

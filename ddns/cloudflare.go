@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/cloudflare/cloudflare-go"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
@@ -33,8 +35,9 @@ func NewCloudflare(settings json.RawMessage) (Service, error) {
 	return &service, nil
 }
 
-func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	// Initialize the Cloudflare API with the provided API token
+// session is the API, and the zone, for the requests of one update: they have updateTimeout
+// together, which ctx ends.
+func (c *Cloudflare) session(ctx context.Context) (*cloudflare.API, *cloudflare.ResourceContainer, error) {
 	// Its own client has no timeout: with this one, a request without an answer fails the update
 	// at httpTimeout, as the client doesn't try one that timed out again.
 	options := []cloudflare.Option{cloudflare.HTTPClient(newHTTPClient(nil))}
@@ -43,14 +46,8 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	}
 	api, err := cloudflare.NewWithAPIToken(c.APIToken, options...)
 	if err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
+		return nil, nil, fmt.Errorf("failed to initialize: %w", err)
 	}
-
-	// And the update has this one, for all its requests: the client tries one answered with an
-	// error of the server again, three times, waiting longer before each.
-	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
-	defer cancel()
-
 	// Get Zone ID: as the client's ZoneIDByName, which has no context.
 	zoneName := c.Zone
 	if unicode, err := idna.ToUnicode(zoneName); err == nil {
@@ -58,17 +55,25 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 	}
 	zones, err := api.ListZonesContext(ctx, cloudflare.WithZoneFilters(zoneName, "", ""))
 	if err != nil {
-		return fmt.Errorf("failed to read zone ID: %w", err)
+		return nil, nil, fmt.Errorf("failed to read zone ID: %w", err)
 	}
 	if len(zones.Result) != 1 {
-		return fmt.Errorf("failed to read zone ID: %d zones of the name %s", len(zones.Result), c.Zone)
+		return nil, nil, fmt.Errorf("failed to read zone ID: %d zones of the name %s", len(zones.Result), c.Zone)
 	}
-	zoneID := zones.Result[0].ID
+	return api, cloudflare.ZoneIdentifier(zones.Result[0].ID), nil
+}
+
+func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
+	// The update has this one, for all its requests: the client tries one answered with an
+	// error of the server again, three times, waiting longer before each.
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+	api, rc, err := c.session(ctx)
+	if err != nil {
+		return err
+	}
 
 	fqdn := FQDN(hostname, c.Zone)
-
-	// Create a new *ResourceContainer for the zone
-	rc := cloudflare.ZoneIdentifier(zoneID)
 	params := cloudflare.ListDNSRecordsParams{
 		Name: fqdn,
 	}
@@ -148,3 +153,47 @@ func (c *Cloudflare) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 func (c *Cloudflare) Domain(hostname string) string {
 	return FQDN(hostname, c.Zone)
 }
+
+// SetTXT makes the TXT records of hostname the values: it adds the missing ones and removes the
+// others. Cloudflare's API answers once its servers have them.
+func (c *Cloudflare) SetTXT(hostname string, values []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+	api, rc, err := c.session(ctx)
+	if err != nil {
+		return err
+	}
+	fqdn := FQDN(hostname, c.Zone)
+	current, _, err := api.ListDNSRecords(ctx, rc, cloudflare.ListDNSRecordsParams{Name: fqdn, Type: "TXT"})
+	if err != nil {
+		return fmt.Errorf("failed to list the TXT records of %s: %w", fqdn, err)
+	}
+	// Cloudflare gives a TXT record's content in quotes, or not, by the record.
+	have := make(map[string]bool)
+	for _, record := range current {
+		if record.Type != "TXT" {
+			continue
+		}
+		content := strings.Trim(record.Content, `"`)
+		if slices.Contains(values, content) && !have[content] {
+			have[content] = true
+			continue
+		}
+		if err := api.DeleteDNSRecord(ctx, rc, record.ID); err != nil {
+			return fmt.Errorf("failed to delete a TXT record of %s: %w", fqdn, err)
+		}
+	}
+	for _, v := range values {
+		if have[v] {
+			continue
+		}
+		if _, err := api.CreateDNSRecord(ctx, rc, cloudflare.CreateDNSRecordParams{Type: "TXT", Name: fqdn, Content: v, TTL: txtTTL}); err != nil {
+			return fmt.Errorf("failed to create a TXT record of %s: %w", fqdn, err)
+		}
+		have[v] = true
+	}
+	return nil
+}
+
+// FullName is Domain: the zone is known.
+func (c *Cloudflare) FullName(hostname string) (string, error) { return c.Domain(hostname), nil }

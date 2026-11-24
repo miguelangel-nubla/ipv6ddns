@@ -115,6 +115,9 @@ func (f *fakeRoute53) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		w.Write([]byte(`<ChangeResourceRecordSetsResponse><ChangeInfo><Id>/change/C1</Id><Status>PENDING</Status><SubmittedAt>2026-01-01T00:00:00Z</SubmittedAt></ChangeInfo></ChangeResourceRecordSetsResponse>`))
+	case r.Method == http.MethodGet && path == "/2013-04-01/change/C1":
+		// The servers have every change, once it is asked of.
+		w.Write([]byte(`<GetChangeResponse><ChangeInfo><Id>/change/C1</Id><Status>INSYNC</Status><SubmittedAt>2026-01-01T00:00:00Z</SubmittedAt></ChangeInfo></GetChangeResponse>`))
 	default:
 		f.t.Errorf("unexpected %s %s", r.Method, r.URL)
 		w.WriteHeader(http.StatusNotFound)

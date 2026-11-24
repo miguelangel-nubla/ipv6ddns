@@ -470,3 +470,31 @@ func TestServeEncryptedAsUpstream(t *testing.T) {
 		})
 	}
 }
+
+// A certificate that something else writes, as ACME: the resolver starts without it, refusing
+// the encrypted connections, and shows it once its files are written.
+func TestEncryptedManagedCertificate(t *testing.T) {
+	saved := certificateCheck
+	certificateCheck = 10 * time.Millisecond
+	t.Cleanup(func() { certificateCheck = saved })
+	ca := newTestCA(t)
+	cfg := encryptedConfig(t, ca)
+	dir := t.TempDir()
+	cfg.CertFile, cfg.KeyFile, cfg.CertManaged = filepath.Join(dir, "fullchain.pem"), filepath.Join(dir, "privkey.pem"), true
+	s := start(t, cfg)
+	address := addressOf(t, s, TransportTLS)
+	if _, err := queryTLS(t, ca, address, "printer.home.arpa.", dns.TypeA); err == nil {
+		t.Fatal("answered over TLS without a certificate")
+	}
+	if st := s.Status().Certificate; st == nil || !st.Managed || len(st.Names) != 0 || st.Error != "" {
+		t.Errorf("the status without a certificate: %+v", st)
+	}
+	writeCertificate(t, dir, ca.leaf(t, []string{encryptedName}))
+	time.Sleep(30 * time.Millisecond)
+	if resp, err := queryTLS(t, ca, address, "printer.home.arpa.", dns.TypeA); err != nil || len(resp.Answer) != 2 {
+		t.Fatalf("once written: %v, %v", resp, err)
+	}
+	if st := s.Status().Certificate; st == nil || !slices.Equal(st.Names, []string{encryptedName}) {
+		t.Errorf("the status once written: %+v", st)
+	}
+}

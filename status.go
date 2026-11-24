@@ -131,7 +131,7 @@ func (w *Worker) Status(hideSensible bool) Status {
 	status.Process = processStatus()
 
 	for _, r := range w.resolvers {
-		status.Resolvers = append(status.Resolvers, r.Status())
+		status.Resolvers = append(status.Resolvers, w.resolverStatus(r))
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
