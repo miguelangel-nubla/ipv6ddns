@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"net/netip"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,9 +37,12 @@ func TestCapTTL(t *testing.T) {
 func TestAnswerTTLCappedByExpiry(t *testing.T) {
 	cfg, addresses := testConfig(t)
 	s := start(t, cfg)
-	v4, v6 := time.Now().Add(20*time.Second), time.Now().Add(10*time.Second)
+	// v4 is moved while the server reads it, from its own goroutine.
+	var v4 atomic.Int64
+	v4.Store(time.Now().Add(20 * time.Second).UnixNano())
+	v6 := time.Now().Add(10 * time.Second)
 	addresses.SetExpiring("nas.home.arpa.", []Address{
-		{Addr: netip.MustParseAddr("192.168.1.10"), Expires: func() time.Time { return v4 }},
+		{Addr: netip.MustParseAddr("192.168.1.10"), Expires: func() time.Time { return time.Unix(0, v4.Load()) }},
 		{Addr: netip.MustParseAddr("192.168.1.11")},
 		{Addr: netip.MustParseAddr("fd00::10"), Expires: func() time.Time { return v6 }},
 	})
@@ -60,7 +64,7 @@ func TestAnswerTTLCappedByExpiry(t *testing.T) {
 	if got := ttls(dns.TypeANY); len(got) != 3 || got[0] != got[1] || got[1] != got[2] || got[0] < 8 || got[0] > 10 {
 		t.Errorf("ANY: %v, want 9 or so for all three", got)
 	}
-	v4 = time.Now().Add(time.Hour)
+	v4.Store(time.Now().Add(time.Hour).UnixNano())
 	if got := ttls(dns.TypeA); len(got) != 2 || got[0] != 30 || got[1] != 30 {
 		t.Errorf("A, seen again: %v, want the zone's, 30", got)
 	}
