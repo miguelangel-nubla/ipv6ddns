@@ -154,20 +154,23 @@ discovery:
 		{"acme.sh", []string{"acmesh." + zone}, []string{
 			"-e", "NSUPDATE_SERVER=" + host, "-e", "NSUPDATE_SERVER_PORT=" + port, "-e", "NSUPDATE_KEY=/work/acmesh.key",
 			"--entrypoint", "sh", image(t, "ACMESH"), "-c",
-			"acme.sh --issue --dns dns_nsupdate --dnssleep 1 --insecure --server " + pebble + " --accountemail live@" + zone +
+			"acme.sh --home /work/acmesh/home --issue --dns dns_nsupdate --dnssleep 1 --insecure --server " + pebble + " --accountemail live@" + zone +
 				" --cert-home /work/acmesh -d acmesh." + zone,
 		}},
 	} {
 		t.Run(c.client, func(t *testing.T) {
-			args := append([]string{"run", "--rm", "--network", network, "-v", dir + ":/work"}, c.args...)
+			// As this user: on Linux, the files a container's root writes are root's, and the
+			// certificates and keys of certbot and lego can't be read then.
+			user := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+			args := append([]string{"run", "--rm", "--network", network, "--user", user, "-v", dir + ":/work"}, c.args...)
 			cmd := exec.Command("docker", args...)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("%s: %v\n%s", c.client, err, tail(string(out), 40))
 			}
 			// The certificate, of its names.
-			if !certificateOf(t, dir, c.names) {
-				t.Errorf("%s: no certificate of %v in its files\n%s", c.client, c.names, tail(string(out), 20))
+			if found, unread := certificateOf(t, dir, c.names); !found {
+				t.Errorf("%s: no certificate of %v in its files, of which these can't be read: %v\n%s", c.client, c.names, unread, tail(string(out), 20))
 			}
 		})
 	}
@@ -213,16 +216,26 @@ func randomSecret(t *testing.T) string {
 	return strings.TrimSpace(string(out))
 }
 
-// certificateOf tells whether a certificate of dir, of PEM, has every one of names.
-func certificateOf(t *testing.T, dir string, names []string) bool {
+// certificateOf tells whether a certificate of dir, of PEM, has every one of names; and the
+// files it couldn't read.
+func certificateOf(t *testing.T, dir string, names []string) (bool, []string) {
 	t.Helper()
 	found := false
+	var unread []string
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || found {
+		if err != nil {
+			unread = append(unread, path)
+			return nil
+		}
+		if d.IsDir() || found {
 			return nil
 		}
 		data, err := os.ReadFile(path)
-		if err != nil || !strings.Contains(string(data), "BEGIN CERTIFICATE") {
+		if err != nil {
+			unread = append(unread, path)
+			return nil
+		}
+		if !strings.Contains(string(data), "BEGIN CERTIFICATE") {
 			return nil
 		}
 		if certs := parseCertificates(data); len(certs) > 0 {
@@ -234,7 +247,7 @@ func certificateOf(t *testing.T, dir string, names []string) bool {
 		}
 		return nil
 	})
-	return found
+	return found, unread
 }
 
 // parseCertificates are the certificates of PEM data, in order.
