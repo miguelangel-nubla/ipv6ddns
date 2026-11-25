@@ -10,6 +10,8 @@ package ddns
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -773,6 +775,132 @@ func TestLiveGandi(t *testing.T) {
 		proxied, writes := countingProxy(t, api, func(r *http.Request) bool { return r.Method != http.MethodGet })
 		service.(*Gandi).apiBaseURL = proxied
 		return service, writes
+	}
+
+	s.run(t, fqdn, spellings...)
+}
+
+// OVH: IPV6DDNS_LIVE_OVH has the settings, with the application's keys and a consumer key of the
+// zone, and IPV6DDNS_LIVE_OVH_NAME the name to use in it. The records are read with the API,
+// signed as its documentation says, and not through the provider's client.
+func TestLiveOVH(t *testing.T) {
+	s := &liveServer{provider: "ovh", settings: liveSettings(t, "IPV6DDNS_LIVE_OVH"), ttls: []string{"5m", "10m"}}
+	s.zone = strings.ToLower(strings.Trim(fmt.Sprint(s.settings["zone"]), "."))
+	fqdn, spellings := cloudName(t, "IPV6DDNS_LIVE_OVH_NAME", s.zone)
+	sub := RelativeName(fqdn, s.zone)
+	endpoint, _ := s.settings["endpoint"].(string)
+	if endpoint == "" {
+		endpoint = "ovh-eu"
+	}
+	api := ovhEndpoints[endpoint]
+	if api == "" {
+		api = strings.TrimSuffix(endpoint, "/")
+	}
+	key, secret, consumer := fmt.Sprint(s.settings["application_key"]), fmt.Sprint(s.settings["application_secret"]), fmt.Sprint(s.settings["consumer_key"])
+
+	var delta time.Duration
+	{
+		response, err := http.Get(api + "/auth/time")
+		if err != nil {
+			t.Fatal(withoutURL(err))
+		}
+		data, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		server, _ := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+		delta = time.Until(time.Unix(server, 0))
+	}
+	zone := api + "/domain/zone/" + url.PathEscape(s.zone)
+	call := func(t *testing.T, method, target string, body any, result any) {
+		t.Helper()
+		var data []byte
+		if body != nil {
+			data, _ = json.Marshal(body)
+		}
+		for {
+			timestamp := strconv.FormatInt(time.Now().Add(delta).Unix(), 10)
+			sum := sha1.Sum([]byte(strings.Join([]string{secret, consumer, method, target, string(data), timestamp}, "+")))
+			request, err := http.NewRequest(method, target, bytes.NewReader(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("X-Ovh-Application", key)
+			request.Header.Set("X-Ovh-Consumer", consumer)
+			request.Header.Set("X-Ovh-Timestamp", timestamp)
+			request.Header.Set("X-Ovh-Signature", "$1$"+hex.EncodeToString(sum[:]))
+			request.Header.Set("Content-Type", "application/json")
+			response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+			if err != nil {
+				t.Fatalf("%s: %v", method, withoutURL(err))
+			}
+			answer, _ := io.ReadAll(response.Body)
+			response.Body.Close()
+			if response.StatusCode == http.StatusTooManyRequests {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			if response.StatusCode >= 300 {
+				t.Fatalf("%s: %s: %s", method, response.Status, answer)
+			}
+			if result != nil && len(answer) > 0 {
+				if err := json.Unmarshal(answer, result); err != nil {
+					t.Fatalf("%s: %v", method, err)
+				}
+			}
+			return
+		}
+	}
+	list := func(t *testing.T, rrType string) []ovhRecord {
+		t.Helper()
+		var ids []int64
+		call(t, http.MethodGet, zone+"/record?fieldType="+rrType+"&subDomain="+url.QueryEscape(sub), nil, &ids)
+		var out []ovhRecord
+		for _, id := range ids {
+			var r ovhRecord
+			call(t, http.MethodGet, zone+"/record/"+strconv.FormatInt(id, 10), nil, &r)
+			out = append(out, r)
+		}
+		return out
+	}
+	s.records = func(t *testing.T, name, rrType string) []liveRecord {
+		t.Helper()
+		if !strings.EqualFold(name, fqdn) {
+			t.Fatalf("asked for %s, the test's name is %s", name, fqdn)
+		}
+		var out []liveRecord
+		for _, r := range list(t, rrType) {
+			out = append(out, liveRecord{strings.Trim(r.Target, `"`), r.TTL})
+		}
+		return out
+	}
+
+	// The TXT record of the name, which no update is to touch.
+	if len(list(t, "TXT")) == 0 {
+		call(t, http.MethodPost, zone+"/record", ovhRecord{FieldType: "TXT", SubDomain: sub, Target: liveKeep, TTL: 300}, nil)
+		call(t, http.MethodPost, zone+"/refresh", nil, nil)
+	}
+	t.Cleanup(func() {
+		for _, r := range list(t, "TXT") {
+			if strings.Trim(r.Target, `"`) == liveKeep {
+				call(t, http.MethodDelete, zone+"/record/"+strconv.FormatInt(r.ID, 10), nil, nil)
+			}
+		}
+		call(t, http.MethodPost, zone+"/refresh", nil, nil)
+	})
+	s.fixtures = func(t *testing.T) {
+		t.Helper()
+		if got := s.records(t, fqdn, "TXT"); len(got) != 1 || got[0].data != liveKeep {
+			t.Errorf("%s has the TXT records %v, want its %q untouched", fqdn, got, liveKeep)
+		}
+	}
+	// The requests are signed of their URL: no proxy can stand between, so the changes aren't
+	// counted.
+	s.service = func(t *testing.T, raw json.RawMessage) (Service, func() int) {
+		t.Helper()
+		service, err := NewService("ovh", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return service, nil
 	}
 
 	s.run(t, fqdn, spellings...)

@@ -65,6 +65,7 @@ func providerTypes() map[string]any {
 		"porkbun":                 Porkbun{},
 		"digitalocean":            DigitalOcean{},
 		"gandi":                   Gandi{},
+		"ovh":                     OVH{},
 		"gravity":                 Gravity{},
 		"mikrotik":                Mikrotik{},
 		"openwrt":                 OpenWrt{},

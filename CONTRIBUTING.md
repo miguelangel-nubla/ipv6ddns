@@ -140,6 +140,7 @@ IPV6DDNS_LIVE_HETZNER='{"api_token": "...", "zone": "example.com"}' IPV6DDNS_LIV
 IPV6DDNS_LIVE_PORKBUN='{"api_key": "pk1_...", "secret_api_key": "sk1_...", "zone": "example.com"}' IPV6DDNS_LIVE_PORKBUN_NAME=ipv6ddns-live \
 IPV6DDNS_LIVE_DIGITALOCEAN='{"api_token": "...", "zone": "example.com"}' IPV6DDNS_LIVE_DIGITALOCEAN_NAME=ipv6ddns-live \
 IPV6DDNS_LIVE_GANDI='{"token": "...", "zone": "example.com"}' IPV6DDNS_LIVE_GANDI_NAME=ipv6ddns-live \
+IPV6DDNS_LIVE_OVH='{"application_key": "...", "application_secret": "...", "consumer_key": "...", "zone": "example.com"}' IPV6DDNS_LIVE_OVH_NAME=ipv6ddns-live \
 tools/live-providers.sh
 ```
 

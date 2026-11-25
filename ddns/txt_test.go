@@ -21,6 +21,7 @@ var (
 	_ TXTWriter = (*Porkbun)(nil)
 	_ TXTWriter = (*DigitalOcean)(nil)
 	_ TXTWriter = (*Gandi)(nil)
+	_ TXTWriter = (*OVH)(nil)
 )
 
 // The providers registered as TXT writers are those whose services are, and no other: of each
@@ -32,7 +33,7 @@ func TestTXTProvidersRegistered(t *testing.T) {
 			t.Errorf("%s: a TXTWriter %v, registered as one %v", name, writes, WritesTXT(name))
 		}
 	}
-	if got := TXTProviders(); got != "cloudflare, desec, digitalocean, duckdns, gandi, hetzner, porkbun, rfc2136 or route53" {
+	if got := TXTProviders(); got != "cloudflare, desec, digitalocean, duckdns, gandi, hetzner, ovh, porkbun, rfc2136 or route53" {
 		t.Errorf("listed as %q", got)
 	}
 }

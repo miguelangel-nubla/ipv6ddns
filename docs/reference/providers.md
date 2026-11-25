@@ -15,6 +15,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`mikrotik`](#mikrotik)
 - [`openwrt`](#openwrt)
 - [`opnsense_unbound`](#opnsense_unbound)
+- [`ovh`](#ovh)
 - [`pfsense_restapi_unbound`](#pfsense_restapi_unbound)
 - [`pihole`](#pihole)
 - [`porkbun`](#porkbun)
@@ -159,6 +160,21 @@ OPNsense's Unbound host overrides, through its API.
 | `secret` | string | **Required.** Its secret. |
 | `zone` | string | **Required.** The zone of the names. |
 | `ttl` | string | **Required.** The records' TTL, as 5m or 1h. |
+
+## ovh
+
+OVHcloud DNS, through its API, of a zone of the account. Each record is written apart, and the zone refreshed after, which serves the changes.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
+| Key | Takes | |
+|---|---|---|
+| `endpoint` | string | The API of the account: ovh-eu, ovh-ca or ovh-us, or its https:// URL. Default: ovh-eu. |
+| `application_key` | string | **Required.** The application's key, made at the endpoint's /createApp, as https://eu.api.ovh.com/createApp. |
+| `application_secret` | string | **Required.** The application's secret. |
+| `consumer_key` | string | **Required.** A consumer key of the application, that allows GET, POST, PUT and DELETE on /domain/zone/<zone>/*: made at the endpoint's /createToken, which makes the three keys at once. |
+| `zone` | string | **Required.** The zone, as example.com. |
+| `ttl` | string | The records' TTL, as 5m or 1h: 1m at the least. Default: 1h. |
 
 ## pfsense_restapi_unbound
 
