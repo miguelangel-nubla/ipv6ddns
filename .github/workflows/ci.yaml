@@ -188,6 +188,34 @@ jobs:
         name: Live tests of the providers
         run: tools/live-providers.sh
 
+  # The unifi provider and plugin against UniFi OS, which runs in no container: UniFi OS Server,
+  # installed on the runner by the script, of the version it pins, with an API key and its admin.
+  # Its installer is large and it takes minutes to start: on main, weekly and by hand, as macOS's.
+  unifi-os:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.actor != 'github-actions[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      -
+        name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: 'stable'
+          check-latest: true
+      -
+        name: UniFi OS Server
+        run: tools/unifi-os-server.sh "$RUNNER_TEMP/unifi-os.env"
+      -
+        name: Live tests against it
+        run: |
+          . "$RUNNER_TEMP/unifi-os.env"
+          go test -tags live -count=1 -v -run '^TestLiveUniFi' ./ddns .
+
   # 64-bit atomic operations need an alignment 32-bit platforms don't give by themselves.
   # macOS, with its own sockets, its own mDNS responder beside the program's, and no netlink: the
   # tests that need Linux skip there. The BSDs are built and vetted only.

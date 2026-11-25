@@ -11,12 +11,12 @@ import (
 )
 
 // The UniFi Network API, live: of a self-hosted Network Application, with a user,
-// IPV6DDNS_LIVE_UNIFI, which tools/live-providers.sh runs; and of UniFi OS Server, with an API
-// key, IPV6DDNS_LIVE_UNIFI_OS, which takes a VM and is run by hand. Neither has a gateway to
-// serve the records, so they are read back through the API, with a client of the test's own:
-// what the gateway answers isn't checked.
+// IPV6DDNS_LIVE_UNIFI, which tools/live-providers.sh runs; and of UniFi OS Server, with an API key
+// and with its admin, IPV6DDNS_LIVE_UNIFI_OS and IPV6DDNS_LIVE_UNIFI_OS_USER, which
+// tools/unifi-os-server.sh sets up. Neither has a gateway to serve the records, so they are read
+// back through the API, with a client of the test's own: what the gateway answers isn't checked.
 func TestLiveUniFi(t *testing.T) {
-	for _, variable := range []string{"IPV6DDNS_LIVE_UNIFI", "IPV6DDNS_LIVE_UNIFI_OS"} {
+	for _, variable := range []string{"IPV6DDNS_LIVE_UNIFI", "IPV6DDNS_LIVE_UNIFI_OS", "IPV6DDNS_LIVE_UNIFI_OS_USER"} {
 		t.Run(variable, func(t *testing.T) {
 			settings := liveSettings(t, variable)
 			raw, _ := json.Marshal(settings)

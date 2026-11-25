@@ -105,7 +105,14 @@ A provider's fake API is written by the same person who wrote the provider, so t
 
 `tools/live-providers.sh` starts Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, BIND, OpenWrt, a self-hosted UniFi Network Application and MikroTik RouterOS (a CHR under QEMU). It gives each one a zone, a credential, and some records that must be left alone. Then it runs the `TestLive` tests of `ddns/`, built with the `live` tag. Every change goes through `Update`, under each spelling of the name, and is checked with a DNS query to the server.
 
-UniFi is the exception: without a gateway, nothing serves its records, so its test reads them back through its API. The same test runs against UniFi OS, with an API key, when `IPV6DDNS_LIVE_UNIFI_OS` has its settings; UniFi OS Server takes a VM, so that one is run by hand.
+UniFi is the exception: without a gateway, nothing serves its records, so its test reads them back through its API. A test of the whole program, `TestLiveUniFiProgram`, has UniFi as both its discovery and its names.
+
+The same UniFi tests run against UniFi OS, which no container has:
+
+- `tools/unifi-os-server.sh <file>` installs UniFi OS Server, of the version it pins, on a Linux machine with Podman. It sets it up offline with a local admin, makes an API key, and writes `IPV6DDNS_LIVE_UNIFI_OS` and `IPV6DDNS_LIVE_UNIFI_OS_USER` to the file, to source before `go test -tags live -run '^TestLiveUniFi' ./ddns .`.
+- `tools/unifi-os-vm.sh up` does it in a Debian VM under QEMU, for macOS: the file is then `~/.cache/ipv6ddns-unifi-os-vm/env`.
+- CI runs them on `main`, weekly and by hand: the installer is large, and the server takes minutes to start.
+- UniFi OS limits how often a user logs in. The tests log in often, so the admin's may wait a minute for a refused login to pass.
 
 - It needs Docker, Go, curl, OpenSSL and OpenSSH, and takes a few minutes, most of them the UniFi Network Application's start. CI runs it.
 - The servers are pinned to the versions in the script, so a failing run points at the code and not at whatever was released that day. Moving to a newer version of a server is a change to the script.
