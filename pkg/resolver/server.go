@@ -75,6 +75,9 @@ type Server struct {
 	keys keyring
 	// One update at a time, and no answer of a grant's records while one is made.
 	updateMutex sync.Mutex
+	// When a client's signatures refused were last logged, of each key it named.
+	warnedMutex sync.Mutex
+	warned      map[string]time.Time
 
 	mutex   sync.Mutex
 	servers []*dns.Server

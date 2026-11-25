@@ -53,8 +53,26 @@ type Grant interface {
 	Apply(changes map[string][]dns.RR) error
 }
 
-// The algorithms a key may have: those of SHA-2 that RFC 8945 recommends, and none weaker.
-var updateAlgorithms = []string{dns.HmacSHA256, dns.HmacSHA384, dns.HmacSHA512}
+// UpdateAlgorithms are the algorithms a key may have, by the names the configuration gives them:
+// those of SHA-2 that RFC 8945 recommends, and none weaker.
+var UpdateAlgorithms = map[string]string{
+	"hmac-sha256": dns.HmacSHA256,
+	"hmac-sha384": dns.HmacSHA384,
+	"hmac-sha512": dns.HmacSHA512,
+}
+
+// macSizes are the sizes of the signatures of the algorithms, in bytes.
+var macSizes = map[string]int{dns.HmacSHA256: 32, dns.HmacSHA384: 48, dns.HmacSHA512: 64}
+
+// holder is a Grant that holds some names of its zone alone, of those Scope gives: a DHCP
+// server's names, one label below the zone, and no wildcard.
+type holder interface {
+	Holds(name string) bool
+}
+
+// warnEvery is how often a client's signatures refused are logged, of each key it names: a host
+// that sends many is told of once a minute, and the log isn't flooded.
+const warnEvery = time.Minute
 
 // The bounds of an update's sections, past which it is refused unread: more than any client sends
 // for one name, which is what updates are for.
@@ -96,7 +114,7 @@ func newKeys(path string, keys []UpdateKey) (map[string]*keyState, error) {
 		if _, ok := out[name]; ok {
 			return nil, fmt.Errorf("%s.updates.keys: %s is there twice", path, strings.TrimSuffix(name, "."))
 		}
-		if !slices.Contains(updateAlgorithms, k.Algorithm) {
+		if !slices.Contains(slices.Collect(maps.Values(UpdateAlgorithms)), k.Algorithm) {
 			return nil, fmt.Errorf("%s.updates.keys.%s: the algorithm %s isn't one of hmac-sha256, hmac-sha384 and hmac-sha512", path, k.Name, k.Algorithm)
 		}
 		secret, err := base64.StdEncoding.DecodeString(k.Secret)
@@ -197,11 +215,15 @@ func (sc scope) covers(name string, rrtype uint16) bool {
 	if !InZone(name, sc.zone) || sc.names != nil && !slices.Contains(sc.names, name) {
 		return false
 	}
+	if h, ok := sc.grant.(holder); ok && !h.Holds(name) {
+		return false
+	}
 	return rrtype == dns.TypeANY || slices.Contains(sc.types, rrtype)
 }
 
 // within tells whether name is one the grant may change, or a name between one and the zone:
-// a name it answers with authority, to a query signed with its key.
+// whose SOA it answers with authority, to a query signed with its key, as the clients find the
+// zone.
 func (sc scope) within(name string) bool {
 	if !InZone(name, sc.zone) {
 		return false
@@ -251,11 +273,30 @@ func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG) {
 		tsigError = dns.RcodeBadSig
 	}
 	if tsigError != 0 {
-		s.warnf("resolver %s: a message from %s signed with the key %s refused: %s", s.config.Name, hostOf(remote),
-			strings.TrimSuffix(t.Hdr.Name, "."), map[uint16]string{dns.RcodeBadKey: "no such key, or of another algorithm",
-				dns.RcodeBadTime: "its time is more than 5 minutes off: check the clocks", dns.RcodeBadSig: "the signature is wrong: check the secret"}[tsigError])
+		// Of a client no allow has, as a host of the internet that tries keys: refused, unsaid.
+		if !s.anyAllowed(remote) {
+			s.queries[Refused].Add(1)
+			_ = w.WriteMsg(reply(req, dns.RcodeRefused))
+			return
+		}
+		if s.shouldWarn(hostOf(remote) + " " + strings.ToLower(t.Hdr.Name)) {
+			s.warnf("resolver %s: a message from %s signed with the key %s refused: %s", s.config.Name, hostOf(remote),
+				strings.TrimSuffix(t.Hdr.Name, "."), map[uint16]string{dns.RcodeBadKey: "no such key, or of another algorithm",
+					dns.RcodeBadTime: "its time is more than 5 minutes off: check the clocks", dns.RcodeBadSig: "the signature is wrong: check the secret"}[tsigError])
+		}
 		resp := new(dns.Msg)
 		resp.SetRcode(req, dns.RcodeNotAuth)
+		if tsigError == dns.RcodeBadTime {
+			// Signed, with the server's time, as RFC 8945 has it: the key is right, and the client
+			// tells the clocks apart from a secret refused.
+			now := s.now().Unix()
+			resp.SetTsig(t.Hdr.Name, t.Algorithm, tsigFudge, now)
+			sig := resp.IsTsig()
+			sig.Error, sig.OtherLen, sig.OtherData = dns.RcodeBadTime, 6, fmt.Sprintf("%012x", now)
+			_ = w.WriteMsg(resp)
+			return
+		}
+		// Unsigned: the key, or its signature, is not one to sign with.
 		resp.Extra = append(resp.Extra, &dns.TSIG{Hdr: dns.RR_Header{Name: t.Hdr.Name, Rrtype: dns.TypeTSIG, Class: dns.ClassANY},
 			Algorithm: t.Algorithm, TimeSigned: uint64(s.now().Unix()), Fudge: tsigFudge, OrigId: req.Id, Error: tsigError})
 		if data, err := resp.Pack(); err == nil {
@@ -268,7 +309,11 @@ func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG) {
 	switch {
 	case !s.keyAllowed(key, remote):
 		resp = reply(req, dns.RcodeRefused)
-		s.updated(key, UpdateRefused, fmt.Sprintf("from %s, which its allow hasn't", hostOf(remote)))
+		if req.Opcode == dns.OpcodeUpdate {
+			s.updated(key, UpdateRefused, fmt.Sprintf("from %s, which its allow hasn't", hostOf(remote)))
+		} else {
+			s.queries[Refused].Add(1)
+		}
 	case req.Opcode == dns.OpcodeUpdate:
 		resp = s.update(req, key)
 	case req.Opcode == dns.OpcodeQuery:
@@ -285,11 +330,77 @@ func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG) {
 		if opt := req.IsEdns0(); opt != nil {
 			size = max(int(opt.UDPSize()), dns.MinMsgSize)
 		}
-		// Room for the signature.
-		resp.Truncate(size - 128)
+		fitSigned(resp, size-tsigRoom(t.Hdr.Name, key.Algorithm))
 	}
 	resp.SetTsig(t.Hdr.Name, t.Algorithm, tsigFudge, s.now().Unix())
 	_ = w.WriteMsg(resp)
+}
+
+// fitSigned truncates resp to size, which leaves its signature room: as Truncate does, which
+// never goes below 512 bytes, so can't leave that room in a response of 512.
+func fitSigned(resp *dns.Msg, size int) {
+	resp.Compress = true
+	for resp.Len() > size {
+		switch {
+		case len(resp.Extra) > 0 && resp.IsEdns0() == nil, len(resp.Extra) > 1:
+			// The additional records, but OPT, which says the size.
+			for i := len(resp.Extra) - 1; i >= 0; i-- {
+				if resp.Extra[i].Header().Rrtype != dns.TypeOPT {
+					resp.Extra = slices.Delete(resp.Extra, i, i+1)
+					break
+				}
+			}
+		case len(resp.Ns) > 0:
+			resp.Ns = resp.Ns[:len(resp.Ns)-1]
+		case len(resp.Answer) > 0:
+			resp.Answer = resp.Answer[:len(resp.Answer)-1]
+		default:
+			return
+		}
+		resp.Truncated = true
+	}
+}
+
+// tsigRoom is the room the signature of a response takes, signed with the key of that name and
+// algorithm.
+func tsigRoom(name, algorithm string) int {
+	m := new(dns.Msg)
+	base := m.Len()
+	m.SetTsig(name, algorithm, tsigFudge, 0)
+	sig := m.IsTsig()
+	sig.MACSize = uint16(macSizes[algorithm])
+	sig.MAC = strings.Repeat("00", macSizes[algorithm])
+	return m.Len() - base
+}
+
+// anyAllowed tells whether remote is in any allow: the resolver's, or a key's.
+func (s *Server) anyAllowed(remote net.Addr) bool {
+	if s.allowed(remote) {
+		return true
+	}
+	for _, k := range s.keys {
+		if s.keyAllowed(k, remote) {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldWarn tells whether what, a client and a key, wasn't warned of within warnEvery, and notes
+// it now.
+func (s *Server) shouldWarn(what string) bool {
+	s.warnedMutex.Lock()
+	defer s.warnedMutex.Unlock()
+	now := s.now()
+	if last, ok := s.warned[what]; ok && now.Sub(last) < warnEvery {
+		return false
+	}
+	// Bounded, whatever the clients send.
+	if s.warned == nil || len(s.warned) > 4096 {
+		s.warned = make(map[string]time.Time)
+	}
+	s.warned[what] = now
+	return true
 }
 
 // keyAllowed tells whether a key may be used from remote: its allow's, the updates', or the
@@ -344,7 +455,9 @@ func (s *Server) answerSigned(req *dns.Msg, key *keyState, remote net.Addr) (*dn
 	if q.Qclass == dns.ClassINET {
 		scopes, _ := key.scopes()
 		for _, sc := range scopes {
-			if sc.within(name) {
+			// The names it may change, of any type; the names between them and the zone, of
+			// their SOA alone: the rest of those names is the world's, as any client is told.
+			if sc.covers(name, dns.TypeANY) || q.Qtype == dns.TypeSOA && sc.within(name) {
 				return s.authoritative(req, sc, name, q.Qtype), Local
 			}
 		}

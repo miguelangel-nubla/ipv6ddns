@@ -165,7 +165,14 @@ func TestUpdateSignatures(t *testing.T) {
 		if resp.Rcode != dns.RcodeNotAuth || tsigError(resp) != c.want {
 			t.Errorf("%s: %s, TSIG error %d, want NOTAUTH, %d", c.what, dns.RcodeToString[resp.Rcode], tsigError(resp), c.want)
 		}
-		if sig := resp.IsTsig(); sig == nil || sig.MAC != "" {
+		// BADTIME is signed, with the server's time, as RFC 8945 has it; the others, unsigned.
+		sig := resp.IsTsig()
+		switch {
+		case sig == nil:
+			t.Errorf("%s: no TSIG error said", c.what)
+		case c.want == dns.RcodeBadTime && (sig.MAC == "" || sig.OtherLen != 6):
+			t.Errorf("%s: BADTIME must be signed, with the time: %v", c.what, sig)
+		case c.want != dns.RcodeBadTime && sig.MAC != "":
 			t.Errorf("%s: the response must say the TSIG error, unsigned: %v", c.what, sig)
 		}
 	}
@@ -656,4 +663,125 @@ func FuzzUpdate(f *testing.F) {
 			}
 		}
 	})
+}
+
+// Signatures refused, of a client no allow has: refused unsaid, and never logged; of one an allow
+// has, logged once a minute, however many it sends.
+func TestUpdateRefusedSignaturesLogged(t *testing.T) {
+	var mutex sync.Mutex
+	var warned []string
+	for _, c := range []struct {
+		what  string
+		allow []netip.Prefix
+		rcode int
+		warns int
+	}{
+		{"of no allow", []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}, dns.RcodeRefused, 0},
+		{"of the resolver's allow", nil, dns.RcodeNotAuth, 1},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			warned = nil
+			cfg := updateConfig(t, newFakeGrant("example.com.", nil, dns.TypeA))
+			cfg.Allow, cfg.UpdateKeys[0].Allow = c.allow, c.allow
+			cfg.Warnf = func(f string, a ...any) { mutex.Lock(); warned = append(warned, fmt.Sprintf(f, a...)); mutex.Unlock() }
+			s := start(t, cfg)
+			for range 3 {
+				m := updateOf("example.com")
+				m.Insert([]dns.RR{rr(t, "vps.example.com. 60 IN A 192.0.2.7")})
+				resp, _ := signedExchange(t, s, "udp", m, "intruder", dns.HmacSHA256, testSecret, time.Now())
+				if resp.Rcode != c.rcode {
+					t.Errorf("%s, want %s", dns.RcodeToString[resp.Rcode], dns.RcodeToString[c.rcode])
+				}
+			}
+			mutex.Lock()
+			defer mutex.Unlock()
+			if len(warned) != c.warns {
+				t.Errorf("warned %q, want %d", warned, c.warns)
+			}
+		})
+	}
+}
+
+// A signed answer over UDP fits its size with its signature, of the longest key names and
+// algorithm: truncated, never larger.
+func TestSignedAnswerFits(t *testing.T) {
+	long := strings.Repeat("k", 60) + "." + strings.Repeat("e", 60) + "." + strings.Repeat("y", 60)
+	name := "_acme-challenge.nas.example.com."
+	g := newFakeGrant("example.com.", []string{name}, dns.TypeTXT)
+	for i := range 40 {
+		g.records[name] = append(g.records[name], rr(t, fmt.Sprintf(`%s 60 IN TXT "value number %d, long enough"`, name, i)))
+	}
+	cfg, _ := testConfig(t)
+	cfg.UpdateKeys = []UpdateKey{{Name: long, Secret: testSecret, Algorithm: dns.HmacSHA512, Grants: []Grant{g}}}
+	s := start(t, cfg)
+	m := new(dns.Msg)
+	m.SetQuestion(name, dns.TypeTXT)
+	resp, err := signedExchange(t, s, "udp", m, long, dns.HmacSHA512, testSecret, time.Now())
+	if err != nil {
+		t.Fatalf("the signature: %v", err)
+	}
+	// The client read it into 512 bytes; and so it measures, compressed as it was sent.
+	resp.Compress = true
+	if !resp.Truncated || resp.Len() > dns.MinMsgSize {
+		t.Errorf("truncated %v, %d bytes, of %d at most", resp.Truncated, resp.Len(), dns.MinMsgSize)
+	}
+}
+
+// A signed query of a name between a permission and its zone, of another type than SOA, is the
+// world's: forwarded, as any client's.
+func TestSignedQueryBetweenIsForwarded(t *testing.T) {
+	up := newUpstream(t)
+	cfg, _ := testConfig(t, up.address)
+	g := newFakeGrant("example.com.", []string{"_acme-challenge.shop.example.com."}, dns.TypeTXT)
+	cfg.UpdateKeys = []UpdateKey{{Name: "nas", Secret: testSecret, Algorithm: dns.HmacSHA256, Grants: []Grant{g}}}
+	s := start(t, cfg)
+	m := new(dns.Msg)
+	m.SetQuestion("shop.example.com.", dns.TypeA)
+	resp := send(t, s, m)
+	if a, ok := firstA(resp); !ok || a != "192.0.2.53" {
+		t.Errorf("shop, signed: %v", resp)
+	}
+	m = new(dns.Msg)
+	m.SetQuestion("shop.example.com.", dns.TypeSOA)
+	if resp := send(t, s, m); !resp.Authoritative || len(resp.Answer) != 0 || len(resp.Ns) != 1 {
+		t.Errorf("shop's SOA, signed: %v", resp)
+	}
+}
+
+// firstA is the first A record's address of resp.
+func firstA(resp *dns.Msg) (string, bool) {
+	for _, r := range resp.Answer {
+		if a, ok := r.(*dns.A); ok {
+			return a.A.String(), true
+		}
+	}
+	return "", false
+}
+
+// holdingGrant is a fake grant that holds the names one label below its zone alone, and no
+// wildcard.
+type holdingGrant struct{ *fakeGrant }
+
+func (g holdingGrant) Holds(name string) bool {
+	label, ok := strings.CutSuffix(name, "."+g.zone)
+	return ok && label != "*" && !strings.Contains(label, ".")
+}
+
+func TestUpdateGrantHolds(t *testing.T) {
+	g := holdingGrant{newFakeGrant("lan.example.com.", nil, dns.TypeA)}
+	s := start(t, updateConfig(t, g))
+	for _, c := range []struct {
+		name  string
+		rcode int
+	}{
+		{"printer.lan.example.com.", dns.RcodeSuccess},
+		{"*.lan.example.com.", dns.RcodeRefused},
+		{"a.b.lan.example.com.", dns.RcodeRefused},
+	} {
+		m := updateOf("lan.example.com")
+		m.Insert([]dns.RR{rr(t, c.name+" 60 IN A 192.0.2.7")})
+		if resp := send(t, s, m); resp.Rcode != c.rcode {
+			t.Errorf("%s: %s, want %s", c.name, dns.RcodeToString[resp.Rcode], dns.RcodeToString[c.rcode])
+		}
+	}
 }

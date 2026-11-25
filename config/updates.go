@@ -91,13 +91,6 @@ type NamesPermission struct {
 	Zone string `json:"zone,omitempty"`
 }
 
-// The algorithms of a key, as the configuration writes them, and as TSIG names them.
-var updateAlgorithms = map[string]string{
-	"hmac-sha256": dns.HmacSHA256,
-	"hmac-sha384": dns.HmacSHA384,
-	"hmac-sha512": dns.HmacSHA512,
-}
-
 // minSecret is the shortest secret a key may have, in bytes: half of what tsig-keygen makes for
 // hmac-sha256, which RFC 8945 asks at the least.
 const minSecret = 16
@@ -159,7 +152,7 @@ func (c *Config) setUpUpdates(path string, r *Resolver, spec *resolver.Config, a
 			algorithm = "hmac-sha256"
 		}
 		var ok bool
-		if key.Algorithm, ok = updateAlgorithms[algorithm]; !ok {
+		if key.Algorithm, ok = resolver.UpdateAlgorithms[algorithm]; !ok {
 			return fmt.Errorf("%s.algorithm: %s isn't one a key may have: hmac-sha256, hmac-sha384 or hmac-sha512", keyPath, k.Algorithm)
 		}
 		for _, a := range k.Allow {

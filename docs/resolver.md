@@ -425,7 +425,7 @@ The resolver's own `allow` still decides who it answers queries for, so its defa
 
 ### How the clients find the zone
 
-Before an update, certbot and nsupdate look for the zone of the name, with SOA queries signed with the key. The resolver answers those with authority, for the names of the key's permissions and the names between them and the zone: the zone's SOA at the zone, and no data, with the SOA, below it. The same query unsigned, or signed with another key, is answered as any other, so nothing changes for the rest of the network.
+Before an update, certbot and nsupdate look for the zone of the name, with SOA queries signed with the key. The resolver answers those with authority, for the names of the key's permissions and the names between them and the zone: the zone's SOA at the zone, and no data, with the SOA, below it. A signed query of another type is answered with authority only of a name the key may change; of the names between, it is answered as any other, since they are the world's. The same query unsigned, or signed with another key, is answered as any other, so nothing changes for the rest of the network.
 
 ### The answers
 
