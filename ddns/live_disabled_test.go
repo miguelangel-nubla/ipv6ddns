@@ -5,6 +5,7 @@ package ddns
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"slices"
 	"testing"
 )
@@ -18,7 +19,12 @@ import (
 func liveDisabled(t *testing.T, s *liveServer, host string, disabled func() []string) {
 	t.Helper()
 	fqdn := host + "." + s.zone
-	service, err := NewService(s.provider, s.with("ttl", s.ttls[0]))
+	// Of the server's TTL, or with none where its provider has none.
+	ttl, settings := "", s.with("", nil)
+	if len(s.ttls) > 0 {
+		ttl, settings = s.ttls[0], s.with("ttl", s.ttls[0])
+	}
+	service, err := NewService(s.provider, settings)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +36,7 @@ func liveDisabled(t *testing.T, s *liveServer, host string, disabled func() []st
 		if ips == nil {
 			want = nil
 		}
-		s.expect(t, fmt.Sprintf("update %d", i+1), fqdn, s.ttls[0], want...)
+		s.expect(t, fmt.Sprintf("update %d", i+1), fqdn, ttl, want...)
 		got := disabled()
 		slices.Sort(got)
 		if !slices.Equal(got, []string{"2001:db8::2", "2001:db8::bad"}) {
@@ -80,6 +86,59 @@ func TestLiveMikrotikDisabled(t *testing.T) {
 		for _, row := range run("/ip/dns/static/print", "?name="+fqdn) {
 			if row["disabled"] == "true" && row["ttl"] == "5m" {
 				ips = append(ips, row["address"])
+			}
+		}
+		return ips
+	})
+}
+
+// AdGuard Home: a disabled rewrite, which its API makes by an update of one added.
+func TestLiveAdGuardHomeDisabled(t *testing.T) {
+	s := &liveServer{provider: "adguardhome", settings: liveSettings(t, "IPV6DDNS_LIVE_ADGUARDHOME")}
+	s.zone = fmt.Sprint(s.settings["zone"])
+	s.records = dnsRecords(liveEnv(t, "IPV6DDNS_LIVE_ADGUARDHOME_DNS"))
+	service, err := NewService("adguardhome", s.with("", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := service.(*AdGuardHome)
+	client := newHTTPClient(nil)
+	fqdn := "live-disabled." + s.zone
+	list := func() []adGuardRewrite {
+		t.Helper()
+		var rewrites []adGuardRewrite
+		if err := a.call(client, http.MethodGet, "list", nil, &rewrites); err != nil {
+			t.Fatal(err)
+		}
+		return rewrites
+	}
+	removeAll := func() {
+		for _, r := range list() {
+			if r.Domain == fqdn {
+				if err := a.call(client, http.MethodPost, "delete", adGuardRewrite{Domain: r.Domain, Answer: r.Answer}, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	removeAll()
+	t.Cleanup(removeAll)
+	off := false
+	for _, ip := range []string{"2001:db8::2", "2001:db8::bad"} {
+		rewrite := adGuardRewrite{Domain: fqdn, Answer: ip}
+		if err := a.call(client, http.MethodPost, "add", rewrite, nil); err != nil {
+			t.Fatal(err)
+		}
+		update := map[string]any{"target": rewrite, "update": adGuardRewrite{Domain: fqdn, Answer: ip, Enabled: &off}}
+		if err := a.call(client, http.MethodPut, "update", update, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	liveDisabled(t, s, "live-disabled", func() []string {
+		var ips []string
+		for _, r := range list() {
+			if r.Domain == fqdn && r.Enabled != nil && !*r.Enabled {
+				ips = append(ips, r.Answer)
 			}
 		}
 		return ips
