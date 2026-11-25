@@ -136,6 +136,7 @@ IPV6DDNS_LIVE_CLOUDFLARE='{"api_token": "...", "zone": "example.com", "ttl": "5m
 IPV6DDNS_LIVE_ROUTE53='{"access_key_id": "...", "secret_access_key": "...", "region": "us-east-1", "hosted_zone_id": "Z...", "ttl": "5m"}' IPV6DDNS_LIVE_ROUTE53_NAME=ipv6ddns-live \
 IPV6DDNS_LIVE_DUCKDNS='{"api_token": "..."}' IPV6DDNS_LIVE_DUCKDNS_NAME=a-name-of-the-account \
 IPV6DDNS_LIVE_DESEC='{"token": "...", "zone": "example.com"}' IPV6DDNS_LIVE_DESEC_NAME=ipv6ddns-live \
+IPV6DDNS_LIVE_HETZNER='{"api_token": "...", "zone": "example.com"}' IPV6DDNS_LIVE_HETZNER_NAME=ipv6ddns-live \
 tools/live-providers.sh
 ```
 

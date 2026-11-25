@@ -17,6 +17,7 @@ var (
 	_ TXTWriter = (*Route53)(nil)
 	_ TXTWriter = (*DuckDNS)(nil)
 	_ TXTWriter = (*DeSEC)(nil)
+	_ TXTWriter = (*Hetzner)(nil)
 )
 
 // The providers registered as TXT writers are those whose services are, and no other: of each
@@ -28,7 +29,7 @@ func TestTXTProvidersRegistered(t *testing.T) {
 			t.Errorf("%s: a TXTWriter %v, registered as one %v", name, writes, WritesTXT(name))
 		}
 	}
-	if got := TXTProviders(); got != "cloudflare, desec, duckdns, rfc2136 or route53" {
+	if got := TXTProviders(); got != "cloudflare, desec, duckdns, hetzner, rfc2136 or route53" {
 		t.Errorf("listed as %q", got)
 	}
 }

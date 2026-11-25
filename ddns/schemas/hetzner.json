@@ -1,0 +1,27 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "Hetzner DNS, through the Hetzner Cloud API, of a zone in Hetzner's console. A change is done once Hetzner says so.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "api_token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "An API token of the project of the zone, with read and write: in Hetzner's console, under Security, API tokens."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The zone, as example.com."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL, as 5m or 1h. Default: the zone's."
+        }
+    },
+    "required": [
+        "api_token",
+        "zone"
+    ]
+}

@@ -9,6 +9,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`desec`](#desec)
 - [`duckdns`](#duckdns)
 - [`gravity`](#gravity)
+- [`hetzner`](#hetzner)
 - [`mikrotik`](#mikrotik)
 - [`openwrt`](#openwrt)
 - [`opnsense_unbound`](#opnsense_unbound)
@@ -78,6 +79,18 @@ Gravity, a DNS server for home networks, through its API. The zone itself is the
 | `api_key` | string | **Required.** An API key. |
 | `zone` | string | **Required.** The zone, ending in a dot, as home.lan. |
 | `ttl` | string | The records' TTL, as 5m or 1h. Default: 5m. Gravity v0.32 and later keeps a TTL per record, and requires it. |
+
+## hetzner
+
+Hetzner DNS, through the Hetzner Cloud API, of a zone in Hetzner's console. A change is done once Hetzner says so.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
+| Key | Takes | |
+|---|---|---|
+| `api_token` | string | **Required.** An API token of the project of the zone, with read and write: in Hetzner's console, under Security, API tokens. |
+| `zone` | string | **Required.** The zone, as example.com. |
+| `ttl` | string | The records' TTL, as 5m or 1h. Default: the zone's. |
 
 ## mikrotik
 

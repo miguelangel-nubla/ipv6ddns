@@ -373,3 +373,121 @@ func TestLiveDeSEC(t *testing.T) {
 
 	s.run(t, fqdn, spellings...)
 }
+
+// Hetzner: IPV6DDNS_LIVE_HETZNER has the settings, with a token of the project of the zone, and
+// IPV6DDNS_LIVE_HETZNER_NAME the name to use in it. The records are read with the Cloud API, asked
+// as its documentation says and not through the provider's client.
+func TestLiveHetzner(t *testing.T) {
+	const api = "https://api.hetzner.cloud/v1"
+	s := &liveServer{provider: "hetzner", settings: liveSettings(t, "IPV6DDNS_LIVE_HETZNER"), ttls: []string{"5m", "10m"}}
+	s.zone = strings.ToLower(strings.Trim(fmt.Sprint(s.settings["zone"]), "."))
+	fqdn, spellings := cloudName(t, "IPV6DDNS_LIVE_HETZNER_NAME", s.zone)
+	sub := RelativeName(fqdn, s.zone)
+
+	call := func(t *testing.T, method, path string, body any, result any) {
+		t.Helper()
+		for {
+			var payload io.Reader
+			if body != nil {
+				raw, _ := json.Marshal(body)
+				payload = bytes.NewReader(raw)
+			}
+			request, err := http.NewRequest(method, api+path, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+fmt.Sprint(s.settings["api_token"]))
+			request.Header.Set("Content-Type", "application/json")
+			response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+			if err != nil {
+				t.Fatalf("%s %s: %v", method, path, withoutURL(err))
+			}
+			data, _ := io.ReadAll(response.Body)
+			response.Body.Close()
+			if response.StatusCode == http.StatusTooManyRequests {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			if response.StatusCode >= 300 {
+				t.Fatalf("%s %s: %s: %s", method, path, response.Status, data)
+			}
+			if result != nil {
+				if err := json.Unmarshal(data, result); err != nil {
+					t.Fatalf("%s %s: %v", method, path, err)
+				}
+			}
+			return
+		}
+	}
+	var zones struct {
+		Zones []struct {
+			ID json.Number `json:"id"`
+		} `json:"zones"`
+	}
+	call(t, http.MethodGet, "/zones?name="+url.QueryEscape(s.zone), nil, &zones)
+	if len(zones.Zones) != 1 {
+		t.Fatalf("%d zones of the name %s", len(zones.Zones), s.zone)
+	}
+	zone := "/zones/" + zones.Zones[0].ID.String()
+	set := func(t *testing.T, rrType string) *hetznerRRset {
+		t.Helper()
+		var answer struct {
+			RRsets []hetznerRRset `json:"rrsets"`
+		}
+		call(t, http.MethodGet, zone+"/rrsets?name="+url.QueryEscape(sub)+"&type="+rrType, nil, &answer)
+		for _, r := range answer.RRsets {
+			if strings.EqualFold(r.Name, sub) && r.Type == rrType {
+				return &r
+			}
+		}
+		return nil
+	}
+	s.records = func(t *testing.T, name, rrType string) []liveRecord {
+		t.Helper()
+		if !strings.EqualFold(name, fqdn) {
+			t.Fatalf("asked for %s, the test's name is %s", name, fqdn)
+		}
+		r := set(t, rrType)
+		if r == nil {
+			return nil
+		}
+		ttl := 0
+		if r.TTL != nil {
+			ttl = *r.TTL
+		}
+		var records []liveRecord
+		for _, v := range r.Records {
+			records = append(records, liveRecord{strings.Trim(v.Value, `"`), ttl})
+		}
+		return records
+	}
+
+	// The TXT record of the name, which no update is to touch.
+	if set(t, "TXT") == nil {
+		ttl := 300
+		call(t, http.MethodPost, zone+"/rrsets", hetznerRRset{Name: sub, Type: "TXT", TTL: &ttl, Records: []hetznerRecord{{Value: quoteTXT(liveKeep)}}}, nil)
+	}
+	t.Cleanup(func() {
+		if r := set(t, "TXT"); r != nil && len(r.Records) == 1 && strings.Trim(r.Records[0].Value, `"`) == liveKeep {
+			call(t, http.MethodDelete, zone+"/rrsets/"+url.PathEscape(sub)+"/TXT", nil, nil)
+		}
+	})
+	s.fixtures = func(t *testing.T) {
+		t.Helper()
+		if got := s.records(t, fqdn, "TXT"); len(got) != 1 || got[0].data != liveKeep {
+			t.Errorf("%s has the TXT records %v, want its %q untouched", fqdn, got, liveKeep)
+		}
+	}
+	s.service = func(t *testing.T, raw json.RawMessage) (Service, func() int) {
+		t.Helper()
+		service, err := NewService("hetzner", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxied, writes := countingProxy(t, api, func(r *http.Request) bool { return r.Method != http.MethodGet })
+		service.(*Hetzner).apiBaseURL = proxied
+		return service, writes
+	}
+
+	s.run(t, fqdn, spellings...)
+}
