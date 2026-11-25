@@ -276,22 +276,4 @@ Plugins read the tables of the families that are on. They take only the entries 
 
 ### A UniFi gateway
 
-A `unifi` plugin reads the clients that the gateway's UniFi Network has connected now, UniFi's own devices included: of a UniFi OS console, of UniFi OS Server, or of a self-hosted Network Application.
-
-```yaml
-discovery:
-  plugins:
-    gateway:
-      type: unifi
-      interval: 60s
-      address: https://192.168.1.1
-      api_key: ${file:unifi_api_key}
-      tls_fingerprint: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-```
-
-- **Addresses:** each client's IPv4 address, and its IPv6 addresses where UniFi has them. UniFi doesn't always know a client's IPv6 addresses, privacy ones in particular, so keep local discovery on for those.
-- **Names:** the host name the client gave the gateway's DHCP server, and the name you gave the client in UniFi. A name with a space becomes one with a hyphen, as `living-room-tv`; one with a character no name has, such as an apostrophe, is left out.
-- **Login:** an API key, which a console makes under Settings, Control Plane, Integrations, or a `username` and `password` of a local user that can only read. A self-hosted Network Application has no API keys.
-- **The certificate:** a console's is its own, so give its fingerprint, which `openssl s_client -connect 192.168.1.1:443 </dev/null | openssl x509 -outform der | openssl dgst -sha256` shows.
-
-The same gateway can keep the names, too: see the [`unifi` provider](reference/providers.md#unifi).
+A `unifi` plugin reads the clients that the gateway's UniFi Network has connected now, with their addresses and names: of a UniFi OS console, of UniFi OS Server, or of a self-hosted Network Application. The setup, the login and what it registers are on the [UniFi page](unifi.md#discovery-plugin), with the gateway's DNS records too.
