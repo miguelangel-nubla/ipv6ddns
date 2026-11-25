@@ -144,6 +144,8 @@ go test ./cmd/ipv6ddns -update
 
 The same command redraws the pictures of the report, the `.svg` files in `docs/images/`, each from the `.txt` file beside it. Change the text, never the pictures. A test holds the pictures' colors to those the program gives each kind of line.
 
+The picture of how ipv6ddns works, `architecture-light.svg`, is a drawing: edit it, and the same command draws `architecture-dark.svg` from it, in the dark colors. Check that every text still fits its box, in a browser.
+
 ### Guides
 
 The [guides](docs/guides/README.md) are linked from posts elsewhere, which nobody updates. So once a guide is published, its file name and its headings stay as they are, because those links use the headings' anchors.

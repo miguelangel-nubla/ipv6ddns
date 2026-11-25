@@ -5,6 +5,11 @@
 
 **DNS names for every device on your network, wherever its addresses move.**
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
+  <img src="docs/images/architecture-light.svg" alt="ipv6ddns, on one machine, finds the devices on your network, such as a server, a camera, a laptop or a printer, with no software on them, and keeps a DNS name pointing at each: at your DNS provider, in your router, or in its own DNS server. When a device's address changes, its name follows: server.example.com has its AAAA record move from 2001:db8:1::a to 2001:db8:2::a, and its A record from 203.0.113.7 to 203.0.113.9.">
+</picture>
+
 ipv6ddns finds every host on your LAN, over IPv6 and IPv4, and keeps a DNS name pointing at each one. The names can live at your DNS provider, at your router, or in ipv6ddns itself, acting as the LAN's DNS server. You install nothing on the devices and need no static addresses.
 
 - **Dynamic DNS for any device.** A server, a camera or a container is found by its MAC address, and its name is kept up to date at Cloudflare, Route 53, DuckDNS and others. The name can carry the network's public IPv4 next to the device's IPv6. When your ISP changes the IPv6 prefix, or a laptop picks a new address, `myserver.example.com` keeps working.

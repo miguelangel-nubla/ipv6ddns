@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" width="960" height="360" role="img" aria-labelledby="title">
+<!-- The light picture is the drawing: edit it, and go test ./internal/docgen -update draws the dark one, each color of its style in its dark one. -->
+<title id="title">ipv6ddns, on one machine, finds the devices on your network and keeps a DNS name pointing at each, at your DNS provider, in your router or in its own DNS server. When a device's address changes, IPv6 or IPv4, its name follows.</title>
+<style>
+  .bg { fill: #ffffff; }
+  .box { fill: #f6f8fa; stroke: #d0d7de; }
+  .chip { fill: #ffffff; stroke: #d0d7de; }
+  .core { fill: #eef4ff; stroke: #0f3a8a; stroke-width: 1.5; }
+  text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #1d2530; }
+  .big { font-size: 22px; font-weight: 700; fill: #0f3a8a; }
+  .h { font-size: 17px; font-weight: 700; fill: #0d1117; }
+  .t { font-size: 14px; fill: #1d2530; }
+  .s { font-size: 13px; fill: #5d6877; }
+  .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; fill: #1d2530; }
+  .n { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; font-weight: 600; fill: #0f3a8a; }
+  .old { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; fill: #5d6877; text-decoration: line-through; }
+  .gone { fill: #c0262d; font-weight: 700; }
+  .new { fill: #1d7a3e; font-weight: 700; }
+  .lab { font-size: 13px; font-weight: 600; fill: #0f3a8a; }
+  .ok { font-size: 13px; font-weight: 600; fill: #1d7a3e; }
+  .em { font-weight: 600; fill: #0d1117; }
+  .to { fill: #0f3a8a; font-weight: 700; }
+  .a { fill: none; stroke: #0f3a8a; stroke-width: 2; }
+  .tip { fill: #0f3a8a; }
+  .rt { fill: #5d6877; }
+  .ic { fill: none; stroke: #5d6877; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .ic .icf { fill: #5d6877; stroke: none; }
+  .ic .paper { fill: #ffffff; }
+</style>
+<defs><marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="tip"/></marker></defs>
+<rect width="960" height="360" rx="12" class="bg"/>
+<rect x="24" y="40" width="250" height="180" rx="12" class="box"/>
+<text x="149" y="74" class="h" text-anchor="middle">Your network</text>
+<rect x="48" y="96" width="94" height="34" rx="12" class="chip"/>
+<g class="ic" transform="translate(61 105)"><rect x="1" y="1.5" width="14" height="5.5" rx="1.5"/><rect x="1" y="9" width="14" height="5.5" rx="1.5"/><circle cx="4" cy="4.25" r="0.9" class="icf"/><circle cx="4" cy="11.75" r="0.9" class="icf"/></g>
+<text x="84" y="118" class="t">server</text>
+<rect x="152" y="96" width="94" height="34" rx="12" class="chip"/>
+<g class="ic" transform="translate(165 105)"><path d="M5 4.5 L6.3 2.5 H9.7 L11 4.5"/><rect x="1" y="4.5" width="14" height="10" rx="2"/><circle cx="8" cy="9.5" r="3"/></g>
+<text x="188" y="118" class="t">camera</text>
+<rect x="48" y="142" width="94" height="34" rx="12" class="chip"/>
+<g class="ic" transform="translate(61 151)"><rect x="3" y="2.5" width="10" height="8" rx="1"/><path d="M1 13.5 H15"/></g>
+<text x="84" y="164" class="t">laptop</text>
+<rect x="152" y="142" width="94" height="34" rx="12" class="chip"/>
+<g class="ic" transform="translate(165 151)"><rect x="4" y="1.5" width="8" height="4"/><rect x="1.5" y="5.5" width="13" height="6" rx="1.5"/><rect x="4" y="9.5" width="8" height="5" class="paper"/></g>
+<text x="188" y="164" class="t">printer</text>
+<text x="149" y="202" class="ok" text-anchor="middle">no software on them</text>
+<rect x="375" y="70" width="210" height="120" rx="12" class="core"/>
+<text x="480" y="120" class="big" text-anchor="middle">ipv6ddns</text>
+<text x="480" y="144" class="s" text-anchor="middle">on one machine</text>
+<rect x="686" y="40" width="250" height="180" rx="12" class="box"/>
+<text x="811" y="74" class="h" text-anchor="middle">DNS names</text>
+<g class="ic" transform="translate(728 99)"><path d="M4.5 13 H12 A3 3 0 0 0 12.3 7.05 A4.2 4.2 0 0 0 4.3 7.5 A2.8 2.8 0 0 0 4.5 13 Z"/></g>
+<text x="754" y="112" class="t">your <tspan class="em">DNS provider</tspan></text>
+<g class="ic" transform="translate(728 129)"><rect x="1" y="8" width="14" height="6" rx="1.5"/><path d="M4 8 L3 3 M12 8 L13 3"/><circle cx="4.5" cy="11" r="0.8" class="icf"/><circle cx="7" cy="11" r="0.8" class="icf"/><circle cx="9.5" cy="11" r="0.8" class="icf"/></g>
+<text x="754" y="142" class="t">your <tspan class="em">router</tspan></text>
+<g class="ic" transform="translate(728 159)"><path d="M8 1.5 L13.5 3.5 V7.5 C13.5 11 11 13.5 8 14.5 C5 13.5 2.5 11 2.5 7.5 V3.5 Z"/><path d="M5.5 8 L7.3 9.8 L10.5 6.3"/></g>
+<text x="754" y="172" class="t">its <tspan class="em">own DNS server</tspan></text>
+<text x="811" y="202" class="ok" text-anchor="middle">kept up to date</text>
+<path d="M375 130.0 L274 130.0" class="a" marker-end="url(#tip)"/>
+<text x="324.5" y="118.0" class="lab" text-anchor="middle">finds them</text>
+<path d="M585 130.0 L686 130.0" class="a" marker-end="url(#tip)"/>
+<text x="635.5" y="118.0" class="lab" text-anchor="middle">names them</text>
+<text x="480.0" y="270" class="s" text-anchor="middle">When a device&#x27;s address changes, <tspan class="em">its name follows</tspan>:</text>
+<text x="224" y="316" class="m" xml:space="preserve"><tspan class="n">server.example.com</tspan>  <tspan class="to">→</tspan></text>
+<text x="431" y="304" class="m" xml:space="preserve"><tspan class="rt">AAAA</tspan>  <tspan class="old">2001:db8:<tspan class="gone">1</tspan>::a</tspan>  2001:db8:<tspan class="new">2</tspan>::a</text>
+<text x="431" y="328" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">203.0.113.<tspan class="gone">7</tspan></tspan>    203.0.113.<tspan class="new">9</tspan></text>
+</svg>
