@@ -11,3 +11,4 @@ Running ipv6ddns as the Home Assistant app? Start at the [guides for the app](ho
 | The same name on a network with several ISPs, fiber and LTE or two providers, with the addresses of each, that fails over when one goes down | [Multi-WAN: a public name on a network with several ISPs](multi-wan.md) |
 | Every device by name, in the AdGuard Home you already run | [Every device by name, in AdGuard Home](adguard-home.md) |
 | Every device by name, in the Pi-hole you already run | [Every device by name, in Pi-hole](pi-hole.md) |
+| A Let's Encrypt certificate for another machine, the NAS or a proxy, by its ACME client, without giving it your DNS provider's token | [Certificates for other machines](certificates-for-other-machines.md) |

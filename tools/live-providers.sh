@@ -26,6 +26,10 @@ PIHOLE_IMAGE=${PIHOLE_IMAGE:-pihole/pihole:2026.11.0}
 PEBBLE_IMAGE=${PEBBLE_IMAGE:-ghcr.io/letsencrypt/pebble@sha256:c156cabea562e43ed0060bddc03539c07de40e311b52c6b0e5ea710a496e56b8}
 BIND_IMAGE=${BIND_IMAGE:-internetsystemsconsortium/bind9:9.20@sha256:978201d91548ec63c3b1c1befd5e6a3c9fa127f79f9058fd82d8e3493fe90ce1}
 # The UniFi Network Application 10.6.109, self-hosted, and the MongoDB it keeps its settings in.
+# The ACME clients that get certificates through the resolver's dynamic updates.
+CERTBOT_IMAGE=${CERTBOT_IMAGE:-certbot/dns-rfc2136:v5.10.0@sha256:bc280757312c9b26cc614475977aa0445b0bf6bd7119d68c4f464cbaa9de9959}
+LEGO_IMAGE=${LEGO_IMAGE:-goacme/lego:v5.7.0@sha256:9fe6151508c0e1ddc51a6d3e474353520f4b008782bf0c6d31676da72e6d4766}
+ACMESH_IMAGE=${ACMESH_IMAGE:-neilpang/acme.sh:3.1.7@sha256:78d9f4ec812fd1ca48d565fac9fee78ca67f607175afc3c58f62784b4100a369}
 UNIFI_IMAGE=${UNIFI_IMAGE:-lscr.io/linuxserver/unifi-network-application:10.6.109-ls155}
 MONGO_IMAGE=${MONGO_IMAGE:-mongo@sha256:41e8195b2791692695e1dc9bd21cd51d0a3af05fff8ace9304a5c1acf94f1ae1}
 OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
@@ -239,6 +243,10 @@ docker run -d --name "$prefix-pebble" --network "container:$prefix-bind" -e PEBB
 	"$PEBBLE_IMAGE" -config test/config/pebble-config.json -dnsserver 127.0.0.1:53 >/dev/null
 docker cp -q "$prefix-pebble:/test/certs/pebble.minica.pem" "$work/pebble-ca.pem"
 pebble=https://127.0.0.1:$(port bind 14000/tcp)
+# The ACME clients join BIND's network, where Pebble is, and reach the resolver of the tests on
+# this machine: Docker Desktop's host, or the gateway of the network, on Linux.
+acme_host=$(docker exec "$prefix-bind" getent ahostsv4 host.docker.internal 2>/dev/null | awk '{ print $1; exit }')
+[ -n "$acme_host" ] || acme_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$prefix-bind")
 wait_for Pebble curl -fs --cacert "$work/pebble-ca.pem" "$pebble/dir"
 
 # Technitium: an API token, a primary zone and the records.
@@ -325,6 +333,9 @@ export IPV6DDNS_LIVE_RFC2136_DNS="127.0.0.1:$(port bind 53/udp)"
 export IPV6DDNS_LIVE_PEBBLE="$pebble/dir"
 export IPV6DDNS_LIVE_PEBBLE_MANAGEMENT="https://127.0.0.1:$(port bind 15000/tcp)"
 export IPV6DDNS_LIVE_PEBBLE_CA="$work/pebble-ca.pem"
+export IPV6DDNS_LIVE_ACME_NETWORK="container:$prefix-bind"
+export IPV6DDNS_LIVE_ACME_HOST="$acme_host"
+export IPV6DDNS_LIVE_CERTBOT_IMAGE="$CERTBOT_IMAGE" IPV6DDNS_LIVE_LEGO_IMAGE="$LEGO_IMAGE" IPV6DDNS_LIVE_ACMESH_IMAGE="$ACMESH_IMAGE"
 export IPV6DDNS_LIVE_OPENWRT="{\"address\":\"127.0.0.1:$openwrt_ssh\",\"username\":\"root\",\"ssh_key\":\"$work/key\",\"host_key\":\"${openwrt_host_keys%% *}\",\"zone\":\"lan\"}"
 export IPV6DDNS_LIVE_OPENWRT_DNS="127.0.0.1:$(port openwrt 53/udp)"
 export IPV6DDNS_LIVE_OPENWRT_HOST_KEYS="$openwrt_host_keys"

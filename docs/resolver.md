@@ -380,7 +380,7 @@ Each permission is of one kind:
 
 | Kind | What the key may change | Who sends it |
 |---|---|---|
-| `challenges` | The TXT records of the DNS challenge, `_acme-challenge` of each name, written through a credential of the public zone | certbot, lego or acme.sh on another machine, to get a certificate |
+| `challenges` | The TXT records of the DNS challenge, `_acme-challenge` of each name, written through a credential of the public zone | certbot, lego or acme.sh on another machine, to get a certificate: see [certificates for other machines](guides/certificates-for-other-machines.md) |
 | `addresses` | The A and AAAA records of one name, which become the addresses of a push [source](sources.md) | A host that updates its own address with `nsupdate`, or a router's RFC 2136 client |
 | `names` | The names of the hosts of a zone, with their addresses, which go to the hosts discovery found | A DHCP server's dynamic DNS: Kea, ISC dhcpd, Windows |
 
