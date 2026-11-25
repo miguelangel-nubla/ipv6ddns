@@ -208,6 +208,11 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		if len(spec.Encrypted) > 0 {
 			spec.Certificate = w.certificate(spec.CertificateName)
 		}
+		keys, err := w.updateKeys(name, cfg.Resolvers[name].Updates)
+		if err != nil {
+			return nil, err
+		}
+		spec.UpdateKeys, spec.Infof, spec.Warnf = keys, logger.Infof, logger.Warnf
 		server, err := resolver.New(spec, logger.Errorf)
 		if err != nil {
 			return nil, err
@@ -755,6 +760,20 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 		detail("        Cache: %s", cached)
 		if s.Certificate != "" {
 			plain("        Certificate: %s", s.Certificate)
+		}
+		if len(s.Keys) > 0 {
+			plain("        Keys:")
+		}
+		for _, k := range s.Keys {
+			counts := fmt.Sprintf("applied %d, refused %d, failed %d", k.Updates[resolver.UpdateApplied], k.Updates[resolver.UpdateRefused], k.Updates[resolver.UpdateFailed])
+			page.Add(pretty.As(pretty.Name, prefix+"            "+k.Name), pretty.Span{Text: fmt.Sprintf(" (%s): %s", strings.Join(k.Permissions, ", "), counts)})
+			if k.Last != nil {
+				style := pretty.Detail
+				if k.LastResult != resolver.UpdateApplied {
+					style = pretty.Warn
+				}
+				page.Add(pretty.Span{Text: prefix + "                Last: "}, pretty.As(style, fmt.Sprintf("%s, %s: %s", k.Last.Local().Format(time.DateTime), k.LastResult, k.LastMessage)))
+			}
 		}
 	}
 	return page

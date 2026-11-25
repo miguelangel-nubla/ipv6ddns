@@ -71,6 +71,11 @@ type Server struct {
 	// The reverse zones of the private networks it answers itself: absolute, in lower case.
 	private []string
 
+	// The keys of the dynamic updates, by name, absolute and in lower case: none without.
+	keys keyring
+	// One update at a time, and no answer of a grant's records while one is made.
+	updateMutex sync.Mutex
+
 	mutex   sync.Mutex
 	servers []*dns.Server
 	// The servers of DNS over HTTPS, and the listeners of DNS over QUIC, with their connections.
@@ -122,6 +127,11 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 	if !cfg.ForwardUnknownPrivateReverse {
 		s.private = privateZones()
 	}
+	keys, err := newKeys(cfg.Path, cfg.UpdateKeys)
+	if err != nil {
+		return nil, err
+	}
+	s.keys = keyring(keys)
 	return s, nil
 }
 
@@ -305,6 +315,12 @@ func (s *Server) Start() error {
 		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, cert.Config(alpnTLS)), Net: "tcp-tls", Handler: s,
 			NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
+	// With keys, the signatures are checked, and updates taken.
+	if len(s.keys) > 0 {
+		for _, srv := range servers {
+			srv.TsigProvider, srv.MsgAcceptFunc = s.keys, acceptUpdates
+		}
+	}
 	s.mutex.Lock()
 	s.servers, s.listening, s.allow, s.serving = servers, listening, allow, true
 	s.mutex.Unlock()
@@ -463,6 +479,12 @@ func (s *Server) allowed(addr net.Addr) bool {
 
 // ServeDNS answers a query over plain DNS, or over TLS.
 func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+	// A signature is checked by the server, of the keys', and with keys alone: without, it is
+	// unchecked, and the message is as any other.
+	if t := req.IsTsig(); t != nil && len(s.keys) > 0 && !req.Response {
+		s.serveSigned(w, req, t)
+		return
+	}
 	_, overUDP := w.RemoteAddr().(*net.UDPAddr)
 	resp := s.respond(req, w.RemoteAddr())
 	if resp == nil {
@@ -496,6 +518,11 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 		return nil, ""
 	}
 	if !s.allowed(remote) {
+		return reply(req, dns.RcodeRefused), Refused
+	}
+	// An update unsigned, or signed over DNS over HTTPS or over QUIC, where signatures aren't
+	// checked: refused, of a resolver that takes updates. A query signed there is refused too.
+	if len(s.keys) > 0 && (req.Opcode == dns.OpcodeUpdate || req.IsTsig() != nil) {
 		return reply(req, dns.RcodeRefused), Refused
 	}
 	if req.Opcode != dns.OpcodeQuery {
@@ -727,6 +754,8 @@ type Status struct {
 	CacheSize    int `json:"cache_size"`
 	// The certificate of the encrypted transports, of certificates, by its name: none without them.
 	Certificate string `json:"certificate,omitempty"`
+	// The keys of the dynamic updates, by name: none without.
+	Keys []KeyStatus `json:"keys,omitempty"`
 }
 
 func (s *Server) Status() Status {
@@ -780,5 +809,6 @@ func (s *Server) Status() Status {
 	if len(s.config.Encrypted) > 0 {
 		status.Certificate = s.config.CertificateName
 	}
+	status.Keys = s.keysStatus()
 	return status
 }

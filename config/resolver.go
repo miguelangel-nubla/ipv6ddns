@@ -46,6 +46,8 @@ type Resolver struct {
 	// upstream servers, out of RFC 6303, as of a local server that knows more of their names.
 	// Default: false, no such name, its own.
 	ForwardUnknownPrivateReverseQueries bool `json:"forward_unknown_private_reverse_queries,omitempty"`
+	// The dynamic updates it takes, by RFC 2136, of the clients that hold a key.
+	Updates *Updates `json:"updates,omitempty"`
 
 	// The resolver, checked, with its zones.
 	Spec resolver.Config `json:"-"`
@@ -91,6 +93,8 @@ func (c *Config) setUpResolvers() error {
 	names := slices.Sorted(maps.Keys(c.Resolvers))
 	// Every resolver's entries, to tell those two share.
 	listening := make(map[string]string)
+	// What the keys of every resolver may change.
+	claimed := make(claims)
 	for _, name := range names {
 		r := c.Resolvers[name]
 		path := "resolvers." + name
@@ -193,6 +197,9 @@ func (c *Config) setUpResolvers() error {
 			}
 			spec.Records = append(spec.Records, rr)
 			spec.Lines = append(spec.Lines, line)
+		}
+		if err := c.setUpUpdates(path, &r, &spec, claimed); err != nil {
+			return err
 		}
 		r.Spec = spec
 		c.Resolvers[name] = r

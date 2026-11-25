@@ -99,6 +99,64 @@ DNS servers for the clients on a network, by name. Each answers the zones of its
 | `records` | list of string | - | Records of names outside its zones, one per entry, in zone file syntax, with every name absolute and ending in a dot: www.example.com. CNAME nas.lan.example.com. A record without a TTL gets 1m. |
 | `cache_size` | number | - | How many answers of the upstream servers it keeps, each for its TTL: a day at most, and an hour for a name that doesn't exist or has no data. When full, the one asked longest ago goes first. Default: 10000. 0 keeps none, and every query goes upstream. Local names are never kept: they follow discovery at once. |
 | `forward_unknown_private_reverse_queries` | boolean | `false` | Whether to ask the upstream servers for the reverse name of a private address the resolver has no name for: for an upstream server that knows more names, as a router does for its DHCP clients. By default, as RFC 6303 says, the resolver answers that there's no such name, and the question never leaves it. The private ranges are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and documentation ones, fd00::/8, fe80::/10, ::1 and 2001:db8::/32. |
+| `updates` | object | - | Dynamic updates, by RFC 2136: the clients that hold one of keys may change records, each within its permissions, over plain DNS or DNS over TLS. A query signed with a key is answered with authority about the names of its permissions, as certbot and nsupdate find their zone; any other query, unsigned or not, as before. An unsigned update is refused. See [dynamic updates](../resolver.md#dynamic-updates). |
+
+### updates
+
+`resolvers.<name>.updates`
+
+Dynamic updates, by RFC 2136: the clients that hold one of keys may change records, each within its permissions, over plain DNS or DNS over TLS. A query signed with a key is answered with authority about the names of its permissions, as certbot and nsupdate find their zone; any other query, unsigned or not, as before. An unsigned update is refused. See [dynamic updates](../resolver.md#dynamic-updates).
+
+| Key | Takes | |
+|---|---|---|
+| `allow` | list, or comma separated | The networks or addresses the keys may send from, of those that give none, as 192.168.1.0/24. Default: the resolver's allow. |
+| `keys` | object | **Required.** The TSIG keys, by their names, as the clients give them: nas, as certbot's dns_rfc2136_name. tsig-keygen -a hmac-sha256 nas makes one. |
+
+### keys
+
+`resolvers.<name>.updates.keys.<name>`
+
+The TSIG keys, by their names, as the clients give them: nas, as certbot's dns_rfc2136_name. tsig-keygen -a hmac-sha256 nas makes one.
+
+| Key | Takes | Default | |
+|---|---|---|---|
+| `secret` | string | - | **Required.** The key's secret, in base64, as tsig-keygen writes it: 16 bytes at least. Keep it in a file, as ${file:tsig_nas}. |
+| `algorithm` | `hmac-sha256`, `hmac-sha384`, `hmac-sha512` | `hmac-sha256` | The algorithm of the key. |
+| `allow` | list, or comma separated | - | The networks or addresses this key may send from, as 198.51.100.0/24. Default: the allow of updates. |
+| `permissions` | list of object | - | **Required.** What the key may change, each a permission of one kind: challenges, addresses or names. An update goes to the first permission that holds all of it. A name can be changed by one key alone. |
+
+### permissions: challenges
+
+`resolvers.<name>.updates.keys.<name>.permissions[].challenges`
+
+The TXT records of the DNS challenge of ACME, of some names, written through a credential: what certbot, lego or acme.sh on another machine changes to get a certificate. Of each name, _acme-challenge and its name alone.
+
+| Key | Takes | |
+|---|---|---|
+| `credential` | string | **Required.** The credential of the public zone of the names, which writes the records: of cloudflare, route53, rfc2136 or duckdns. |
+| `names` | list, or comma separated | **Required.** The names of the certificates, relative to the zone of the credential, as acme's: nas.lan, or *.apps. A wildcard and its parent have one challenge, so either allows both. None may be a name of a certificate of ipv6ddns's own. |
+
+### permissions: addresses
+
+`resolvers.<name>.updates.keys.<name>.permissions[].addresses`
+
+The A and AAAA records of a name, which go to a push source as its addresses: what a host that updates its own address with nsupdate, or a router's RFC 2136 client, changes.
+
+| Key | Takes | |
+|---|---|---|
+| `source` | string | **Required.** The push source the addresses go to. |
+| `zone` | string | **Required.** The zone of the name, as the client gives it its updates: example.com. |
+| `name` | string | The name the client updates, relative to the zone. Default: the source's name. |
+
+### permissions: names
+
+`resolvers.<name>.updates.keys.<name>.permissions[].names`
+
+The names of the hosts of a zone, with their addresses, as a DHCP server's dynamic DNS sends them: Kea, ISC dhcpd, Windows. Each name goes to the host discovery found at its address.
+
+| Key | Takes | |
+|---|---|---|
+| `zone` | string | **Required.** The zone of the names, as the DHCP server gives it: lan.example.com. |
 
 ## Sources
 

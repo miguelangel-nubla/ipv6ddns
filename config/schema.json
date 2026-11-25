@@ -231,6 +231,128 @@
                         "type": "boolean",
                         "default": false,
                         "description": "Whether to ask the upstream servers for the reverse name of a private address the resolver has no name for: for an upstream server that knows more names, as a router does for its DHCP clients. By default, as RFC 6303 says, the resolver answers that there's no such name, and the question never leaves it. The private ranges are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and documentation ones, fd00::/8, fe80::/10, ::1 and 2001:db8::/32."
+                    },
+                    "updates": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Dynamic updates, by RFC 2136: the clients that hold one of keys may change records, each within its permissions, over plain DNS or DNS over TLS. A query signed with a key is answered with authority about the names of its permissions, as certbot and nsupdate find their zone; any other query, unsigned or not, as before. An unsigned update is refused. See [dynamic updates](../resolver.md#dynamic-updates).",
+                        "properties": {
+                            "allow": {
+                                "$ref": "#/$defs/stringList",
+                                "description": "The networks or addresses the keys may send from, of those that give none, as 192.168.1.0/24. Default: the resolver's allow."
+                            },
+                            "keys": {
+                                "type": "object",
+                                "minProperties": 1,
+                                "description": "The TSIG keys, by their names, as the clients give them: nas, as certbot's dns_rfc2136_name. tsig-keygen -a hmac-sha256 nas makes one.",
+                                "additionalProperties": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "secret": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "The key's secret, in base64, as tsig-keygen writes it: 16 bytes at least. Keep it in a file, as ${file:tsig_nas}."
+                                        },
+                                        "algorithm": {
+                                            "type": "string",
+                                            "enum": [
+                                                "hmac-sha256",
+                                                "hmac-sha384",
+                                                "hmac-sha512"
+                                            ],
+                                            "default": "hmac-sha256",
+                                            "description": "The algorithm of the key."
+                                        },
+                                        "allow": {
+                                            "$ref": "#/$defs/stringList",
+                                            "description": "The networks or addresses this key may send from, as 198.51.100.0/24. Default: the allow of updates."
+                                        },
+                                        "permissions": {
+                                            "type": "array",
+                                            "minItems": 1,
+                                            "description": "What the key may change, each a permission of one kind: challenges, addresses or names. An update goes to the first permission that holds all of it. A name can be changed by one key alone.",
+                                            "items": {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "minProperties": 1,
+                                                "maxProperties": 1,
+                                                "properties": {
+                                                    "challenges": {
+                                                        "type": "object",
+                                                        "additionalProperties": false,
+                                                        "description": "The TXT records of the DNS challenge of ACME, of some names, written through a credential: what certbot, lego or acme.sh on another machine changes to get a certificate. Of each name, _acme-challenge and its name alone.",
+                                                        "properties": {
+                                                            "credential": {
+                                                                "type": "string",
+                                                                "minLength": 1,
+                                                                "description": "The credential of the public zone of the names, which writes the records: of cloudflare, route53, rfc2136 or duckdns."
+                                                            },
+                                                            "names": {
+                                                                "$ref": "#/$defs/stringList",
+                                                                "description": "The names of the certificates, relative to the zone of the credential, as acme's: nas.lan, or *.apps. A wildcard and its parent have one challenge, so either allows both. None may be a name of a certificate of ipv6ddns's own."
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "credential",
+                                                            "names"
+                                                        ]
+                                                    },
+                                                    "addresses": {
+                                                        "type": "object",
+                                                        "additionalProperties": false,
+                                                        "description": "The A and AAAA records of a name, which go to a push source as its addresses: what a host that updates its own address with nsupdate, or a router's RFC 2136 client, changes.",
+                                                        "properties": {
+                                                            "source": {
+                                                                "type": "string",
+                                                                "minLength": 1,
+                                                                "description": "The push source the addresses go to."
+                                                            },
+                                                            "zone": {
+                                                                "type": "string",
+                                                                "minLength": 1,
+                                                                "description": "The zone of the name, as the client gives it its updates: example.com."
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "minLength": 1,
+                                                                "description": "The name the client updates, relative to the zone. Default: the source's name."
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "source",
+                                                            "zone"
+                                                        ]
+                                                    },
+                                                    "names": {
+                                                        "type": "object",
+                                                        "additionalProperties": false,
+                                                        "description": "The names of the hosts of a zone, with their addresses, as a DHCP server's dynamic DNS sends them: Kea, ISC dhcpd, Windows. Each name goes to the host discovery found at its address.",
+                                                        "properties": {
+                                                            "zone": {
+                                                                "type": "string",
+                                                                "minLength": 1,
+                                                                "description": "The zone of the names, as the DHCP server gives it: lan.example.com."
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "zone"
+                                                        ]
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "secret",
+                                        "permissions"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "keys"
+                        ]
                     }
                 },
                 "required": [

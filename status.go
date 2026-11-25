@@ -321,6 +321,14 @@ func (s Status) WriteMetrics(out io.Writer) error {
 	for _, r := range s.Resolvers {
 		fmt.Fprintf(&b, "ipv6ddns_resolver_cache_entries%s %d\n", resolverLabels(r.Name), r.CacheEntries)
 	}
+	metric("ipv6ddns_resolver_updates_total", "counter", "The dynamic updates a key of a resolver sent, by result: applied, refused, failed.")
+	for _, r := range s.Resolvers {
+		for _, k := range r.Keys {
+			for _, result := range []string{resolver.UpdateApplied, resolver.UpdateRefused, resolver.UpdateFailed} {
+				fmt.Fprintf(&b, "ipv6ddns_resolver_updates_total%s %d\n", resolverLabels(r.Name, "key", k.Name, "result", result), k.Updates[result])
+			}
+		}
+	}
 	metric("ipv6ddns_resolver_upstream_failures_total", "counter", "The queries an upstream server of a resolver didn't answer in time.")
 	for _, r := range s.Resolvers {
 		for _, upstream := range r.Upstreams {

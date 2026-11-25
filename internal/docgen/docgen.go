@@ -229,6 +229,23 @@ func Configuration() (string, error) {
 
 	resolvers := asNode(root.Properties["resolvers"].AdditionalProperties)
 	section("Resolvers", "resolvers.<name>", root.Properties["resolvers"].Description, resolvers, "properties", "resolvers", "additionalProperties", "properties")
+	// Its dynamic updates: their keys, and the permissions of each, by kind.
+	sub := func(title, keyPath string, n *node, path ...string) {
+		fmt.Fprintf(&b, "### %s\n\n`%s`\n\n%s\n\n", title, keyPath, n.Description)
+		table(&b, n, order(raw, path...), defs)
+	}
+	updatesPath := []string{"properties", "resolvers", "additionalProperties", "properties", "updates", "properties"}
+	updates := resolvers.Properties["updates"]
+	sub("updates", "resolvers.<name>.updates", updates, updatesPath...)
+	keysPath := append(slices.Clone(updatesPath), "keys", "additionalProperties", "properties")
+	keys := asNode(updates.Properties["keys"].AdditionalProperties)
+	keys.Description = updates.Properties["keys"].Description
+	sub("keys", "resolvers.<name>.updates.keys.<name>", keys, keysPath...)
+	permissionsPath := append(slices.Clone(keysPath), "permissions", "items", "properties")
+	permission := keys.Properties["permissions"].Items
+	for _, kind := range []string{"challenges", "addresses", "names"} {
+		sub("permissions: "+kind, "resolvers.<name>.updates.keys.<name>.permissions[]."+kind, permission.Properties[kind], append(slices.Clone(permissionsPath), kind, "properties")...)
+	}
 
 	source := asNode(root.Properties["sources"].AdditionalProperties)
 	section("Sources", "sources.<name>", root.Properties["sources"].Description+" See [sources](../sources.md).", source, "properties", "sources", "additionalProperties", "properties")

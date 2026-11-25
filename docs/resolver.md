@@ -339,10 +339,106 @@ Several records with the same name and type are answered together, like the two 
 
 Any type works, with two exceptions: an SOA, which the resolver makes itself, and the types that belong to a message rather than a name, such as OPT.
 
+## Dynamic updates
+
+Other machines can change some records through the resolver, with RFC 2136 dynamic updates signed with a TSIG key. ipv6ddns writes each change where it belongs: through a credential, to a source, or to discovery. Each key may change only what its permissions say.
+
+```yaml
+credentials:
+  public:
+    provider: cloudflare
+    settings:
+      api_token: ${file:cloudflare_token}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+
+resolvers:
+  home:
+    listen:
+      - 192.168.1.2
+    upstream:
+      - 1.1.1.1
+    updates:
+      keys:
+        nas:
+          secret: ${file:tsig_nas}
+          permissions:
+            - challenges:
+                credential: public
+                names:
+                  - nas.lan
+```
+
+Here, certbot on the NAS can get a certificate for `nas.lan.example.com`, through the resolver, without holding the Cloudflare token.
+
+`tsig-keygen -a hmac-sha256 nas` makes a key. The secret is the base64 after `secret`. The keys are in the [reference](reference/configuration.md#updates).
+
+### Permissions
+
+Each permission is of one kind:
+
+| Kind | What the key may change | Who sends it |
+|---|---|---|
+| `challenges` | The TXT records of the DNS challenge, `_acme-challenge` of each name, written through a credential of the public zone | certbot, lego or acme.sh on another machine, to get a certificate |
+| `addresses` | The A and AAAA records of one name, which become the addresses of a push [source](sources.md) | A host that updates its own address with `nsupdate`, or a router's RFC 2136 client |
+| `names` | The names of the hosts of a zone, with their addresses, which go to the hosts discovery found | A DHCP server's dynamic DNS: Kea, ISC dhcpd, Windows |
+
+- **A key can hold several permissions.** An update goes to the first that holds all of it, so one message can't change records of two.
+- **A name can be changed by one key alone.** Two keys that could change the same name, or a challenge of a name of one of ipv6ddns's own [certificates](#a-certificate-from-lets-encrypt), are an error at start.
+- **Names are relative to the zone**, as everywhere else: `nas.lan` of the credential's zone `example.com` is `nas.lan.example.com`.
+
+### Where updates may come from
+
+A key is used only from its `allow`. A key without one uses the `allow` of `updates`, and without that, the resolver's. So a key for a machine on the internet can be let in from its network alone:
+
+```yaml
+# Added to the configuration above: a key for a VPS, used from its provider's network alone.
+resolvers:
+  home:
+    listen:
+      - 192.168.1.2
+      - 203.0.113.7
+    updates:
+      keys:
+        vps:
+          secret: ${file:tsig_vps}
+          allow:
+            - 198.51.100.0/24
+          permissions:
+            - challenges:
+                credential: public
+                names:
+                  - vps
+```
+
+The resolver's own `allow` still decides who it answers queries for, so its default, the LAN, keeps it from being an open resolver.
+
+### How the clients find the zone
+
+Before an update, certbot and nsupdate look for the zone of the name, with SOA queries signed with the key. The resolver answers those with authority, for the names of the key's permissions and the names between them and the zone: the zone's SOA at the zone, and no data, with the SOA, below it. The same query unsigned, or signed with another key, is answered as any other, so nothing changes for the rest of the network.
+
+### The answers
+
+| Answer | When |
+|---|---|
+| `NOERROR` | The update is applied, or it changed nothing |
+| `NOTAUTH`, with a TSIG error | The key is unknown, or of another algorithm (`BADKEY`); the signature is wrong (`BADSIG`); or the clocks are more than 5 minutes apart (`BADTIME`) |
+| `REFUSED` | Unsigned; from outside the key's `allow`; of a zone of none of its permissions; or of a record outside them |
+| `NOTZONE` | A record of a name outside the update's zone |
+| `FORMERR` | A message RFC 2136 doesn't allow |
+| `YXDOMAIN`, `NXDOMAIN`, `YXRRSET`, `NXRRSET` | A prerequisite that doesn't hold, as RFC 4703's conflict checks ask them |
+| `SERVFAIL` | Where the change goes failed, such as the provider: nothing was changed |
+
+- **Updates come over plain DNS, UDP or TCP, and DNS over TLS.** Over DNS over HTTPS or over QUIC, signatures aren't checked, so an update, or a signed query, is refused there.
+- **The TTLs of the records sent are ignored.** What ipv6ddns writes has its own: the credential's, for instance.
+- **Every update is logged**, with what it changed or why it was refused, and `/status.json` has each key's counts and its last update.
+
 ## How a query is answered
 
 The resolver goes through these steps in order, and the first one that applies gives the answer:
 
+1. **A message signed with a key** of [dynamic updates](#dynamic-updates) is an update, or a query answered with authority about the key's names. Any other name it asks goes on to the steps below.
 1. **A client outside `allow`** gets `REFUSED`. Nothing is asked upstream.
 2. **A name in the resolver's own `records`** is answered from them.
 3. **A name in a zone** is answered when a task publishes it or a record has it. The answer is the task's current addresses, as A and AAAA, or the records of the type asked. Answers from a zone are authoritative (`AA`).
@@ -568,4 +664,5 @@ The instances can differ in two cases, and a client may ask either one meanwhile
 - **Allow:** a resolver only answers the clients in `allow`, which by default is the networks it listens on. A resolver that answers anyone, on an address the internet reaches, is an open resolver. It relays any query upstream. Its answers are also larger than the queries, so an attacker can fake a victim's address in the queries and aim the answers at the victim: an amplification attack. Don't widen `allow` to everyone, and don't listen on a public address. On a router, a port alone does listen on one.
 - **DNSSEC:** local answers aren't signed. If you give a different answer here to a name in a publicly signed zone, such as `www.example.com` in a signed `example.com`, the name fails on a client that validates DNSSEC itself. That includes every name of a zone such as `lan.example.com`, when `example.com` is signed. Put such names in a zone that isn't signed, such as `home.arpa`, or in a domain of your own that you don't sign. Forwarded answers are relayed as they are. They include their signatures when the client's DO bit asks for them, and are cached separately from the answers asked without it.
 - **Upstream:** over plain DNS, the names asked and the answers cross the network unencrypted. Anyone on the path can read the questions and change the answers. An [encrypted upstream](#encrypted-upstream-servers) protects that path up to the server, which still sees every name. The clients' own queries to the resolver are plain DNS, on the LAN, unless they use the [encrypted transports](#encrypted-dns-for-the-clients).
+- **Updates:** a key's secret lets its holder change what its permissions say, and nothing else. Keep it in a file, as `${file:tsig_nas}`, give each machine a key of its own, and narrow its `allow` to where it is used. A key's permissions are checked for every record of an update, and an update refused changes nothing.
 - **Cache:** an upstream answer is served to every client for its TTL, including a wrong answer, as with any caching resolver. Nothing is kept for more than a day, or across a restart. With `cache_size: 0`, the resolver asks every time.

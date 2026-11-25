@@ -63,6 +63,12 @@ type Config struct {
 	// Whether the reverse of the private networks' addresses that it has no name of is asked of the
 	// upstream servers, out of RFC 6303: by default, it is no such name, its own.
 	ForwardUnknownPrivateReverse bool
+	// The keys that may change records by dynamic updates, over plain DNS and DNS over TLS.
+	UpdateKeys []UpdateKey
+	// The networks the keys may send from, of those that give none. None: Allow.
+	UpdateAllow []netip.Prefix
+	// Where the updates are logged, and the messages refused: nowhere, for nil.
+	Infof, Warnf func(string, ...any)
 }
 
 // Zone is a credential's zone, which a resolver answers.

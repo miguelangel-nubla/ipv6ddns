@@ -190,6 +190,10 @@ func TestDocExamples(t *testing.T) {
 				if ref[1] == "duckdns_token" {
 					value = "01234567-89ab-cdef-0123-456789abcdef"
 				}
+				// A TSIG key's secret, of 32 bytes, as tsig-keygen makes.
+				if strings.HasPrefix(filepath.Base(ref[1]), "tsig_") {
+					value = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+				}
 				t.Setenv(ref[1], value)
 			}
 			// A file a ${file:...} names: beside the configuration when relative, with a key in a
@@ -207,6 +211,10 @@ func TestDocExamples(t *testing.T) {
 				}
 				if ref[1] == "duckdns_token" {
 					value = "01234567-89ab-cdef-0123-456789abcdef"
+				}
+				// A TSIG key's secret, of 32 bytes, as tsig-keygen makes.
+				if strings.HasPrefix(filepath.Base(ref[1]), "tsig_") {
+					value = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 				}
 				if err := os.WriteFile(filepath.Join(dir, ref[1]), []byte(value+"\n"), 0o600); err != nil {
 					t.Fatal(err)
