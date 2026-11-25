@@ -244,7 +244,7 @@ credentials:
 ```
 
 - **`names`** are the names the certificate is for, relative to the zone of `credential`, as an endpoint's names are. A wildcard, as `*.lan`, is one too.
-- **`credential`** is the credential of your public zone, which writes the challenge's record. Its provider must be `cloudflare`, `route53`, `rfc2136` or `duckdns`. A DuckDNS name has one TXT record, so its certificate can only be for that name.
+- **`credential`** is the credential of your public zone, which writes the challenge's record. Its provider must be one that writes TXT records, as the [providers reference](reference/providers.md) marks them. A DuckDNS name has one TXT record, so its certificate can only be for that name.
 - **`email`** is an address Let's Encrypt may write to about the account. It no longer sends mail about certificates that end. Optional.
 - **`directory`** is the authority, Let's Encrypt by default. Its staging directory, `https://acme-staging-v02.api.letsencrypt.org/directory`, has no limits but signs certificates that no client trusts: use it to try the setup.
 

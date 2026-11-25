@@ -342,6 +342,9 @@ func Providers() (string, error) {
 			return "", err
 		}
 		fmt.Fprintf(&b, "## %s\n\n%s\n\n", name, n.Description)
+		if ddns.WritesTXT(name) {
+			b.WriteString("It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).\n\n")
+		}
 		table(&b, n, order(raw, "properties"), nil)
 	}
 	return strings.TrimRight(b.String(), "\n") + "\n", nil

@@ -29,6 +29,7 @@ type RFC2136 struct {
 
 func init() {
 	RegisterProvider("rfc2136", NewRFC2136)
+	RegisterTXT("rfc2136")
 }
 
 func NewRFC2136(settings json.RawMessage) (Service, error) {

@@ -25,6 +25,7 @@ type Cloudflare struct {
 
 func init() {
 	RegisterProvider("cloudflare", NewCloudflare)
+	RegisterTXT("cloudflare")
 }
 
 func NewCloudflare(settings json.RawMessage) (Service, error) {

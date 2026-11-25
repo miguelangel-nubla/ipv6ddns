@@ -36,6 +36,8 @@ AdGuard Home, through its API: the names are DNS rewrites, one for each address.
 
 Cloudflare DNS, through its API. The free plan works.
 
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
 | Key | Takes | |
 |---|---|---|
 | `api_token` | string | **Required.** An API token with Zone.DNS edit permission on the zone. |
@@ -46,6 +48,8 @@ Cloudflare DNS, through its API. The free plan works.
 ## duckdns
 
 DuckDNS: one A and one AAAA record per name, under duckdns.org.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
 
 | Key | Takes | |
 |---|---|---|
@@ -141,6 +145,8 @@ A zone that one of ipv6ddns's resolvers answers from memory, for the clients on 
 
 A DNS server that takes dynamic updates, RFC 2136, as BIND, Knot and PowerDNS do, and Windows DNS where it allows nonsecure updates: the primary of the zone. Each update replaces the name's A and AAAA records in one step, over TCP, and leaves its records of other types. Without a TSIG key, the server must take updates from the address of the machine ipv6ddns runs on. Give ipv6ddns a zone of its own, not one a DHCP server registers its clients in: both would write the same names.
 
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
 | Key | Takes | |
 |---|---|---|
 | `server` | string | **Required.** The primary server of the zone, as 192.168.1.2 or ns1.example.com:53. Without a port, 53. |
@@ -153,6 +159,8 @@ A DNS server that takes dynamic updates, RFC 2136, as BIND, Knot and PowerDNS do
 ## route53
 
 AWS Route 53, through its API. ipv6ddns learns the hosted zone's name from AWS at the first update. Until then, a name written relative, as nas, and the same name written in full are two names, each writing the records with its own addresses alone, and the start warns of them. Write each name one way.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
 
 | Key | Takes | |
 |---|---|---|

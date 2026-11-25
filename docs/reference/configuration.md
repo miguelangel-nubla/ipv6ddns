@@ -133,7 +133,7 @@ The TXT records of the DNS challenge of ACME, of some names, written through a c
 
 | Key | Takes | |
 |---|---|---|
-| `credential` | string | **Required.** The credential of the public zone of the names, which writes the records: of cloudflare, route53, rfc2136 or duckdns. |
+| `credential` | string | **Required.** The credential of the public zone of the names, which writes the records: of a provider that writes TXT records, as the providers reference marks them. |
 | `names` | list, or comma separated | **Required.** The names of the certificates, relative to the zone of the credential, as acme's: nas.lan, or *.apps. A wildcard and its parent have one challenge, so either allows both. None may be a name of a certificate of ipv6ddns's own. |
 
 ### permissions: addresses
@@ -211,7 +211,7 @@ A certificate that ipv6ddns gets from an ACME authority, Let's Encrypt by defaul
 | Key | Takes | |
 |---|---|---|
 | `names` | list, or comma separated | The names the certificate is for, relative to the zone of credential, as an endpoint's names are: dns.lan, of the zone example.com, is dns.lan.example.com. A wildcard, as *.lan, is one too. The clients are given one of them, which must have this machine's address, as a record of the resolver's zone. |
-| `credential` | string | The credential of the names' public zone, which writes the TXT record of the challenge: of cloudflare, route53, rfc2136 or duckdns. |
+| `credential` | string | The credential of the names' public zone, which writes the TXT record of the challenge: of a provider that writes TXT records, as the providers reference marks them. |
 | `email` | string | An address the authority may write to about the account. Let's Encrypt sends no more mail about certificates that end. Default: none. |
 | `directory` | string | The authority's directory: Let's Encrypt's, https://acme-v02.api.letsencrypt.org/directory, by default. Its staging one, https://acme-staging-v02.api.letsencrypt.org/directory, signs certificates that no client trusts, without its limits, to try the setup with. |
 

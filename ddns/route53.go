@@ -45,6 +45,7 @@ func route53Name(name string) string {
 
 func init() {
 	RegisterProvider("route53", NewRoute53)
+	RegisterTXT("route53")
 }
 
 func NewRoute53(settings json.RawMessage) (Service, error) {

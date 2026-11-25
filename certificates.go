@@ -60,7 +60,7 @@ func (w *Worker) certificates() ([]*certificate, error) {
 			}
 			writer, ok := endpoint.Service.(ddns.TXTWriter)
 			if !ok {
-				return nil, fmt.Errorf("certificates.%s.acme.credential: the provider of %s, %s, can't write the TXT records of the DNS challenge: give a credential of cloudflare, route53, rfc2136 or duckdns", name, t.ACME.Credential, w.config.Credentials[t.ACME.Credential].Provider)
+				return nil, fmt.Errorf("certificates.%s.acme.credential: the provider of %s, %s, can't write the TXT records of the DNS challenge: give a credential of %s", name, t.ACME.Credential, w.config.Credentials[t.ACME.Credential].Provider, ddns.TXTProviders())
 			}
 			c.writer = writer
 			c.acme = &acmeSettings{

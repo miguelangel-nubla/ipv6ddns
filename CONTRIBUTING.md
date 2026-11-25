@@ -191,9 +191,9 @@ Many messages are quoted in the pages and the tests, so search for the old text 
    - It runs when the addresses change, and again after an error. It never runs periodically.
    - It returns `nil` only once the change is applied and served. That holds even when the previous update failed halfway.
    - Every wait for the provider has a timeout.
-5. **Write TXT records too, whenever its API can.** Implement `ddns.TXTWriter`: `SetTXT`, which makes a name's TXT records exactly the values given, and returns once they are served; and `FullName`, a name in full, as `Domain` but asking the provider when it must. That makes its credential one that writes the DNS challenge, for ipv6ddns's own certificates and for the [challenges of other machines](docs/guides/certificates-for-other-machines.md). Today `cloudflare`, `route53`, `rfc2136` and `duckdns` do: when you change another provider whose API has TXT records, add it, and the lists of them in the docs and the errors.
+5. **Write TXT records too, whenever its API can.** Implement `ddns.TXTWriter`: `SetTXT`, which makes a name's TXT records exactly the values given, and returns once they are served; and `FullName`, a name in full, as `Domain` but asking the provider when it must. That makes its credential one that writes the DNS challenge, for ipv6ddns's own certificates and for the [challenges of other machines](docs/guides/certificates-for-other-machines.md). Register it with `RegisterTXT`, beside `RegisterProvider`: the errors and the [providers reference](docs/reference/providers.md) list it then, and a test checks that each registered is a `TXTWriter`, and each `TXTWriter` registered. When you change a provider whose API has TXT records, and it has no `SetTXT` yet, add it.
 6. **Test it against a fake of the provider's API**, as the other providers do. Cover prefix changes, and an update that fails halfway. Where the real server runs in a container, add it to `tools/live-providers.sh` and `ddns/live_test.go`.
-7. **Add it to the test in `ddns/schema_test.go`**, and regenerate the reference.
+7. **Add its type to `providerTypes` in `ddns/schema_test.go`**, whose tests check its schema and its TXT records, and regenerate the reference.
 
 ## A job without a runner
 

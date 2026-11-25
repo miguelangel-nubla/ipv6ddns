@@ -286,7 +286,7 @@
                                                             "credential": {
                                                                 "type": "string",
                                                                 "minLength": 1,
-                                                                "description": "The credential of the public zone of the names, which writes the records: of cloudflare, route53, rfc2136 or duckdns."
+                                                                "description": "The credential of the public zone of the names, which writes the records: of a provider that writes TXT records, as the providers reference marks them."
                                                             },
                                                             "names": {
                                                                 "$ref": "#/$defs/stringList",
@@ -1008,7 +1008,7 @@
                         "credential": {
                             "type": "string",
                             "minLength": 1,
-                            "description": "The credential of the names' public zone, which writes the TXT record of the challenge: of cloudflare, route53, rfc2136 or duckdns."
+                            "description": "The credential of the names' public zone, which writes the TXT record of the challenge: of a provider that writes TXT records, as the providers reference marks them."
                         },
                         "email": {
                             "type": "string",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +17,20 @@ var (
 	_ TXTWriter = (*Route53)(nil)
 	_ TXTWriter = (*DuckDNS)(nil)
 )
+
+// The providers registered as TXT writers are those whose services are, and no other: of each
+// provider's type, with the schema test's list of them.
+func TestTXTProvidersRegistered(t *testing.T) {
+	for name, v := range providerTypes() {
+		_, writes := reflect.New(reflect.TypeOf(v)).Interface().(TXTWriter)
+		if writes != WritesTXT(name) {
+			t.Errorf("%s: a TXTWriter %v, registered as one %v", name, writes, WritesTXT(name))
+		}
+	}
+	if got := TXTProviders(); got != "cloudflare, duckdns, rfc2136 or route53" {
+		t.Errorf("listed as %q", got)
+	}
+}
 
 // TXT records set, set again to others, and removed: the name's other records stay, as do another
 // name's TXT records.

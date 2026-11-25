@@ -60,6 +60,28 @@ func RegisterProvider(providerName string, factory ProviderFactory) {
 	providers[providerName] = factory
 }
 
+// The providers whose services are TXTWriters, by name.
+var txtProviders = make(map[string]bool)
+
+// RegisterTXT says of a provider that its service is a TXTWriter: its credential can write the
+// DNS challenge. A test checks it of each.
+func RegisterTXT(providerName string) {
+	txtProviders[providerName] = true
+}
+
+// WritesTXT tells whether a provider's service is a TXTWriter.
+func WritesTXT(providerName string) bool { return txtProviders[providerName] }
+
+// TXTProviders are the providers whose services are TXTWriters, sorted, as an error lists them:
+// "cloudflare, duckdns or route53".
+func TXTProviders() string {
+	names := slices.Sorted(maps.Keys(txtProviders))
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
+}
+
 func NewService(provider string, settings json.RawMessage) (Service, error) {
 	factory, ok := providers[provider]
 	if !ok {

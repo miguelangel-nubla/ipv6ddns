@@ -20,6 +20,7 @@ type DuckDNS struct {
 
 func init() {
 	RegisterProvider("duckdns", NewDuckDNS)
+	RegisterTXT("duckdns")
 }
 
 func NewDuckDNS(settings json.RawMessage) (Service, error) {

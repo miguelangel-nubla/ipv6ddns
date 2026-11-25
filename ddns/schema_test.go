@@ -8,25 +8,15 @@ import (
 )
 
 func TestSettingsSchemasMatchProviders(t *testing.T) {
-	schemas := map[string]struct {
+	schemas := make(map[string]struct {
 		schema string
 		value  any
-	}{
-		"adguardhome":             {"adguardhome", AdGuardHome{}},
-		"cloudflare":              {"cloudflare", Cloudflare{}},
-		"pihole":                  {"pihole", PiHole{}},
-		"duckdns":                 {"duckdns", DuckDNS{}},
-		"gravity":                 {"gravity", Gravity{}},
-		"mikrotik":                {"mikrotik", Mikrotik{}},
-		"openwrt":                 {"openwrt", OpenWrt{}},
-		"opnsense_unbound":        {"opnsense_unbound", OpnsenseUnbound{}},
-		"pfsense_restapi_unbound": {"pfsense_restapi_unbound", PfsenseRestapiUnbound{}},
-		"route53":                 {"route53", Route53{}},
-		"resolver":                {"resolver", Resolver{}},
-		"rfc2136":                 {"rfc2136", RFC2136{}},
-		"technitium":              {"technitium", Technitium{}},
-		"unifi":                   {"unifi", UniFi{}},
-		"windows":                 {"windows", WindowsDNS{}},
+	})
+	for name, v := range providerTypes() {
+		schemas[name] = struct {
+			schema string
+			value  any
+		}{name, v}
 	}
 	for provider := range providers {
 		s, ok := schemas[provider]
@@ -59,5 +49,27 @@ func TestSettingsSchemasMatchProviders(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// providerTypes are the type of each provider's service, by its name: a new provider is added
+// here, for its schema and its TXT records to be checked.
+func providerTypes() map[string]any {
+	return map[string]any{
+		"adguardhome":             AdGuardHome{},
+		"cloudflare":              Cloudflare{},
+		"pihole":                  PiHole{},
+		"duckdns":                 DuckDNS{},
+		"gravity":                 Gravity{},
+		"mikrotik":                Mikrotik{},
+		"openwrt":                 OpenWrt{},
+		"opnsense_unbound":        OpnsenseUnbound{},
+		"pfsense_restapi_unbound": PfsenseRestapiUnbound{},
+		"route53":                 Route53{},
+		"resolver":                Resolver{},
+		"rfc2136":                 RFC2136{},
+		"technitium":              Technitium{},
+		"unifi":                   UniFi{},
+		"windows":                 WindowsDNS{},
 	}
 }
