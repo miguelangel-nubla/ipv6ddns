@@ -102,15 +102,18 @@ var updateAlgorithms = map[string]string{
 // hmac-sha256, which RFC 8945 asks at the least.
 const minSecret = 16
 
-// claims are what the keys of every resolver may change, to tell two that would change the same:
-// by what, the path of the permission that does.
-type claims map[string]string
+// claims are what the keys of every resolver may change, to tell two keys that would change the
+// same: by what, the key's path and the permission's. One key may claim a name twice, as a
+// certificate's name and its wildcard, which share a challenge.
+type claims map[string][2]string
 
-func (cl claims) claim(what, path string) error {
-	if other, ok := cl[what]; ok {
-		return fmt.Errorf("%s: %s is %s's already: a name can be changed by one key alone", path, strings.SplitN(what, " ", 2)[1], other)
+func (cl claims) claim(what, key, path string) error {
+	if other, ok := cl[what]; ok && other[0] != key {
+		return fmt.Errorf("%s: %s is %s's already: a name can be changed by one key alone", path, strings.SplitN(what, " ", 2)[1], other[1])
 	}
-	cl[what] = path
+	if _, ok := cl[what]; !ok {
+		cl[what] = [2]string{key, path}
+	}
 	return nil
 }
 
@@ -170,7 +173,7 @@ func (c *Config) setUpUpdates(path string, r *Resolver, spec *resolver.Config, a
 			return fmt.Errorf("%s.permissions is missing: give what the key may change: challenges, addresses or names", keyPath)
 		}
 		for i, p := range k.Permissions {
-			if err := c.checkPermission(fmt.Sprintf("%s.permissions[%d]", keyPath, i), p, all); err != nil {
+			if err := c.checkPermission(keyPath, fmt.Sprintf("%s.permissions[%d]", keyPath, i), p, all); err != nil {
 				return err
 			}
 		}
@@ -181,7 +184,7 @@ func (c *Config) setUpUpdates(path string, r *Resolver, spec *resolver.Config, a
 }
 
 // checkPermission checks a permission, and claims what it may change.
-func (c *Config) checkPermission(path string, p Permission, all claims) error {
+func (c *Config) checkPermission(key, path string, p Permission, all claims) error {
 	set := 0
 	for _, s := range []bool{p.Challenges != nil, p.Addresses != nil, p.Names != nil} {
 		if s {
@@ -216,7 +219,7 @@ func (c *Config) checkPermission(path string, p Permission, all claims) error {
 			if cert := c.acmeChallenge(ch.Credential, zone, full); cert != "" {
 				return fmt.Errorf("%s.names: %s is a name of certificates.%s, whose challenge ipv6ddns writes itself", path, n, cert)
 			}
-			if err := all.claim("challenge "+full, path+".names"); err != nil {
+			if err := all.claim("challenge "+full, key, path+".names"); err != nil {
 				return err
 			}
 		}
@@ -243,7 +246,7 @@ func (c *Config) checkPermission(path string, p Permission, all claims) error {
 		if _, ok := dns.IsDomainName(full); !ok || strings.ContainsAny(full, " *") {
 			return fmt.Errorf("%s.name: %q is not a name", path, name)
 		}
-		return all.claim("addresses "+strings.TrimSuffix(full, "."), path)
+		return all.claim("addresses "+strings.TrimSuffix(full, "."), key, path)
 	default:
 		n := p.Names
 		path += ".names"
@@ -254,7 +257,7 @@ func (c *Config) checkPermission(path string, p Permission, all claims) error {
 		if _, ok := dns.IsDomainName(zone); !ok || strings.ContainsAny(zone, " *") {
 			return fmt.Errorf("%s.zone: %q is not a zone", path, n.Zone)
 		}
-		return all.claim("names "+strings.ToLower(zone), path)
+		return all.claim("names "+strings.ToLower(zone), key, path)
 	}
 }
 

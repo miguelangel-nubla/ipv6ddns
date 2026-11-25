@@ -130,6 +130,52 @@ func TestUpdates(t *testing.T) {
 	}
 }
 
+// One key may have a name twice: a certificate's name and its wildcard share a challenge, and a
+// name written relative and in full is one.
+func TestUpdatesOneKeyTwice(t *testing.T) {
+	_, err := updatesConfig(t, plainAndTLS, `
+      keys:
+        nas:
+          secret: `+testSecretYAML+`
+          permissions:
+            - challenges:
+                credential: public
+                names:
+                  - apps
+                  - "*.apps"
+                  - apps.example.com
+            - addresses:
+                source: wan
+                zone: example.com
+            - addresses:
+                source: wan
+                zone: example.com
+                name: wan.example.com`)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// Two keys of one resolver can't change one name, of any kind.
+func TestUpdatesTwoKeysOneName(t *testing.T) {
+	two := func(permission string) string {
+		return "\n      keys:\n        a:\n          secret: " + testSecretYAML + "\n          permissions:\n" + permission +
+			"        b:\n          secret: " + testSecretYAML + "\n          permissions:\n" + permission
+	}
+	for _, c := range []struct{ what, permission, want string }{
+		{"a challenge", "            - challenges:\n                credential: public\n                names:\n                  - \"*.apps\"\n",
+			"resolvers.home.updates.keys.b.permissions[0].challenges.names: apps.example.com is resolvers.home.updates.keys.a.permissions[0].challenges.names's already"},
+		{"addresses", "            - addresses:\n                source: wan\n                zone: example.com\n",
+			"resolvers.home.updates.keys.b.permissions[0].addresses: wan.example.com is resolvers.home.updates.keys.a.permissions[0].addresses's already"},
+		{"names", "            - names:\n                zone: lan.example.com\n",
+			"resolvers.home.updates.keys.b.permissions[0].names: lan.example.com is resolvers.home.updates.keys.a.permissions[0].names's already"},
+	} {
+		if _, err := updatesConfig(t, plainAndTLS, two(c.permission)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %s", c.what, err, c.want)
+		}
+	}
+}
+
 func TestUpdatesErrors(t *testing.T) {
 	key := func(permissions string) string {
 		return `
@@ -175,22 +221,11 @@ func TestUpdatesErrors(t *testing.T) {
 			`resolvers.home.updates.keys.nas.permissions[0].challenges.names: "a.*.lan" is not a name: a wildcard is only its first label, as *.apps`},
 		{"a name of ipv6ddns's own certificate", plainAndTLS, key(challenges("public", "*.dns.lan")),
 			"resolvers.home.updates.keys.nas.permissions[0].challenges.names: *.dns.lan is a name of certificates.dns, whose challenge ipv6ddns writes itself"},
-		{"one challenge twice in a key", plainAndTLS, key(challenges("public", "apps", "*.apps")),
-			"resolvers.home.updates.keys.nas.permissions[0].challenges.names: apps.example.com is resolvers.home.updates.keys.nas.permissions[0].challenges.names's already"},
-		{"one challenge, full and relative", plainAndTLS, key(challenges("public", "nas.lan") + challenges("public", "nas.lan.example.com")),
-			"resolvers.home.updates.keys.nas.permissions[1].challenges.names: nas.lan.example.com is resolvers.home.updates.keys.nas.permissions[0].challenges.names's already"},
-
 		{"a source missing", plainAndTLS, key("            - addresses:\n                source: nope\n                zone: example.com\n"),
 			"resolvers.home.updates.keys.nas.permissions[0].addresses.source: there is no source nope: add it under sources, with type: push"},
 		{"a source not push", plainAndTLS, key("            - addresses:\n                source: fixed\n                zone: example.com\n"),
 			"resolvers.home.updates.keys.nas.permissions[0].addresses.source: fixed is a source of type static: the addresses sent go to a source of type push"},
 		{"a zone missing", plainAndTLS, key("            - addresses:\n                source: wan\n"), "zone"},
-		{"one name, by its default and given", plainAndTLS, key("            - addresses:\n                source: wan\n                zone: example.com\n" +
-			"            - addresses:\n                source: wan\n                zone: example.com\n                name: wan.example.com\n"),
-			"resolvers.home.updates.keys.nas.permissions[1].addresses: wan.example.com is resolvers.home.updates.keys.nas.permissions[0].addresses's already"},
-
-		{"one zone of names twice", plainAndTLS, key("            - names:\n                zone: lan.example.com\n            - names:\n                zone: LAN.example.com.\n"),
-			"resolvers.home.updates.keys.nas.permissions[1].names: lan.example.com is resolvers.home.updates.keys.nas.permissions[0].names's already"},
 	} {
 		t.Run(c.what, func(t *testing.T) {
 			_, err := updatesConfig(t, c.listen, c.updates)
