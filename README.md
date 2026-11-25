@@ -51,7 +51,7 @@ The two times on each line are how long the address has left before it expires, 
    - at a DNS provider, a router or the DNS server you already run: Cloudflare, Route 53, DuckDNS, MikroTik, OpenWrt, pfSense, OPNsense, UniFi, AdGuard Home, Pi-hole, Technitium, Windows DNS, Gravity, and any server that takes RFC 2136 updates, such as BIND;
    - or in a zone of ipv6ddns's own [resolver](docs/resolver.md), which the LAN's devices query.
 
-[How it works](docs/how-it-works.md) explains the problem with DDNS on IPv6, why ipv6ddns is designed this way, and what else it can do, such as following several ISPs at once.
+[How it works](docs/how-it-works.md) explains the problem with DDNS on IPv6, why ipv6ddns is designed this way, and what else it can do, such as a name on a network with several ISPs: see [multi-WAN](docs/guides/multi-wan.md).
 
 ## Quick start
 

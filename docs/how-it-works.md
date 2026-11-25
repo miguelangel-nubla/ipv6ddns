@@ -33,9 +33,9 @@ The configuration and the credentials for the whole network are in one place, an
 
 ## Other uses
 
-### Several ISPs at once
+### Multi-WAN: several ISPs at once
 
-A network can have addresses from several ISPs at once, for example a fiber connection, a backup LTE connection and Starlink. The AAAA records hold the addresses of every connection that is up, so inbound connections fail over by themselves.
+A network can have addresses from several ISPs at once, for example a fiber connection, a backup LTE connection and Starlink. Each device has an address in each ISP's prefix, and a name gets all of them, so a client can connect through whichever connection is up. When a connection goes down, its addresses leave the name once the devices drop them, which the router decides. The router must also send replies out through the ISP they came from. [Multi-WAN](guides/multi-wan.md) sets it up.
 
 ### IPv4 too
 
