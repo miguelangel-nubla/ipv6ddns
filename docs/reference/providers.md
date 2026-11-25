@@ -7,6 +7,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`adguardhome`](#adguardhome)
 - [`cloudflare`](#cloudflare)
 - [`desec`](#desec)
+- [`digitalocean`](#digitalocean)
 - [`duckdns`](#duckdns)
 - [`gravity`](#gravity)
 - [`hetzner`](#hetzner)
@@ -59,6 +60,18 @@ It writes TXT records too: its credential can write the DNS challenge, of ipv6dd
 | `token` | string | **Required.** A token of the account, made at desec.io under Token Management. A token restricted to the zone, or to the names ipv6ddns keeps, is enough. |
 | `zone` | string | **Required.** The domain at deSEC, as example.com or example.dedyn.io. |
 | `ttl` | string | The records' TTL, as 1h. Default: the least deSEC allows the domain, an hour for most; a lower one is raised to it, with a warning. |
+
+## digitalocean
+
+DigitalOcean DNS, through its API, of a domain of the account. Each record is written apart.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
+| Key | Takes | |
+|---|---|---|
+| `api_token` | string | **Required.** A personal access token with the write scope, or the domain scopes: in DigitalOcean's control panel, under API. |
+| `zone` | string | **Required.** The domain, as example.com. |
+| `ttl` | string | The records' TTL, as 5m or 1h: 30s at the least. Default: 1h, DigitalOcean's. |
 
 ## duckdns
 

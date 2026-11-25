@@ -588,3 +588,99 @@ func TestLivePorkbun(t *testing.T) {
 
 	s.run(t, fqdn, spellings...)
 }
+
+// DigitalOcean: IPV6DDNS_LIVE_DIGITALOCEAN has the settings, with a token of the write scope, and
+// IPV6DDNS_LIVE_DIGITALOCEAN_NAME the name to use in its domain. The records are read with the
+// API, asked as its documentation says and not through the provider's client.
+func TestLiveDigitalOcean(t *testing.T) {
+	const api = "https://api.digitalocean.com/v2"
+	s := &liveServer{provider: "digitalocean", settings: liveSettings(t, "IPV6DDNS_LIVE_DIGITALOCEAN"), ttls: []string{"5m", "10m"}}
+	s.zone = strings.ToLower(strings.Trim(fmt.Sprint(s.settings["zone"]), "."))
+	fqdn, spellings := cloudName(t, "IPV6DDNS_LIVE_DIGITALOCEAN_NAME", s.zone)
+	records := api + "/domains/" + url.PathEscape(s.zone) + "/records"
+
+	call := func(t *testing.T, method, target string, body any, result any) {
+		t.Helper()
+		for {
+			var payload io.Reader
+			if body != nil {
+				raw, _ := json.Marshal(body)
+				payload = bytes.NewReader(raw)
+			}
+			request, err := http.NewRequest(method, target, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+fmt.Sprint(s.settings["api_token"]))
+			request.Header.Set("Content-Type", "application/json")
+			response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+			if err != nil {
+				t.Fatalf("%s: %v", method, withoutURL(err))
+			}
+			data, _ := io.ReadAll(response.Body)
+			response.Body.Close()
+			if response.StatusCode == http.StatusTooManyRequests {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			if response.StatusCode >= 300 {
+				t.Fatalf("%s: %s: %s", method, response.Status, data)
+			}
+			if result != nil && len(data) > 0 {
+				if err := json.Unmarshal(data, result); err != nil {
+					t.Fatalf("%s: %v", method, err)
+				}
+			}
+			return
+		}
+	}
+	list := func(t *testing.T, rrType string) []digitalOceanRecord {
+		t.Helper()
+		var answer struct {
+			Records []digitalOceanRecord `json:"domain_records"`
+		}
+		call(t, http.MethodGet, records+"?per_page=200&name="+url.QueryEscape(fqdn)+"&type="+rrType, nil, &answer)
+		return answer.Records
+	}
+	s.records = func(t *testing.T, name, rrType string) []liveRecord {
+		t.Helper()
+		if !strings.EqualFold(name, fqdn) {
+			t.Fatalf("asked for %s, the test's name is %s", name, fqdn)
+		}
+		var out []liveRecord
+		for _, r := range list(t, rrType) {
+			out = append(out, liveRecord{strings.Trim(r.Data, `"`), r.TTL})
+		}
+		return out
+	}
+
+	// The TXT record of the name, which no update is to touch.
+	if len(list(t, "TXT")) == 0 {
+		call(t, http.MethodPost, records, digitalOceanRecord{Type: "TXT", Name: RelativeName(fqdn, s.zone), Data: liveKeep, TTL: 300}, nil)
+	}
+	t.Cleanup(func() {
+		for _, r := range list(t, "TXT") {
+			if strings.Trim(r.Data, `"`) == liveKeep {
+				call(t, http.MethodDelete, records+"/"+strconv.FormatInt(r.ID, 10), nil, nil)
+			}
+		}
+	})
+	s.fixtures = func(t *testing.T) {
+		t.Helper()
+		if got := s.records(t, fqdn, "TXT"); len(got) != 1 || got[0].data != liveKeep {
+			t.Errorf("%s has the TXT records %v, want its %q untouched", fqdn, got, liveKeep)
+		}
+	}
+	s.service = func(t *testing.T, raw json.RawMessage) (Service, func() int) {
+		t.Helper()
+		service, err := NewService("digitalocean", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxied, writes := countingProxy(t, api, func(r *http.Request) bool { return r.Method != http.MethodGet })
+		service.(*DigitalOcean).apiBaseURL = proxied
+		return service, writes
+	}
+
+	s.run(t, fqdn, spellings...)
+}
