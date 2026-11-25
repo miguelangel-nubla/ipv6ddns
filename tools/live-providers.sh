@@ -127,6 +127,15 @@ for (const name of ["unifi", "unifi_stat", "unifi_audit"]) {
 EOF
 docker run -d --name "$prefix-unifi-mongo" -p 127.0.0.1::8443/tcp \
 	-v "$work/unifi-mongo.js:/docker-entrypoint-initdb.d/unifi.js:ro" "$MONGO_IMAGE" >/dev/null
+# UniFi joins MongoDB's network, which is gone if MongoDB ended: its log says why, as a CPU
+# without the AVX that MongoDB needs.
+sleep 2
+if [ "$(docker inspect -f '{{.State.Running}}' "$prefix-unifi-mongo")" != true ]; then
+	echo "live-providers: MongoDB, of UniFi, ended:" >&2
+	docker logs --tail 40 "$prefix-unifi-mongo" 2>&1 | sed 's/^/  mongo: /' >&2
+	grep -o -m1 -w avx /proc/cpuinfo >/dev/null 2>&1 || echo "live-providers: this CPU has no AVX" >&2
+	exit 1
+fi
 docker run -d --name "$prefix-unifi" --network "container:$prefix-unifi-mongo" \
 	-e MONGO_USER=unifi -e MONGO_PASS="$password" -e MONGO_HOST=127.0.0.1 -e MONGO_PORT=27017 \
 	-e MONGO_DBNAME=unifi -e MONGO_AUTHSOURCE=unifi "$UNIFI_IMAGE" >/dev/null
