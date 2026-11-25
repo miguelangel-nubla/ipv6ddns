@@ -22,7 +22,7 @@ A DDNS client on a server has three problems:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/architecture-dark.svg">
-  <img src="images/architecture-light.svg" alt="ipv6ddns, a single instance anywhere on the LAN, finds the devices on your network, such as a server, a camera, a laptop or a printer, with no software on them, and keeps a DNS name pointing at each: at your DNS provider, in your router, or in its own DNS server. When a device's address changes, its name follows: server.mydomain.com has its AAAA record move from 2001:db8:1::a to 2001:db8:2::a, and its A record from 203.0.113.7 to 203.0.113.9; and a name on the LAN too: printer.mydomain.com has its A record move from 192.168.1.20 to 192.168.1.35.">
+  <img src="images/architecture-light.svg" alt="ipv6ddns, a single instance anywhere on the LAN, finds the devices on your network, such as a server, a camera, a laptop or a printer, with no software on them, and keeps a DNS name pointing at each: at your DNS provider, in your router, or in its own DNS server. When a device's address changes, its name follows: server.mydomain.com has its AAAA record move from 2001:db8:1::a to 2001:db8:2::a, and its A record from 203.0.113.7 to 203.0.113.9; and a name on the LAN too: printer.mydomain.com keeps its AAAA record, of the ULA address fd12:3456:789a::20, and has its A record move from 192.168.1.20 to 192.168.1.35.">
 </picture>
 
 1. [Discovery](discovery.md) finds every address on the network, together with the MAC that holds it. It listens, it probes, and it reads the routers' neighbor tables. A MAC address doesn't change when the IP addresses do, so it identifies the device.

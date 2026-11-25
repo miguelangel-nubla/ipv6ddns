@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 392" width="960" height="392" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 412" width="960" height="412" role="img" aria-labelledby="title">
 <!-- The light picture is the drawing: edit it, and go test ./internal/docgen -update draws the dark one, each color of its style in its dark one. -->
 <title id="title">ipv6ddns, a single instance anywhere on the LAN, finds the devices on your network and keeps a DNS name pointing at each, at your DNS provider, in your router or in its own DNS server. When a device's address changes, IPv6 or IPv4, public or on the LAN, its name follows.</title>
 <style>
@@ -28,7 +28,7 @@
   .ic .paper { fill: #ffffff; }
 </style>
 <defs><marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="tip"/></marker></defs>
-<rect width="960" height="392" rx="12" class="bg"/>
+<rect width="960" height="412" rx="12" class="bg"/>
 <rect x="24" y="40" width="250" height="180" rx="12" class="box"/>
 <text x="149" y="74" class="h" text-anchor="middle">Your network</text>
 <rect x="48" y="96" width="94" height="34" rx="12" class="chip"/>
@@ -62,11 +62,12 @@
 <path d="M585 130.0 L686 130.0" class="a" marker-end="url(#tip)"/>
 <text x="635.5" y="118.0" class="lab" text-anchor="middle">names them</text>
 <text x="480.0" y="270" class="s" text-anchor="middle">When a device&#x27;s address changes, <tspan class="em">its name follows</tspan>:</text>
-<text x="394" y="316" class="n" text-anchor="end">server.mydomain.com</text>
-<text x="412" y="316" class="m"><tspan class="to">→</tspan></text>
-<text x="439" y="304" class="m" xml:space="preserve"><tspan class="rt">AAAA</tspan>  <tspan class="old">2001:db8:<tspan class="gone">1</tspan>::a</tspan>  2001:db8:<tspan class="new">2</tspan>::a</text>
-<text x="439" y="328" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">203.0.113.<tspan class="gone">7</tspan></tspan>    203.0.113.<tspan class="new">9</tspan></text>
-<text x="394" y="362" class="n" text-anchor="end">printer.mydomain.com</text>
-<text x="412" y="362" class="m"><tspan class="to">→</tspan></text>
-<text x="439" y="362" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">192.168.1.<tspan class="gone">20</tspan></tspan>   192.168.1.<tspan class="new">35</tspan></text>
+<text x="372" y="312" class="n" text-anchor="end">server.mydomain.com</text>
+<text x="390" y="312" class="m"><tspan class="to">→</tspan></text>
+<text x="417" y="300" class="m" xml:space="preserve"><tspan class="rt">AAAA</tspan>  <tspan class="old">2001:db8:<tspan class="gone">1</tspan>::a</tspan>  2001:db8:<tspan class="new">2</tspan>::a</text>
+<text x="417" y="324" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">203.0.113.<tspan class="gone">7</tspan></tspan>    203.0.113.<tspan class="new">9</tspan></text>
+<text x="372" y="370" class="n" text-anchor="end">printer.mydomain.com</text>
+<text x="390" y="370" class="m"><tspan class="to">→</tspan></text>
+<text x="417" y="358" class="m" xml:space="preserve"><tspan class="rt">AAAA</tspan>                 fd12:3456:789a::20</text>
+<text x="417" y="382" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">192.168.1.<tspan class="gone">20</tspan></tspan>   192.168.1.<tspan class="new">35</tspan></text>
 </svg>
