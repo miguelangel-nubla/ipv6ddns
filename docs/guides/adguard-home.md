@@ -73,7 +73,7 @@ dig printer.lan.example.com
 dig printer.lan.example.com AAAA
 ```
 
-To make a bare `printer` work too, set your router's local domain, or DHCP's domain search option, to `lan.example.com`.
+To make a bare `printer` work too, see [point the network at it](network-wide-names.md#point-the-network-at-it).
 
 ## What to know
 
@@ -82,14 +82,13 @@ To make a bare `printer` work too, set your router's local domain, or DHCP's dom
 - **A name with a rewrite answers nothing else.** That is how AdGuard Home works: once a name has a rewrite, AdGuard Home no longer asks upstream for it. Choose a domain for these names that has no records of its own elsewhere.
 - **No reverse names.** AdGuard Home doesn't answer an address back to its name from a rewrite.
 - **The TTL is AdGuard Home's.** It answers a rewrite with its own short TTL, so a change is seen within seconds.
-- **A device that left keeps its name for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. If another device takes its address meanwhile, the old name loses that address at once. A host that leaves while ipv6ddns isn't running keeps its rewrites until you remove them: see [when a host leaves](../hostnames.md#when-a-host-leaves).
+- **A device that left keeps its name for a while**, as any name ipv6ddns keeps: see [common problems](network-wide-names.md#common-problems).
 
 ## Common problems
 
 - **`the username or the password is refused`.** Check both. AdGuard Home blocks an address that fails to log in several times, for 15 minutes by default, and that includes your own browser when it is on the same machine as ipv6ddns. Fix the password, wait, and restart ipv6ddns.
 - **`not an answer of AdGuard Home's API`.** The address isn't AdGuard Home's web interface. Give the address you open in the browser, with its port, and `https://` if it has a certificate. For a certificate of your own, see `tls_fingerprint` in the [providers reference](../reference/providers.md#adguardhome).
-- **A device has no name.** The device says no name, or none that discovery hears. The web report lists every host found, with the names it has.
-- **The names are in AdGuard Home, and a device doesn't resolve them.** The device asks another DNS server. Check its DNS servers with `resolvectl status`, `ipconfig /all`, or its network settings.
+- **A device has no name, or doesn't resolve the names that are in AdGuard Home:** see [common problems](network-wide-names.md#common-problems), which are the same with any DNS server.
 
 ## More
 

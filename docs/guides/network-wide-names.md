@@ -122,9 +122,9 @@ A written name also names a device that says no name at all. The web report show
 
 - **`address already in use` at the start.** Another DNS server has port 53 on this machine: Pi-hole, AdGuard Home, or dnsmasq. For the first two, see the guides for [AdGuard Home](adguard-home.md) and [Pi-hole](pi-hole.md). systemd-resolved doesn't get in the way, because it only listens on `127.0.0.53`. See [port 53](../resolver.md#port-53).
 - **A device has no name.** The device says no name, or none that discovery hears. The web report lists every host found, with the names it has. A host with no name there needs a [plugin](../discovery.md#plugins) that reads the router's leases, or a [written name](#a-name-that-matters).
-- **The names answer with `dig @192.168.1.2` but not without.** The device still uses the router for DNS. Check the device's DNS servers with `resolvectl status`, `ipconfig /all`, or its network settings, and renew its lease.
+- **The names answer when you ask the DNS server directly, as with `dig @192.168.1.2`, but not without.** The device asks another DNS server, such as the router. Check the device's DNS servers with `resolvectl status`, `ipconfig /all`, or its network settings, and renew its lease.
 - **Two devices called the same.** Both are under `printer`. Each also has a name of its own, `1.printer` and `2.printer`, in the order of their MACs. Rename one of the devices, or [write a name](#a-name-that-matters) for the one that matters.
-- **A device's old name still answers for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. If another device takes its address meanwhile, the old name loses that address at once. Discovery can't tell a host that left from a host that is quiet.
+- **A device's old name still answers for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. If another device takes its address meanwhile, the old name loses that address at once. Discovery can't tell a host that left from a host that is quiet. A host that leaves while ipv6ddns isn't running keeps its records until you remove them: see [when a host leaves](../hostnames.md#when-a-host-leaves).
 
 ## Your router's DNS instead
 

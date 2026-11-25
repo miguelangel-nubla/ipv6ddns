@@ -73,7 +73,7 @@ dig -x 192.168.1.20
 
 The first two commands give the printer's addresses. The third gives the printer's name back.
 
-To make a bare `printer` work too, set your router's local domain, or DHCP's domain search option, to `lan.example.com`.
+To make a bare `printer` work too, see [point the network at it](network-wide-names.md#point-the-network-at-it).
 
 ## What to know
 
@@ -81,15 +81,14 @@ To make a bare `printer` work too, set your router's local domain, or DHCP's dom
 - **Your own records stay.** ipv6ddns only touches a record of a name it keeps, written as one address and that name. A record you wrote with several names on its line is left alone.
 - **Reverse names work.** Pi-hole answers an address back to its name from these records.
 - **One session.** ipv6ddns logs in once and keeps the session, so it uses one of the sessions Pi-hole's API allows at a time.
-- **A device that left keeps its name for a while.** A name stays until discovery lets the host go, after the host's [lifetime](../discovery.md#lifetimes), an hour by default. If another device takes its address meanwhile, the old name loses that address at once. A host that leaves while ipv6ddns isn't running keeps its records until you remove them: see [when a host leaves](../hostnames.md#when-a-host-leaves).
+- **A device that left keeps its name for a while**, as any name ipv6ddns keeps: see [common problems](network-wide-names.md#common-problems).
 
 ## Common problems
 
 - **`the password is refused`.** Check it. With two-factor authentication on, make an application password and give that one.
 - **`not an answer of Pi-hole's API, which is of its version 6 and later`.** The address isn't Pi-hole's web interface, or Pi-hole is older than version 6. Give the address without `/admin`, with its port if it isn't 80, and `https://` if it has a certificate. For Pi-hole's own certificate, see `tls_fingerprint` in the [providers reference](../reference/providers.md#pihole).
 - **Pi-hole refuses the change.** A setting given to Pi-hole in its container's environment can't be changed through the API. If your local DNS records are set with `FTLCONF_dns_hosts`, move them to Pi-hole's own settings.
-- **A device has no name.** The device says no name, or none that discovery hears. The web report lists every host found, with the names it has.
-- **The names are in Pi-hole, and a device doesn't resolve them.** The device asks another DNS server. Check its DNS servers with `resolvectl status`, `ipconfig /all`, or its network settings.
+- **A device has no name, or doesn't resolve the names that are in Pi-hole:** see [common problems](network-wide-names.md#common-problems), which are the same with any DNS server.
 
 ## More
 
