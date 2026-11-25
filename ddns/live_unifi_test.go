@@ -39,10 +39,20 @@ func TestLiveUniFi(t *testing.T) {
 			u := reader.(*UniFi)
 			zone := strings.Trim(u.Zone, ".")
 			name, other := "live."+zone, "other."+zone
+			// limited runs f until UniFi OS stops refusing logins that came too often, as the
+			// clients of these tests do, each its own: HTTP 429, for a minute or so.
+			limited := func(f func() error) error {
+				for deadline := time.Now().Add(3 * time.Minute); ; time.Sleep(5 * time.Second) {
+					err := f()
+					if err == nil || !strings.Contains(err.Error(), "HTTP 429") || time.Now().After(deadline) {
+						return err
+					}
+				}
+			}
 			list := func() []unifiRecord {
 				t.Helper()
 				var records []unifiRecord
-				if err := u.call(http.MethodGet, "", nil, &records); err != nil {
+				if err := limited(func() error { return u.call(http.MethodGet, "", nil, &records) }); err != nil {
 					t.Fatal(err)
 				}
 				return records
@@ -62,7 +72,7 @@ func TestLiveUniFi(t *testing.T) {
 			clean := func() {
 				for _, r := range list() {
 					if r.Key == name || r.Key == other {
-						if err := u.call(http.MethodDelete, "/"+r.ID, nil, nil); err != nil {
+						if err := limited(func() error { return u.call(http.MethodDelete, "/"+r.ID, nil, nil) }); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -75,7 +85,7 @@ func TestLiveUniFi(t *testing.T) {
 				{Enabled: true, Key: other, RecordType: "AAAA", Value: "2001:db8::f"},
 				{Enabled: false, Key: name, RecordType: "AAAA", Value: "2001:db8::9"},
 			} {
-				if err := u.call(http.MethodPost, "", r, nil); err != nil {
+				if err := limited(func() error { return u.call(http.MethodPost, "", r, nil) }); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -123,7 +133,7 @@ func TestLiveUniFi(t *testing.T) {
 
 			step := func(what string, want []string, ips ...string) {
 				t.Helper()
-				if err := service.Update("live", unifiAddrs(ips...)); err != nil {
+				if err := limited(func() error { return service.Update("live", unifiAddrs(ips...)) }); err != nil {
 					t.Fatalf("%s: %v", what, err)
 				}
 				if got := of(name); !slices.Equal(got, want) {
@@ -151,7 +161,7 @@ func TestLiveUniFi(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := withTTL.Update("live", unifiAddrs("192.0.2.5")); err != nil {
+			if err := limited(func() error { return withTTL.Update("live", unifiAddrs("192.0.2.5")) }); err != nil {
 				t.Fatal(err)
 			}
 			if got := of(name); !slices.Equal(got, []string{"A 192.0.2.5 300"}) {
