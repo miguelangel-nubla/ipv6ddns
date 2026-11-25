@@ -28,6 +28,10 @@ New here? The [README](../README.md) explains what ipv6ddns does. Each [guide](g
 ## Platforms
 
 - [MikroTik](mikrotik.md): RouterOS as a DNS provider, a discovery plugin, and a container host.
+- [OpenWrt](openwrt.md): the router's dnsmasq as a DNS provider, and its neighbor table and leases as a discovery plugin.
+- [OPNsense](opnsense.md): Unbound's host overrides as a DNS provider, and the firewall's neighbor tables and leases as a discovery plugin.
+- [pfSense](pfsense.md): the DNS Resolver's host overrides as a DNS provider, and the firewall's neighbor tables and leases as a discovery plugin.
+- [UniFi](unifi.md): the gateway's DNS Records as a DNS provider, and its clients as a discovery plugin.
 
 ## Reference
 
