@@ -59,7 +59,13 @@ func (w *Worker) grant(path, key string, p config.Permission) (resolver.Grant, e
 		if !ok {
 			return nil, fmt.Errorf("%s.credential: the provider of %s, %s, can't write the TXT records of the DNS challenge: give a credential of cloudflare, route53, rfc2136 or duckdns", path, p.Challenges.Credential, w.config.Credentials[p.Challenges.Credential].Provider)
 		}
-		return newChallengeGrant(writer, p.Challenges.Names, func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) }), nil
+		g := newChallengeGrant(writer, p.Challenges.Names, filepath.Join(w.config.BaseDir, "challenges-"+key+"-"+p.Challenges.Credential+".json"),
+			func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) })
+		if err := g.load(); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		w.grantsToStart = append(w.grantsToStart, g)
+		return g, nil
 	}
 	if p.Addresses != nil {
 		a := p.Addresses
@@ -85,7 +91,7 @@ func (w *Worker) grant(path, key string, p config.Permission) (resolver.Grant, e
 	if err := g.load(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	w.namesGrants = append(w.namesGrants, g)
+	w.grantsToStart = append(w.grantsToStart, g)
 	return g, nil
 }
 
@@ -221,15 +227,7 @@ func (g *namesGrant) save(records map[string][]dns.RR) error {
 			st.Names[name] = append(st.Names[name], rr.String())
 		}
 	}
-	data, err := json.MarshalIndent(st, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := g.file + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("keeping the names: %w", err)
-	}
-	if err := os.Rename(tmp, g.file); err != nil {
+	if err := writeJSON(g.file, st); err != nil {
 		return fmt.Errorf("keeping the names: %w", err)
 	}
 	return nil
@@ -237,27 +235,26 @@ func (g *namesGrant) save(records map[string][]dns.RR) error {
 
 // load reads the names file, if there is one: of names of the zone, of the grant's types.
 func (g *namesGrant) load() error {
-	data, err := os.ReadFile(g.file)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("reading the names: %w", err)
-	}
 	var st namesState
-	if err := json.Unmarshal(data, &st); err != nil {
-		return fmt.Errorf("reading the names, %s: %w", g.file, err)
+	if ok, err := readJSON(g.file, &st); err != nil || !ok {
+		return err
 	}
 	for name, lines := range st.Names {
 		for _, line := range lines {
 			rr, err := dns.NewRR(line)
-			if err != nil || rr == nil || !resolver.InZone(rr.Header().Name, g.zone) || !slices.Contains(g.Types(), rr.Header().Rrtype) {
-				return fmt.Errorf("reading the names, %s: %q is no record of the zone", g.file, line)
+			if err != nil || rr == nil || strings.ToLower(rr.Header().Name) != name || !g.Holds(name) || !slices.Contains(g.Types(), rr.Header().Rrtype) {
+				return fmt.Errorf("reading the names, %s: %q is no record of %s", g.file, line, strings.TrimSuffix(name, "."))
 			}
 			g.records[name] = append(g.records[name], rr)
 		}
 	}
 	return nil
+}
+
+// Holds tells whether name is one a host can have: one label below the zone, and no wildcard.
+func (g *namesGrant) Holds(name string) bool {
+	label, ok := strings.CutSuffix(name, "."+g.zone)
+	return ok && label != "" && !strings.ContainsAny(label, ".*")
 }
 
 // addressesGrant is a permission of addresses: the A and AAAA records of one name, which are the
@@ -328,23 +325,31 @@ func (g *addressesGrant) Apply(changes map[string][]dns.RR) error {
 var challengeExpiry = time.Hour
 
 // challengeGrant is a permission of challenges: the TXT records of _acme-challenge of each of
-// its names, written through a credential's provider.
+// its names, written through a credential's provider. What it wrote is kept in its file, so that
+// a client's removal after a restart, or the expiry, still removes it.
 type challengeGrant struct {
 	writer ddns.TXTWriter
 	names  []string
+	file   string
 	warnf  func(string, ...any)
 
 	mutex sync.Mutex
 	// The zone and the challenges' names, absolute and in lower case, once the provider told them.
 	zone       string
 	challenges []string
-	// The records of each name, as written last; and the timer that removes them.
-	records map[string][]dns.RR
-	expiry  map[string]*time.Timer
+	// The records of each name, as written last, and when; the timer that removes them, and the
+	// generation of the name's records it is of: a timer of records since changed does nothing.
+	records    map[string][]dns.RR
+	changed    map[string]time.Time
+	expiry     map[string]*time.Timer
+	generation map[string]uint64
+	// Once the worker stopped: no timer writes.
+	closed bool
 }
 
-func newChallengeGrant(writer ddns.TXTWriter, names []string, warnf func(string, ...any)) *challengeGrant {
-	return &challengeGrant{writer: writer, names: names, warnf: warnf, records: make(map[string][]dns.RR), expiry: make(map[string]*time.Timer)}
+func newChallengeGrant(writer ddns.TXTWriter, names []string, file string, warnf func(string, ...any)) *challengeGrant {
+	return &challengeGrant{writer: writer, names: names, file: file, warnf: warnf, records: make(map[string][]dns.RR),
+		changed: make(map[string]time.Time), expiry: make(map[string]*time.Timer), generation: make(map[string]uint64)}
 }
 
 func (g *challengeGrant) Kind() string { return config.PermissionChallenges }
@@ -384,44 +389,166 @@ func (g *challengeGrant) Records(name string) []dns.RR {
 	return slices.Clone(g.records[name])
 }
 
+// txtValues are the values of TXT records.
+func txtValues(rrs []dns.RR) []string {
+	var values []string
+	for _, rr := range rrs {
+		if txt, ok := rr.(*dns.TXT); ok {
+			values = append(values, strings.Join(txt.Txt, ""))
+		}
+	}
+	return values
+}
+
 // Apply writes the values of each name changed, all of them: a provider's SetTXT makes the
-// records of a name those it is given.
+// records of a name those it is given. One that fails puts back those written before it, so
+// that nothing is changed, as far as the provider lets.
 func (g *challengeGrant) Apply(changes map[string][]dns.RR) error {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
+	var written []string
 	for _, name := range slices.Sorted(maps.Keys(changes)) {
-		var values []string
-		for _, rr := range changes[name] {
-			if txt, ok := rr.(*dns.TXT); ok {
-				values = append(values, strings.Join(txt.Txt, ""))
+		if err := g.writer.SetTXT(strings.TrimSuffix(name, "."), txtValues(changes[name])); err != nil {
+			for _, w := range written {
+				if err := g.writer.SetTXT(strings.TrimSuffix(w, "."), txtValues(g.records[w])); err != nil {
+					g.warnf("putting back the TXT records of %s: %s", strings.TrimSuffix(w, "."), err)
+				}
 			}
-		}
-		if err := g.writer.SetTXT(strings.TrimSuffix(name, "."), values); err != nil {
 			return fmt.Errorf("writing the TXT records of %s: %w", strings.TrimSuffix(name, "."), err)
 		}
-		g.records[name] = changes[name]
-		if t := g.expiry[name]; t != nil {
-			t.Stop()
-			delete(g.expiry, name)
-		}
-		if len(values) > 0 {
-			g.expiry[name] = time.AfterFunc(challengeExpiry, func() { g.expire(name) })
-		}
+		written = append(written, name)
 	}
+	now := time.Now()
+	for _, name := range written {
+		g.set(name, changes[name], now)
+	}
+	g.save()
 	return nil
 }
 
-// expire removes the records of a name its client left, an hour after they last changed.
-func (g *challengeGrant) expire(name string) {
+// set makes name's records those given, changed at, and its timer, of a new generation: mutex
+// held.
+func (g *challengeGrant) set(name string, rrs []dns.RR, at time.Time) {
+	g.generation[name]++
+	if t := g.expiry[name]; t != nil {
+		t.Stop()
+		delete(g.expiry, name)
+	}
+	if len(rrs) == 0 {
+		delete(g.records, name)
+		delete(g.changed, name)
+		return
+	}
+	g.records[name], g.changed[name] = rrs, at
+	if g.closed {
+		return
+	}
+	generation := g.generation[name]
+	g.expiry[name] = time.AfterFunc(max(time.Until(at.Add(challengeExpiry)), 0), func() { g.expire(name, generation) })
+}
+
+// expire removes the records of a name its client left, an hour after they last changed: unless
+// they changed since, of a newer generation, or the worker stopped.
+func (g *challengeGrant) expire(name string, generation uint64) {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
-	if len(g.records[name]) == 0 {
+	if g.closed || g.generation[name] != generation || len(g.records[name]) == 0 {
 		return
 	}
 	if err := g.writer.SetTXT(strings.TrimSuffix(name, "."), nil); err != nil {
 		g.warnf("removing the TXT records of %s, which its client left: %s", strings.TrimSuffix(name, "."), err)
 		return
 	}
-	delete(g.records, name)
-	delete(g.expiry, name)
+	g.set(name, nil, time.Now())
+	g.save()
+}
+
+// start arms the timers of the records of its file, and stops every timer once ctx is done.
+func (g *challengeGrant) start(ctx context.Context, running *sync.WaitGroup) {
+	g.mutex.Lock()
+	for name, rrs := range g.records {
+		g.set(name, rrs, g.changed[name])
+	}
+	g.mutex.Unlock()
+	running.Add(1)
+	go func() {
+		defer running.Done()
+		<-ctx.Done()
+		g.mutex.Lock()
+		defer g.mutex.Unlock()
+		g.closed = true
+		for _, t := range g.expiry {
+			t.Stop()
+		}
+	}()
+}
+
+// challengesState is a challenges file: each name's values, and when they last changed.
+type challengesState struct {
+	Names map[string]challengeState `json:"names"`
+}
+
+type challengeState struct {
+	Values  []string  `json:"values"`
+	Changed time.Time `json:"changed"`
+}
+
+// save writes the records to the file, telling of an error: what the provider has is the
+// update's, whatever the file.
+func (g *challengeGrant) save() {
+	st := challengesState{Names: make(map[string]challengeState)}
+	for name, rrs := range g.records {
+		st.Names[name] = challengeState{Values: txtValues(rrs), Changed: g.changed[name].UTC()}
+	}
+	if err := writeJSON(g.file, st); err != nil {
+		g.warnf("keeping the challenges: %s", err)
+	}
+}
+
+// load reads the file, if there is one.
+func (g *challengeGrant) load() error {
+	var st challengesState
+	if ok, err := readJSON(g.file, &st); err != nil || !ok {
+		return err
+	}
+	for name, c := range st.Names {
+		name = strings.ToLower(dns.Fqdn(name))
+		if !strings.HasPrefix(name, "_acme-challenge.") {
+			return fmt.Errorf("reading the challenges, %s: %s is no challenge's name", g.file, name)
+		}
+		var rrs []dns.RR
+		for _, v := range c.Values {
+			rrs = append(rrs, &dns.TXT{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 60}, Txt: []string{v}})
+		}
+		g.records[name], g.changed[name] = rrs, c.Changed
+	}
+	return nil
+}
+
+// writeJSON writes v to file, through a file beside it, renamed.
+func writeJSON(file string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := file + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, file)
+}
+
+// readJSON reads file into v, and tells whether there was one.
+func readJSON(file string, v any) (bool, error) {
+	data, err := os.ReadFile(file)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reading %s: %w", file, err)
+	}
+	if err := json.Unmarshal(data, v); err != nil {
+		return false, fmt.Errorf("reading %s: %w", file, err)
+	}
+	return true, nil
 }

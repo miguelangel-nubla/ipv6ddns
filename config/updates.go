@@ -202,6 +202,13 @@ func (c *Config) checkPermission(key, path string, p Permission, all claims) err
 		case len(ch.Names) == 0:
 			return fmt.Errorf("%s.names is missing: give the names of the certificates, relative to the zone of the credential, as nas.lan or *.apps", path)
 		}
+		// One permission of a credential, of each key: what it wrote is kept by those two.
+		if err := all.claim("credential "+ch.Credential+" of "+key, key, path); err != nil {
+			return err
+		}
+		if other := all["credential "+ch.Credential+" of "+key][1]; other != path {
+			return fmt.Errorf("%s: %s has a permission of challenges of %s already, %s: give all their names in one", path, strings.TrimPrefix(key, strings.SplitN(key, ".keys.", 2)[0]+".keys."), ch.Credential, other)
+		}
 		zone := settingsZone(credential.RawSettings)
 		for _, n := range ch.Names {
 			base, ok := challengeBase(n)

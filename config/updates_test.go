@@ -335,3 +335,25 @@ resolvers:
 		t.Errorf("%v, want %s", err, want)
 	}
 }
+
+// One permission of challenges of a credential, of each key: two would keep what they wrote in one
+// file.
+func TestUpdatesChallengesOncePerCredential(t *testing.T) {
+	_, err := updatesConfig(t, plainAndTLS, `
+      keys:
+        nas:
+          secret: `+testSecretYAML+`
+          permissions:
+            - challenges:
+                credential: public
+                names:
+                  - nas.lan
+            - challenges:
+                credential: public
+                names:
+                  - apps`)
+	want := "resolvers.home.updates.keys.nas.permissions[1].challenges: nas has a permission of challenges of public already, resolvers.home.updates.keys.nas.permissions[0].challenges: give all their names in one"
+	if err == nil || err.Error() != want {
+		t.Errorf("%v, want %s", err, want)
+	}
+}

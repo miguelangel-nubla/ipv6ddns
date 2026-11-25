@@ -134,6 +134,8 @@ The web report lists the name under the device, said by `updates.kea`, and the r
 
 - **A name goes to the device at its address.** Discovery finds the device at the address it leased, as it talks, and the name is given to it. A name whose address discovery hasn't seen yet waits, and is given within a minute once it has.
 - **Conflicts are the DHCP server's**, as RFC 4703 has them: a DHCID record of each name says which client it is of. Another client that asks for the name is refused, and the first keeps it. With `ddns-conflict-resolution-mode: no-check-without-dhcid`, Kea sends no checks, and the last client to ask gets it.
+- **The checks see the names the DHCP server sent alone.** A name a device says itself, over mDNS, or a record of the resolver's own, is not "in use" to them: two devices with one name are told apart as discovery tells any, as `1.printer` and `2.printer`.
+- **Names are one label below the zone**, as `printer.lan.example.com`: an update of `a.b.lan.example.com`, or of a wildcard, is refused.
 - **A name the server removes**, when the lease is released or expires, isn't given again, and goes when discovery's [names lifetime](../reference/configuration.md#discovery-hostnames) is over, an hour by default, unless the device says it otherwise.
 - **A restart keeps the names**, in `names-lan.example.com.json` beside the configuration: Kea doesn't send them again when a lease is renewed.
 - **The TTLs the server sends are ignored**: the endpoint's credential sets its own.

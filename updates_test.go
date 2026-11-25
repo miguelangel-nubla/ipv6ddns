@@ -632,3 +632,173 @@ func TestUpdatesNames(t *testing.T) {
 		t.Errorf("the DHCID, after a restart: %v", resp)
 	}
 }
+
+// failingRecorder is a txtRecorder that fails the names given.
+type failingRecorder struct {
+	*txtRecorder
+	failing map[string]bool
+}
+
+func (r *failingRecorder) SetTXT(name string, values []string) error {
+	if r.failing[name] {
+		return errors.New("the API refused " + name)
+	}
+	return r.txtRecorder.SetTXT(name, values)
+}
+
+func txtRR(t *testing.T, name, value string) dns.RR {
+	t.Helper()
+	rr, err := dns.NewRR(fmt.Sprintf(`%s 60 IN TXT "%s"`, name, value))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rr
+}
+
+// A timer of records since changed does nothing: the expiry that fired as they were written
+// doesn't remove the new ones.
+func TestChallengeExpiryOfOlderRecords(t *testing.T) {
+	rec := &txtRecorder{txt: map[string][]string{}}
+	g := newChallengeGrant(rec, []string{"nas"}, filepath.Join(t.TempDir(), "c.json"), t.Logf)
+	name := "_acme-challenge.nas.rec.test."
+	if err := g.Apply(map[string][]dns.RR{name: {txtRR(t, name, "old")}}); err != nil {
+		t.Fatal(err)
+	}
+	g.mutex.Lock()
+	old := g.generation[name]
+	g.mutex.Unlock()
+	if err := g.Apply(map[string][]dns.RR{name: {txtRR(t, name, "new")}}); err != nil {
+		t.Fatal(err)
+	}
+	g.expire(name, old)
+	if got := rec.txt["_acme-challenge.nas.rec.test"]; !slices.Equal(got, []string{"new"}) {
+		t.Errorf("after an older timer: %q", got)
+	}
+	g.mutex.Lock()
+	current := g.generation[name]
+	g.mutex.Unlock()
+	g.expire(name, current)
+	if got := rec.txt["_acme-challenge.nas.rec.test"]; len(got) != 0 {
+		t.Errorf("after its own timer: %q", got)
+	}
+}
+
+// A name that fails puts back those written before it: the update changes nothing.
+func TestChallengeApplyPutsBack(t *testing.T) {
+	rec := &failingRecorder{&txtRecorder{txt: map[string][]string{}}, map[string]bool{}}
+	g := newChallengeGrant(rec, []string{"a", "b"}, filepath.Join(t.TempDir(), "c.json"), t.Logf)
+	a, b := "_acme-challenge.a.rec.test.", "_acme-challenge.b.rec.test."
+	if err := g.Apply(map[string][]dns.RR{a: {txtRR(t, a, "a1")}}); err != nil {
+		t.Fatal(err)
+	}
+	rec.failing["_acme-challenge.b.rec.test"] = true
+	if err := g.Apply(map[string][]dns.RR{a: {txtRR(t, a, "a2")}, b: {txtRR(t, b, "b1")}}); err == nil {
+		t.Fatal("no error")
+	}
+	if got := rec.txt["_acme-challenge.a.rec.test"]; !slices.Equal(got, []string{"a1"}) {
+		t.Errorf("a, put back: %q", got)
+	}
+	if got := txtValues(g.Records(a)); !slices.Equal(got, []string{"a1"}) {
+		t.Errorf("a, as the grant has it: %q", got)
+	}
+}
+
+// A restart between a client's challenge and its removal: the file has the value, so the removal
+// removes it at the provider; and one never removed expires, of the time it was written.
+func TestChallengeKeptAcrossARestart(t *testing.T) {
+	old := challengeExpiry
+	t.Cleanup(func() { challengeExpiry = old })
+	file := filepath.Join(t.TempDir(), "c.json")
+	rec := &txtRecorder{txt: map[string][]string{}}
+	name := "_acme-challenge.nas.rec.test."
+	first := newChallengeGrant(rec, []string{"nas"}, file, t.Logf)
+	if err := first.Apply(map[string][]dns.RR{name: {txtRR(t, name, "token")}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Started again: the client removes it, and the provider is told.
+	again := newChallengeGrant(rec, []string{"nas"}, file, t.Logf)
+	if err := again.load(); err != nil {
+		t.Fatal(err)
+	}
+	if got := txtValues(again.Records(name)); !slices.Equal(got, []string{"token"}) {
+		t.Fatalf("after a restart: %q", got)
+	}
+	if err := again.Apply(map[string][]dns.RR{name: nil}); err != nil {
+		t.Fatal(err)
+	}
+	if calls := rec.callsSoFar(); calls[len(calls)-1] != `_acme-challenge.nas.rec.test []` {
+		t.Errorf("the removal: %q", calls)
+	}
+
+	// One left, and its time over while ipv6ddns was stopped: removed once started.
+	if err := again.Apply(map[string][]dns.RR{name: {txtRR(t, name, "left")}}); err != nil {
+		t.Fatal(err)
+	}
+	challengeExpiry = 100 * time.Millisecond
+	time.Sleep(150 * time.Millisecond)
+	third := newChallengeGrant(rec, []string{"nas"}, file, t.Logf)
+	if err := third.load(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var running sync.WaitGroup
+	third.start(ctx, &running)
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if calls := rec.callsSoFar(); calls[len(calls)-1] == `_acme-challenge.nas.rec.test []` {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("never expired: %q", rec.callsSoFar())
+		}
+	}
+	cancel()
+	running.Wait()
+}
+
+// Once the worker stopped, no timer writes to the provider.
+func TestChallengeTimersStop(t *testing.T) {
+	old := challengeExpiry
+	challengeExpiry = 100 * time.Millisecond
+	t.Cleanup(func() { challengeExpiry = old })
+	rec := &txtRecorder{txt: map[string][]string{}}
+	g := newChallengeGrant(rec, []string{"nas"}, filepath.Join(t.TempDir(), "c.json"), t.Logf)
+	ctx, cancel := context.WithCancel(context.Background())
+	var running sync.WaitGroup
+	g.start(ctx, &running)
+	name := "_acme-challenge.nas.rec.test."
+	if err := g.Apply(map[string][]dns.RR{name: {txtRR(t, name, "token")}}); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	running.Wait()
+	time.Sleep(250 * time.Millisecond)
+	if calls := rec.callsSoFar(); len(calls) != 1 {
+		t.Errorf("written after the stop: %q", calls)
+	}
+}
+
+// The names a DHCP server may send: one label below the zone, and no wildcard; and a file whose
+// record isn't of its name is an error at start.
+func TestNamesGrantHolds(t *testing.T) {
+	g := &namesGrant{zone: "lan.example.com.", records: map[string][]dns.RR{}}
+	for name, want := range map[string]bool{
+		"printer.lan.example.com.": true,
+		"lan.example.com.":         false,
+		"*.lan.example.com.":       false,
+		"a.b.lan.example.com.":     false,
+		"printer.example.com.":     false,
+	} {
+		if got := g.Holds(name); got != want {
+			t.Errorf("%s: %v, want %v", name, got, want)
+		}
+	}
+	g.file = filepath.Join(t.TempDir(), "names.json")
+	if err := os.WriteFile(g.file, []byte(`{"names":{"printer.lan.example.com.":["scanner.lan.example.com.\t60\tIN\tA\t192.0.2.1"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.load(); err == nil || !strings.Contains(err.Error(), "is no record of printer.lan.example.com") {
+		t.Errorf("a record of another name: %v", err)
+	}
+}
