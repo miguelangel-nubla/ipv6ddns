@@ -256,3 +256,118 @@ func tail(s string, n int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// TestLiveUpdatesNsupdate sends a host's own addresses to ipv6ddns with nsupdate, signed with a
+// key, as a VPS would: they go to a push source, whose task writes them to BIND with the rfc2136
+// provider. nsupdate finds the zone itself, by the resolver, which asks BIND as the internet. It
+// runs in BIND's container, of the clients' network.
+func TestLiveUpdatesNsupdate(t *testing.T) {
+	settings, network, host := os.Getenv("IPV6DDNS_LIVE_RFC2136"), os.Getenv("IPV6DDNS_LIVE_ACME_NETWORK"), os.Getenv("IPV6DDNS_LIVE_ACME_HOST")
+	container, ok := strings.CutPrefix(network, "container:")
+	if settings == "" || !ok || host == "" {
+		t.Skip("IPV6DDNS_LIVE_RFC2136, IPV6DDNS_LIVE_ACME_NETWORK and IPV6DDNS_LIVE_ACME_HOST not set: tools/live-providers.sh sets them")
+	}
+	var bind struct {
+		Zone string `json:"zone"`
+	}
+	if err := json.Unmarshal([]byte(settings), &bind); err != nil {
+		t.Fatal(err)
+	}
+	zone, bindDNS := bind.Zone, os.Getenv("IPV6DDNS_LIVE_RFC2136_DNS")
+	secret := randomSecret(t)
+	port := freeDNSPort(t)
+	w := workerOf(t, fmt.Sprintf(`
+credentials:
+  public:
+    provider: rfc2136
+    settings: %s
+    debounce: 1ms
+resolvers:
+  lan:
+    listen: 0.0.0.0:%s
+    allow:
+      - 0.0.0.0/0
+      - ::/0
+    upstream: %s
+    updates:
+      keys:
+        vps:
+          secret: %s
+          permissions:
+            - addresses:
+                source: vps
+                zone: %s
+sources:
+  vps:
+    type: push
+    state_file: %s
+tasks:
+  vps:
+    sources:
+      - vps
+    endpoints:
+      public:
+        - vps
+discovery:
+  ipv6:
+    enabled: false
+`, settings, port, bindDNS, secret, zone, filepath.Join(t.TempDir(), "push-vps.json")))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	key := fmt.Sprintf("key \"vps\" {\n\talgorithm hmac-sha256;\n\tsecret \"%s\";\n};\n", secret)
+	nsupdate := func(lines ...string) {
+		t.Helper()
+		script := fmt.Sprintf("server %s %s\n%s\nsend\n", host, port, strings.Join(lines, "\n"))
+		cmd := exec.Command("docker", "exec", "-i", "-e", "KEY="+key, container, "sh", "-c",
+			`printf '%s' "$KEY" > /tmp/vps.key && nsupdate -v -k /tmp/vps.key`)
+		cmd.Stdin = strings.NewReader(script)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("nsupdate: %v\n%s", err, out)
+		}
+	}
+	name := "vps." + zone + "."
+	atBIND := func(want ...string) {
+		t.Helper()
+		var got []string
+		for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+			got = nil
+			for _, qtype := range []uint16{dns.TypeA, dns.TypeAAAA} {
+				m := new(dns.Msg)
+				m.SetQuestion(name, qtype)
+				resp, _, err := (&dns.Client{Timeout: 3 * time.Second}).Exchange(m, bindDNS)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, rr := range resp.Answer {
+					switch rr := rr.(type) {
+					case *dns.A:
+						got = append(got, rr.A.String())
+					case *dns.AAAA:
+						got = append(got, rr.AAAA.String())
+					}
+				}
+			}
+			slices.Sort(got)
+			if slices.Equal(got, want) || time.Now().After(deadline) {
+				break
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("BIND has %v of %s, want %v", got, name, want)
+		}
+	}
+
+	nsupdate("update delete "+name+" A", "update add "+name+" 300 A 192.0.2.77", "update add "+name+" 300 AAAA 2001:db8::77")
+	atBIND("192.0.2.77", "2001:db8::77")
+	nsupdate("update delete " + name + " AAAA")
+	atBIND("192.0.2.77")
+	nsupdate("update delete " + name)
+	atBIND()
+	if k := w.Status(true).Resolvers[0].Keys[0]; k.Updates["applied"] != 3 || k.Updates["refused"] != 0 {
+		t.Errorf("the key: %+v", k)
+	}
+}

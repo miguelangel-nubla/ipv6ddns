@@ -741,7 +741,7 @@
                     "password": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "push: the password the router sends with its updates, as the HTTP basic password or as password in the URL. Required."
+                        "description": "push: the password the router sends with its updates, as the HTTP basic password or as password in the URL. Required, unless a key of a resolver's updates sends the addresses, with a permission of addresses: without one, the source takes those alone, and refuses every request of the web server."
                     },
                     "state_file": {
                         "type": "string",

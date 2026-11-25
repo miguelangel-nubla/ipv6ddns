@@ -304,3 +304,66 @@ func TestPushSaveError(t *testing.T) {
 		})
 	}
 }
+
+// Replace makes the addresses those given, of both families, as a key's update has them: kept in
+// the file, and matched again.
+func TestPushReplace(t *testing.T) {
+	dir := t.TempDir()
+	s := pushSource(t, dir, 0)
+	rematched := 0
+	s.Start(t.Context(), nil, func() { rematched++ })
+	have := func(want ...string) {
+		t.Helper()
+		if got := sortedStrings(s.Addresses().Strings()); !slices.Equal(got, want) {
+			t.Errorf("%v, want %v", got, want)
+		}
+	}
+	if changed, err := s.Replace(pushed("192.0.2.7", "2001:db8::7")); !changed || err != nil {
+		t.Fatal(changed, err)
+	}
+	have("192.0.2.7", "2001:db8::7")
+	// One family alone: the other goes, unlike Push.
+	if changed, _ := s.Replace(pushed("2001:db8::8", "2001:db8::9")); !changed {
+		t.Error("not changed")
+	}
+	have("2001:db8::8", "2001:db8::9")
+	if changed, _ := s.Replace(pushed("2001:db8::9", "2001:db8::8")); changed {
+		t.Error("the same again changed")
+	}
+	if changed, _ := s.Replace(nil); !changed {
+		t.Error("none: not changed")
+	}
+	have()
+	// Each time, as Push: the matching is asked again, changed or not.
+	if rematched != 4 {
+		t.Errorf("matched again %d times, want 4", rematched)
+	}
+	// Kept for a restart.
+	s.Replace(pushed("192.0.2.10"))
+	again := pushSource(t, dir, 0)
+	if got := again.Addresses().Strings(); !slices.Equal(got, []string{"192.0.2.10"}) {
+		t.Errorf("after a restart: %v", got)
+	}
+}
+
+// A push source without a password takes a key's updates alone: no password is its, the empty one
+// neither.
+func TestPushWithoutPassword(t *testing.T) {
+	cfg := config.Source{Type: config.SourcePush}
+	cfg.Lifetime.Duration = config.PushForever
+	s, err := New("vps", cfg, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"", "secret", " "} {
+		if s.Accepts(p) {
+			t.Errorf("%q accepted", p)
+		}
+	}
+}
+
+func sortedStrings(s []string) []string {
+	out := slices.Clone(s)
+	slices.Sort(out)
+	return out
+}

@@ -319,3 +319,141 @@ tasks:
 		t.Errorf("%v, want %s", err, want)
 	}
 }
+
+// addressesWorker is a worker with a resolver at port, whose key nas may send the addresses of
+// vps.example.com to the push source vps, of no password, kept in state; and the task vps, which
+// gives them to the fake provider of id. Started, and stopped with ctx.
+func addressesWorker(t *testing.T, ctx context.Context, port, id, state string) *Worker {
+	t.Helper()
+	w := workerOf(t, fmt.Sprintf(`
+credentials:
+  public:
+    provider: fake
+    settings:
+      id: %s
+    debounce: 1ms
+resolvers:
+  lan:
+    listen: 127.0.0.1:%s
+    upstream: 127.0.0.1:%s
+    updates:
+      keys:
+        nas:
+          secret: %s
+          permissions:
+            - addresses:
+                source: vps
+                zone: example.com
+sources:
+  vps:
+    type: push
+    state_file: %s
+tasks:
+  vps:
+    sources:
+      - vps
+    endpoints:
+      public:
+        - vps
+discovery:
+  ipv6:
+    enabled: false
+`, id, port, freeDNSPort(t), updatesTestSecret, state))
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+func addressUpdate(t *testing.T, change func(m *dns.Msg, rr func(string) dns.RR)) *dns.Msg {
+	t.Helper()
+	m := new(dns.Msg)
+	m.SetUpdate("example.com.")
+	change(m, func(line string) dns.RR {
+		r, err := dns.NewRR("vps.example.com. " + line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	})
+	return m
+}
+
+// A host's own addresses, sent as nsupdate does: they become the push source's, the task's
+// provider gets them, and a restart keeps them.
+func TestUpdatesAddresses(t *testing.T) {
+	port := freeDNSPort(t)
+	state := filepath.Join(t.TempDir(), "push-vps.json")
+	ctx, cancel := context.WithCancel(context.Background())
+	w := addressesWorker(t, ctx, port, "addresses", state)
+	address := net.JoinHostPort("127.0.0.1", port)
+	service := fakeServices["addresses"]
+
+	for _, step := range []struct {
+		what   string
+		change func(m *dns.Msg, rr func(string) dns.RR)
+		rcode  int
+		want   []string
+	}{
+		{"its IPv4", func(m *dns.Msg, rr func(string) dns.RR) {
+			m.RemoveRRset([]dns.RR{rr("0 IN A 0.0.0.0")})
+			m.Insert([]dns.RR{rr("300 IN A 192.0.2.7")})
+		}, dns.RcodeSuccess, []string{"192.0.2.7"}},
+		{"its IPv6, beside", func(m *dns.Msg, rr func(string) dns.RR) {
+			m.Insert([]dns.RR{rr("300 IN AAAA 2001:db8::7"), rr("300 IN AAAA 2001:db8::8")})
+		}, dns.RcodeSuccess, []string{"192.0.2.7", "2001:db8::7", "2001:db8::8"}},
+		{"one removed", func(m *dns.Msg, rr func(string) dns.RR) {
+			m.Remove([]dns.RR{rr("0 IN AAAA 2001:db8::8")})
+		}, dns.RcodeSuccess, []string{"192.0.2.7", "2001:db8::7"}},
+		{"the IPv4 removed, if it has IPv6", func(m *dns.Msg, rr func(string) dns.RR) {
+			m.RRsetUsed([]dns.RR{rr("0 IN AAAA ::")})
+			m.RemoveRRset([]dns.RR{rr("0 IN A 0.0.0.0")})
+		}, dns.RcodeSuccess, []string{"2001:db8::7"}},
+		{"a prerequisite that fails", func(m *dns.Msg, rr func(string) dns.RR) {
+			m.RRsetUsed([]dns.RR{rr("0 IN A 0.0.0.0")})
+			m.Insert([]dns.RR{rr("300 IN A 192.0.2.99")})
+		}, dns.RcodeNXRrset, []string{"2001:db8::7"}},
+		{"a TXT record", func(m *dns.Msg, rr func(string) dns.RR) {
+			m.Insert([]dns.RR{rr(`300 IN TXT "x"`)})
+		}, dns.RcodeRefused, []string{"2001:db8::7"}},
+	} {
+		if resp := signed(t, address, addressUpdate(t, step.change)); resp.Rcode != step.rcode {
+			t.Errorf("%s: %s, want %s", step.what, dns.RcodeToString[resp.Rcode], dns.RcodeToString[step.rcode])
+		}
+		if got := slices.Sorted(slices.Values(w.sources["vps"].Addresses().Strings())); !slices.Equal(got, step.want) {
+			t.Errorf("%s: the source has %v, want %v", step.what, got, step.want)
+		}
+	}
+	// Another name of the zone: refused.
+	m := new(dns.Msg)
+	m.SetUpdate("example.com.")
+	other, _ := dns.NewRR("www.example.com. 300 IN A 192.0.2.1")
+	m.Insert([]dns.RR{other})
+	if resp := signed(t, address, m); resp.Rcode != dns.RcodeRefused {
+		t.Errorf("another name: %s", dns.RcodeToString[resp.Rcode])
+	}
+	service.waitFor(t, "vps", "2001:db8::7")
+
+	// Asked, signed: the source's addresses, with authority.
+	q := new(dns.Msg)
+	q.SetQuestion("vps.example.com.", dns.TypeAAAA)
+	if resp := signed(t, address, q); !resp.Authoritative || len(resp.Answer) != 1 || resp.Answer[0].(*dns.AAAA).AAAA.String() != "2001:db8::7" {
+		t.Errorf("asked: %v", resp)
+	}
+
+	// A restart: the source's file has them, and the resolver answers them again.
+	cancel()
+	stopping, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	if err := w.Shutdown(stopping); err != nil {
+		t.Fatal(err)
+	}
+	port = freeDNSPort(t)
+	ctx, cancel = context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	addressesWorker(t, ctx, port, "addresses-again", state)
+	if resp := signed(t, net.JoinHostPort("127.0.0.1", port), q); len(resp.Answer) != 1 {
+		t.Errorf("after a restart: %v", resp)
+	}
+	fakeServices["addresses-again"].waitFor(t, "vps", "2001:db8::7")
+}

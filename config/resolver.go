@@ -269,6 +269,30 @@ func (c *Config) setUpResolvers() error {
 			return err
 		}
 	}
+	return c.checkPushSources()
+}
+
+// checkPushSources tells of a push source without a password that no key sends addresses to: it
+// would never have any.
+func (c *Config) checkPushSources() error {
+	fed := map[string]bool{}
+	for _, r := range c.Resolvers {
+		if r.Updates == nil {
+			continue
+		}
+		for _, k := range r.Updates.Keys {
+			for _, p := range k.Permissions {
+				if p.Addresses != nil {
+					fed[p.Addresses.Source] = true
+				}
+			}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
+		if s := c.Sources[name]; s.Type == SourcePush && s.Password == "" && !fed[name] {
+			return fmt.Errorf("source %s: a push source needs a password, which a router sends with its updates, or a key of a resolver's updates whose permission of addresses sends them", name)
+		}
+	}
 	return nil
 }
 

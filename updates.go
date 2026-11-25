@@ -3,6 +3,8 @@ package ipv6ddns
 import (
 	"fmt"
 	"maps"
+	"net"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +14,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
+	"github.com/miguelangel-nubla/ipv6ddns/source"
 )
 
 // updateKeys are the keys of a resolver's dynamic updates, each with a grant of each of its
@@ -52,7 +55,83 @@ func (w *Worker) grant(path string, p config.Permission) (resolver.Grant, error)
 		}
 		return newChallengeGrant(writer, p.Challenges.Names, func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) }), nil
 	}
+	if p.Addresses != nil {
+		a := p.Addresses
+		s, ok := w.sources[a.Source]
+		if !ok || !s.IsPush() {
+			return nil, fmt.Errorf("%s.source: no push source %s", path, a.Source)
+		}
+		name := a.Name
+		if name == "" {
+			name = a.Source
+		}
+		return &addressesGrant{source: s, zone: resolver.Name("", a.Zone), name: resolver.Name(name, a.Zone),
+			warnf: func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) }}, nil
+	}
 	return nil, fmt.Errorf("%s: permissions of %s aren't taken yet", path, p.Kind())
+}
+
+// addressesGrant is a permission of addresses: the A and AAAA records of one name, which are the
+// addresses of a push source. Its records are the source's, so a restart keeps them, in its file.
+type addressesGrant struct {
+	source     *source.Source
+	zone, name string
+	warnf      func(string, ...any)
+}
+
+func (g *addressesGrant) Kind() string { return config.PermissionAddresses }
+
+func (g *addressesGrant) Scope() (string, []string, error) {
+	return g.zone, []string{g.name}, nil
+}
+
+func (g *addressesGrant) Types() []uint16 { return []uint16{dns.TypeA, dns.TypeAAAA} }
+
+// Records are the source's addresses, as records of the name.
+func (g *addressesGrant) Records(name string) []dns.RR {
+	if name != g.name {
+		return nil
+	}
+	var out []dns.RR
+	for _, a := range g.source.Addresses().Get() {
+		ip := a.Unmap().WithZone("")
+		h := dns.RR_Header{Name: g.name, Class: dns.ClassINET, Ttl: 60}
+		if ip.Is4() {
+			h.Rrtype = dns.TypeA
+			out = append(out, &dns.A{Hdr: h, A: ip.AsSlice()})
+		} else {
+			h.Rrtype = dns.TypeAAAA
+			out = append(out, &dns.AAAA{Hdr: h, AAAA: ip.AsSlice()})
+		}
+	}
+	return out
+}
+
+// Apply makes the source's addresses the name's records, all of them.
+func (g *addressesGrant) Apply(changes map[string][]dns.RR) error {
+	rrs, ok := changes[g.name]
+	if !ok {
+		return nil
+	}
+	var addrs []netip.Addr
+	for _, rr := range rrs {
+		var ip net.IP
+		switch rr := rr.(type) {
+		case *dns.A:
+			ip = rr.A
+		case *dns.AAAA:
+			ip = rr.AAAA
+		}
+		if a, ok := netip.AddrFromSlice(ip); ok {
+			addrs = append(addrs, a.Unmap())
+		}
+	}
+	// The addresses are the source's once Replace returns, and the tasks have them: a file that
+	// isn't written is told, not the update's error, which would say nothing changed.
+	if _, err := g.source.Replace(addrs); err != nil {
+		g.warnf("%s", err)
+	}
+	return nil
 }
 
 // challengeExpiry is how long a value of a challenge's record stays after its name last changed,

@@ -42,7 +42,7 @@ credentials:
 | `command` | The addresses that a `command`, run with its `args`, prints one per line. The command runs in the configuration's directory |
 | `static` | The `addresses` you list. Use it for an address that doesn't change, or that discovery can't reach |
 | `homeassistant` | The addresses in the state of a Home Assistant `entity`, or of its `attribute`: see the [Home Assistant integration](home-assistant-integration.md#an-entitys-addresses) |
-| `push` | The addresses your router sends, as it would to a DynDNS service: see [a router's updates](#a-routers-updates) |
+| `push` | The addresses your router sends, as it would to a DynDNS service: see [a router's updates](#a-routers-updates). Or those a host sends as dynamic updates, signed with a key: see [a key's updates](#a-keys-updates) |
 
 A `dns` or `http` source asks its services in order until one answers. Each service gets its share of the run's time. So a service that hangs doesn't stop the next one from being asked, and one family doesn't hold up the other.
 
@@ -164,6 +164,67 @@ tasks:
 - The prefix lasts the source's `lifetime` from when the router sent it, as the addresses do, though later updates send none: past it, the rule lets every address pass until the router sends one again. It is kept in the source's file, so a restart keeps it, and shown in `/status.json`.
 
 The web server has no other authentication, so give it an address of the LAN, not one the internet reaches. UniFi's dynamic DNS sends IPv4 alone; the IPv6 addresses of the devices come from discovery anyway.
+
+## A key's updates
+
+A host can send its own addresses as RFC 2136 dynamic updates, signed with a TSIG key, to a [resolver](resolver.md#dynamic-updates) of ipv6ddns: a VPS whose address changes, with `nsupdate` from cron, or a router's RFC 2136 client, as pfSense's. A key's permission of `addresses` makes them a push source's:
+
+```yaml
+sources:
+  vps:
+    type: push
+
+resolvers:
+  home:
+    listen:
+      - 192.168.1.2
+    upstream:
+      - 1.1.1.1
+    updates:
+      keys:
+        vps:
+          secret: ${file:tsig_vps}
+          permissions:
+            - addresses:
+                source: vps
+                zone: example.com
+
+tasks:
+  vps:
+    sources:
+      - vps
+    endpoints:
+      cloudflare:
+        - vps
+
+credentials:
+  cloudflare:
+    provider: cloudflare
+    settings:
+      api_token: ${file:cloudflare_token}
+      zone: example.com
+      ttl: 1h
+      proxied: false
+```
+
+On the VPS, as often as its address may change:
+
+```
+nsupdate -k /etc/tsig_vps.key <<EOF
+server 192.168.1.2
+update delete vps.example.com A
+update add vps.example.com 300 A 198.51.100.42
+update delete vps.example.com AAAA
+update add vps.example.com 300 AAAA 2001:db8:2::42
+send
+EOF
+```
+
+- **The name the client updates** is the source's name in the zone, `vps.example.com`, unless the permission gives another `name`. It only says what the update is of: the names published are the tasks', as above, where the task gives it the same name.
+- **An update says exactly what changes**: an address added, one removed, or all of a family removed. Unlike dyndns2, sending IPv4 leaves the IPv6 addresses as they are, and removing them takes `update delete vps.example.com AAAA`.
+- **Without a `password`,** the source takes the key's updates alone, and refuses every request at `/nic/update`. It needs no web server then. With one, it takes both.
+- **The addresses stay until the next update**, and a restart keeps them, as a router's. The TTL sent is ignored: the endpoint's credential sets its own.
+- **Only A and AAAA records of that name**: an update of anything else is refused, unless the key has a permission of it.
 
 ## A script of yours
 

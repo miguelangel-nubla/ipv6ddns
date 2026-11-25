@@ -176,7 +176,7 @@ Sources of addresses that have no MAC, such as the network's public IPv4, by nam
 | `addresses` | list of string | For static: the addresses. |
 | `entity` | string | For homeassistant: the entity, as sensor.wan_ip. |
 | `attribute` | string | For homeassistant: an attribute of the entity to read instead of its state. |
-| `password` | string | push: the password the router sends with its updates, as the HTTP basic password or as password in the URL. Required. |
+| `password` | string | push: the password the router sends with its updates, as the HTTP basic password or as password in the URL. Required, unless a key of a resolver's updates sends the addresses, with a permission of addresses: without one, the source takes those alone, and refuses every request of the web server. |
 | `state_file` | string | push: the file the addresses sent last are kept in, so that a restart doesn't lose them until the router's next update. Relative to the configuration's folder, unless absolute. Default: push-<source>.json. |
 
 ## Web server

@@ -104,9 +104,8 @@ func (s Source) withDefaults() (Source, error) {
 			return s, fmt.Errorf("a homeassistant source needs an entity")
 		}
 	case SourcePush:
-		if s.Password == "" {
-			return s, fmt.Errorf("a push source needs a password, which the router sends with its updates")
-		}
+		// Without a password, it takes the dynamic updates of a key alone: setUpResolvers checks
+		// that one sends them.
 		if len(s.Family) > 0 || s.Interval.Duration != 0 {
 			return s, fmt.Errorf("a push source has no family nor interval: it has the addresses the router sends, when it sends them")
 		}
@@ -210,7 +209,7 @@ func (c *Config) setUpSources() error {
 		c.Sources[name] = source
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
-		if c.Sources[name].Type == SourcePush && len(c.Webserver.Listen) == 0 {
+		if c.Sources[name].Type == SourcePush && c.Sources[name].Password != "" && len(c.Webserver.Listen) == 0 {
 			return fmt.Errorf("source %s: a router pushes its addresses through the web server, at /nic/update: give webserver.listen", name)
 		}
 	}

@@ -290,3 +290,48 @@ resolvers:
 		t.Errorf("%v, want %s", err, want)
 	}
 }
+
+// A push source without a password takes a key's updates: it needs no web server, and a key that
+// sends to it.
+func TestUpdatesPushWithoutPassword(t *testing.T) {
+	text := func(keys string) string {
+		return `
+sources:
+  vps:
+    type: push
+tasks:
+  vps:
+    sources:
+      - vps
+    endpoints:
+      home:
+        - vps
+credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: home.arpa
+resolvers:
+  home:
+    listen:
+      - 192.168.1.2
+    upstream:
+      - 1.1.1.1
+` + keys
+	}
+	if _, err := loadConfig(t, text(`    updates:
+      keys:
+        vps:
+          secret: `+testSecretYAML+`
+          permissions:
+            - addresses:
+                source: vps
+                zone: example.com
+`)); err != nil {
+		t.Error(err)
+	}
+	want := "source vps: a push source needs a password, which a router sends with its updates, or a key of a resolver's updates whose permission of addresses sends them"
+	if _, err := loadConfig(t, text("")); err == nil || err.Error() != want {
+		t.Errorf("%v, want %s", err, want)
+	}
+}

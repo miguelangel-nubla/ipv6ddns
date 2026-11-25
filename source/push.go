@@ -41,8 +41,12 @@ func pushFile(name string, cfg config.Source, baseDir string) string {
 func (s *Source) IsPush() bool { return s.config.Type == config.SourcePush }
 
 // Accepts tells whether password is the source's: compared in constant time, as anyone who
-// reaches the web server can try.
+// reaches the web server can try. A source without one, which takes the updates of a key alone,
+// accepts none.
 func (s *Source) Accepts(password string) bool {
+	if s.config.Password == "" {
+		return false
+	}
 	return subtle.ConstantTimeCompare([]byte(password), []byte(s.config.Password)) == 1
 }
 
@@ -55,6 +59,21 @@ func (s *Source) Push(addrs []netip.Addr, prefix netip.Prefix) (bool, error) {
 	if len(addrs) == 0 && !prefix.IsValid() {
 		return false, errors.New("no address, nor prefix")
 	}
+	families := map[int]bool{}
+	for _, ip := range addrs {
+		families[familyOf(ip.Unmap())] = true
+	}
+	return s.push(addrs, prefix, families)
+}
+
+// Replace makes the source's addresses those given, of both families, none for none, as a key's
+// dynamic update has them: kept, written and matched as Push's. It tells whether they changed.
+func (s *Source) Replace(addrs []netip.Addr) (bool, error) {
+	return s.push(addrs, netip.Prefix{}, map[int]bool{4: true, 6: true})
+}
+
+// push takes the addresses, which replace the source's of the families given, and the prefix.
+func (s *Source) push(addrs []netip.Addr, prefix netip.Prefix, families map[int]bool) (bool, error) {
 	s.pushMutex.Lock()
 	defer s.pushMutex.Unlock()
 	now := time.Now()
@@ -67,12 +86,9 @@ func (s *Source) Push(addrs []netip.Addr, prefix netip.Prefix) (bool, error) {
 		s.prefix, s.prefixAt = prefix, now
 		s.mutex.Unlock()
 	}
-	families := map[int]bool{}
 	sent := map[netip.Addr]bool{}
 	for _, ip := range addrs {
-		ip = ip.Unmap().WithZone("")
-		sent[ip] = true
-		families[familyOf(ip)] = true
+		sent[ip.Unmap().WithZone("")] = true
 	}
 	before := slices.Sorted(slices.Values(s.Addresses().Strings()))
 	for _, addr := range s.addrs.Get() {

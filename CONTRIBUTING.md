@@ -107,7 +107,7 @@ A provider's fake API is written by the same person who wrote the provider, so t
 
 UniFi is the exception: without a gateway, nothing serves its records, so its test reads them back through its API. A test of the whole program, `TestLiveUniFiProgram`, has UniFi as both its discovery and its names.
 
-The resolver's dynamic updates are tested with real ACME clients, in `TestLiveUpdatesACMEClients`. certbot, lego and acme.sh, of the versions the script pins, each get a certificate of Pebble through ipv6ddns, with a key of their own. ipv6ddns writes their challenges to BIND with the `rfc2136` provider, where Pebble checks them. The clients run in BIND's network, where Pebble is, and reach the test's resolver on this machine. Their certificates must have their names, and no challenge may be left at BIND.
+The resolver's dynamic updates are tested with real ACME clients, in `TestLiveUpdatesACMEClients`. certbot, lego and acme.sh, of the versions the script pins, each get a certificate of Pebble through ipv6ddns, with a key of their own. ipv6ddns writes their challenges to BIND with the `rfc2136` provider, where Pebble checks them. The clients run in BIND's network, where Pebble is, and reach the test's resolver on this machine. Their certificates must have their names, and no challenge may be left at BIND. In `TestLiveUpdatesNsupdate`, a real `nsupdate`, in BIND's container, sends a host's own addresses with a key: they must reach BIND through a push source and its task, and leave with the last update.
 
 The same UniFi tests run against UniFi OS, which no container has:
 

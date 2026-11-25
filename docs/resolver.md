@@ -381,7 +381,7 @@ Each permission is of one kind:
 | Kind | What the key may change | Who sends it |
 |---|---|---|
 | `challenges` | The TXT records of the DNS challenge, `_acme-challenge` of each name, written through a credential of the public zone | certbot, lego or acme.sh on another machine, to get a certificate: see [certificates for other machines](guides/certificates-for-other-machines.md) |
-| `addresses` | The A and AAAA records of one name, which become the addresses of a push [source](sources.md) | A host that updates its own address with `nsupdate`, or a router's RFC 2136 client |
+| `addresses` | The A and AAAA records of one name, which become the addresses of a push [source](sources.md#a-keys-updates) | A host that updates its own address with `nsupdate`, or a router's RFC 2136 client |
 | `names` | The names of the hosts of a zone, with their addresses, which go to the hosts discovery found | A DHCP server's dynamic DNS: Kea, ISC dhcpd, Windows |
 
 - **A key can hold several permissions.** An update goes to the first that holds all of it, so one message can't change records of two.
@@ -394,6 +394,10 @@ A key is used only from its `allow`. A key without one uses the `allow` of `upda
 
 ```yaml
 # Added to the configuration above: a key for a VPS, used from its provider's network alone.
+sources:
+  vps:
+    type: push
+
 resolvers:
   home:
     listen:
@@ -406,11 +410,16 @@ resolvers:
           allow:
             - 198.51.100.0/24
           permissions:
+            - addresses:
+                source: vps
+                zone: example.com
             - challenges:
                 credential: public
                 names:
                   - vps
 ```
+
+The VPS sends its own addresses to the source `vps`, as in [a key's updates](sources.md#a-keys-updates), and gets its certificate too.
 
 The resolver's own `allow` still decides who it answers queries for, so its default, the LAN, keeps it from being an open resolver.
 
