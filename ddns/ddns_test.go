@@ -26,6 +26,7 @@ var validSettings = map[string]string{
 	"hetzner":                 `{"api_token": "t", "zone": "example.com"}`,
 	"porkbun":                 `{"api_key": "pk", "secret_api_key": "sk", "zone": "example.com"}`,
 	"digitalocean":            `{"api_token": "t", "zone": "example.com"}`,
+	"gandi":                   `{"token": "t", "zone": "example.com"}`,
 	"duckdns":                 `{"api_token": "01234567-89ab-cdef-0123-456789abcdef"}`,
 	"gravity":                 `{"server": "http://gravity", "api_key": "k", "zone": "example.com.", "ttl": "5m"}`,
 	"mikrotik":                `{"address": "192.0.2.1", "username": "u", "password": "p", "zone": "lan", "ttl": "5m"}`,

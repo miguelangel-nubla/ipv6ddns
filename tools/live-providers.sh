@@ -9,7 +9,7 @@
 #
 # Arguments go to go test: tools/live-providers.sh -run '^TestLiveGravity$'
 #
-# The tests of the providers that are a service, Cloudflare, deSEC, DigitalOcean, DuckDNS,
+# The tests of the providers that are a service, Cloudflare, deSEC, DigitalOcean, DuckDNS, Gandi,
 # Hetzner, Porkbun and Route 53, run too when their variables are set: see ddns/live_cloud_test.go.
 #
 # The servers are of the versions written here, so that a run tells of the code and not of what

@@ -9,6 +9,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`desec`](#desec)
 - [`digitalocean`](#digitalocean)
 - [`duckdns`](#duckdns)
+- [`gandi`](#gandi)
 - [`gravity`](#gravity)
 - [`hetzner`](#hetzner)
 - [`mikrotik`](#mikrotik)
@@ -82,6 +83,18 @@ It writes TXT records too: its credential can write the DNS challenge, of ipv6dd
 | Key | Takes | |
 |---|---|---|
 | `api_token` | string | **Required.** The account's token. |
+
+## gandi
+
+Gandi LiveDNS, through its API, of a domain of the account whose name servers are LiveDNS. Each name's A and AAAA records are written as sets.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
+| Key | Takes | |
+|---|---|---|
+| `token` | string | **Required.** A personal access token that may manage the domain's technical configuration: in Gandi's account settings, under Authentication options. |
+| `zone` | string | **Required.** The domain, as example.com. |
+| `ttl` | string | The records' TTL, as 5m or 1h: 5m at the least, and a lower one is raised to it, with a warning. Default: 3h, Gandi's. |
 
 ## gravity
 

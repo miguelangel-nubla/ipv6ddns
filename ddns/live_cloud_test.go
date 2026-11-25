@@ -684,3 +684,96 @@ func TestLiveDigitalOcean(t *testing.T) {
 
 	s.run(t, fqdn, spellings...)
 }
+
+// Gandi: IPV6DDNS_LIVE_GANDI has the settings, with a personal access token, and
+// IPV6DDNS_LIVE_GANDI_NAME the name to use in its domain. The records are read with the LiveDNS
+// API, asked as its documentation says and not through the provider's client. Its TTLs are 5
+// minutes at the least.
+func TestLiveGandi(t *testing.T) {
+	const api = "https://api.gandi.net/v5/livedns"
+	s := &liveServer{provider: "gandi", settings: liveSettings(t, "IPV6DDNS_LIVE_GANDI"), ttls: []string{"5m", "10m"}}
+	s.zone = strings.ToLower(strings.Trim(fmt.Sprint(s.settings["zone"]), "."))
+	fqdn, spellings := cloudName(t, "IPV6DDNS_LIVE_GANDI_NAME", s.zone)
+	set := api + "/domains/" + url.PathEscape(s.zone) + "/records/" + url.PathEscape(RelativeName(fqdn, s.zone)) + "/"
+
+	call := func(t *testing.T, method, target string, body any, result any) bool {
+		t.Helper()
+		for {
+			var payload io.Reader
+			if body != nil {
+				raw, _ := json.Marshal(body)
+				payload = bytes.NewReader(raw)
+			}
+			request, err := http.NewRequest(method, target, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Bearer "+fmt.Sprint(s.settings["token"]))
+			request.Header.Set("Content-Type", "application/json")
+			response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+			if err != nil {
+				t.Fatalf("%s: %v", method, withoutURL(err))
+			}
+			data, _ := io.ReadAll(response.Body)
+			response.Body.Close()
+			switch {
+			case response.StatusCode == http.StatusTooManyRequests:
+				time.Sleep(2 * time.Second)
+				continue
+			case response.StatusCode == http.StatusNotFound && method == http.MethodGet:
+				return false
+			case response.StatusCode >= 300:
+				t.Fatalf("%s: %s: %s", method, response.Status, data)
+			}
+			if result != nil && len(data) > 0 {
+				if err := json.Unmarshal(data, result); err != nil {
+					t.Fatalf("%s: %v", method, err)
+				}
+			}
+			return true
+		}
+	}
+	s.records = func(t *testing.T, name, rrType string) []liveRecord {
+		t.Helper()
+		if !strings.EqualFold(name, fqdn) {
+			t.Fatalf("asked for %s, the test's name is %s", name, fqdn)
+		}
+		var r gandiRRset
+		if !call(t, http.MethodGet, set+rrType, nil, &r) {
+			return nil
+		}
+		var out []liveRecord
+		for _, v := range r.Values {
+			out = append(out, liveRecord{strings.Trim(v, `"`), r.TTL})
+		}
+		return out
+	}
+
+	// The TXT record of the name, which no update is to touch.
+	if !call(t, http.MethodGet, set+"TXT", nil, nil) {
+		call(t, http.MethodPut, set+"TXT", gandiRRset{TTL: 300, Values: []string{quoteTXT(liveKeep)}}, nil)
+	}
+	t.Cleanup(func() {
+		if got := s.records(t, fqdn, "TXT"); len(got) == 1 && got[0].data == liveKeep {
+			call(t, http.MethodDelete, set+"TXT", nil, nil)
+		}
+	})
+	s.fixtures = func(t *testing.T) {
+		t.Helper()
+		if got := s.records(t, fqdn, "TXT"); len(got) != 1 || got[0].data != liveKeep {
+			t.Errorf("%s has the TXT records %v, want its %q untouched", fqdn, got, liveKeep)
+		}
+	}
+	s.service = func(t *testing.T, raw json.RawMessage) (Service, func() int) {
+		t.Helper()
+		service, err := NewService("gandi", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxied, writes := countingProxy(t, api, func(r *http.Request) bool { return r.Method != http.MethodGet })
+		service.(*Gandi).apiBaseURL = proxied
+		return service, writes
+	}
+
+	s.run(t, fqdn, spellings...)
+}

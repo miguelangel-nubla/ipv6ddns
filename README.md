@@ -12,7 +12,7 @@
 
 ipv6ddns finds every host on your LAN, over IPv6 and IPv4, and keeps a DNS name pointing at each one. The names can live at your DNS provider, at your router, or in ipv6ddns itself, acting as the LAN's DNS server. You install nothing on the devices and need no static addresses.
 
-- **Dynamic DNS for any device.** A server, a camera or a container is found by its MAC address, and its name is kept up to date at Cloudflare, Route 53, deSEC, Hetzner, Porkbun, DigitalOcean, DuckDNS and others. The name can carry the network's public IPv4 next to the device's IPv6. When your ISP changes the IPv6 prefix, or a laptop picks a new address, `myserver.example.com` keeps working.
+- **Dynamic DNS for any device.** A server, a camera or a container is found by its MAC address, and its name is kept up to date at Cloudflare, Route 53, deSEC, Hetzner, Porkbun, DigitalOcean, Gandi, DuckDNS and others. The name can carry the network's public IPv4 next to the device's IPv6. When your ISP changes the IPv6 prefix, or a laptop picks a new address, `myserver.example.com` keeps working.
 - **Every machine by name, with nothing to set per host.** Each host gets the name it calls itself, such as `printer.lan.example.com` or `laptop.lan.example.com`. Names appear and disappear as hosts come and go.
 - **The LAN's DNS server, if you want one.** ipv6ddns can answer those names itself, along with records you write and the reverse names. It forwards every other query, over TLS or HTTPS if you like, and caches the answers.
 
@@ -48,7 +48,7 @@ The two times on each line are how long the address has left before it expires, 
 2. **Tasks** give names their addresses. A task's filters choose which addresses it takes: this MAC, only global addresses, only the stable one. A task's name can also be a template, such as `{hostname}`, which makes a name for every host the task matches.
 3. **Sources** add addresses that have no MAC: the network's public IPv4, a command's output, or a Home Assistant entity.
 4. **The names are kept up to date** wherever you choose, as the addresses change:
-   - at a DNS provider, a router or the DNS server you already run: Cloudflare, Route 53, deSEC, Hetzner, Porkbun, DigitalOcean, DuckDNS, MikroTik, OpenWrt, pfSense, OPNsense, UniFi, AdGuard Home, Pi-hole, Technitium, Windows DNS, Gravity, and any server that takes RFC 2136 updates, such as BIND;
+   - at a DNS provider, a router or the DNS server you already run: Cloudflare, Route 53, deSEC, Hetzner, Porkbun, DigitalOcean, Gandi, DuckDNS, MikroTik, OpenWrt, pfSense, OPNsense, UniFi, AdGuard Home, Pi-hole, Technitium, Windows DNS, Gravity, and any server that takes RFC 2136 updates, such as BIND;
    - or in a zone of ipv6ddns's own [resolver](docs/resolver.md), which the LAN's devices query.
 
 [How it works](docs/how-it-works.md) explains the problem with DDNS on IPv6, why ipv6ddns is designed this way, and what else it can do, such as a name on a network with several ISPs: see [multi-WAN](docs/guides/multi-wan.md).
