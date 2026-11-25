@@ -22,6 +22,7 @@ var validSettings = map[string]string{
 	"adguardhome":             `{"address": "http://adguard:3000", "username": "admin", "password": "p", "zone": "lan.example.com"}`,
 	"pihole":                  `{"address": "http://pihole", "password": "p", "zone": "lan.example.com"}`,
 	"cloudflare":              `{"api_token": "t", "zone": "example.com", "ttl": "5m", "proxied": false}`,
+	"desec":                   `{"token": "t", "zone": "example.com"}`,
 	"duckdns":                 `{"api_token": "01234567-89ab-cdef-0123-456789abcdef"}`,
 	"gravity":                 `{"server": "http://gravity", "api_key": "k", "zone": "example.com.", "ttl": "5m"}`,
 	"mikrotik":                `{"address": "192.0.2.1", "username": "u", "password": "p", "zone": "lan", "ttl": "5m"}`,

@@ -280,3 +280,96 @@ func TestLiveDuckDNS(t *testing.T) {
 		s.expect(t, step.name, fqdn, "", step.want...)
 	}
 }
+
+// deSEC: IPV6DDNS_LIVE_DESEC has the settings, with a token for the domain, and
+// IPV6DDNS_LIVE_DESEC_NAME the name to use in it. The records are read with the API, asked as its
+// documentation says and not through the provider's client. Its TTLs are an hour at the least.
+func TestLiveDeSEC(t *testing.T) {
+	const api = "https://desec.io/api/v1"
+	s := &liveServer{provider: "desec", settings: liveSettings(t, "IPV6DDNS_LIVE_DESEC"), ttls: []string{"1h", "2h"}}
+	s.zone = strings.ToLower(strings.Trim(fmt.Sprint(s.settings["zone"]), "."))
+	fqdn, spellings := cloudName(t, "IPV6DDNS_LIVE_DESEC_NAME", s.zone)
+	subname := RelativeName(fqdn, s.zone)
+	domain := api + "/domains/" + url.PathEscape(s.zone)
+
+	call := func(t *testing.T, method, path string, body any, result any) int {
+		t.Helper()
+		var payload io.Reader
+		if body != nil {
+			raw, _ := json.Marshal(body)
+			payload = bytes.NewReader(raw)
+		}
+		for {
+			request, err := http.NewRequest(method, domain+path, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Authorization", "Token "+fmt.Sprint(s.settings["token"]))
+			request.Header.Set("Content-Type", "application/json")
+			response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+			if err != nil {
+				t.Fatalf("%s %s: %v", method, path, withoutURL(err))
+			}
+			data, _ := io.ReadAll(response.Body)
+			response.Body.Close()
+			// deSEC limits the requests of a domain: as many as the test asks, it waits.
+			if response.StatusCode == http.StatusTooManyRequests {
+				time.Sleep(2 * time.Second)
+				if body != nil {
+					raw, _ := json.Marshal(body)
+					payload = bytes.NewReader(raw)
+				}
+				continue
+			}
+			if response.StatusCode == http.StatusNotFound {
+				return response.StatusCode
+			}
+			if response.StatusCode >= 300 {
+				t.Fatalf("%s %s: %s: %s", method, path, response.Status, data)
+			}
+			if result != nil && len(data) > 0 {
+				if err := json.Unmarshal(data, result); err != nil {
+					t.Fatalf("%s %s: %v", method, path, err)
+				}
+			}
+			return response.StatusCode
+		}
+	}
+	s.records = func(t *testing.T, name, rrType string) []liveRecord {
+		t.Helper()
+		var set deSECRRset
+		if call(t, http.MethodGet, "/rrsets/"+url.PathEscape(RelativeName(name, s.zone))+"/"+rrType+"/", nil, &set) == http.StatusNotFound {
+			return nil
+		}
+		var records []liveRecord
+		for _, r := range set.Records {
+			records = append(records, liveRecord{strings.Trim(r, `"`), set.TTL})
+		}
+		return records
+	}
+
+	// The TXT record of the name, which no update is to touch.
+	keep := []deSECRRset{{Subname: subname, Type: "TXT", TTL: 3600, Records: []string{quoteTXT(liveKeep)}}}
+	call(t, http.MethodPatch, "/rrsets/", keep, nil)
+	t.Cleanup(func() {
+		call(t, http.MethodPatch, "/rrsets/", []deSECRRset{{Subname: subname, Type: "TXT", Records: []string{}}}, nil)
+	})
+	s.fixtures = func(t *testing.T) {
+		t.Helper()
+		if got := s.records(t, fqdn, "TXT"); len(got) != 1 || got[0].data != liveKeep {
+			t.Errorf("%s has the TXT records %v, want its %q untouched", fqdn, got, liveKeep)
+		}
+	}
+	s.service = func(t *testing.T, raw json.RawMessage) (Service, func() int) {
+		t.Helper()
+		service, err := NewService("desec", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxied, writes := countingProxy(t, api, func(r *http.Request) bool { return r.Method != http.MethodGet })
+		service.(*DeSEC).apiBaseURL = proxied
+		return service, writes
+	}
+
+	s.run(t, fqdn, spellings...)
+}

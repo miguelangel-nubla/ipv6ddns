@@ -1,0 +1,27 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "deSEC DNS, through its API: free, with DNSSEC. Each name's A and AAAA records are written together, in one request.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A token of the account, made at desec.io under Token Management. A token restricted to the zone, or to the names ipv6ddns keeps, is enough."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The domain at deSEC, as example.com or example.dedyn.io."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL, as 1h. Default: the least deSEC allows the domain, an hour for most; a lower one is raised to it, with a warning."
+        }
+    },
+    "required": [
+        "token",
+        "zone"
+    ]
+}

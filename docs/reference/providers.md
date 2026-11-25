@@ -6,6 +6,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 
 - [`adguardhome`](#adguardhome)
 - [`cloudflare`](#cloudflare)
+- [`desec`](#desec)
 - [`duckdns`](#duckdns)
 - [`gravity`](#gravity)
 - [`mikrotik`](#mikrotik)
@@ -44,6 +45,18 @@ It writes TXT records too: its credential can write the DNS challenge, of ipv6dd
 | `zone` | string | **Required.** The zone, as example.com. |
 | `ttl` | string | **Required.** The records' TTL, as 5m or 1h. 1s means Cloudflare's automatic TTL. |
 | `proxied` | boolean | **Required.** Whether traffic to the records goes through Cloudflare's proxy. |
+
+## desec
+
+deSEC DNS, through its API: free, with DNSSEC. Each name's A and AAAA records are written together, in one request.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
+| Key | Takes | |
+|---|---|---|
+| `token` | string | **Required.** A token of the account, made at desec.io under Token Management. A token restricted to the zone, or to the names ipv6ddns keeps, is enough. |
+| `zone` | string | **Required.** The domain at deSEC, as example.com or example.dedyn.io. |
+| `ttl` | string | The records' TTL, as 1h. Default: the least deSEC allows the domain, an hour for most; a lower one is raised to it, with a warning. |
 
 ## duckdns
 

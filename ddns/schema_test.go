@@ -58,6 +58,7 @@ func providerTypes() map[string]any {
 	return map[string]any{
 		"adguardhome":             AdGuardHome{},
 		"cloudflare":              Cloudflare{},
+		"desec":                   DeSEC{},
 		"pihole":                  PiHole{},
 		"duckdns":                 DuckDNS{},
 		"gravity":                 Gravity{},
