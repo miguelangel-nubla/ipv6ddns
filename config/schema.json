@@ -327,7 +327,7 @@
                                                     "names": {
                                                         "type": "object",
                                                         "additionalProperties": false,
-                                                        "description": "The names of the hosts of a zone, with their addresses, as a DHCP server's dynamic DNS sends them: Kea, ISC dhcpd, Windows. Each name goes to the host discovery found at its address.",
+                                                        "description": "The names of the hosts of a zone, with their addresses, as a DHCP server's dynamic DNS sends them, signed with the key: Kea's, or ISC dhcpd's. Each name goes to the host discovery found at its address, and is kept in names-<zone>.json beside the configuration. See [names from your DHCP server](../guides/dhcp-server-names.md).",
                                                         "properties": {
                                                             "zone": {
                                                                 "type": "string",

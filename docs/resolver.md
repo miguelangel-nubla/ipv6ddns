@@ -382,7 +382,7 @@ Each permission is of one kind:
 |---|---|---|
 | `challenges` | The TXT records of the DNS challenge, `_acme-challenge` of each name, written through a credential of the public zone | certbot, lego or acme.sh on another machine, to get a certificate: see [certificates for other machines](guides/certificates-for-other-machines.md) |
 | `addresses` | The A and AAAA records of one name, which become the addresses of a push [source](sources.md#a-keys-updates) | A host that updates its own address with `nsupdate`, or a router's RFC 2136 client |
-| `names` | The names of the hosts of a zone, with their addresses, which go to the hosts discovery found | A DHCP server's dynamic DNS: Kea, ISC dhcpd, Windows |
+| `names` | The names of the hosts of a zone, with their addresses, which go to the hosts discovery found | A DHCP server's dynamic DNS, as Kea's or ISC dhcpd's: see [names from your DHCP server](guides/dhcp-server-names.md) |
 
 - **A key can hold several permissions.** An update goes to the first that holds all of it, so one message can't change records of two.
 - **A name can be changed by one key alone.** Two keys that could change the same name, or a challenge of a name of one of ipv6ddns's own [certificates](#a-certificate-from-lets-encrypt), are an error at start.

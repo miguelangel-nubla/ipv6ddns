@@ -30,6 +30,8 @@ BIND_IMAGE=${BIND_IMAGE:-internetsystemsconsortium/bind9:9.20@sha256:978201d9154
 CERTBOT_IMAGE=${CERTBOT_IMAGE:-certbot/dns-rfc2136:v5.10.0@sha256:bc280757312c9b26cc614475977aa0445b0bf6bd7119d68c4f464cbaa9de9959}
 LEGO_IMAGE=${LEGO_IMAGE:-goacme/lego:v5.7.0@sha256:9fe6151508c0e1ddc51a6d3e474353520f4b008782bf0c6d31676da72e6d4766}
 ACMESH_IMAGE=${ACMESH_IMAGE:-neilpang/acme.sh:3.1.7@sha256:78d9f4ec812fd1ca48d565fac9fee78ca67f607175afc3c58f62784b4100a369}
+# Kea's DHCP-DDNS, which sends a DHCP server's names to the resolver's dynamic updates.
+KEA_IMAGE=${KEA_IMAGE:-docker.cloudsmith.io/isc/docker/kea-dhcp-ddns:3.0.2@sha256:0047489b20627867996d5bda36e3ab58624c0b78eb4f6aed16de7beaccf9bbc1}
 UNIFI_IMAGE=${UNIFI_IMAGE:-lscr.io/linuxserver/unifi-network-application:10.6.109-ls155}
 MONGO_IMAGE=${MONGO_IMAGE:-mongo@sha256:41e8195b2791692695e1dc9bd21cd51d0a3af05fff8ace9304a5c1acf94f1ae1}
 OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
@@ -335,7 +337,7 @@ export IPV6DDNS_LIVE_PEBBLE_MANAGEMENT="https://127.0.0.1:$(port bind 15000/tcp)
 export IPV6DDNS_LIVE_PEBBLE_CA="$work/pebble-ca.pem"
 export IPV6DDNS_LIVE_ACME_NETWORK="container:$prefix-bind"
 export IPV6DDNS_LIVE_ACME_HOST="$acme_host"
-export IPV6DDNS_LIVE_CERTBOT_IMAGE="$CERTBOT_IMAGE" IPV6DDNS_LIVE_LEGO_IMAGE="$LEGO_IMAGE" IPV6DDNS_LIVE_ACMESH_IMAGE="$ACMESH_IMAGE"
+export IPV6DDNS_LIVE_CERTBOT_IMAGE="$CERTBOT_IMAGE" IPV6DDNS_LIVE_LEGO_IMAGE="$LEGO_IMAGE" IPV6DDNS_LIVE_ACMESH_IMAGE="$ACMESH_IMAGE" IPV6DDNS_LIVE_KEA_IMAGE="$KEA_IMAGE"
 export IPV6DDNS_LIVE_OPENWRT="{\"address\":\"127.0.0.1:$openwrt_ssh\",\"username\":\"root\",\"ssh_key\":\"$work/key\",\"host_key\":\"${openwrt_host_keys%% *}\",\"zone\":\"lan\"}"
 export IPV6DDNS_LIVE_OPENWRT_DNS="127.0.0.1:$(port openwrt 53/udp)"
 export IPV6DDNS_LIVE_OPENWRT_HOST_KEYS="$openwrt_host_keys"

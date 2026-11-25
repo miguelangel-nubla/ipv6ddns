@@ -29,9 +29,11 @@ const rematchInterval = 10 * time.Second
 type Worker struct {
 	*State
 	discWorker *ipv6disc.Worker
-	logger     *zap.SugaredLogger
-	config     config.Config
-	targets    []*target
+	// The permissions of names of the resolvers' keys, which give their names to the hosts.
+	namesGrants []*namesGrant
+	logger      *zap.SugaredLogger
+	config      config.Config
+	targets     []*target
 	// The sources of addresses without a MAC, by name. Their addresses are theirs, not the
 	// discovery state's: that one takes none without a MAC, and they need no watching, since the
 	// matching leaves out the ones past their lifetime.
@@ -397,6 +399,9 @@ func (w *Worker) Start(ctx context.Context) error {
 			defer w.running.Done()
 			h.follow(ctx, func() Status { return w.Status(false) })
 		}()
+	}
+	for _, g := range w.namesGrants {
+		g.start(ctx, &w.running)
 	}
 	changes, unsubscribe := w.discWorker.State.Subscribe()
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {

@@ -4,11 +4,15 @@ package ipv6ddns
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -369,5 +373,183 @@ discovery:
 	atBIND()
 	if k := w.Status(true).Resolvers[0].Keys[0]; k.Updates["applied"] != 3 || k.Updates["refused"] != 0 {
 		t.Errorf("the key: %+v", k)
+	}
+}
+
+// TestLiveUpdatesKea has Kea's DHCP-DDNS send a DHCP server's names to ipv6ddns: the requests
+// kea-dhcp4 sends it after a lease are sent to it here, and it updates ipv6ddns, with its
+// conflict resolution, RFC 4703's, signed with a key. A name goes to the host discovery has at
+// its address, and the task writes it to BIND. It runs in BIND's network, of the clients, with
+// IPV6DDNS_LIVE_KEA_IMAGE.
+func TestLiveUpdatesKea(t *testing.T) {
+	settings, network, host := os.Getenv("IPV6DDNS_LIVE_RFC2136"), os.Getenv("IPV6DDNS_LIVE_ACME_NETWORK"), os.Getenv("IPV6DDNS_LIVE_ACME_HOST")
+	container, ok := strings.CutPrefix(network, "container:")
+	if settings == "" || !ok || host == "" {
+		t.Skip("IPV6DDNS_LIVE_RFC2136, IPV6DDNS_LIVE_ACME_NETWORK and IPV6DDNS_LIVE_ACME_HOST not set: tools/live-providers.sh sets them")
+	}
+	keaImage := image(t, "KEA")
+	var bind struct {
+		Zone string `json:"zone"`
+	}
+	if err := json.Unmarshal([]byte(settings), &bind); err != nil {
+		t.Fatal(err)
+	}
+	zone, bindDNS := bind.Zone, os.Getenv("IPV6DDNS_LIVE_RFC2136_DNS")
+	old := namesRefresh
+	namesRefresh = 200 * time.Millisecond
+	t.Cleanup(func() { namesRefresh = old })
+
+	secret := randomSecret(t)
+	port := freeDNSPort(t)
+	dir := t.TempDir()
+	w := workerOf(t, fmt.Sprintf(`
+credentials:
+  public:
+    provider: rfc2136
+    settings: %s
+    debounce: 1ms
+resolvers:
+  lan:
+    listen: 0.0.0.0:%s
+    allow:
+      - 0.0.0.0/0
+      - ::/0
+    upstream: %s
+    updates:
+      keys:
+        kea:
+          secret: %s
+          permissions:
+            - names:
+                zone: lan.%s
+tasks:
+  lan:
+    filter:
+      - ip:
+          family:
+            - 4
+    endpoints:
+      public:
+        - "{hostname}.lan"
+discovery:
+  ipv6:
+    enabled: false
+  ipv4:
+    enabled: true
+    listen: false
+  hostnames:
+    lifetime: 2s
+`, settings, port, bindDNS, secret, zone))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	printer, _ := net.ParseMAC("00:00:5e:00:53:20")
+	w.discWorker.State.Register(printer, netip.MustParseAddr("192.0.2.20"), "eth0", time.Hour, nil)
+
+	// Kea's DHCP-DDNS, in BIND's network, taking the requests at 127.0.0.1:53001.
+	d2 := fmt.Sprintf(`{"DhcpDdns": {
+  "ip-address": "127.0.0.1", "port": 53001, "dns-server-timeout": 3000,
+  "tsig-keys": [{"name": "kea", "algorithm": "HMAC-SHA256", "secret": "%s"}],
+  "forward-ddns": {"ddns-domains": [{"name": "lan.%s.", "key-name": "kea",
+    "dns-servers": [{"ip-address": "%s", "port": %s}]}]},
+  "reverse-ddns": {"ddns-domains": []},
+  "loggers": [{"name": "kea-dhcp-ddns", "output-options": [{"output": "stdout"}], "severity": "INFO"}]
+}}`, secret, zone, host, port)
+	if err := os.WriteFile(filepath.Join(dir, "d2.conf"), []byte(d2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("ipv6ddns-live-kea-%d", os.Getpid())
+	if out, err := exec.Command("docker", "run", "-d", "--name", name, "--platform", "linux/amd64", "--network", network,
+		"-v", dir+":/work:ro", keaImage, "/usr/sbin/kea-dhcp-ddns", "-c", "/work/d2.conf").CombinedOutput(); err != nil {
+		t.Fatalf("Kea: %v\n%s", err, out)
+	}
+	t.Cleanup(func() {
+		if t.Failed() {
+			out, _ := exec.Command("docker", "logs", "--tail", "40", name).CombinedOutput()
+			t.Logf("Kea's log:\n%s", out)
+		}
+		_ = exec.Command("docker", "rm", "-f", name).Run()
+	})
+	for deadline := time.Now().Add(60 * time.Second); ; time.Sleep(time.Second) {
+		out, _ := exec.Command("docker", "logs", name).CombinedOutput()
+		if strings.Contains(string(out), "DHCP_DDNS_STARTED") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Kea didn't start:\n%s", tail(string(out), 20))
+		}
+	}
+
+	// A name change request, as kea-dhcp4 sends it: its JSON, after its length.
+	ncr := func(add bool, fqdn, ip, dhcid string) {
+		t.Helper()
+		change := 1
+		if add {
+			change = 0
+		}
+		body := fmt.Sprintf(`{"change-type":%d,"forward-change":true,"reverse-change":false,"fqdn":"%s","ip-address":"%s","dhcid":"%s","lease-expires-on":"%s","lease-length":3600,"conflict-resolution-mode":"check-with-dhcid"}`,
+			change, fqdn, ip, dhcid, time.Now().Add(time.Hour).UTC().Format("20060102150405"))
+		msg := append([]byte{byte(len(body) >> 8), byte(len(body))}, body...)
+		// BIND's image is Alpine's: its nc sends the datagram.
+		cmd := exec.Command("docker", "exec", "-e", "NCR="+base64.StdEncoding.EncodeToString(msg), container, "sh", "-c",
+			`echo "$NCR" | base64 -d | nc -u -w 1 127.0.0.1 53001`)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("sending the request: %v\n%s", err, out)
+		}
+	}
+	dhcid := func(client string) string {
+		sum := sha256.Sum256([]byte(client))
+		return "000201" + hex.EncodeToString(sum[:])
+	}
+	fqdn := "printer.lan." + zone + "."
+	published := "printer.lan." + zone + "."
+	atBIND := func(want ...string) {
+		t.Helper()
+		var got []string
+		for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+			got = nil
+			m := new(dns.Msg)
+			m.SetQuestion(published, dns.TypeA)
+			resp, _, err := (&dns.Client{Timeout: 3 * time.Second}).Exchange(m, bindDNS)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, rr := range resp.Answer {
+				if a, ok := rr.(*dns.A); ok {
+					got = append(got, a.A.String())
+				}
+			}
+			if slices.Equal(got, want) || time.Now().After(deadline) {
+				break
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("BIND has %v of %s, want %v", got, published, want)
+		}
+	}
+	key := func() map[string]uint64 { return w.Status(true).Resolvers[0].Keys[0].Updates }
+
+	// The lease: the name goes to the printer, and the task writes it.
+	ncr(true, fqdn, "192.0.2.20", dhcid("printer"))
+	atBIND("192.0.2.20")
+
+	// Another client asks for the name: Kea's conflict resolution keeps the printer's.
+	before := key()["refused"]
+	ncr(true, fqdn, "192.0.2.99", dhcid("another"))
+	for deadline := time.Now().Add(20 * time.Second); key()["refused"] < before+2; time.Sleep(200 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("Kea's checks of the other client weren't refused: %v", key())
+		}
+	}
+	atBIND("192.0.2.20")
+
+	// The lease ends: the name goes, once discovery's names lifetime is over, and the task removes
+	// it.
+	ncr(false, fqdn, "192.0.2.20", dhcid("printer"))
+	atBIND()
+	if u := key(); u["applied"] < 2 || u["failed"] != 0 {
+		t.Errorf("the key: %v", u)
 	}
 }

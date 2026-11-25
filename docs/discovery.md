@@ -96,7 +96,7 @@ Each protocol, with its options and defaults, is in the [reference](reference/co
 
 ## Names
 
-Discovery keeps the names the hosts go by. They come from two places: the protocols that learn names, such as mDNS, and the plugins, which read them in their routers' DHCP leases.
+Discovery keeps the names the hosts go by. They come from the protocols that learn names, such as mDNS; from the plugins, which read them in their routers' DHCP leases; and from a DHCP server's dynamic DNS, which sends them to a resolver's [dynamic updates](guides/dhcp-server-names.md).
 
 A name is whatever the device claims, cleaned into one DNS label. Nothing proves it, and two hosts can claim the same name.
 

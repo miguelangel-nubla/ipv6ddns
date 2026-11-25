@@ -152,7 +152,7 @@ The A and AAAA records of a name, which go to a push source as its addresses: wh
 
 `resolvers.<name>.updates.keys.<name>.permissions[].names`
 
-The names of the hosts of a zone, with their addresses, as a DHCP server's dynamic DNS sends them: Kea, ISC dhcpd, Windows. Each name goes to the host discovery found at its address.
+The names of the hosts of a zone, with their addresses, as a DHCP server's dynamic DNS sends them, signed with the key: Kea's, or ISC dhcpd's. Each name goes to the host discovery found at its address, and is kept in names-<zone>.json beside the configuration. See [names from your DHCP server](../guides/dhcp-server-names.md).
 
 | Key | Takes | |
 |---|---|---|

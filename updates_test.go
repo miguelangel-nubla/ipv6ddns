@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -456,4 +457,178 @@ func TestUpdatesAddresses(t *testing.T) {
 		t.Errorf("after a restart: %v", resp)
 	}
 	fakeServices["addresses-again"].waitFor(t, "vps", "2001:db8::7")
+}
+
+// namesWorker is a worker of the configuration in dir, with a resolver at port, whose key kea may
+// send the names of lan.example.com; and the task lan, which gives every host's IPv4 addresses
+// to its names, at the fake provider of id. Started, and stopped with ctx.
+func namesWorker(t *testing.T, ctx context.Context, dir, port, id string) *Worker {
+	t.Helper()
+	path := filepath.Join(dir, "config.yaml")
+	text := fmt.Sprintf(`
+credentials:
+  public:
+    provider: fake
+    settings:
+      id: %s
+    debounce: 1ms
+resolvers:
+  lan:
+    listen: 127.0.0.1:%s
+    upstream: 127.0.0.1:%s
+    updates:
+      keys:
+        kea:
+          secret: %s
+          permissions:
+            - names:
+                zone: lan.example.com
+tasks:
+  lan:
+    filter:
+      - ip:
+          family:
+            - 4
+    endpoints:
+      public:
+        - "{hostname}"
+discovery:
+  ipv6:
+    enabled: false
+  ipv4:
+    enabled: true
+    listen: false
+`, id, port, freeDNSPort(t), updatesTestSecret)
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+// signedAs sends m signed with the key kea.
+func signedAs(t *testing.T, address string, m *dns.Msg) *dns.Msg {
+	t.Helper()
+	m.SetTsig("kea.", dns.HmacSHA256, 300, time.Now().Unix())
+	c := &dns.Client{Timeout: 3 * time.Second, TsigSecret: map[string]string{"kea.": updatesTestSecret}}
+	resp, _, err := c.Exchange(m, address)
+	if err != nil {
+		t.Fatalf("%v: %v", resp, err)
+	}
+	return resp
+}
+
+// hasName waits until the host of hw has name, said by source.
+func hasName(t *testing.T, w *Worker, hw net.HardwareAddr, name, source string) {
+	t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		for _, n := range w.discWorker.State.NamesOf(hw) {
+			if n.Name == name && slices.Contains(n.Sources, source) {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s has no name %s of %s: %+v", hw, name, source, w.discWorker.State.NamesOf(hw))
+		}
+	}
+}
+
+// A DHCP server's names, sent as Kea's DHCP-DDNS does, with its conflict checks: each goes to the
+// host discovery has at its address, and the task publishes it; a restart keeps them.
+func TestUpdatesNames(t *testing.T) {
+	old := namesRefresh
+	namesRefresh = 100 * time.Millisecond
+	t.Cleanup(func() { namesRefresh = old })
+	dir := t.TempDir()
+	port := freeDNSPort(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	w := namesWorker(t, ctx, dir, port, "names")
+	address := net.JoinHostPort("127.0.0.1", port)
+	printer, _ := net.ParseMAC("00:11:22:33:44:55")
+	w.discWorker.State.Register(printer, netip.MustParseAddr("192.168.1.20"), "eth0", time.Hour, nil)
+
+	name := "printer.lan.example.com."
+	rr := func(line string) dns.RR {
+		r, err := dns.NewRR(line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	ours, theirs := "AAIBY2/AuCccgoJbsaxcQc9TUapptP69lOjxfNuVAA2kjEA=", "AAEBOSD+XR3Os/0LozeXVqcNc7FwCfQdWL3b/NaiUDlW2No="
+	update := func(change func(m *dns.Msg)) int {
+		t.Helper()
+		m := new(dns.Msg)
+		m.SetUpdate("lan.example.com.")
+		change(m)
+		return signedAs(t, address, m).Rcode
+	}
+
+	// The lease: the name is free, and goes to the printer, which the task publishes.
+	if rcode := update(func(m *dns.Msg) {
+		m.NameNotUsed([]dns.RR{rr(name + " 0 IN A 0.0.0.0")})
+		m.Insert([]dns.RR{rr(name + " 1200 IN A 192.168.1.20"), rr(name + " 1200 IN DHCID " + ours)})
+	}); rcode != dns.RcodeSuccess {
+		t.Fatal(dns.RcodeToString[rcode])
+	}
+	hasName(t, w, printer, "printer", "updates.kea")
+	fakeServices["names"].waitFor(t, "printer", "192.168.1.20")
+
+	// Another client asks for the name: its DHCID isn't the one kept.
+	if rcode := update(func(m *dns.Msg) {
+		m.Used([]dns.RR{rr(name + " 0 IN DHCID " + theirs)})
+		m.RemoveRRset([]dns.RR{rr(name + " 0 IN A 0.0.0.0")})
+		m.Insert([]dns.RR{rr(name + " 1200 IN A 192.168.1.99")})
+	}); rcode != dns.RcodeNXRrset {
+		t.Errorf("another client: %s", dns.RcodeToString[rcode])
+	}
+
+	// A name whose host discovery hasn't found yet: it gets it once it does.
+	scanner, _ := net.ParseMAC("00:11:22:33:44:66")
+	if rcode := update(func(m *dns.Msg) {
+		m.Insert([]dns.RR{rr("scanner.lan.example.com. 1200 IN A 192.168.1.30")})
+	}); rcode != dns.RcodeSuccess {
+		t.Fatal(dns.RcodeToString[rcode])
+	}
+	w.discWorker.State.Register(scanner, netip.MustParseAddr("192.168.1.30"), "eth0", time.Hour, nil)
+	hasName(t, w, scanner, "scanner", "updates.kea")
+
+	// The reverse name, which Kea sends of its reverse zone: refused, the resolver has its own.
+	if rcode := (func() int {
+		m := new(dns.Msg)
+		m.SetUpdate("1.168.192.in-addr.arpa.")
+		m.Insert([]dns.RR{rr("20.1.168.192.in-addr.arpa. 1200 IN PTR " + name)})
+		return signedAs(t, address, m).Rcode
+	})(); rcode != dns.RcodeRefused {
+		t.Errorf("a reverse name: %s", dns.RcodeToString[rcode])
+	}
+
+	// A restart: the names come back of their file.
+	cancel()
+	stopping, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	if err := w.Shutdown(stopping); err != nil {
+		t.Fatal(err)
+	}
+	port = freeDNSPort(t)
+	ctx, cancel = context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	w = namesWorker(t, ctx, dir, port, "names-again")
+	w.discWorker.State.Register(printer, netip.MustParseAddr("192.168.1.20"), "eth0", time.Hour, nil)
+	hasName(t, w, printer, "printer", "updates.kea")
+	q := new(dns.Msg)
+	q.SetQuestion(name, dns.TypeDHCID)
+	if resp := signedAs(t, net.JoinHostPort("127.0.0.1", port), q); len(resp.Answer) != 1 || !resp.Authoritative {
+		t.Errorf("the DHCID, after a restart: %v", resp)
+	}
 }
