@@ -1,6 +1,6 @@
 # Home Assistant app: ipv6ddns
 
-DNS names for every device on your network, wherever its addresses move.
+DNS names for every device on your network, on the LAN and on the internet, wherever its addresses move.
 
 ipv6ddns finds every host on your LAN, over IPv6 and IPv4, and keeps their
 names in one of three places: at your DNS provider, at your router, or in

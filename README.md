@@ -3,11 +3,11 @@
 [![ci](https://github.com/miguelangel-nubla/ipv6ddns/actions/workflows/ci.yaml/badge.svg)](https://github.com/miguelangel-nubla/ipv6ddns/actions/workflows/ci.yaml)
 [![release](https://img.shields.io/github/v/release/miguelangel-nubla/ipv6ddns)](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest)
 
-**DNS names for every device on your network, wherever its addresses move.**
+**DNS names for every device on your network, on the LAN and on the internet, wherever its addresses move.**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
-  <img src="docs/images/architecture-light.svg" alt="ipv6ddns, on one machine, finds the devices on your network, such as a server, a camera, a laptop or a printer, with no software on them, and keeps a DNS name pointing at each: at your DNS provider, in your router, or in its own DNS server. When a device's address changes, its name follows: server.example.com has its AAAA record move from 2001:db8:1::a to 2001:db8:2::a, and its A record from 203.0.113.7 to 203.0.113.9.">
+  <img src="docs/images/architecture-light.svg" alt="ipv6ddns, a single instance anywhere on the LAN, finds the devices on your network, such as a server, a camera, a laptop or a printer, with no software on them, and keeps a DNS name pointing at each: at your DNS provider, in your router, or in its own DNS server. When a device's address changes, its name follows: server.mydomain.com has its AAAA record move from 2001:db8:1::a to 2001:db8:2::a, and its A record from 203.0.113.7 to 203.0.113.9; and a name on the LAN too: printer.mydomain.com has its A record move from 192.168.1.20 to 192.168.1.35.">
 </picture>
 
 ipv6ddns finds every host on your LAN, over IPv6 and IPv4, and keeps a DNS name pointing at each one. The names can live at your DNS provider, at your router, or in ipv6ddns itself, acting as the LAN's DNS server. You install nothing on the devices and need no static addresses.

@@ -1,5 +1,5 @@
 {
-  description = "ipv6ddns: DNS names for every device on your network, wherever its addresses move";
+  description = "ipv6ddns: DNS names for every device on your network, on the LAN and on the internet, wherever its addresses move";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

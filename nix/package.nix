@@ -59,7 +59,7 @@ buildGoModule {
   '';
 
   meta = {
-    description = "DNS names for every device on your network, wherever its addresses move";
+    description = "DNS names for every device on your network, on the LAN and on the internet, wherever its addresses move";
     homepage = "https://github.com/miguelangel-nubla/ipv6ddns";
     license = lib.licenses.asl20;
     mainProgram = "ipv6ddns";

@@ -4,7 +4,8 @@ name: ipv6ddns
 version: dev
 slug: ipv6ddns
 description: >-
-  DNS names for every device on your network, wherever its addresses move:
+  DNS names for every device on your network, on the LAN and on the internet,
+  wherever its addresses move:
   at your DNS provider, at your router, or answered by its own DNS server
 url: https://github.com/miguelangel-nubla/ipv6ddns
 # Home Assistant supports these two only, since 2025.12.

@@ -1,13 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" width="960" height="360" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 392" width="960" height="392" role="img" aria-labelledby="title">
 <!-- The light picture is the drawing: edit it, and go test ./internal/docgen -update draws the dark one, each color of its style in its dark one. -->
-<title id="title">ipv6ddns, on one machine, finds the devices on your network and keeps a DNS name pointing at each, at your DNS provider, in your router or in its own DNS server. When a device's address changes, IPv6 or IPv4, its name follows.</title>
+<title id="title">ipv6ddns, a single instance anywhere on the LAN, finds the devices on your network and keeps a DNS name pointing at each, at your DNS provider, in your router or in its own DNS server. When a device's address changes, IPv6 or IPv4, public or on the LAN, its name follows.</title>
 <style>
   .bg { fill: #ffffff; }
   .box { fill: #f6f8fa; stroke: #d0d7de; }
   .chip { fill: #ffffff; stroke: #d0d7de; }
   .core { fill: #eef4ff; stroke: #0f3a8a; stroke-width: 1.5; }
   text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; fill: #1d2530; }
-  .big { font-size: 22px; font-weight: 700; fill: #0f3a8a; }
+  .big { font-size: 32px; font-weight: 700; fill: #0f3a8a; }
   .h { font-size: 17px; font-weight: 700; fill: #0d1117; }
   .t { font-size: 14px; fill: #1d2530; }
   .s { font-size: 13px; fill: #5d6877; }
@@ -28,7 +28,7 @@
   .ic .paper { fill: #ffffff; }
 </style>
 <defs><marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="tip"/></marker></defs>
-<rect width="960" height="360" rx="12" class="bg"/>
+<rect width="960" height="392" rx="12" class="bg"/>
 <rect x="24" y="40" width="250" height="180" rx="12" class="box"/>
 <text x="149" y="74" class="h" text-anchor="middle">Your network</text>
 <rect x="48" y="96" width="94" height="34" rx="12" class="chip"/>
@@ -45,8 +45,9 @@
 <text x="188" y="164" class="t">printer</text>
 <text x="149" y="202" class="ok" text-anchor="middle">no software on them</text>
 <rect x="375" y="70" width="210" height="120" rx="12" class="core"/>
-<text x="480" y="120" class="big" text-anchor="middle">ipv6ddns</text>
-<text x="480" y="144" class="s" text-anchor="middle">on one machine</text>
+<text x="480" y="117" class="big" text-anchor="middle">ipv6ddns</text>
+<text x="480" y="145" class="s" text-anchor="middle">a single instance</text>
+<text x="480" y="164" class="s" text-anchor="middle">anywhere on the LAN</text>
 <rect x="686" y="40" width="250" height="180" rx="12" class="box"/>
 <text x="811" y="74" class="h" text-anchor="middle">DNS names</text>
 <g class="ic" transform="translate(728 99)"><path d="M4.5 13 H12 A3 3 0 0 0 12.3 7.05 A4.2 4.2 0 0 0 4.3 7.5 A2.8 2.8 0 0 0 4.5 13 Z"/></g>
@@ -61,7 +62,11 @@
 <path d="M585 130.0 L686 130.0" class="a" marker-end="url(#tip)"/>
 <text x="635.5" y="118.0" class="lab" text-anchor="middle">names them</text>
 <text x="480.0" y="270" class="s" text-anchor="middle">When a device&#x27;s address changes, <tspan class="em">its name follows</tspan>:</text>
-<text x="224" y="316" class="m" xml:space="preserve"><tspan class="n">server.example.com</tspan>  <tspan class="to">→</tspan></text>
-<text x="431" y="304" class="m" xml:space="preserve"><tspan class="rt">AAAA</tspan>  <tspan class="old">2001:db8:<tspan class="gone">1</tspan>::a</tspan>  2001:db8:<tspan class="new">2</tspan>::a</text>
-<text x="431" y="328" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">203.0.113.<tspan class="gone">7</tspan></tspan>    203.0.113.<tspan class="new">9</tspan></text>
+<text x="394" y="316" class="n" text-anchor="end">server.mydomain.com</text>
+<text x="412" y="316" class="m"><tspan class="to">→</tspan></text>
+<text x="439" y="304" class="m" xml:space="preserve"><tspan class="rt">AAAA</tspan>  <tspan class="old">2001:db8:<tspan class="gone">1</tspan>::a</tspan>  2001:db8:<tspan class="new">2</tspan>::a</text>
+<text x="439" y="328" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">203.0.113.<tspan class="gone">7</tspan></tspan>    203.0.113.<tspan class="new">9</tspan></text>
+<text x="394" y="362" class="n" text-anchor="end">printer.mydomain.com</text>
+<text x="412" y="362" class="m"><tspan class="to">→</tspan></text>
+<text x="439" y="362" class="m" xml:space="preserve"><tspan class="rt">A   </tspan>  <tspan class="old">192.168.1.<tspan class="gone">20</tspan></tspan>   192.168.1.<tspan class="new">35</tspan></text>
 </svg>

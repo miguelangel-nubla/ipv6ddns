@@ -39,7 +39,7 @@ func manPage() string {
 	var b strings.Builder
 	b.WriteString(`.\" Generated from the code by go test ./cmd/ipv6ddns \-update: edit it, not this page.` + "\n")
 	b.WriteString(".TH IPV6DDNS 1 \"\" ipv6ddns \"User Commands\"\n")
-	b.WriteString(".SH NAME\nipv6ddns \\- DNS names for every device on your network, wherever its addresses move\n")
+	b.WriteString(".SH NAME\nipv6ddns \\- DNS names for every device on your network, on the LAN and on the internet, wherever its addresses move\n")
 	b.WriteString(".SH SYNOPSIS\n.B ipv6ddns" + synopsis.String() + "\n")
 	b.WriteString(".SH DESCRIPTION\n")
 	b.WriteString(roff("ipv6ddns discovers the hosts of the network, with their addresses and names, and keeps the addresses of those its configuration chooses, IPv6 and IPv4, in the records of a DNS provider. It updates a name when its addresses change.") + "\n.PP\n")
