@@ -253,10 +253,10 @@ A plugin reads the neighbor table of a router, or of another host, every `interv
 
 | Type | Reads | Over |
 |---|---|---|
-| `linux` | `ip neigh` | SSH |
-| `freebsd` | `ndp -an`, `arp -an`: pfSense, OPNsense | SSH |
+| `linux` | `ip neigh`: [OpenWrt](openwrt.md#discovery-plugin) | SSH |
+| `freebsd` | `ndp -an`, `arp -an`: [pfSense](pfsense.md#discovery-plugin), [OPNsense](opnsense.md#discovery-plugin) | SSH |
 | `mikrotik` | `/ipv6/neighbor`, `/ip/arp` | The API: see [MikroTik](mikrotik.md#discovery-plugin) |
-| `unifi` | The clients a UniFi gateway has connected now, with their names: see [below](#a-unifi-gateway) | The UniFi Network API |
+| `unifi` | The clients a UniFi gateway has connected now, with their names: see [UniFi](unifi.md#discovery-plugin) | The UniFi Network API |
 
 ```yaml
 discovery:

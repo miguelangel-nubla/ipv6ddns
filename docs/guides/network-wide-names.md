@@ -166,7 +166,7 @@ webserver:
     - 8053
 ```
 
-[MikroTik as a DNS provider](../mikrotik.md#dns-provider) describes the user ipv6ddns needs on the router. The settings of the other routers are in the [providers reference](../reference/providers.md).
+[MikroTik as a DNS provider](../mikrotik.md#dns-provider) describes the user ipv6ddns needs on the router. The other routers have pages of their own, [OpenWrt](../openwrt.md#dns-provider), [OPNsense](../opnsense.md#dns-provider), [pfSense](../pfsense.md#dns-provider) and [UniFi](../unifi.md#dns-provider), and their settings are in the [providers reference](../reference/providers.md).
 
 For a UniFi gateway, the names are its DNS Records, which the devices get when they use the gateway as their DNS server, as they do by default. Create an API key in the console, under Settings, Control Plane, Integrations, and put it in a file `unifi_api_key`. The console's certificate is its own, so give its fingerprint, which `openssl s_client -connect 192.168.1.1:443 </dev/null | openssl x509 -outform der | openssl dgst -sha256` shows:
 

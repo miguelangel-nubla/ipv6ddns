@@ -117,6 +117,10 @@ The full index is in [docs](docs/README.md).
 | [The integration](docs/home-assistant-integration.md) | ipv6ddns as a device in Home Assistant, and entity states used as addresses |
 | **Platforms** | |
 | [MikroTik](docs/mikrotik.md) | RouterOS as a DNS provider, a discovery plugin, and a container host |
+| [UniFi](docs/unifi.md) | A UniFi gateway as a DNS provider, a discovery plugin, and a source of its public addresses |
+| [OpenWrt](docs/openwrt.md) | dnsmasq as a DNS provider, the router as a discovery plugin, and a source of its public addresses |
+| [OPNsense](docs/opnsense.md) | Unbound as a DNS provider, the firewall as a discovery plugin, and a source of its public addresses |
+| [pfSense](docs/pfsense.md) | The DNS Resolver as a DNS provider, the firewall as a discovery plugin, and a source of its public addresses |
 | **Reference** | |
 | [Configuration reference](docs/reference/configuration.md) | Every key, generated from the schema |
 | [Providers reference](docs/reference/providers.md) | Every provider's settings |
