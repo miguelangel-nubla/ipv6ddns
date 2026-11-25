@@ -1,10 +1,10 @@
 #!/bin/sh
 # The live tests of the DNS providers, ddns/live_test.go, against the real servers that run in a
-# container: Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, BIND, OpenWrt, and Mikrotik
-# RouterOS, a CHR under QEMU. It
+# container: Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, BIND, OpenWrt, a self-hosted
+# UniFi Network Application with its MongoDB, and Mikrotik RouterOS, a CHR under QEMU. It
 # starts them, provisions each with a zone, a credential and the records the tests must leave
-# alone, runs the tests and removes them. It needs Docker, Go, curl and OpenSSH's ssh-keygen and
-# ssh-keyscan. The RouterOS image stays, in the Docker volume ipv6ddns-live-routeros: it is
+# alone, runs the tests and removes them. It needs Docker, Go, curl, OpenSSL and OpenSSH's
+# ssh-keygen and ssh-keyscan. The RouterOS image stays, in the Docker volume ipv6ddns-live-routeros: it is
 # downloaded once.
 #
 # Arguments go to go test: tools/live-providers.sh -run '^TestLiveGravity$'
@@ -25,6 +25,9 @@ PIHOLE_IMAGE=${PIHOLE_IMAGE:-pihole/pihole:2026.11.0}
 # Let's Encrypt's test authority, of ACME, 2.7.0.
 PEBBLE_IMAGE=${PEBBLE_IMAGE:-ghcr.io/letsencrypt/pebble@sha256:c156cabea562e43ed0060bddc03539c07de40e311b52c6b0e5ea710a496e56b8}
 BIND_IMAGE=${BIND_IMAGE:-internetsystemsconsortium/bind9:9.20@sha256:978201d91548ec63c3b1c1befd5e6a3c9fa127f79f9058fd82d8e3493fe90ce1}
+# The UniFi Network Application 10.6.109, self-hosted, and the MongoDB it keeps its settings in.
+UNIFI_IMAGE=${UNIFI_IMAGE:-lscr.io/linuxserver/unifi-network-application:10.6.109-ls155}
+MONGO_IMAGE=${MONGO_IMAGE:-mongo@sha256:41e8195b2791692695e1dc9bd21cd51d0a3af05fff8ace9304a5c1acf94f1ae1}
 OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
 case $(docker version --format '{{.Server.Arch}}') in
 arm64 | aarch64) openwrt_target=armsr-armv8 openwrt_platform=linux/aarch64_generic ;;
@@ -38,7 +41,7 @@ password=live-$$
 prefix=ipv6ddns-live-$$
 work=$(mktemp -d)
 cleanup() {
-	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-adguardhome" "$prefix-pihole" "$prefix-bind" "$prefix-pebble" "$prefix-openwrt" "$prefix-routeros" >/dev/null 2>&1 || true
+	docker rm -f "$prefix-technitium" "$prefix-gravity" "$prefix-adguardhome" "$prefix-pihole" "$prefix-bind" "$prefix-pebble" "$prefix-openwrt" "$prefix-routeros" "$prefix-unifi" "$prefix-unifi-mongo" >/dev/null 2>&1 || true
 	rm -rf "$work"
 }
 trap cleanup EXIT
@@ -108,6 +111,19 @@ docker run -d --name "$prefix-adguardhome" $publish -p 127.0.0.1::3000/tcp -p 12
 docker run -d --name "$prefix-pihole" $publish -p 127.0.0.1::80/tcp \
 	-e FTLCONF_webserver_api_password="$password" -e FTLCONF_dns_listeningMode=all \
 	-e FTLCONF_misc_dnsmasq_lines="txt-record=live.$zone,keep;txt-record=$zone,keep" "$PIHOLE_IMAGE" >/dev/null
+
+# The UniFi Network Application, in the network of its MongoDB, which has the port: a user of
+# each of its databases, made at MongoDB's first start.
+cat >"$work/unifi-mongo.js" <<EOF
+for (const name of ["unifi", "unifi_stat", "unifi_audit"]) {
+	db.getSiblingDB(name).createUser({user: "unifi", pwd: "$password", roles: [{role: "dbOwner", db: name}]});
+}
+EOF
+docker run -d --name "$prefix-unifi-mongo" -p 127.0.0.1::8443/tcp \
+	-v "$work/unifi-mongo.js:/docker-entrypoint-initdb.d/unifi.js:ro" "$MONGO_IMAGE" >/dev/null
+docker run -d --name "$prefix-unifi" --network "container:$prefix-unifi-mongo" \
+	-e MONGO_USER=unifi -e MONGO_PASS="$password" -e MONGO_HOST=127.0.0.1 -e MONGO_PORT=27017 \
+	-e MONGO_DBNAME=unifi -e MONGO_AUTHSOURCE=unifi "$UNIFI_IMAGE" >/dev/null
 
 # BIND: the primary of the zone, which takes the updates a TSIG key signs, with the records the
 # tests must leave alone. Its zone file is copied where BIND can write its journal.
@@ -209,6 +225,15 @@ pihole_sid=$(curl -fs -H 'Content-Type: application/json' "$pihole/api/auth" -d 
 curl -fs -X PUT -H "X-FTL-SID: $pihole_sid" "$pihole/api/config/dns/hosts/2001:db8::f%20other.$zone" >/dev/null
 curl -fs -X DELETE -H "X-FTL-SID: $pihole_sid" "$pihole/api/auth" >/dev/null
 
+# The UniFi Network Application: its first start, set up as its wizard would, with an admin.
+# It takes minutes to come up. Its certificate is its own: the test pins it.
+unifi=https://127.0.0.1:$(port unifi-mongo 8443/tcp)
+wait_seconds=600 wait_for 'UniFi Network' sh -c "curl -fsk '$unifi/status' | grep -q '\"up\":true'"
+curl -fsk -H 'Content-Type: application/json' "$unifi/api/cmd/sitemgr" \
+	-d "{\"cmd\":\"add-default-admin\",\"name\":\"admin\",\"email\":\"admin@example.test\",\"x_password\":\"$password\"}" >/dev/null
+curl -fsk -H 'Content-Type: application/json' "$unifi/api/cmd/system" -d '{"cmd":"set-installed"}' >/dev/null
+unifi_fingerprint=$(openssl s_client -connect "${unifi#https://}" </dev/null 2>/dev/null | openssl x509 -outform der | openssl dgst -sha256 -r | cut -d' ' -f1)
+
 wait_for BIND docker exec "$prefix-bind" dig +short +tcp @127.0.0.1 "$zone" SOA
 docker run -d --name "$prefix-pebble" --network "container:$prefix-bind" -e PEBBLE_VA_NOSLEEP=1 -e PEBBLE_WFE_NONCEREJECT=0 \
 	"$PEBBLE_IMAGE" -config test/config/pebble-config.json -dnsserver 127.0.0.1:53 >/dev/null
@@ -285,7 +310,7 @@ routeros_api ip/service/set -d '{".id":"api-ssl","certificate":"live"}' >/dev/nu
 routeros_fingerprint=$(routeros_api 'certificate?name=live' | json_field fingerprint)
 routeros_version=$(routeros_api system/resource | json_field version)
 
-echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), AdGuard Home ($ADGUARDHOME_IMAGE), Pi-hole ($PIHOLE_IMAGE), BIND ($BIND_IMAGE), Pebble ($PEBBLE_IMAGE), OpenWrt ($OPENWRT_IMAGE), RouterOS $routeros_version"
+echo "live-providers: Technitium ($TECHNITIUM_IMAGE), Gravity ($GRAVITY_IMAGE), AdGuard Home ($ADGUARDHOME_IMAGE), Pi-hole ($PIHOLE_IMAGE), BIND ($BIND_IMAGE), Pebble ($PEBBLE_IMAGE), OpenWrt ($OPENWRT_IMAGE), UniFi Network ($UNIFI_IMAGE), RouterOS $routeros_version"
 
 export IPV6DDNS_LIVE_TECHNITIUM="{\"address\":\"$technitium\",\"token\":\"$technitium_token\",\"zone\":\"$zone\",\"ttl\":\"5m\"}"
 export IPV6DDNS_LIVE_TECHNITIUM_DNS="127.0.0.1:$(port technitium 53/udp)"
@@ -307,6 +332,7 @@ routeros_settings="\"username\":\"admin\",\"password\":\"\",\"zone\":\"lan\",\"t
 export IPV6DDNS_LIVE_MIKROTIK="{\"address\":\"127.0.0.1:$(port routeros 8728/tcp)\",$routeros_settings}"
 export IPV6DDNS_LIVE_MIKROTIK_TLS="{\"address\":\"127.0.0.1:$(port routeros 8729/tcp)\",\"use_tls\":true,\"tls_fingerprint\":\"$routeros_fingerprint\",$routeros_settings}"
 export IPV6DDNS_LIVE_MIKROTIK_DNS="127.0.0.1:$(port routeros 53/udp)"
+export IPV6DDNS_LIVE_UNIFI="{\"address\":\"$unifi\",\"username\":\"admin\",\"password\":\"$password\",\"zone\":\"$zone\",\"tls_fingerprint\":\"$unifi_fingerprint\"}"
 
 # One package at a time: they share the servers, and their zones. What the authority and its DNS
 # server said, when a test failed: of the containers that are gone after.

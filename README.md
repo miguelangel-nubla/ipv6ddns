@@ -25,7 +25,7 @@ It runs on one machine on the network. It can also run as a [Home Assistant app]
 | Every machine on the network reachable by name, from every device | [Guide: every machine on the network by name](docs/guides/network-wide-names.md) |
 | A server's public name kept up to date when its IPv6 prefix changes | [Quick start](#quick-start), then [filtering](docs/filtering.md) to choose which of its addresses |
 | Home Assistant itself at a public name, such as `ha.example.com` | [The app: publishing Home Assistant](homeassistant/addon/DOCS.md#publishing-home-assistant-itself) |
-| The names in your router's DNS: MikroTik, OpenWrt, OPNsense, pfSense | [Your router's DNS instead](docs/guides/network-wide-names.md#your-routers-dns-instead), and the [providers reference](docs/reference/providers.md) |
+| The names in your router's DNS: MikroTik, OpenWrt, OPNsense, pfSense, UniFi | [Your router's DNS instead](docs/guides/network-wide-names.md#your-routers-dns-instead), and the [providers reference](docs/reference/providers.md) |
 | A DNS server for the LAN, with your own records | [The resolver](docs/resolver.md) |
 | The network's public IPv4 under the same name as the IPv6 | [Sources](docs/sources.md) |
 
@@ -48,7 +48,7 @@ The two times on each line are how long the address has left before it expires, 
 2. **Tasks** give names their addresses. A task's filters choose which addresses it takes: this MAC, only global addresses, only the stable one. A task's name can also be a template, such as `{hostname}`, which makes a name for every host the task matches.
 3. **Sources** add addresses that have no MAC: the network's public IPv4, a command's output, or a Home Assistant entity.
 4. **The names are kept up to date** wherever you choose, as the addresses change:
-   - at a DNS provider, a router or the DNS server you already run: Cloudflare, Route 53, DuckDNS, MikroTik, OpenWrt, pfSense, OPNsense, AdGuard Home, Pi-hole, Technitium, Windows DNS, Gravity, and any server that takes RFC 2136 updates, such as BIND;
+   - at a DNS provider, a router or the DNS server you already run: Cloudflare, Route 53, DuckDNS, MikroTik, OpenWrt, pfSense, OPNsense, UniFi, AdGuard Home, Pi-hole, Technitium, Windows DNS, Gravity, and any server that takes RFC 2136 updates, such as BIND;
    - or in a zone of ipv6ddns's own [resolver](docs/resolver.md), which the LAN's devices query.
 
 [How it works](docs/how-it-works.md) explains the problem with DDNS on IPv6, why ipv6ddns is designed this way, and what else it can do, such as following several ISPs at once.

@@ -66,7 +66,7 @@ Write names in lower case, both in the configuration and in the records at the p
 
 ### Disabled records
 
-At a MikroTik, OPNsense or AdGuard Home provider, ipv6ddns treats a disabled record as your own choice. It leaves the record as it is, whatever its address, and adds no record next to it. So that address stays unanswered, even when the name has it again.
+At a MikroTik, OPNsense, AdGuard Home or UniFi provider, ipv6ddns treats a disabled record as your own choice. It leaves the record as it is, whatever its address, and adds no record next to it. So that address stays unanswered, even when the name has it again.
 
 Technitium is different: it enables a name's disabled records of a type whenever a record of that type is added to the name, so a record can't stay disabled beside the name's records. There, disabled records behave like any other record: one of an address the name has is enabled, and one of an address it no longer has is removed.
 

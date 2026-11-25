@@ -17,6 +17,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`rfc2136`](#rfc2136)
 - [`route53`](#route53)
 - [`technitium`](#technitium)
+- [`unifi`](#unifi)
 - [`windows`](#windows)
 
 ## adguardhome
@@ -172,6 +173,21 @@ Technitium DNS Server, through its HTTP API.
 | `token` | string | **Required.** An API token. |
 | `zone` | string | **Required.** The zone. |
 | `ttl` | string | **Required.** The records' TTL, as 5m or 1h. |
+
+## unifi
+
+A UniFi gateway's local DNS records, its DNS Records, through the UniFi Network API: of a UniFi OS console, as a UDM, UDR, UCG or UXG, or of UniFi OS Server, with an API key or a user; or of a self-hosted UniFi Network Application, with a user. The names are records, one for each address, which the gateway answers to the devices that use it as their DNS server. UniFi Network 8.2.93 or later. A record of the name that you disabled, or of another type, as a CNAME, is left as it is.
+
+| Key | Takes | |
+|---|---|---|
+| `address` | string | **Required.** The address of the console, as https://192.168.1.1, or of the self-hosted Network Application, as https://192.168.1.2:8443. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the console's certificate, in hex, for when it can't be verified otherwise: a console's own certificate is signed by itself. Without it, the certificate must be valid. |
+| `api_key` | string | An API key of UniFi OS: in the console, Settings, Control Plane, Integrations, Create API Key. Its user must be allowed to change the network's settings. A self-hosted Network Application has no API keys: give username and password instead. |
+| `username` | string | A local user that may change the network's settings, instead of api_key. Without two-factor authentication: ipv6ddns can't answer it. |
+| `password` | string | Its password. |
+| `site` | string | The site, by its name in the API: default unless you made others. Default: default. |
+| `zone` | string | **Required.** The domain the names are under, as lan.example.com. UniFi has no zones: it is only what a name written alone, as nas, is completed with. |
+| `ttl` | string | The records' TTL, as 5m or 1h, a day at most. Default: none, which the gateway answers with a TTL of its own. |
 
 ## windows
 

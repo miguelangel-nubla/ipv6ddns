@@ -128,7 +128,7 @@ A written name also names a device that says no name at all. The web report show
 
 ## Your router's DNS instead
 
-Instead of answering the names itself, ipv6ddns can put them in your router's own DNS: MikroTik, OpenWrt, OPNsense or pfSense, among the [providers](../reference/providers.md). A DNS server that takes dynamic updates, such as BIND, works the same way, with the [`rfc2136`](../reference/providers.md#rfc2136) provider. Then there's no new DNS server to give the devices, and you skip [pointing the network at it](#point-the-network-at-it).
+Instead of answering the names itself, ipv6ddns can put them in your router's own DNS: MikroTik, OpenWrt, OPNsense, pfSense or a UniFi gateway, among the [providers](../reference/providers.md). A DNS server that takes dynamic updates, such as BIND, works the same way, with the [`rfc2136`](../reference/providers.md#rfc2136) provider. Then there's no new DNS server to give the devices, and you skip [pointing the network at it](#point-the-network-at-it).
 
 The task is the same. The router's credential replaces the resolver's, and there's no `resolvers` block. This example is for MikroTik, with the password in a file `mikrotik_password` beside the configuration:
 
@@ -167,6 +167,21 @@ webserver:
 ```
 
 [MikroTik as a DNS provider](../mikrotik.md#dns-provider) describes the user ipv6ddns needs on the router. The settings of the other routers are in the [providers reference](../reference/providers.md).
+
+For a UniFi gateway, the names are its DNS Records, which the devices get when they use the gateway as their DNS server, as they do by default. Create an API key in the console, under Settings, Control Plane, Integrations, and put it in a file `unifi_api_key`. The console's certificate is its own, so give its fingerprint, which `openssl s_client -connect 192.168.1.1:443 </dev/null | openssl x509 -outform der | openssl dgst -sha256` shows:
+
+```yaml
+credentials:
+  home:
+    provider: unifi
+    settings:
+      address: https://192.168.1.1
+      api_key: ${file:unifi_api_key}
+      tls_fingerprint: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      zone: lan.example.com
+```
+
+A self-hosted UniFi Network Application has no API keys: give `username` and `password` instead, of a local user.
 
 One thing differs from the resolver. The router keeps the records ipv6ddns made. So a host that left while ipv6ddns wasn't running keeps its name on the router until you remove it: see [when a host leaves](../hostnames.md#when-a-host-leaves). The resolver keeps its names in memory, and leaves nothing behind.
 

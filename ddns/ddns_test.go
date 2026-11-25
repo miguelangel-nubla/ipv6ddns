@@ -30,6 +30,7 @@ var validSettings = map[string]string{
 	"resolver":                `{"zone": "home.arpa", "records": ["printer A 192.168.1.20"], "ttl": "1m"}`,
 	"route53":                 `{"access_key_id": "a", "secret_access_key": "s", "region": "eu-west-1", "hosted_zone_id": "Z1", "ttl": "5m"}`,
 	"technitium":              `{"address": "https://dns", "token": "t", "zone": "example.com", "ttl": "5m"}`,
+	"unifi":                   `{"address": "https://192.168.1.1", "api_key": "k", "zone": "lan.example.com", "ttl": "5m"}`,
 	"windows":                 `{"zone": "example.com"}`,
 	"opnsense_unbound":        `{"address": "https://fw", "key": "k", "secret": "s", "zone": "lan", "ttl": "5m"}`,
 	"pfsense_restapi_unbound": `{"address": "https://fw", "key": "k", "zone": "lan", "ttl": "5m"}`,

@@ -155,12 +155,13 @@ jobs:
           args: build --snapshot --clean
 
   # The DNS providers against the real servers that run in a container, of the versions pinned in
-  # the script: Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, BIND, OpenWrt, and Mikrotik
-  # RouterOS under QEMU. A fake of an API is written by the hand that wrote its provider, and agrees
-  # with it.
+  # the script: Technitium DNS Server, Gravity, AdGuard Home, Pi-hole, BIND, OpenWrt, a self-hosted
+  # UniFi Network Application, and Mikrotik RouterOS under QEMU. A fake of an API is written by the
+  # hand that wrote its provider, and agrees with it. The UniFi Network Application takes minutes
+  # to start.
   providers:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       -
         name: Checkout

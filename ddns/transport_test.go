@@ -97,6 +97,8 @@ func TestUpdatesTimeOut(t *testing.T) {
 		"rfc2136":                        &RFC2136{Server: silent, Zone: "example.com"},
 		"gravity":                        &Gravity{Server: "http://" + silent, APIKey: "k", Zone: "lan."},
 		"duckdns":                        &DuckDNS{APIToken: duckToken, updateURL: "http://" + silent},
+		"unifi, an API key":              newTestUniFi(t, `{"address": "http://`+silent+`", "api_key": "k", "zone": "lan"}`),
+		"unifi, a login":                 newTestUniFi(t, `{"address": "http://`+silent+`", "username": "u", "password": "p", "zone": "lan"}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			done := make(chan error, 1)

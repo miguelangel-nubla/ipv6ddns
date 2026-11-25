@@ -25,6 +25,7 @@ func TestSettingsSchemasMatchProviders(t *testing.T) {
 		"resolver":                {"resolver", Resolver{}},
 		"rfc2136":                 {"rfc2136", RFC2136{}},
 		"technitium":              {"technitium", Technitium{}},
+		"unifi":                   {"unifi", UniFi{}},
 		"windows":                 {"windows", WindowsDNS{}},
 	}
 	for provider := range providers {
