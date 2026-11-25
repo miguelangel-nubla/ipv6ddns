@@ -15,6 +15,7 @@ A credential's `provider` is one of these, and its `settings` are those of the p
 - [`opnsense_unbound`](#opnsense_unbound)
 - [`pfsense_restapi_unbound`](#pfsense_restapi_unbound)
 - [`pihole`](#pihole)
+- [`porkbun`](#porkbun)
 - [`resolver`](#resolver)
 - [`rfc2136`](#rfc2136)
 - [`route53`](#route53)
@@ -155,6 +156,19 @@ Pi-hole, version 6 and later, through its API: the names are its local DNS recor
 | `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
 | `password` | string | The password of the web interface, or an application password, which two-factor authentication requires. Leave it out where Pi-hole has no password. |
 | `zone` | string | **Required.** The domain the names are under, as lan.example.com. Pi-hole has no zones: it is only what a name written alone, as nas, is completed with. |
+
+## porkbun
+
+Porkbun DNS, through its API, of a domain whose API Access is on, in Porkbun's Domain Management. Each record is written apart.
+
+It writes TXT records too: its credential can write the DNS challenge, of ipv6ddns's [certificates](../resolver.md#a-certificate-from-lets-encrypt) and of [other machines'](../guides/certificates-for-other-machines.md).
+
+| Key | Takes | |
+|---|---|---|
+| `api_key` | string | **Required.** The API key, pk1_..., made in Porkbun's account settings, under API Access. |
+| `secret_api_key` | string | **Required.** Its secret key, sk1_.... |
+| `zone` | string | **Required.** The domain, as example.com. |
+| `ttl` | string | The records' TTL, as 10m or 1h. Default and least: 10m, Porkbun's least; a lower one is raised to it, with a warning. |
 
 ## resolver
 

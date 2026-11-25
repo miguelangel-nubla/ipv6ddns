@@ -62,6 +62,7 @@ func providerTypes() map[string]any {
 		"pihole":                  PiHole{},
 		"duckdns":                 DuckDNS{},
 		"hetzner":                 Hetzner{},
+		"porkbun":                 Porkbun{},
 		"gravity":                 Gravity{},
 		"mikrotik":                Mikrotik{},
 		"openwrt":                 OpenWrt{},

@@ -1,0 +1,33 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "description": "Porkbun DNS, through its API, of a domain whose API Access is on, in Porkbun's Domain Management. Each record is written apart.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "api_key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The API key, pk1_..., made in Porkbun's account settings, under API Access."
+        },
+        "secret_api_key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Its secret key, sk1_...."
+        },
+        "zone": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The domain, as example.com."
+        },
+        "ttl": {
+            "type": "string",
+            "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+            "description": "The records' TTL, as 10m or 1h. Default and least: 10m, Porkbun's least; a lower one is raised to it, with a warning."
+        }
+    },
+    "required": [
+        "api_key",
+        "secret_api_key",
+        "zone"
+    ]
+}

@@ -137,6 +137,7 @@ IPV6DDNS_LIVE_ROUTE53='{"access_key_id": "...", "secret_access_key": "...", "reg
 IPV6DDNS_LIVE_DUCKDNS='{"api_token": "..."}' IPV6DDNS_LIVE_DUCKDNS_NAME=a-name-of-the-account \
 IPV6DDNS_LIVE_DESEC='{"token": "...", "zone": "example.com"}' IPV6DDNS_LIVE_DESEC_NAME=ipv6ddns-live \
 IPV6DDNS_LIVE_HETZNER='{"api_token": "...", "zone": "example.com"}' IPV6DDNS_LIVE_HETZNER_NAME=ipv6ddns-live \
+IPV6DDNS_LIVE_PORKBUN='{"api_key": "pk1_...", "secret_api_key": "sk1_...", "zone": "example.com"}' IPV6DDNS_LIVE_PORKBUN_NAME=ipv6ddns-live \
 tools/live-providers.sh
 ```
 

@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -486,6 +487,102 @@ func TestLiveHetzner(t *testing.T) {
 		}
 		proxied, writes := countingProxy(t, api, func(r *http.Request) bool { return r.Method != http.MethodGet })
 		service.(*Hetzner).apiBaseURL = proxied
+		return service, writes
+	}
+
+	s.run(t, fqdn, spellings...)
+}
+
+// Porkbun: IPV6DDNS_LIVE_PORKBUN has the settings, with the keys of the account and a domain whose
+// API access is on, and IPV6DDNS_LIVE_PORKBUN_NAME the name to use in it. The records are read
+// with the API, asked as its documentation says and not through the provider's client. Its TTLs
+// are 10 minutes at the least.
+func TestLivePorkbun(t *testing.T) {
+	const api = "https://api.porkbun.com/api/json/v3"
+	s := &liveServer{provider: "porkbun", settings: liveSettings(t, "IPV6DDNS_LIVE_PORKBUN"), ttls: []string{"10m", "20m"}}
+	s.zone = strings.ToLower(strings.Trim(fmt.Sprint(s.settings["zone"]), "."))
+	fqdn, spellings := cloudName(t, "IPV6DDNS_LIVE_PORKBUN_NAME", s.zone)
+	sub := RelativeName(fqdn, s.zone)
+
+	call := func(t *testing.T, path string, fields map[string]string, result any) {
+		t.Helper()
+		body := map[string]string{"apikey": fmt.Sprint(s.settings["api_key"]), "secretapikey": fmt.Sprint(s.settings["secret_api_key"])}
+		for k, v := range fields {
+			body[k] = v
+		}
+		for {
+			raw, _ := json.Marshal(body)
+			response, err := (&http.Client{Timeout: 30 * time.Second}).Post(api+path, "application/json", bytes.NewReader(raw))
+			if err != nil {
+				t.Fatalf("%s: %v", path, withoutURL(err))
+			}
+			data, _ := io.ReadAll(response.Body)
+			response.Body.Close()
+			if response.StatusCode == http.StatusServiceUnavailable || response.StatusCode == http.StatusTooManyRequests {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			var status struct {
+				Status string `json:"status"`
+			}
+			if json.Unmarshal(data, &status) != nil || status.Status != "SUCCESS" {
+				t.Fatalf("%s: %s: %s", path, response.Status, data)
+			}
+			if result != nil {
+				if err := json.Unmarshal(data, result); err != nil {
+					t.Fatalf("%s: %v", path, err)
+				}
+			}
+			return
+		}
+	}
+	list := func(t *testing.T, rrType string) []porkbunRecord {
+		t.Helper()
+		var answer struct {
+			Records []porkbunRecord `json:"records"`
+		}
+		call(t, "/dns/retrieveByNameType/"+url.PathEscape(s.zone)+"/"+rrType+"/"+url.PathEscape(sub), nil, &answer)
+		return answer.Records
+	}
+	s.records = func(t *testing.T, name, rrType string) []liveRecord {
+		t.Helper()
+		if !strings.EqualFold(name, fqdn) {
+			t.Fatalf("asked for %s, the test's name is %s", name, fqdn)
+		}
+		var records []liveRecord
+		for _, r := range list(t, rrType) {
+			ttl, _ := strconv.Atoi(r.TTL)
+			records = append(records, liveRecord{strings.Trim(r.Content, `"`), ttl})
+		}
+		return records
+	}
+
+	// The TXT record of the name, which no update is to touch.
+	if len(list(t, "TXT")) == 0 {
+		call(t, "/dns/create/"+url.PathEscape(s.zone), map[string]string{"name": sub, "type": "TXT", "content": liveKeep, "ttl": "600"}, nil)
+	}
+	t.Cleanup(func() {
+		for _, r := range list(t, "TXT") {
+			if strings.Trim(r.Content, `"`) == liveKeep {
+				call(t, "/dns/delete/"+url.PathEscape(s.zone)+"/"+url.PathEscape(r.ID), nil, nil)
+			}
+		}
+	})
+	s.fixtures = func(t *testing.T) {
+		t.Helper()
+		if got := s.records(t, fqdn, "TXT"); len(got) != 1 || got[0].data != liveKeep {
+			t.Errorf("%s has the TXT records %v, want its %q untouched", fqdn, got, liveKeep)
+		}
+	}
+	s.service = func(t *testing.T, raw json.RawMessage) (Service, func() int) {
+		t.Helper()
+		service, err := NewService("porkbun", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Every request is a POST: those that change are counted by their path.
+		proxied, writes := countingProxy(t, api, func(r *http.Request) bool { return !strings.Contains(r.URL.Path, "/retrieve") })
+		service.(*Porkbun).apiBaseURL = proxied
 		return service, writes
 	}
 
