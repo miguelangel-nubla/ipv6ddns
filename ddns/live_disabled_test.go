@@ -4,8 +4,10 @@ package ddns
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"testing"
 )
@@ -143,4 +145,63 @@ func TestLiveAdGuardHomeDisabled(t *testing.T) {
 		}
 		return ips
 	})
+}
+
+// Technitium, the exception: it enables the disabled records of a type when one of that type is
+// added, so a disabled record is as any other. Of an address the name has, it is enabled and
+// answered, even when nothing is added beside it; of one it no longer has, it is deleted.
+func TestLiveTechnitiumDisabled(t *testing.T) {
+	s := &liveServer{provider: "technitium", settings: liveSettings(t, "IPV6DDNS_LIVE_TECHNITIUM"), ttls: []string{"10m"}}
+	s.zone = fmt.Sprint(s.settings["zone"])
+	s.records = dnsRecords(liveEnv(t, "IPV6DDNS_LIVE_TECHNITIUM_DNS"))
+	address, token := fmt.Sprint(s.settings["address"]), fmt.Sprint(s.settings["token"])
+	fqdn := "live-disabled." + s.zone
+	client := newHTTPClient(nil)
+	api := func(action string, params map[string]string) technitiumResponse {
+		t.Helper()
+		u, err := url.Parse(address)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u.Path, _ = url.JoinPath(u.Path, "/api/zones/records/"+action)
+		q := url.Values{"token": {token}, "zone": {s.zone}, "domain": {fqdn}}
+		for k, v := range params {
+			q.Set(k, v)
+		}
+		u.RawQuery = q.Encode()
+		resp, err := technitiumCall(client, u)
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		return resp
+	}
+	removeAll := func() {
+		for _, r := range api("get", nil).Response.Records {
+			if r.Type == "AAAA" {
+				var data technitiumRDataIP
+				json.Unmarshal(r.RData, &data)
+				api("delete", map[string]string{"type": "AAAA", "ipAddress": data.IPAddress})
+			}
+		}
+	}
+	removeAll()
+	t.Cleanup(removeAll)
+	for _, ip := range []string{"2001:db8::1", "2001:db8::bad"} {
+		api("add", map[string]string{"type": "AAAA", "ipAddress": ip, "ttl": "300"})
+		api("update", map[string]string{"type": "AAAA", "ipAddress": ip, "newIpAddress": ip, "ttl": "300", "disable": "true"})
+	}
+	service, err := NewService("technitium", s.with("", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nothing is added: the record wanted is enabled, of its TTL, and the other deleted.
+	if err := service.Update("live-disabled", collectionWith("2001:db8::1")); err != nil {
+		t.Fatal(err)
+	}
+	s.expect(t, "the address of a disabled record", fqdn, "5m", "AAAA 2001:db8::1")
+	for _, r := range api("get", nil).Response.Records {
+		if r.Type == "AAAA" && r.Disabled {
+			t.Errorf("a record is still disabled: %s", r.RData)
+		}
+	}
 }

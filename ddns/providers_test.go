@@ -211,8 +211,9 @@ func sameIP(a, b string) bool {
 	return okX && okY && x == y
 }
 
-func TestTechnitiumUpdate(t *testing.T) {
-	fake := newFakeDNS(t, "nas.example.com", "other.example.com")
+// technitiumFake serves fake as Technitium's records API: its records, disabled or not, and the
+// add, update and delete of one.
+func technitiumFake(t *testing.T, fake *fakeDNS) *httptest.Server {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fake.mutex.Lock()
 		defer fake.mutex.Unlock()
@@ -225,18 +226,30 @@ func TestTechnitiumUpdate(t *testing.T) {
 		case "/api/zones/records/get":
 			var records []map[string]any
 			for _, rec := range fake.of(domain) {
-				records = append(records, map[string]any{"type": rec.rrType, "ttl": rec.ttl, "rData": map[string]string{"ipAddress": rec.ip}})
+				records = append(records, map[string]any{"type": rec.rrType, "ttl": rec.ttl, "disabled": rec.disabled, "rData": map[string]string{"ipAddress": rec.ip}})
 			}
 			writeJSON(w, map[string]any{"status": "ok", "response": map[string]any{"records": records}})
 			return
 		case "/api/zones/records/add":
 			ttl, _ := strconv.Atoi(q.Get("ttl"))
 			fake.add(domain, q.Get("type"), q.Get("ipAddress"), ttl)
+			// Technitium enables the disabled records of the type of one added.
+			for i, rec := range fake.records {
+				if rec.name == domain && rec.rrType == q.Get("type") {
+					fake.records[i].disabled = false
+				}
+			}
 		case "/api/zones/records/update":
 			ttl, _ := strconv.Atoi(q.Get("ttl"))
+			if q.Get("newIpAddress") != q.Get("ipAddress") {
+				t.Errorf("an update moves the record to another address: %s", r.URL.RawQuery)
+			}
 			for i, rec := range fake.records {
 				if rec.name == domain && rec.rrType == q.Get("type") && sameIP(rec.ip, q.Get("ipAddress")) {
 					fake.records[i].ttl = ttl
+					if q.Get("disable") == "false" {
+						fake.records[i].disabled = false
+					}
 				}
 			}
 			fake.writes++
@@ -249,8 +262,13 @@ func TestTechnitiumUpdate(t *testing.T) {
 		}
 		writeJSON(w, map[string]any{"status": "ok"})
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return server
+}
 
+func TestTechnitiumUpdate(t *testing.T) {
+	fake := newFakeDNS(t, "nas.example.com", "other.example.com")
+	server := technitiumFake(t, fake)
 	service := &Technitium{Address: server.URL, Token: "secret", Zone: "example.com"}
 	service.TTL.Duration = 10 * time.Minute
 	fake.check(func(addrs *ipv6disc.AddrCollection) error { return service.Update("nas", addrs) }, "nas.example.com", "other.example.com")
@@ -258,6 +276,34 @@ func TestTechnitiumUpdate(t *testing.T) {
 		if rec.ttl != 600 {
 			t.Errorf("record %s: ttl %d, want 600: of the one it had too", rec.ip, rec.ttl)
 		}
+	}
+}
+
+// At Technitium a disabled record is as any other, since Technitium enables it when a record of
+// its type is added: one of an address the name has is enabled, even when nothing is added, and
+// keeps its TTL without one in the settings; one of an address it no longer has is deleted.
+func TestTechnitiumDisabled(t *testing.T) {
+	fake := newFakeDNS(t, "nas.example.com", "other.example.com")
+	server := technitiumFake(t, fake)
+	fake.mutex.Lock()
+	fake.records = slices.DeleteFunc(fake.records, func(r record) bool { return r.name == "nas.example.com" })
+	fake.add("nas.example.com", "AAAA", wantedIP, 300)
+	fake.add("nas.example.com", "AAAA", disabledIP, 300)
+	for i := range fake.records {
+		fake.records[i].disabled = fake.records[i].name == "nas.example.com"
+	}
+	fake.writes = 0
+	fake.mutex.Unlock()
+	service := &Technitium{Address: server.URL, Token: "secret", Zone: "example.com"}
+	if err := service.Update("nas", collectionWith(wantedIP)); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, rec := range fake.of("nas.example.com") {
+		got = append(got, fmt.Sprintf("%s %s %d disabled=%v", rec.rrType, rec.ip, rec.ttl, rec.disabled))
+	}
+	if want := []string{"AAAA " + wantedIP + " 300 disabled=false"}; !slices.Equal(got, want) {
+		t.Errorf("the records: %v, want %v", got, want)
 	}
 }
 

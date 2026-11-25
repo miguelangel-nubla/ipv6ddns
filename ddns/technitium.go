@@ -37,9 +37,10 @@ type technitiumResponse struct {
 	ErrorMessage string `json:"errorMessage"`
 	Response     struct {
 		Records []struct {
-			Type  string          `json:"type"`
-			TTL   int             `json:"ttl"`
-			RData json.RawMessage `json:"rData"`
+			Type     string          `json:"type"`
+			TTL      int             `json:"ttl"`
+			Disabled bool            `json:"disabled"`
+			RData    json.RawMessage `json:"rData"`
 		} `json:"records"`
 	} `json:"response"`
 }
@@ -63,17 +64,24 @@ func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 
 	ttl := int(t.TTL.Seconds())
 
-	// 3. Calculate Diff
-	// Delete records that are not in desired
+	// A disabled record is as any other: Technitium enables the disabled records of a name's
+	// type whenever a record of that type is added, so it can't be kept disabled beside the
+	// name's records. Deleted when its address is not wanted, and enabled when it is.
 	for ip, record := range currentIPs {
-		if _, needed := desiredIPs[ip]; !needed {
+		_, needed := desiredIPs[ip]
+		switch {
+		case !needed:
 			if err := t.request(client, "delete", fqdn, record.rrType, ip, 0); err != nil {
 				return fmt.Errorf("failed to delete record %s (%s): %w", fqdn, ip, err)
 			}
-		} else if ttl > 0 && record.ttl != ttl {
-			// Kept, with the TTL set.
-			if err := t.request(client, "update", fqdn, record.rrType, ip, ttl); err != nil {
-				return fmt.Errorf("failed to set the TTL of record %s (%s): %w", fqdn, ip, err)
+		case record.disabled || (ttl > 0 && record.ttl != ttl):
+			// Kept, enabled, with the TTL set, or the one it had.
+			keep := record.ttl
+			if ttl > 0 {
+				keep = ttl
+			}
+			if err := t.request(client, "update", fqdn, record.rrType, ip, keep); err != nil {
+				return fmt.Errorf("failed to update record %s (%s): %w", fqdn, ip, err)
 			}
 		}
 	}
@@ -92,8 +100,9 @@ func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollec
 
 // technitiumRecord is an A or AAAA record of a name.
 type technitiumRecord struct {
-	rrType string
-	ttl    int
+	rrType   string
+	ttl      int
+	disabled bool
 }
 
 func (t *Technitium) getRecords(client *http.Client, domain string) (map[string]technitiumRecord, error) {
@@ -119,7 +128,7 @@ func (t *Technitium) getRecords(client *http.Client, domain string) (map[string]
 			var rData technitiumRDataIP
 			if err := json.Unmarshal(rec.RData, &rData); err == nil {
 				if ip, ok := canonicalIP(rData.IPAddress); ok {
-					currentIPs[ip] = technitiumRecord{rrType: rec.Type, ttl: rec.TTL}
+					currentIPs[ip] = technitiumRecord{rrType: rec.Type, ttl: rec.TTL, disabled: rec.Disabled}
 				}
 			}
 		}
@@ -145,8 +154,13 @@ func (t *Technitium) request(client *http.Client, action, domain, recordType, ip
 	if action != "delete" {
 		q.Set("ttl", strconv.Itoa(ttl))
 	}
-	if action == "add" {
+	switch action {
+	case "add":
 		q.Set("overwrite", "false") // The others of the name stay: the ones not wanted are deleted one by one
+	case "update":
+		// The record is kept, of its address, and enabled if it was disabled.
+		q.Set("newIpAddress", ip)
+		q.Set("disable", "false")
 	}
 	u.RawQuery = q.Encode()
 
