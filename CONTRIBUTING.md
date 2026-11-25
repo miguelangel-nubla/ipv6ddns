@@ -114,6 +114,15 @@ The same UniFi tests run against UniFi OS, which no container has:
 - CI runs them on `main`, weekly and by hand: the installer is large, and the server takes minutes to start.
 - UniFi OS limits how often a user logs in. The tests log in often, so the admin's may wait a minute for a refused login to pass.
 
+Neither UniFi OS Server nor the self-hosted application has a gateway, so they serve none of the records. Against a real console with a gateway, the same tests check what it answers too:
+
+1. Make an API key and get the certificate's fingerprint, as [UniFi: logging in](docs/unifi.md#logging-in) says.
+2. Set `IPV6DDNS_LIVE_UNIFI_OS` to the provider's settings, `{"address":"https://192.168.1.1","api_key":"...","tls_fingerprint":"...","zone":"lan.example.com"}`, with a zone whose names `live`, `other` and `live-program` you don't use: the tests add and remove records of those alone.
+3. Set `IPV6DDNS_LIVE_UNIFI_OS_DNS` to the gateway's DNS server, `192.168.1.1:53`.
+4. Run `go test -tags live -count=1 -v -run '^TestLiveUniFi' ./ddns .`. Each step asks the gateway for the name and expects the records UniFi lists, and the log shows the TTL it answers with.
+
+ipv6disc's plugin test, run against the same console, logs the clients it lists with their IPv6 fields: see its CONTRIBUTING.
+
 - It needs Docker, Go, curl, OpenSSL and OpenSSH, and takes a few minutes, most of them the UniFi Network Application's start. CI runs it.
 - The servers are pinned to the versions in the script, so a failing run points at the code and not at whatever was released that day. Moving to a newer version of a server is a change to the script.
 - When a real server and its fake behave differently, that is a bug in both the fake and the provider.

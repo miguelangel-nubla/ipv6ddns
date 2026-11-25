@@ -136,7 +136,9 @@ func queryDNS(t *testing.T, server, name, rrType string) []liveRecord {
 		t.Fatalf("name %s: %v", name, err)
 	}
 	query := dnsmessage.Message{
-		Header:    dnsmessage.Header{ID: uint16(time.Now().UnixNano())},
+		// Recursion desired, as a device asks: a gateway's DNS server forwards what isn't its own,
+		// and an authoritative server ignores it.
+		Header:    dnsmessage.Header{ID: uint16(time.Now().UnixNano()), RecursionDesired: true},
 		Questions: []dnsmessage.Question{{Name: qname, Type: qtype, Class: dnsmessage.ClassINET}},
 	}
 	packed, err := query.Pack()

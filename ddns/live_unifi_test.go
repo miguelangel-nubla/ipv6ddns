@@ -5,16 +5,23 @@ package ddns
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The UniFi Network API, live: of a self-hosted Network Application, with a user,
 // IPV6DDNS_LIVE_UNIFI, which tools/live-providers.sh runs; and of UniFi OS Server, with an API key
 // and with its admin, IPV6DDNS_LIVE_UNIFI_OS and IPV6DDNS_LIVE_UNIFI_OS_USER, which
 // tools/unifi-os-server.sh sets up. Neither has a gateway to serve the records, so they are read
-// back through the API, with a client of the test's own: what the gateway answers isn't checked.
+// back through the API, with a client of the test's own.
+//
+// A real console with a gateway, given by the same variables, can be asked too: with
+// IPV6DDNS_LIVE_UNIFI_OS_DNS, or IPV6DDNS_LIVE_UNIFI_DNS, the address of its DNS server, as
+// 192.168.1.1:53, each step asks it for the name, and expects the records UniFi lists. The TTL it
+// answers with is logged: that of a record without one is the gateway's.
 func TestLiveUniFi(t *testing.T) {
 	for _, variable := range []string{"IPV6DDNS_LIVE_UNIFI", "IPV6DDNS_LIVE_UNIFI_OS", "IPV6DDNS_LIVE_UNIFI_OS_USER"} {
 		t.Run(variable, func(t *testing.T) {
@@ -73,6 +80,47 @@ func TestLiveUniFi(t *testing.T) {
 				}
 			}
 
+			// The gateway's DNS server, when given: of the console of the variable, with a user or a key.
+			dnsServer := os.Getenv(strings.TrimSuffix(variable, "_USER") + "_DNS")
+			// answered checks the gateway answers the name with the records wanted, as "A 192.0.2.5 0",
+			// and the TTL, when one is given: it may take a moment to load a change.
+			answered := func(what string, want []string, wantTTL int) {
+				t.Helper()
+				if dnsServer == "" {
+					return
+				}
+				var wantAddrs []string
+				for _, w := range want {
+					f := strings.Fields(w)
+					wantAddrs = append(wantAddrs, f[0]+" "+f[1])
+				}
+				slices.Sort(wantAddrs)
+				var got []string
+				var ttls []int
+				for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(500 * time.Millisecond) {
+					got, ttls = nil, nil
+					for _, rrType := range []string{"A", "AAAA"} {
+						for _, r := range queryDNS(t, dnsServer, name, rrType) {
+							ip, _ := canonicalIP(r.data)
+							got = append(got, rrType+" "+ip)
+							ttls = append(ttls, r.ttl)
+						}
+					}
+					slices.Sort(got)
+					ttlOK := wantTTL == 0 || len(want) == 0 || !slices.ContainsFunc(ttls, func(t int) bool { return t != wantTTL })
+					if (slices.Equal(got, wantAddrs) && ttlOK) || time.Now().After(deadline) {
+						break
+					}
+				}
+				t.Logf("%s: the gateway answers %v, with the TTLs %v", what, got, ttls)
+				if !slices.Equal(got, wantAddrs) {
+					t.Errorf("%s: the gateway answers %v, want %v", what, got, wantAddrs)
+				}
+				if wantTTL != 0 && len(want) > 0 && slices.ContainsFunc(ttls, func(t int) bool { return t != wantTTL }) {
+					t.Errorf("%s: the gateway answers with the TTLs %v, want %d", what, ttls, wantTTL)
+				}
+			}
+
 			step := func(what string, want []string, ips ...string) {
 				t.Helper()
 				if err := service.Update("live", unifiAddrs(ips...)); err != nil {
@@ -81,6 +129,7 @@ func TestLiveUniFi(t *testing.T) {
 				if got := of(name); !slices.Equal(got, want) {
 					t.Errorf("%s: %v, want %v", what, got, want)
 				}
+				answered(what, want, 0)
 			}
 			step("added", []string{"A 192.0.2.5 0", "AAAA 2001:db8::5 0"}, "192.0.2.5", "2001:db8::5", "2001:db8::9")
 			step("again, the same", []string{"A 192.0.2.5 0", "AAAA 2001:db8::5 0"}, "192.0.2.5", "2001:db8::5", "2001:db8::9")
@@ -108,6 +157,7 @@ func TestLiveUniFi(t *testing.T) {
 			if got := of(name); !slices.Equal(got, []string{"A 192.0.2.5 300"}) {
 				t.Errorf("with a TTL: %v", got)
 			}
+			answered("with a TTL", []string{"A 192.0.2.5 300"}, 300)
 		})
 	}
 }
