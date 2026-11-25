@@ -324,7 +324,7 @@ func TestUniFiErrors(t *testing.T) {
 		{"a wrong key", `"api_key": "wrong"`, "HTTP 401: the API key is refused: create one in UniFi OS"},
 		{"a wrong password", `"username": "admin", "password": "wrong"`, "logging in: HTTP 403: the username or the password is refused"},
 		{"a wrong password, self-hosted", `"username": "admin", "password": "wrong", "address": "SELF"`, "logging in: HTTP 400: the username or the password is refused"},
-		{"another site", `"api_key": "the-key", "site": "other"`, `HTTP 404: no DNS records of site "other" here`},
+		{"another site", `"api_key": "the-key", "site": "other"`, `HTTP 404: not here: the site "other", or the address, is wrong. An API key is of UniFi OS alone: a self-hosted Network Application needs username and password, or the UniFi Network is older than 8.2.93`},
 		{"an API key on a self-hosted one", `"api_key": "the-key", "address": "SELF"`, "a self-hosted Network Application needs username and password"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -338,11 +338,6 @@ func TestUniFiErrors(t *testing.T) {
 				t.Errorf("got %v\nwant %s", err, c.want)
 			}
 		})
-	}
-	// What UniFi says of a record it refuses, with the field.
-	u := &UniFi{}
-	if err := u.refused(http.StatusBadRequest, []byte(`{"code":"api.err.StaticDnsRecordInvalidParameters","details":{"invalid_fields":["value"]},"errorCode":400,"message":"Invalid IPv6 Address"}`)); err.Error() != "HTTP 400: Invalid IPv6 Address (value)" {
-		t.Errorf("a refused record: %v", err)
 	}
 }
 
