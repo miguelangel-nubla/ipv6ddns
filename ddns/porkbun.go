@@ -188,50 +188,29 @@ func (p *Porkbun) records(ctx context.Context, sub, rrType string) ([]porkbunRec
 	return answer.Records, nil
 }
 
-// set makes the records of the name of rrType the values, of ttl: the missing ones made first, so
-// the name always has some, then the others deleted, and the TTL of those kept made the one.
+// set makes the records of the name of rrType the values, of ttl, apart, as Porkbun keeps them.
 func (p *Porkbun) set(ctx context.Context, sub, rrType string, values []string, ttl int, canonical func(string) (string, bool)) error {
-	current, err := p.records(ctx, sub, rrType)
+	records, err := p.records(ctx, sub, rrType)
 	if err != nil {
 		return err
 	}
-	have := make(map[string]bool)
-	for _, r := range current {
-		v, ok := canonical(r.Content)
-		if !ok {
-			return fmt.Errorf("a %s record at Porkbun isn't one: %s", rrType, r.Content)
-		}
-		have[v] = true
+	var current []providerRecord
+	for _, r := range records {
+		t, _ := strconv.Atoi(r.TTL)
+		current = append(current, providerRecord{ID: r.ID, Value: r.Content, TTL: t})
 	}
-	want := make(map[string]bool)
-	for _, v := range values {
-		want[v] = true
-		if have[v] {
-			continue
-		}
-		fields := map[string]string{"name": sub, "type": rrType, "content": v, "ttl": strconv.Itoa(ttl)}
-		if err := p.call(ctx, "/dns/create/"+url.PathEscape(p.Zone), fields, nil); err != nil {
-			return fmt.Errorf("making the %s record %s: %w", rrType, v, err)
-		}
-	}
-	kept := make(map[string]bool)
-	for _, r := range current {
-		v, _ := canonical(r.Content)
-		if !want[v] || kept[v] {
-			if err := p.call(ctx, "/dns/delete/"+url.PathEscape(p.Zone)+"/"+url.PathEscape(r.ID), nil, nil); err != nil {
-				return fmt.Errorf("deleting the %s record %s: %w", rrType, v, err)
-			}
-			continue
-		}
-		kept[v] = true
-		if r.TTL != strconv.Itoa(ttl) {
-			fields := map[string]string{"name": sub, "type": rrType, "content": r.Content, "ttl": strconv.Itoa(ttl)}
-			if err := p.call(ctx, "/dns/edit/"+url.PathEscape(p.Zone)+"/"+url.PathEscape(r.ID), fields, nil); err != nil {
-				return fmt.Errorf("setting the TTL of the %s record %s: %w", rrType, v, err)
-			}
-		}
-	}
-	return nil
+	zone := url.PathEscape(p.Zone)
+	return reconcile(current, values, ttl, canonical, recordChanges{
+		create: func(v string) error {
+			return p.call(ctx, "/dns/create/"+zone, map[string]string{"name": sub, "type": rrType, "content": v, "ttl": strconv.Itoa(ttl)}, nil)
+		},
+		remove: func(r providerRecord) error {
+			return p.call(ctx, "/dns/delete/"+zone+"/"+url.PathEscape(r.ID), nil, nil)
+		},
+		setTTL: func(r providerRecord) error {
+			return p.call(ctx, "/dns/edit/"+zone+"/"+url.PathEscape(r.ID), map[string]string{"name": sub, "type": rrType, "content": r.Value, "ttl": strconv.Itoa(ttl)}, nil)
+		},
+	})
 }
 
 // Update makes the A and AAAA records of the name the addresses; its other records stay.
