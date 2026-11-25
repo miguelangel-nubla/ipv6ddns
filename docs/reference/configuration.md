@@ -424,3 +424,18 @@ A plugin over the MikroTik API.
 | `password` | string | Its password. |
 | `use_tls` | boolean | Whether to use the API over TLS, the api-ssl service. Without it, the password crosses the network unencrypted. |
 | `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, as 64 hex digits, colons allowed. For when the system's CAs can't verify it, as with the self-signed one RouterOS makes. It needs use_tls. |
+
+### `unifi`
+
+A plugin over the UniFi Network API.
+
+| Key | Takes | |
+|---|---|---|
+| `type` | string | **Required.** The type of the plugin. |
+| `interval` | duration | **Required.** How often the clients are read, as 60s or 5m. |
+| `address` | string | **Required.** The console, as https://192.168.1.1, or the self-hosted Network Application, as https://192.168.1.2:8443. |
+| `api_key` | string | An API key of UniFi OS: in the console, Settings, Control Plane, Integrations. A self-hosted Network Application has none: give username and password instead. |
+| `username` | string | A local user, instead of api_key, without two-factor authentication. Reading is enough. |
+| `password` | string | Its password. |
+| `site` | string | The site, by its name in the API: default unless you made others. Default: default. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the console's certificate, as 64 hex digits, colons allowed. For when the system's CAs can't verify it, as with the one a console makes for itself. |

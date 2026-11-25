@@ -133,7 +133,7 @@ func TestPluginSchemaMatchesTheTypes(t *testing.T) {
 	if err := json.Unmarshal(configSchema, &schema); err != nil {
 		t.Fatal(err)
 	}
-	defs := map[string]string{"linux": "discoverySshPlugin", "freebsd": "discoverySshPlugin", "mikrotik": "discoveryMikrotikPlugin"}
+	defs := map[string]string{"linux": "discoverySshPlugin", "freebsd": "discoverySshPlugin", "mikrotik": "discoveryMikrotikPlugin", "unifi": "discoveryUnifiPlugin"}
 	if !slices.Equal(slices.Sorted(maps.Keys(defs)), plugins.Types()) {
 		t.Fatalf("the schema has %v, ipv6disc %v", slices.Sorted(maps.Keys(defs)), plugins.Types())
 	}

@@ -145,7 +145,7 @@ func TestDiscoveryErrors(t *testing.T) {
 		"a key hostnames hasn't": {"discovery:\n  hostnames:\n    enabled: true\n", "discovery.hostnames.enabled: no such key: hostnames has lifetime"},
 		"a sweep too large":      {"discovery:\n  protocols:\n    arp-sweep:\n      max_prefix: 8\n", "discovery: invalid max_prefix of the arp-sweep protocol, 8: it is from 16 to 30"},
 		"a block that is none":   {"discovery: all\n", `discovery: "all" isn't a mapping: write its keys under it`},
-		"a plugin of no type":    {"discovery:\n  plugins:\n    router:\n      interval: 60s\n", "discovery.plugins.router: a plugin has a type: one of freebsd, linux, mikrotik"},
+		"a plugin of no type":    {"discovery:\n  plugins:\n    router:\n      interval: 60s\n", "discovery.plugins.router: a plugin has a type: one of freebsd, linux, mikrotik, unifi"},
 		"a plugin's field":       {"discovery:\n  plugins:\n    router:\n      type: linux\n      interval: 60s\n      address: a\n      username: b\n      passwrd: c\n", "discovery.plugins.router.passwrd: no such field of a linux plugin: it has interval, address, username, password, identity_file, host_key"},
 		"a plugin that can't":    {"discovery:\n  plugins:\n    router:\n      type: linux\n      interval: 60s\n      address: a\n      username: b\n", "discovery.plugins.router: "},
 		"solicit, a switch":      {"discovery:\n  solicit: true\n", "discovery.solicit: true isn't valid here: write solicit as a mapping, with ipv6: true under it, and ipv4 beside it for IPv4"},

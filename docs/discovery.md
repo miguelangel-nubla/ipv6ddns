@@ -256,6 +256,7 @@ A plugin reads the neighbor table of a router, or of another host, every `interv
 | `linux` | `ip neigh` | SSH |
 | `freebsd` | `ndp -an`, `arp -an`: pfSense, OPNsense | SSH |
 | `mikrotik` | `/ipv6/neighbor`, `/ip/arp` | The API: see [MikroTik](mikrotik.md#discovery-plugin) |
+| `unifi` | The clients a UniFi gateway has connected now, with their names: see [below](#a-unifi-gateway) | The UniFi Network API |
 
 ```yaml
 discovery:
@@ -272,3 +273,25 @@ discovery:
 Each type's keys are in the [reference](reference/configuration.md#discovery-plugins). Give an SSH plugin its `host_key`. [ipv6disc's docs](https://github.com/miguelangel-nubla/ipv6disc/blob/main/docs/plugins.md#ssh-host-keys) say how to get it.
 
 Plugins read the tables of the families that are on. They take only the entries that were confirmed recently, so the addresses of hosts that left do expire.
+
+### A UniFi gateway
+
+A `unifi` plugin reads the clients that the gateway's UniFi Network has connected now, UniFi's own devices included: of a UniFi OS console, of UniFi OS Server, or of a self-hosted Network Application.
+
+```yaml
+discovery:
+  plugins:
+    gateway:
+      type: unifi
+      interval: 60s
+      address: https://192.168.1.1
+      api_key: ${file:unifi_api_key}
+      tls_fingerprint: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+- **Addresses:** each client's IPv4 address, and its IPv6 addresses where UniFi has them. UniFi doesn't always know a client's IPv6 addresses, privacy ones in particular, so keep local discovery on for those.
+- **Names:** the host name the client gave the gateway's DHCP server, and the name you gave the client in UniFi. A name with a space becomes one with a hyphen, as `living-room-tv`; one with a character no name has, such as an apostrophe, is left out.
+- **Login:** an API key, which a console makes under Settings, Control Plane, Integrations, or a `username` and `password` of a local user that can only read. A self-hosted Network Application has no API keys.
+- **The certificate:** a console's is its own, so give its fingerprint, which `openssl s_client -connect 192.168.1.1:443 </dev/null | openssl x509 -outform der | openssl dgst -sha256` shows.
+
+The same gateway can keep the names, too: see the [`unifi` provider](reference/providers.md#unifi).

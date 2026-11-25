@@ -282,6 +282,7 @@ func Configuration() (string, error) {
 var pluginDefs = []struct{ name, title, pluginType string }{
 	{"discoverySshPlugin", "`linux`, `freebsd`", "linux"},
 	{"discoveryMikrotikPlugin", "`mikrotik`", "mikrotik"},
+	{"discoveryUnifiPlugin", "`unifi`", "unifi"},
 }
 
 // PluginFieldDescriptions are the descriptions of a plugin type's fields, as ipv6disc registers

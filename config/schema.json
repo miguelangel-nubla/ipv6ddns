@@ -945,9 +945,10 @@
                     "enum": [
                         "freebsd",
                         "linux",
-                        "mikrotik"
+                        "mikrotik",
+                        "unifi"
                     ],
-                    "description": "The plugin's type: linux or freebsd, over SSH (pfSense and OPNsense are freebsd); or mikrotik, over its API."
+                    "description": "The plugin's type: linux or freebsd, over SSH (pfSense and OPNsense are freebsd); mikrotik, over its API; or unifi, over the UniFi Network API."
                 }
             },
             "allOf": [
@@ -976,6 +977,18 @@
                     },
                     "then": {
                         "$ref": "#/$defs/discoveryMikrotikPlugin"
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "type": {
+                                "const": "unifi"
+                            }
+                        }
+                    },
+                    "then": {
+                        "$ref": "#/$defs/discoveryUnifiPlugin"
                     }
                 }
             ]
@@ -1061,6 +1074,50 @@
                 "tls_fingerprint": {
                     "type": "string",
                     "description": "The SHA-256 fingerprint of the router's certificate, as 64 hex digits, colons allowed. For when the system's CAs can't verify it, as with the self-signed one RouterOS makes. It needs use_tls."
+                }
+            }
+        },
+        "discoveryUnifiPlugin": {
+            "type": "object",
+            "description": "A plugin over the UniFi Network API.",
+            "additionalProperties": false,
+            "required": [
+                "interval",
+                "address"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "The type of the plugin."
+                },
+                "interval": {
+                    "$ref": "#/$defs/discoveryDuration",
+                    "description": "How often the clients are read, as 60s or 5m."
+                },
+                "address": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The console, as https://192.168.1.1, or the self-hosted Network Application, as https://192.168.1.2:8443."
+                },
+                "api_key": {
+                    "type": "string",
+                    "description": "An API key of UniFi OS: in the console, Settings, Control Plane, Integrations. A self-hosted Network Application has none: give username and password instead."
+                },
+                "username": {
+                    "type": "string",
+                    "description": "A local user, instead of api_key, without two-factor authentication. Reading is enough."
+                },
+                "password": {
+                    "type": "string",
+                    "description": "Its password."
+                },
+                "site": {
+                    "type": "string",
+                    "description": "The site, by its name in the API: default unless you made others. Default: default."
+                },
+                "tls_fingerprint": {
+                    "type": "string",
+                    "description": "The SHA-256 fingerprint of the console's certificate, as 64 hex digits, colons allowed. For when the system's CAs can't verify it, as with the one a console makes for itself."
                 }
             }
         }
