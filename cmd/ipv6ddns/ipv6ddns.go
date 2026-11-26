@@ -402,7 +402,7 @@ func allowOnly(h http.Handler, allow []netip.Prefix) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		client, err := netip.ParseAddrPort(r.RemoteAddr)
-		if err != nil || !slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Contains(client.Addr().Unmap()) }) {
+		if err != nil || !slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Contains(client.Addr().WithZone("").Unmap()) }) {
 			http.Error(w, "forbidden: this address is not one the web server answers", http.StatusForbidden)
 			return
 		}
