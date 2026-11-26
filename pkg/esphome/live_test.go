@@ -126,6 +126,7 @@ func TestLiveHomeAssistantVanishes(t *testing.T) {
 	if got := await(t, events, "state", 10*time.Second)["state"]; got != "2001:db8::1" {
 		t.Errorf("the first state: %v", got)
 	}
+	awaitConnected(t, d)
 	for end := time.Now().Add(3 * idleTimeout); time.Now().Before(end); time.Sleep(200 * time.Millisecond) {
 		if !d.Connected() {
 			t.Fatal("Home Assistant, which pings, was dropped")
@@ -147,6 +148,18 @@ func TestLiveHomeAssistantVanishes(t *testing.T) {
 	t.Logf("dropped %s after it vanished", time.Since(gone).Round(100*time.Millisecond))
 }
 
+// awaitConnected waits until the device says Home Assistant is connected: once it asked for its
+// states, which it does after the device's, so a moment after their first is seen. A test that
+// read Connected at once could find it false, and take that for a drop.
+func awaitConnected(t *testing.T, d *Device) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); !d.Connected(); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("Home Assistant never asked for its states")
+		}
+	}
+}
+
 // Home Assistant stopped, as a machine that hangs: its kernel still takes what it is sent, until
 // its buffers are full. The device drops it once a state couldn't be written for writeTimeout,
 // long before idleTimeout would.
@@ -166,6 +179,7 @@ func TestLiveHomeAssistantStopsReading(t *testing.T) {
 	if got := await(t, events, "state", 10*time.Second)["state"]; got != "2001:db8::1" {
 		t.Errorf("a state before it stopped: %v", got)
 	}
+	awaitConnected(t, d)
 
 	if err := cmd.Process.Signal(syscall.SIGSTOP); err != nil {
 		t.Fatal(err)
