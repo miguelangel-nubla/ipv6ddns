@@ -897,9 +897,10 @@ resolvers:
 	}
 	var plain, https []string
 	for _, e := range cfg.Webservers["main"].Entries {
-		if e.Certificate == "" {
+		switch e.Certificate {
+		case "":
 			plain = append(plain, e.Entry.String())
-		} else if e.Certificate == "home" {
+		case "home":
 			https = append(https, e.Entry.String())
 		}
 	}

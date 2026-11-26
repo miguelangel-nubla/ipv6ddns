@@ -70,7 +70,7 @@ credentials: {}
 	if out, err := cmd.CombinedOutput(); err == nil {
 		t.Errorf("the certificate taken for the address, which it isn't for: %s", out)
 	}
-	if report := one.page("/status.txt"); !strings.Contains(report, "Certificates:\n    home (webserver): "+encryptedHost+", until ") {
+	if report := one.page("/status.txt"); !strings.Contains(report, "Certificates:\n    home (listener web): "+encryptedHost+", until ") {
 		t.Errorf("the report:\n%s", report)
 	}
 }

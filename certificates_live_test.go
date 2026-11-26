@@ -173,7 +173,7 @@ tasks: {}
 		t.Fatalf("the certificates: %+v", statuses)
 	}
 	st := statuses[0]
-	if !st.Managed || !slices.Equal(slices.Sorted(slices.Values(st.Names)), []string{name, web}) || st.Renewal != "" || !slices.Equal(st.UsedBy, []string{"resolvers.lan", "webservers.main"}) {
+	if !st.Managed || !slices.Equal(slices.Sorted(slices.Values(st.Names)), []string{name, web}) || st.Renewal != "" || !slices.Equal(st.UsedBy, []string{"listeners.lan", "listeners.web"}) {
 		t.Errorf("the status: %+v, %+v", st, st.Status)
 	}
 	home := cfg.Certificates["home"]
