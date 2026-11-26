@@ -46,6 +46,9 @@ func sharedServer(t *testing.T, ca *testCA, name string, rank int, port, httpsPo
 	t.Helper()
 	cfg, _ := testConfig(t)
 	cfg.Name, cfg.Path = name, "resolvers."+name
+	// Its plain DNS on a port free over both: a port of the system's, 0, is UDP's, and the shared
+	// HTTPS port, of TCP alone, can be one.
+	cfg.Listen = []listen.Entry{{Host: "127.0.0.1", Port: freePort(t)}}
 	cfg.Records = append(cfg.Records, mustRecords(t, "", `who.test. TXT "`+name+`"`)...)
 	certFile, keyFile := writeCertificate(t, t.TempDir(), ca.leaf(t, names))
 	cert, err := certfile.Load(certFile, keyFile, false, t.Errorf)
