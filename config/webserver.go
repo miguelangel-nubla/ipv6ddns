@@ -28,9 +28,10 @@ type Webserver struct {
 	Shared  []SharedWebEntry `json:"-"`
 }
 
-// WebEntry is a socket a web server opens: of HTTP, or of HTTPS with a certificate, and the
-// clients it answers, nil for everyone.
+// WebEntry is a socket a web server opens, of a listener: of HTTP, or of HTTPS with a
+// certificate, and the clients it answers, nil for everyone.
 type WebEntry struct {
+	Listener    string
 	Entry       listen.Entry
 	Certificate string
 	Allow       []netip.Prefix
@@ -103,11 +104,11 @@ func (c *Config) setUpWebservers() error {
 			for _, le := range l.Entries {
 				switch {
 				case le.Scheme == SchemeHTTP:
-					w.Entries = append(w.Entries, WebEntry{Entry: le.Entry, Allow: entryAllow})
+					w.Entries = append(w.Entries, WebEntry{Listener: ln, Entry: le.Entry, Allow: entryAllow})
 				case le.Scheme == SchemeHTTPS && l.Resolver != "":
 					shared = append(shared, le.Line)
 				case le.Scheme == SchemeHTTPS:
-					w.Entries = append(w.Entries, WebEntry{Entry: le.Entry, Certificate: l.TLS, Allow: entryAllow})
+					w.Entries = append(w.Entries, WebEntry{Listener: ln, Entry: le.Entry, Certificate: l.TLS, Allow: entryAllow})
 				}
 			}
 			if len(shared) > 0 {

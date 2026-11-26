@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 929 750" width="929" height="750" role="img" aria-label="The report of ipv6ddns, with its colors">
-<rect x="0.5" y="0.5" width="928" height="749" rx="6" fill="#12161c" stroke="#30363d"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 929 769" width="929" height="769" role="img" aria-label="The report of ipv6ddns, with its colors">
+<rect x="0.5" y="0.5" width="928" height="768" rx="6" fill="#12161c" stroke="#30363d"/>
 <g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#dde3ea">
 <text x="16" y="28" textLength="31.2" lengthAdjust="spacingAndGlyphs" fill="#f1f4f8" font-weight="600">DNS:</text>
 <text x="55" y="28" textLength="62.4" lengthAdjust="spacingAndGlyphs">4 names,</text>
@@ -60,43 +60,44 @@
 <text x="70.6" y="351" textLength="7.8" lengthAdjust="spacingAndGlyphs">:</text>
 <text x="86.2" y="351" textLength="54.6" lengthAdjust="spacingAndGlyphs" fill="#5fcf83">serving</text>
 <text x="78.4" y="370" textLength="195" lengthAdjust="spacingAndGlyphs">Listening: 192.168.1.2:53</text>
-<text x="78.4" y="389" textLength="163.8" lengthAdjust="spacingAndGlyphs">Allow: 192.168.1.0/24</text>
-<text x="78.4" y="408" textLength="249.6" lengthAdjust="spacingAndGlyphs">Zones: lan.example.com (2 names)</text>
+<text x="78.4" y="389" textLength="390" lengthAdjust="spacingAndGlyphs">Allow: 192.168.1.0/24 (the networks it listens on)</text>
+<text x="78.4" y="408" textLength="319.8" lengthAdjust="spacingAndGlyphs">Zones: lan.example.com (2 names, TTL 60s)</text>
 <text x="78.4" y="427" textLength="163.8" lengthAdjust="spacingAndGlyphs">Upstream: 192.168.1.1</text>
 <text x="250" y="427" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">(0 failed)</text>
-<text x="78.4" y="446" textLength="655.2" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
-<text x="78.4" y="465" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">Cache: 1274 of 10000</text>
-<text x="16" y="503" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#f1f4f8" font-weight="600">Discovery:</text>
-<text x="101.8" y="503" textLength="226.2" lengthAdjust="spacingAndGlyphs">4 hosts, 2 named, 5 addresses</text>
-<text x="47.2" y="522" textLength="132.6" lengthAdjust="spacingAndGlyphs">00:11:22:33:44:55</text>
-<text x="78.4" y="541" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">names:</text>
-<text x="109.6" y="560" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#9cc0ff">nas</text>
-<text x="429.4" y="560" textLength="62.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3h59m12s</text>
-<text x="515.2" y="560" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="140.8" y="579" textLength="93.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">mdns on eth0</text>
+<text x="78.4" y="446" textLength="538.2" lengthAdjust="spacingAndGlyphs">Private reverse: the unknown answered here as no such name (RFC 6303)</text>
+<text x="78.4" y="465" textLength="655.2" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
+<text x="78.4" y="484" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">Cache: 1274 of 10000</text>
+<text x="16" y="522" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#f1f4f8" font-weight="600">Discovery:</text>
+<text x="101.8" y="522" textLength="226.2" lengthAdjust="spacingAndGlyphs">4 hosts, 2 named, 5 addresses</text>
+<text x="47.2" y="541" textLength="132.6" lengthAdjust="spacingAndGlyphs">00:11:22:33:44:55</text>
+<text x="78.4" y="560" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">names:</text>
+<text x="109.6" y="579" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#9cc0ff">nas</text>
 <text x="429.4" y="579" textLength="62.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3h59m12s</text>
 <text x="515.2" y="579" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="140.8" y="598" textLength="234" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">reported by router from leases</text>
-<text x="429.4" y="598" textLength="62.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3h51m 7s</text>
-<text x="523" y="598" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3d 4h</text>
-<text x="78.4" y="617" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">addresses:</text>
-<text x="109.6" y="636" textLength="93.6" lengthAdjust="spacingAndGlyphs">192.168.1.50</text>
-<text x="452.8" y="636" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">2m51s</text>
-<text x="515.2" y="636" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="140.8" y="655" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">arp:answered on eth0</text>
+<text x="140.8" y="598" textLength="93.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">mdns on eth0</text>
+<text x="429.4" y="598" textLength="62.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3h59m12s</text>
+<text x="515.2" y="598" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
+<text x="140.8" y="617" textLength="234" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">reported by router from leases</text>
+<text x="429.4" y="617" textLength="62.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3h51m 7s</text>
+<text x="523" y="617" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3d 4h</text>
+<text x="78.4" y="636" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">addresses:</text>
+<text x="109.6" y="655" textLength="93.6" lengthAdjust="spacingAndGlyphs">192.168.1.50</text>
 <text x="452.8" y="655" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">2m51s</text>
 <text x="515.2" y="655" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="140.8" y="674" textLength="234" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">reported by router from leases</text>
-<text x="437.2" y="674" textLength="54.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">(lease)</text>
-<text x="523" y="674" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3d 4h</text>
-<text x="109.6" y="693" textLength="140.4" lengthAdjust="spacingAndGlyphs">fd12:3456:789a::50</text>
-<text x="445" y="693" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">41m37s</text>
-<text x="515.2" y="693" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="140.8" y="712" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">ndp:answered on eth0</text>
+<text x="140.8" y="674" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">arp:answered on eth0</text>
+<text x="452.8" y="674" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">2m51s</text>
+<text x="515.2" y="674" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
+<text x="140.8" y="693" textLength="234" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">reported by router from leases</text>
+<text x="437.2" y="693" textLength="54.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">(lease)</text>
+<text x="523" y="693" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">3d 4h</text>
+<text x="109.6" y="712" textLength="140.4" lengthAdjust="spacingAndGlyphs">fd12:3456:789a::50</text>
 <text x="445" y="712" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">41m37s</text>
 <text x="515.2" y="712" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
-<text x="140.8" y="731" textLength="171.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">mdns:announced on eth0</text>
-<text x="445" y="731" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">38m 5s</text>
-<text x="546.4" y="731" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">6h20m</text>
+<text x="140.8" y="731" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">ndp:answered on eth0</text>
+<text x="445" y="731" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">41m37s</text>
+<text x="515.2" y="731" textLength="23.4" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">12d</text>
+<text x="140.8" y="750" textLength="171.6" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">mdns:announced on eth0</text>
+<text x="445" y="750" textLength="46.8" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">38m 5s</text>
+<text x="546.4" y="750" textLength="39" lengthAdjust="spacingAndGlyphs" fill="#8c97a6">6h20m</text>
 </g>
 </svg>

@@ -190,10 +190,12 @@ func main() {
 				sugar.Fatalf("%s failed: %s", web.Path, err)
 			}
 			var tlsConfig *tls.Config
+			scheme := "http://"
 			if entry.Certificate != "" {
-				tlsConfig = worker.TLS(entry.Certificate, "h2", "http/1.1")
+				tlsConfig, scheme = worker.TLS(entry.Certificate, "h2", "http/1.1"), "https://"
 			}
 			for _, listener := range listeners {
+				worker.WebListening(entry.Listener, scheme+listener.Addr().String())
 				server := &http.Server{Handler: allowOnly(webHandler(worker), entry.Allow), ReadHeaderTimeout: 10 * time.Second, TLSConfig: tlsConfig}
 				servers = append(servers, server)
 				go func() {

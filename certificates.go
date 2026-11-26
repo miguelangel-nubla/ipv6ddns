@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -144,6 +145,12 @@ type CertificateStatus struct {
 	Name string `json:"name"`
 	// resolvers.lan, webserver.
 	UsedBy []string `json:"used_by"`
+	// The listeners that show it, by name: none of others.
+	Listeners []string `json:"listeners,omitempty"`
+	// Of acme: the names it is for, as written, relative to the zone of the credential that
+	// writes their challenge.
+	ACMENames  []string `json:"acme_names,omitempty"`
+	Credential string   `json:"credential,omitempty"`
 	*certfile.Status
 }
 
@@ -161,7 +168,16 @@ func (c *certificate) status() CertificateStatus {
 			st.Renewal, st.NextAttempt = s.LastError, s.NextAttempt
 		}
 	}
-	return CertificateStatus{Name: c.name, UsedBy: slices.Clone(c.usedBy), Status: st}
+	out := CertificateStatus{Name: c.name, UsedBy: slices.Clone(c.usedBy), Status: st}
+	for _, u := range c.usedBy {
+		if name, ok := strings.CutPrefix(u, "listeners."); ok {
+			out.Listeners = append(out.Listeners, name)
+		}
+	}
+	if c.acme != nil {
+		out.ACMENames, out.Credential = slices.Clone(c.acme.names), c.acme.credential
+	}
+	return out
 }
 
 // certificateStatuses are the certificates' statuses, by name's order.

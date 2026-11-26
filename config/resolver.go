@@ -266,6 +266,7 @@ func (c *Config) listenOnListeners(spec *resolver.Config, names []string) {
 					spec.Listen = append(spec.Listen, le.Entry)
 					spec.ListenLines = append(spec.ListenLines, le.Line)
 					spec.ListenAllow = append(spec.ListenAllow, l.Allowed)
+					spec.ListenListeners = append(spec.ListenListeners, name)
 				}
 			default:
 				enc := resolver.EncryptedListen{Transport: le.Scheme, Entry: le.Entry, Line: le.Line, CertificateName: l.TLS, Allow: l.Allowed,

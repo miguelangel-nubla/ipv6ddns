@@ -47,12 +47,17 @@ type Worker struct {
 	rematch chan struct{}
 	// The device of Home Assistant's ESPHome integration, without the homeassistant block nil.
 	homeAssistant *homeAssistant
+	// The discovery plugins RegisterPlugin added, in its order, for their states.
+	plugins []ipv6disc.Plugin
 	// The goroutines Start starts, for Shutdown.
 	running sync.WaitGroup
 	// The resolvers, by name's order.
 	resolvers []*resolver.Server
 	// The certificates of the configuration, by name's order.
 	certs []*certificate
+	// The sockets the web servers opened, by their listener's name, as WebListening tells them.
+	webSockets map[string][]string
+	webMutex   sync.Mutex
 	// Start was called: a second one would run every source and the matching twice.
 	started atomic.Bool
 	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has.
@@ -525,6 +530,7 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 // RegisterPlugin adds a discovery plugin, before Start: one for each of the configuration's
 // discovery.plugins, which is what makes Start run them.
 func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {
+	w.plugins = append(w.plugins, p)
 	w.discWorker.RegisterPlugin(p)
 }
 
@@ -699,10 +705,13 @@ func (w *Worker) PrettyPrint(prefix string, hideSensible bool) string {
 func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 	var page pretty.Page
 	for _, section := range []pretty.Page{
-		w.State.Page(prefix, hideSensible),
+		w.State.page(prefix, hideSensible, w.writtenRecords()),
 		w.resolversPage(prefix),
+		w.listenersPage(prefix),
 		w.certificatesPage(prefix),
+		w.sourcesPage(prefix, hideSensible),
 		append(w.discWorker.State.Page(prefix), w.discWorker.StatsPage(prefix)...),
+		processPage(prefix, processStatus()),
 		w.config.Page(prefix, hideSensible),
 	} {
 		if len(section) == 0 {
@@ -714,6 +723,30 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 		page = append(page, section...)
 	}
 	return page
+}
+
+// sourcesPage is the page of the sources and Home Assistant's device, of
+// the states the status has.
+func (w *Worker) sourcesPage(prefix string, hideSensible bool) pretty.Page {
+	sources := []source.Status{}
+	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
+		sources = append(sources, w.sources[name].Status(hideSensible))
+	}
+	return sourcesPage(prefix, sources, w.homeAssistantStatus())
+}
+
+// writtenRecords are the records written in the resolvers' zones, by the credential of each zone.
+func (w *Worker) writtenRecords() map[string][]string {
+	written := map[string][]string{}
+	for _, r := range w.resolvers {
+		s := r.Status()
+		for zone, lines := range s.ZoneRecords {
+			if credential := s.ZoneCredentials[zone]; credential != "" && written[credential] == nil {
+				written[credential] = lines
+			}
+		}
+	}
+	return written
 }
 
 // resolversPage tells, of each resolver, where it listens, whom it answers, and what it
@@ -758,8 +791,35 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 			}
 		}
 		page.Add(pretty.As(pretty.Name, prefix+"    "+s.Name), pretty.Span{Text: ": "}, state)
-		plain("        Listening: %s", strings.Join(s.Listening, ", "))
-		plain("        Allow: %s", strings.Join(s.Allow, ", "))
+		// An empty list says what it means: no sockets yet, anyone, or no other server.
+		list := func(items []string, empty string) string {
+			if len(items) == 0 {
+				return empty
+			}
+			return strings.Join(items, ", ")
+		}
+		plain("        Listening: %s", list(s.Listening, "none"))
+		// Whose the allow is: the resolver's, on all its sockets, its listeners', each on its own, or
+		// of none, the networks of the machine's addresses it listens on.
+		whose := "the resolver's"
+		switch {
+		case !s.AllowOwn && len(s.ListenerAllow) > 0:
+			whose = "its listeners'"
+		case !s.AllowOwn:
+			whose = "the networks it listens on"
+		}
+		if len(s.Allow) == 0 {
+			plain("        Allow: none")
+		} else {
+			plain("        Allow: %s (%s)", strings.Join(s.Allow, ", "), whose)
+		}
+		for _, l := range s.ListenerAllow {
+			of := l.Listen
+			if l.Listener != "" {
+				of += " (" + l.Listener + ")"
+			}
+			plain("            %s: %s", of, strings.Join(l.Allow, ", "))
+		}
 		// A socket of listeners of several: which this one is, by the name its clients ask.
 		for _, sh := range s.Shared {
 			by := "the clients that ask " + sh.Name
@@ -773,11 +833,30 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 		}
 		var zones []string
 		for _, z := range s.Zones {
-			zones = append(zones, fmt.Sprintf("%s (%s)", z, countNames(s.ZoneNames[z])))
+			count := countNames(s.ZoneNames[z])
+			if n := len(s.ZoneRecords[z]); n > 0 {
+				written := "records"
+				if n == 1 {
+					written = "record"
+				}
+				count += fmt.Sprintf(", %d written %s", n, written)
+			}
+			count += fmt.Sprintf(", TTL %ds", s.ZoneTTL[z])
+			zones = append(zones, fmt.Sprintf("%s (%s)", z, count))
 		}
-		plain("        Zones: %s", strings.Join(zones, ", "))
+		// The names themselves are under their endpoints, above; each one's task in /status.json.
+		plain("        Zones: %s", list(zones, "none"))
+		if len(s.Records) > 0 {
+			plain("        Records:")
+		}
+		for _, r := range s.Records {
+			plain("            %s", r)
+		}
 		// An upstream that failed stands out; one that never did steps back.
 		upstreams := pretty.Line{{Text: prefix + "        Upstream: "}}
+		if len(s.Upstreams) == 0 {
+			upstreams = append(upstreams, pretty.Span{Text: "none, its own names only"})
+		}
 		for i, u := range s.Upstreams {
 			sep := ""
 			if i > 0 {
@@ -787,9 +866,21 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 			if s.UpstreamFailures[u] > 0 {
 				failed = pretty.Warn
 			}
-			upstreams = append(upstreams, pretty.Span{Text: sep + u + " "}, pretty.As(failed, fmt.Sprintf("(%d failed)", s.UpstreamFailures[u])))
+			name := u
+			if addresses := s.UpstreamAddresses[u]; len(addresses) > 0 {
+				name += " [" + strings.Join(addresses, ", ") + "]"
+			}
+			upstreams = append(upstreams, pretty.Span{Text: sep + name + " "}, pretty.As(failed, fmt.Sprintf("(%d failed)", s.UpstreamFailures[u])))
 		}
 		page.Add(upstreams...)
+		if len(s.Bootstrap) > 0 {
+			plain("        Bootstrap: %s", strings.Join(s.Bootstrap, ", "))
+		}
+		private := "the unknown answered here as no such name (RFC 6303)"
+		if s.ForwardUnknownPrivateReverse {
+			private = "forwarded"
+		}
+		plain("        Private reverse: %s", private)
 		var queries []string
 		for _, kind := range resolver.Kinds {
 			queries = append(queries, fmt.Sprintf("%s %d", kind, s.Queries[kind]))
@@ -809,6 +900,17 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 		for _, k := range s.Keys {
 			counts := fmt.Sprintf("applied %d, refused %d, failed %d", k.Updates[resolver.UpdateApplied], k.Updates[resolver.UpdateRefused], k.Updates[resolver.UpdateFailed])
 			page.Add(pretty.As(pretty.Name, prefix+"            "+k.Name), pretty.Span{Text: fmt.Sprintf(" (%s): %s", strings.Join(k.Permissions, ", "), counts)})
+			// What each permission may change: its zone's names, or all of them, of its types.
+			for _, g := range k.Grants {
+				names := "not asked of its provider yet"
+				switch {
+				case g.Zone != "" && len(g.Names) == 0:
+					names = "all of " + g.Zone
+				case g.Zone != "":
+					names = strings.Join(g.Names, ", ") + " of " + g.Zone
+				}
+				plain("                %s: %s (%s)", g.Permission, names, strings.Join(g.Types, ", "))
+			}
 			if k.Last != nil {
 				style := pretty.Detail
 				if k.LastResult != resolver.UpdateApplied {
@@ -906,6 +1008,10 @@ func certificatesPage(prefix string, statuses []CertificateStatus, now time.Time
 			users = append(users, u)
 		}
 		page.Add(certificateLine(prefix+"    ", c.Name+" ("+strings.Join(users, ", ")+")", c.Status, now)...)
+		// Of acme: the names asked, as written, and the credential that writes their challenge.
+		if len(c.ACMENames) > 0 {
+			page.Add(pretty.Span{Text: fmt.Sprintf("%s        ACME: %s, by credential %s", prefix, strings.Join(c.ACMENames, ", "), c.Credential)})
+		}
 	}
 	return page
 }

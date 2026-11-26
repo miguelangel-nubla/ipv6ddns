@@ -13,6 +13,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
+	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 )
 
 // Status is the state of the worker, to serve as JSON.
@@ -21,13 +22,22 @@ type Status struct {
 	Discovered []DiscoveredHost `json:"discovered"`
 	// The protocols of the local discovery that run, as the configuration names them: those
 	// enabled whose family is on, and listens.
-	Protocols []string          `json:"protocols"`
-	Sources   []source.Status   `json:"sources"`
-	Resolvers []resolver.Status `json:"resolvers"`
+	Protocols []string        `json:"protocols"`
+	Sources   []source.Status `json:"sources"`
+	// The discovery plugins, in the configuration's order.
+	Plugins []PluginStatus `json:"plugins"`
+	// The device of Home Assistant's ESPHome integration, with the homeassistant block.
+	HomeAssistant *HomeAssistantStatus `json:"homeassistant,omitempty"`
+	Resolvers     []resolver.Status    `json:"resolvers"`
 	// The certificates of the configuration, by name.
 	Certificates []CertificateStatus `json:"certificates,omitempty"`
+	// The listeners and the web servers of the configuration, by name.
+	Listeners  []ListenerStatus  `json:"listeners,omitempty"`
+	Webservers []WebserverStatus `json:"webservers,omitempty"`
 	// The program itself: its goroutines, its memory, its open files.
 	Process ProcessStatus `json:"process"`
+	// What in the configuration runs but does nothing, as the start logs it.
+	Warnings []string `json:"warnings"`
 }
 
 type HostnameStatus struct {
@@ -131,6 +141,7 @@ func discoveredRecords(addr *ipv6disc.Addr) []DiscoveredRecord {
 func (w *Worker) Status(hideSensible bool) Status {
 	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Protocols: []string{}, Sources: []source.Status{}, Resolvers: []resolver.Status{}}
 	status.Process = processStatus()
+	status.Warnings = append([]string{}, w.config.Warnings...)
 
 	for _, r := range w.resolvers {
 		status.Resolvers = append(status.Resolvers, r.Status())
@@ -138,10 +149,18 @@ func (w *Worker) Status(hideSensible bool) Status {
 	if len(w.certs) > 0 {
 		status.Certificates = w.certificateStatuses()
 	}
+	if len(w.config.Listeners) > 0 {
+		status.Listeners = w.listenerStatuses()
+	}
+	if len(w.config.Webservers) > 0 {
+		status.Webservers = w.webserverStatuses()
+	}
 
 	for _, name := range slices.Sorted(maps.Keys(w.sources)) {
 		status.Sources = append(status.Sources, w.sources[name].Status(hideSensible))
 	}
+	status.Plugins = w.pluginStatuses(hideSensible)
+	status.HomeAssistant = w.homeAssistantStatus()
 
 	for _, providerKey := range slices.Sorted(maps.Keys(w.State.providers)) {
 		provider := w.State.providers[providerKey]
@@ -220,6 +239,18 @@ type ProcessStatus struct {
 	HeapBytes uint64 `json:"heap_bytes"`
 	// The open files and sockets: where the system tells, as Linux; 0 elsewhere.
 	OpenFiles int `json:"open_files"`
+}
+
+// processPage is the line of the program itself: its goroutines, its heap, and its open files
+// where the system tells them.
+func processPage(prefix string, p ProcessStatus) pretty.Page {
+	var page pretty.Page
+	text := fmt.Sprintf(" %d goroutines, heap %.1f MiB", p.Goroutines, float64(p.HeapBytes)/(1<<20))
+	if p.OpenFiles > 0 {
+		text += fmt.Sprintf(", %d open files", p.OpenFiles)
+	}
+	page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, "Process:"), pretty.Span{Text: text})
+	return page
 }
 
 func processStatus() ProcessStatus {
@@ -321,6 +352,18 @@ func (s Status) WriteMetrics(out io.Writer) error {
 	for _, r := range s.Resolvers {
 		fmt.Fprintf(&b, "ipv6ddns_resolver_cache_entries%s %d\n", resolverLabels(r.Name), r.CacheEntries)
 	}
+	metric("ipv6ddns_resolver_zone_names", "gauge", "The names of a resolver's zone that its tasks have addresses for.")
+	for _, r := range s.Resolvers {
+		for _, z := range r.Zones {
+			fmt.Fprintf(&b, "ipv6ddns_resolver_zone_names%s %d\n", resolverLabels(r.Name, "zone", z), r.ZoneNames[z])
+		}
+	}
+	metric("ipv6ddns_resolver_zone_records", "gauge", "The records written in a resolver's zone, in the configuration.")
+	for _, r := range s.Resolvers {
+		for _, z := range r.Zones {
+			fmt.Fprintf(&b, "ipv6ddns_resolver_zone_records%s %d\n", resolverLabels(r.Name, "zone", z), len(r.ZoneRecords[z]))
+		}
+	}
 	metric("ipv6ddns_resolver_updates_total", "counter", "The dynamic updates a key of a resolver sent, by result: applied, refused, failed.")
 	for _, r := range s.Resolvers {
 		for _, k := range r.Keys {
@@ -333,6 +376,32 @@ func (s Status) WriteMetrics(out io.Writer) error {
 	for _, r := range s.Resolvers {
 		for _, upstream := range r.Upstreams {
 			fmt.Fprintf(&b, "ipv6ddns_resolver_upstream_failures_total%s %d\n", resolverLabels(r.Name, "upstream", upstream), r.UpstreamFailures[upstream])
+		}
+	}
+
+	certificateLabels := func(name string) string {
+		return fmt.Sprintf(`{certificate="%s"}`, labelValue(name))
+	}
+	metric("ipv6ddns_certificate_expiry_timestamp_seconds", "gauge", "When a certificate shown ends.")
+	for _, c := range s.Certificates {
+		if !c.NotAfter.IsZero() {
+			fmt.Fprintf(&b, "ipv6ddns_certificate_expiry_timestamp_seconds%s %d\n", certificateLabels(c.Name), c.NotAfter.Unix())
+		}
+	}
+	metric("ipv6ddns_certificate_last_renewal_failed", "gauge", "1 when the last attempt to get a certificate of acme failed.")
+	for _, c := range s.Certificates {
+		if c.Managed {
+			failed := 0
+			if c.Renewal != "" {
+				failed = 1
+			}
+			fmt.Fprintf(&b, "ipv6ddns_certificate_last_renewal_failed%s %d\n", certificateLabels(c.Name), failed)
+		}
+	}
+	metric("ipv6ddns_certificate_next_attempt_timestamp_seconds", "gauge", "When a certificate of acme is next asked for, after an attempt that failed.")
+	for _, c := range s.Certificates {
+		if !c.NextAttempt.IsZero() {
+			fmt.Fprintf(&b, "ipv6ddns_certificate_next_attempt_timestamp_seconds%s %d\n", certificateLabels(c.Name), c.NextAttempt.Unix())
 		}
 	}
 

@@ -48,6 +48,10 @@ func TestPrettyPrintHostname(t *testing.T) {
 	if page := render(h); !regexp.MustCompile(`, retrying after the error\)[^\n]*\n    \(last update error: <sensible data hidden>\)\n    \[2001`).MatchString(page) {
 		t.Errorf("after an error:\n%s", page)
 	}
+	// Its updates are counted, as the status's.
+	if page := render(h); !strings.Contains(page, "(updates 1, failures 1)") {
+		t.Errorf("the counts of its updates:\n%s", page)
+	}
 	var tb pretty.Table
 	writeHostnameStatus(&tb, "", "nas.example.com", h.status(), true, time.Now())
 	roles := map[string]pretty.Role{}

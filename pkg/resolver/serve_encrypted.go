@@ -101,6 +101,8 @@ type encryptedListeners struct {
 	// host:port with its scheme, as the status says it, and the addresses themselves.
 	listening []string
 	listened  []net.Addr
+	// The sockets of each listener's entries, by its name, as listening tells them.
+	byListener map[string][]string
 }
 
 // open listens on every address of e, over its transport: TCP for TLS and HTTPS, UDP for QUIC. An
@@ -110,13 +112,24 @@ func (l *encryptedListeners) open(s *Server, e EncryptedListen) error {
 	if err != nil {
 		return err
 	}
+	if l.byListener == nil {
+		l.byListener = map[string][]string{}
+	}
+	// Each socket of the entry, of its listener's.
+	of := func(text string) {
+		if e.Listener != "" && !slices.Contains(l.byListener[e.Listener], text) {
+			l.byListener[e.Listener] = append(l.byListener[e.Listener], text)
+		}
+	}
 	for _, a := range addresses {
 		k := sharedKey(e.Transport, a)
 		if !s.opens(e, k) {
 			addr := sharedAddr(e.Transport, a)
-			if text := e.Transport + "://" + addr.String(); !slices.Contains(l.listening, text) {
+			text := e.Transport + "://" + addr.String()
+			if !slices.Contains(l.listening, text) {
 				l.listening = append(l.listening, text)
 			}
+			of(text)
 			l.listened = append(l.listened, addr)
 			continue
 		}
@@ -130,6 +143,7 @@ func (l *encryptedListeners) open(s *Server, e EncryptedListen) error {
 			l.quic = append(l.quic, c)
 			l.quicOf = append(l.quicOf, routes)
 			l.listening = append(l.listening, e.Transport+"://"+c.LocalAddr().String())
+			of(e.Transport + "://" + c.LocalAddr().String())
 			l.listened = append(l.listened, c.LocalAddr())
 			continue
 		}
@@ -145,6 +159,7 @@ func (l *encryptedListeners) open(s *Server, e EncryptedListen) error {
 			l.httpsOf = append(l.httpsOf, routes)
 		}
 		l.listening = append(l.listening, e.Transport+"://"+tl.Addr().String())
+		of(e.Transport + "://" + tl.Addr().String())
 		l.listened = append(l.listened, tl.Addr())
 	}
 	return nil

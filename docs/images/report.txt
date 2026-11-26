@@ -17,9 +17,10 @@ DNS: 4 names, 4 with addresses, 0 without; 0 failing
 Resolvers: 1, 1 serving
     lan: serving
         Listening: 192.168.1.2:53
-        Allow: 192.168.1.0/24
-        Zones: lan.example.com (2 names)
+        Allow: 192.168.1.0/24 (the networks it listens on)
+        Zones: lan.example.com (2 names, TTL 60s)
         Upstream: 192.168.1.1 (0 failed)
+        Private reverse: the unknown answered here as no such name (RFC 6303)
         Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0
         Cache: 1274 of 10000
 

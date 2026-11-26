@@ -114,6 +114,9 @@ type keyState struct {
 	last      time.Time
 	// What the last update did, or why it was refused.
 	lastResult, lastMessage string
+	// The scope each grant gave last, by its place among them, for the status: of a limited
+	// grant, which asks a provider, the status asks no other.
+	read map[int]scope
 }
 
 // newKeys checks the keys and reads their secrets: by their names.
@@ -249,22 +252,37 @@ func (sc scope) within(name string) bool {
 func (key *keyState) scopes() ([]scope, error) {
 	var out []scope
 	var errs []error
-	for _, g := range key.Grants {
-		zone, names, err := g.Scope()
+	for i, g := range key.Grants {
+		sc, err := scopeOf(g)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", g.Kind(), err))
 			continue
 		}
-		sc := scope{grant: g, zone: lowerName(zone), types: g.Types()}
-		if names != nil {
-			sc.names = []string{}
-			for _, n := range names {
-				sc.names = append(sc.names, lowerName(n))
-			}
+		key.mutex.Lock()
+		if key.read == nil {
+			key.read = make(map[int]scope)
 		}
+		key.read[i] = sc
+		key.mutex.Unlock()
 		out = append(out, sc)
 	}
 	return out, errors.Join(errs...)
+}
+
+// scopeOf is the scope a grant gives now, its names in lower case: nil names for all of its zone.
+func scopeOf(g Grant) (scope, error) {
+	zone, names, err := g.Scope()
+	if err != nil {
+		return scope{}, err
+	}
+	sc := scope{grant: g, zone: lowerName(zone), types: g.Types()}
+	if names != nil {
+		sc.names = []string{}
+		for _, n := range names {
+			sc.names = append(sc.names, lowerName(n))
+		}
+	}
+	return sc, nil
 }
 
 // take takes one update of the key's allowance, at now: false when none is left. The allowance
@@ -796,6 +814,8 @@ type KeyStatus struct {
 	Name string `json:"name"`
 	// The kinds of its permissions, in order.
 	Permissions []string `json:"permissions"`
+	// What each permission may change, in the same order.
+	Grants []GrantStatus `json:"grants"`
 	// The updates, by result.
 	Updates map[string]uint64 `json:"updates"`
 	// The last: when, its result and what it did, or why not.
@@ -804,14 +824,54 @@ type KeyStatus struct {
 	LastMessage string     `json:"last_message,omitempty"`
 }
 
+// GrantStatus is what a key's permission may change, for the report and /status.json.
+type GrantStatus struct {
+	Permission string `json:"permission"`
+	// Its zone, and the names of it: all of the zone's, for none. No zone while not known: of a
+	// permission that asks a provider, until an update of the key asked it.
+	Zone  string   `json:"zone,omitempty"`
+	Names []string `json:"names,omitempty"`
+	// The types of record it may change.
+	Types []string `json:"types"`
+}
+
+// grantStatus is the status of the key's grant at i: its scope as it reads now, or as it read
+// last, of a limited grant, which asks a provider.
+func (key *keyState) grantStatus(i int) GrantStatus {
+	g := key.Grants[i]
+	st := GrantStatus{Permission: g.Kind(), Types: []string{}}
+	for _, t := range g.Types() {
+		st.Types = append(st.Types, dns.TypeToString[t])
+	}
+	key.mutex.Lock()
+	sc, ok := key.read[i]
+	key.mutex.Unlock()
+	if l, isLimited := g.(limited); !isLimited || !l.Limited() {
+		var err error
+		if sc, err = scopeOf(g); err != nil {
+			ok = false
+		} else {
+			ok = true
+		}
+	}
+	if ok {
+		st.Zone = strings.TrimSuffix(sc.zone, ".")
+		for _, n := range sc.names {
+			st.Names = append(st.Names, strings.TrimSuffix(n, "."))
+		}
+	}
+	return st
+}
+
 // keysStatus is the status of every key, by name.
 func (s *Server) keysStatus() []KeyStatus {
 	var out []KeyStatus
 	for _, name := range slices.Sorted(maps.Keys(s.keys)) {
 		k := s.keys[name]
-		st := KeyStatus{Name: strings.TrimSuffix(name, "."), Permissions: []string{}, Updates: make(map[string]uint64)}
-		for _, g := range k.Grants {
+		st := KeyStatus{Name: strings.TrimSuffix(name, "."), Permissions: []string{}, Grants: []GrantStatus{}, Updates: make(map[string]uint64)}
+		for i, g := range k.Grants {
 			st.Permissions = append(st.Permissions, g.Kind())
+			st.Grants = append(st.Grants, k.grantStatus(i))
 		}
 		for r, c := range k.counts {
 			st.Updates[r] = c.Load()

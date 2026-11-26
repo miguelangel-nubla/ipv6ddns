@@ -40,6 +40,8 @@ type Config struct {
 	// The allow of each listen entry's sockets, of a listener's: none, Allow. Allow, when given,
 	// replaces it.
 	ListenAllow [][]netip.Prefix
+	// The listener of each listen entry, by its name: none, the resolver's own listen.
+	ListenListeners []string
 	// Where it answers over the encrypted transports, each entry with its transport and its text:
 	// DNS over TLS, over HTTPS and over QUIC.
 	Encrypted []EncryptedListen

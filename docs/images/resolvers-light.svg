@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 843.2 256" width="843.2" height="256" role="img" aria-label="The report of ipv6ddns, with its colors">
-<rect x="0.5" y="0.5" width="842.2" height="255" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 843.2 275" width="843.2" height="275" role="img" aria-label="The report of ipv6ddns, with its colors">
+<rect x="0.5" y="0.5" width="842.2" height="274" rx="6" fill="#ffffff" stroke="#d0d7de"/>
 <g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13" fill="#1d2530">
 <text x="16" y="28" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#1d2530" font-weight="600">Resolvers:</text>
 <text x="101.8" y="28" textLength="15.6" lengthAdjust="spacingAndGlyphs">1,</text>
@@ -8,16 +8,17 @@
 <text x="70.6" y="47" textLength="7.8" lengthAdjust="spacingAndGlyphs">:</text>
 <text x="86.2" y="47" textLength="54.6" lengthAdjust="spacingAndGlyphs" fill="#1d7a3e">serving</text>
 <text x="78.4" y="66" textLength="748.8" lengthAdjust="spacingAndGlyphs">Listening: 192.168.1.2:53, [fd12:3456:789a::2]:53, tls://192.168.1.2:853, quic://192.168.1.2:853</text>
-<text x="78.4" y="85" textLength="327.6" lengthAdjust="spacingAndGlyphs">Allow: 192.168.1.0/24, fd12:3456:789a::/64</text>
-<text x="78.4" y="104" textLength="257.4" lengthAdjust="spacingAndGlyphs">Zones: lan.example.com (23 names)</text>
+<text x="78.4" y="85" textLength="553.8" lengthAdjust="spacingAndGlyphs">Allow: 192.168.1.0/24, fd12:3456:789a::/64 (the networks it listens on)</text>
+<text x="78.4" y="104" textLength="327.6" lengthAdjust="spacingAndGlyphs">Zones: lan.example.com (23 names, TTL 60s)</text>
 <text x="78.4" y="123" textLength="163.8" lengthAdjust="spacingAndGlyphs">Upstream: 192.168.1.1</text>
 <text x="250" y="123" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#5d6877">(0 failed)</text>
 <text x="328" y="123" textLength="117" lengthAdjust="spacingAndGlyphs">, tls://1.1.1.1</text>
 <text x="452.8" y="123" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#8a5200">(3 failed)</text>
-<text x="78.4" y="142" textLength="655.2" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
-<text x="78.4" y="161" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Cache: 1274 of 10000</text>
-<text x="78.4" y="180" textLength="132.6" lengthAdjust="spacingAndGlyphs">Certificate: home</text>
-<text x="16" y="218" textLength="101.4" lengthAdjust="spacingAndGlyphs" fill="#1d2530" font-weight="600">Certificates:</text>
-<text x="47.2" y="237" textLength="452.4" lengthAdjust="spacingAndGlyphs">home (resolver lan): dns.lan.example.com, until 2027-02-21</text>
+<text x="78.4" y="142" textLength="538.2" lengthAdjust="spacingAndGlyphs">Private reverse: the unknown answered here as no such name (RFC 6303)</text>
+<text x="78.4" y="161" textLength="655.2" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
+<text x="78.4" y="180" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Cache: 1274 of 10000</text>
+<text x="78.4" y="199" textLength="132.6" lengthAdjust="spacingAndGlyphs">Certificate: home</text>
+<text x="16" y="237" textLength="101.4" lengthAdjust="spacingAndGlyphs" fill="#1d2530" font-weight="600">Certificates:</text>
+<text x="47.2" y="256" textLength="452.4" lengthAdjust="spacingAndGlyphs">home (resolver lan): dns.lan.example.com, until 2027-02-21</text>
 </g>
 </svg>

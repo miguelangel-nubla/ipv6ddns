@@ -583,6 +583,10 @@ func TestUpdateStatus(t *testing.T) {
 		st[0].LastMessage != "www.example.com A is outside its permissions" || st[0].Last == nil {
 		t.Errorf("%+v", st)
 	}
+	if g := st[0].Grants; len(g) != 1 || g[0].Permission != "fake" || g[0].Zone != "example.com" ||
+		!slices.Equal(g[0].Names, []string{"vps.example.com"}) || !slices.Equal(g[0].Types, []string{"A"}) {
+		t.Errorf("grants: %+v", g)
+	}
 	mutex.Lock()
 	defer mutex.Unlock()
 	want := []string{
@@ -851,5 +855,20 @@ func TestUpdateLimit(t *testing.T) {
 	defer mutex.Unlock()
 	if len(warned) != 1 || !strings.Contains(warned[0], "more than 60 updates of fake a minute") {
 		t.Errorf("warned %q, want once", warned)
+	}
+}
+
+// The status asks no provider: a limited grant's scope is the one an update read last.
+func TestUpdateStatusLimitedScope(t *testing.T) {
+	g := limitedGrant{newFakeGrant("example.com.", []string{"_acme-challenge.example.com."}, dns.TypeTXT)}
+	s := start(t, updateConfig(t, g))
+	if st := s.Status().Keys[0].Grants[0]; st.Zone != "" || st.Names != nil || !slices.Equal(st.Types, []string{"TXT"}) {
+		t.Errorf("before an update: %+v", st)
+	}
+	m := updateOf("example.com")
+	m.Insert([]dns.RR{rr(t, `_acme-challenge.example.com. 60 IN TXT "x"`)})
+	send(t, s, m)
+	if st := s.Status().Keys[0].Grants[0]; st.Zone != "example.com" || !slices.Equal(st.Names, []string{"_acme-challenge.example.com"}) {
+		t.Errorf("after an update: %+v", st)
 	}
 }

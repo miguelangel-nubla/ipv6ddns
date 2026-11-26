@@ -48,6 +48,9 @@ type homeAssistant struct {
 	names map[haName]nameEntities // by endpoint and hostname
 	hosts *esphome.Sensor
 
+	// Why the device isn't announced, when it isn't: with the mutex.
+	announceError string
+
 	// The announcement: the device's, but in tests.
 	advertise func(ctx context.Context, port int, ifaces []net.Interface) error
 }
@@ -437,6 +440,9 @@ func (h *homeAssistant) serve(ctx context.Context, running *sync.WaitGroup, inte
 				err = h.advertise(ctx, port, ifaces)
 			}
 			if err != nil {
+				h.mutex.Lock()
+				h.announceError = err.Error()
+				h.mutex.Unlock()
 				errorf("homeassistant: %s: Home Assistant won't discover it, add it by its address", err)
 			}
 		}()

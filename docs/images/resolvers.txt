@@ -1,9 +1,10 @@
 Resolvers: 1, 1 serving
     lan: serving
         Listening: 192.168.1.2:53, [fd12:3456:789a::2]:53, tls://192.168.1.2:853, quic://192.168.1.2:853
-        Allow: 192.168.1.0/24, fd12:3456:789a::/64
-        Zones: lan.example.com (23 names)
+        Allow: 192.168.1.0/24, fd12:3456:789a::/64 (the networks it listens on)
+        Zones: lan.example.com (23 names, TTL 60s)
         Upstream: 192.168.1.1 (0 failed), tls://1.1.1.1 (3 failed)
+        Private reverse: the unknown answered here as no such name (RFC 6303)
         Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0
         Cache: 1274 of 10000
         Certificate: home

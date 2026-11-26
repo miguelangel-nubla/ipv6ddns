@@ -77,6 +77,12 @@ func (s *State) PrettyPrint(prefix string, hideSensible bool) string {
 // warning, and the times and what has each address as details. A count of the summary has the
 // role of its state only when there is something to it: none failing is no error.
 func (s *State) Page(prefix string, hideSensible bool) pretty.Page {
+	return s.page(prefix, hideSensible, nil)
+}
+
+// page is Page with the records written in the resolver's zones, by credential, each a zone file
+// line under its endpoint, before the names of its tasks.
+func (s *State) page(prefix string, hideSensible bool, written map[string][]string) pretty.Page {
 	type named struct {
 		domain string
 		status hostnameStatus
@@ -126,6 +132,11 @@ func (s *State) Page(prefix string, hideSensible bool) pretty.Page {
 		t.Spans(pretty.As(pretty.Heading, "    Provider: "+providerKey))
 		for _, endpointKey := range slices.Sorted(maps.Keys(s.providers[providerKey].endpoints)) {
 			t.Spans(pretty.As(pretty.Heading, "        Endpoint: "+endpointKey))
+			if providerKey == "resolver" {
+				for _, line := range written[endpointKey] {
+					t.Spans(pretty.Span{Text: "            " + line})
+				}
+			}
 			for _, n := range byEndpoint[providerKey+"\x00"+endpointKey] {
 				writeHostnameStatus(&t, "            ", n.domain, n.status, hideSensible, now)
 			}
@@ -156,6 +167,9 @@ func writeHostnameStatus(t *pretty.Table, indent, domain string, status hostname
 	}
 	if !status.updatedTime.IsZero() {
 		line = append(line, pretty.Span{Text: " "}, pretty.As(pretty.Detail, fmt.Sprintf("(last update: %s)", status.updatedTime.Format(time.RFC3339))))
+	}
+	if status.updates > 0 {
+		line = append(line, pretty.Span{Text: " "}, pretty.As(pretty.Detail, fmt.Sprintf("(updates %d, failures %d)", status.updates, status.failures)))
 	}
 	t.Spans(line...)
 	if status.updateError != nil {

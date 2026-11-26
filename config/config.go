@@ -63,17 +63,23 @@ type Config struct {
 const hidden = "<sensible data hidden>"
 
 // Page is PrettyPrint with the roles: its sections as headings, and what stands for hidden data
-// as a detail. The sections are the lines the page itself writes at the top two levels: what the
+// as a detail, and the warnings as warnings. The sections are the lines the page itself writes at the top two levels: what the
 // configuration names is deeper, so no name of it reads as one.
 func (c *Config) Page(prefix string, hideSensible bool) pretty.Page {
 	var page pretty.Page
 	text := strings.TrimSuffix(c.PrettyPrint("", hideSensible), "\n")
+	warnings := false
 	for line := range strings.SplitSeq(text, "\n") {
 		body := strings.TrimLeft(line, " ")
 		indent := len(line) - len(body)
+		if indent <= 4 {
+			warnings = line == "    Warnings:"
+		}
 		switch {
 		case indent <= 4 && strings.HasSuffix(body, ":"):
 			page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Heading, line))
+		case warnings:
+			page.Add(pretty.Span{Text: prefix}, pretty.As(pretty.Warn, line))
 		case hideSensible && strings.HasSuffix(line, hidden):
 			page.Add(pretty.Span{Text: prefix + strings.TrimSuffix(line, hidden)}, pretty.As(pretty.Detail, hidden))
 		default:
@@ -107,6 +113,9 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 
 		for _, filter := range task.Filters {
 			result.WriteString(prefix + "            - Filter Set:\n")
+			if filter.Self {
+				result.WriteString(prefix + "                Self: true\n")
+			}
 			if filter.MAC.Address != "" || len(filter.MAC.Mask) > 0 || len(filter.MAC.Type) > 0 {
 				result.WriteString(prefix + "                MAC:\n")
 				if filter.MAC.Address != "" {
@@ -120,8 +129,15 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 				}
 			}
 
-			if filter.IP.Prefix.IsValid() || len(filter.IP.Mask) > 0 || len(filter.IP.Type) > 0 {
+			if len(filter.IP.Family) > 0 || filter.IP.Prefix.IsValid() || len(filter.IP.Mask) > 0 || len(filter.IP.Type) > 0 || filter.IP.PrefixSource != "" {
 				result.WriteString(prefix + "                IP:\n")
+				if len(filter.IP.Family) > 0 {
+					families := make([]string, len(filter.IP.Family))
+					for i, family := range filter.IP.Family {
+						families[i] = fmt.Sprintf("IPv%d", family)
+					}
+					result.WriteString(prefix + "                    Family: " + strings.Join(families, ", ") + "\n")
+				}
 				if filter.IP.Prefix.IsValid() {
 					result.WriteString(prefix + "                    Prefix: " + filter.IP.Prefix.String() + "\n")
 				}
@@ -130,6 +146,9 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 				}
 				if len(filter.IP.Type) > 0 {
 					result.WriteString(prefix + "                    Type: " + strings.Join(filter.IP.Type, ", ") + "\n")
+				}
+				if filter.IP.PrefixSource != "" {
+					result.WriteString(prefix + "                    Prefix source: " + filter.IP.PrefixSource + "\n")
 				}
 			}
 
@@ -191,10 +210,11 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 		result.WriteString(prefix + "        Endpoint: " + alias + "\n")
 		result.WriteString(prefix + "            Provider: " + credential.Provider + "\n")
 		result.WriteString(prefix + "            Debounce: " + credential.Debounce.String() + "\n")
+		result.WriteString(prefix + "            Retry: " + credential.Retry.String() + "\n")
 
 		result.WriteString(prefix + "            Settings: ")
 		if hideSensible {
-			result.WriteString(hidden + "\n")
+			result.WriteString(shownSettings(credential.RawSettings) + "\n")
 		} else {
 			bytes, _ := json.MarshalIndent(credential.RawSettings, "            ", "    ")
 			result.Write(bytes)
@@ -255,6 +275,8 @@ func (c *Config) PrettyPrint(prefix string, hideSensible bool) string {
 			}
 		}
 	}
+
+	c.printServers(&result, prefix, hideSensible)
 
 	return result.String()
 }

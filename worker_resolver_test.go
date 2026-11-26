@@ -13,6 +13,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"go.uber.org/zap"
 )
 
@@ -48,6 +49,8 @@ resolvers:
     listeners:
       - lan
     upstream: 127.0.0.1:%s
+    records:
+      - dns.example.test. A 192.0.2.53
 credentials:
   home:
     provider: resolver
@@ -157,6 +160,8 @@ func TestWorkerResolver(t *testing.T) {
 		`ipv6ddns_resolver_queries_total{resolver="lan",kind="servfail"} 1`,
 		`ipv6ddns_resolver_queries_total{resolver="lan",kind="cached"} 0`,
 		`ipv6ddns_resolver_cache_entries{resolver="lan"} 0`,
+		`ipv6ddns_resolver_zone_names{resolver="lan",zone="home.arpa"} 1`,
+		`ipv6ddns_resolver_zone_records{resolver="lan",zone="office.test"} 1`,
 		`ipv6ddns_resolver_upstream_failures_total{resolver="lan",upstream="127.0.0.1:`,
 	} {
 		if !strings.Contains(metrics.String(), want) {
@@ -167,6 +172,32 @@ func TestWorkerResolver(t *testing.T) {
 		t.Errorf("report:\n%s", report)
 	} else if !strings.Contains(report, "        Cache: 0 of 10000\n") || !strings.Contains(report, ", cached 0,") {
 		t.Errorf("report, of the cache:\n%s", report)
+	}
+	// The written records: the zone's under its endpoint, the resolver's own under it, and counted
+	// apart from the names of the tasks.
+	report := w.PrettyPrint("", true)
+	for _, want := range []string{
+		"        Endpoint: office\n            printer.office.test. ",
+		" IN A 192.0.2.20\n",
+		"        Zones: home.arpa (1 name, 1 written record, TTL 60s), office.test (0 names, 1 written record, TTL 60s)\n",
+		"        Allow: 127.0.0.0/8 (the networks it listens on)\n",
+		"        Records:\n            dns.example.test. ",
+		" IN A 192.0.2.53\n",
+		"        Private reverse: the unknown answered here as no such name (RFC 6303)\n",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("report without %q:\n%s", want, report)
+		}
+	}
+	// Each name's task is in /status.json alone: the report has the names under their endpoints.
+	if strings.Contains(report, ": task nas\n") {
+		t.Errorf("report with a line of each name's task:\n%s", report)
+	}
+	if r := status.Resolvers[0]; len(r.Records) != 1 || len(r.ZoneRecords["office.test"]) != 1 || r.ZoneCredentials["office.test"] != "office" {
+		t.Errorf("status, of the records: %+v", r)
+	}
+	if r := status.Resolvers[0]; r.AllowOwn || r.ZoneTTL["home.arpa"] != 60 || r.ZoneTasks["home.arpa"]["nas.home.arpa"] != "nas" {
+		t.Errorf("status, of the allow and the zones' tasks: %+v", r)
 	}
 	if r := status.Resolvers[0]; r.CacheSize != 10000 || r.CacheEntries != 0 {
 		t.Errorf("status, of the cache: %+v", r)
@@ -328,5 +359,59 @@ discovery:
 	}
 	if _, _, err := (&dns.Client{Timeout: 300 * time.Millisecond}).Exchange(new(dns.Msg).SetQuestion("example.org.", dns.TypeA), address); err == nil {
 		t.Error("answering once stopped")
+	}
+}
+
+// A resolver with nothing of a list says so, rather than leaving the line empty.
+func TestResolversPageEmpty(t *testing.T) {
+	page := resolversPage("", []resolver.Status{{Name: "bare", ForwardUnknownPrivateReverse: true}}).String()
+	for _, want := range []string{
+		"        Listening: none\n",
+		"        Allow: none\n",
+		"        Zones: none\n",
+		"        Upstream: none, its own names only\n",
+		"        Private reverse: forwarded\n",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("without %q:\n%s", want, page)
+		}
+	}
+	if strings.Contains(page, "Records:") || strings.Contains(page, "Bootstrap:") {
+		t.Errorf("a line of nothing:\n%s", page)
+	}
+}
+
+// The allow of each listener on its own sockets, and what each key's permission may change.
+func TestResolversPageAllowAndGrants(t *testing.T) {
+	page := resolversPage("", []resolver.Status{{
+		Name:  "lan",
+		Allow: []string{"192.0.2.0/24", "2001:db8::/32"},
+		ListenerAllow: []resolver.ListenerAllowStatus{
+			{Listen: "[::]:53", Allow: []string{"192.0.2.0/24"}},
+			{Listen: "tls://[::]:853", Listener: "lan", Allow: []string{"2001:db8::/32"}},
+		},
+		Keys: []resolver.KeyStatus{{
+			Name:        "nas",
+			Permissions: []string{"addresses", "challenges"},
+			Grants: []resolver.GrantStatus{
+				{Permission: "addresses", Zone: "home.arpa", Names: []string{"nas.home.arpa"}, Types: []string{"A", "AAAA"}},
+				{Permission: "challenges", Types: []string{"TXT"}},
+			},
+		}},
+	}}).String()
+	for _, want := range []string{
+		"        Allow: 192.0.2.0/24, 2001:db8::/32 (its listeners')\n",
+		"            [::]:53: 192.0.2.0/24\n",
+		"            tls://[::]:853 (lan): 2001:db8::/32\n",
+		"                addresses: nas.home.arpa of home.arpa (A, AAAA)\n",
+		"                challenges: not asked of its provider yet (TXT)\n",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("without %q:\n%s", want, page)
+		}
+	}
+	own := resolversPage("", []resolver.Status{{Name: "lan", Allow: []string{"192.0.2.0/24"}, AllowOwn: true}}).String()
+	if !strings.Contains(own, "        Allow: 192.0.2.0/24 (the resolver's)\n") {
+		t.Errorf("the resolver's own allow:\n%s", own)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -101,10 +102,12 @@ type Server struct {
 	quic      []*quic.Listener
 	quicConns map[*quic.Conn]struct{}
 	listening []string
-	allow     []netip.Prefix
-	serving   bool
-	stopping  bool
-	err       error
+	// The sockets of each listener's entries, by its name.
+	listenerSockets map[string][]string
+	allow           []netip.Prefix
+	serving         bool
+	stopping        bool
+	err             error
 }
 
 // New makes the server of cfg, whose zones have their Addresses. errorf logs a server that stops
@@ -261,6 +264,7 @@ func (s *Server) Start() error {
 	// Each address with the allow of its entry's socket, of a listener's: none, the resolver's.
 	var addresses []string
 	var addressAllow [][]netip.Prefix
+	var addressListener []string
 	for i, e := range s.config.Listen {
 		a, err := listen.Addresses([]listen.Entry{e})
 		if err != nil {
@@ -270,8 +274,13 @@ func (s *Server) Start() error {
 		if i < len(s.config.ListenAllow) {
 			allow = s.config.ListenAllow[i]
 		}
+		var listener string
+		if i < len(s.config.ListenListeners) {
+			listener = s.config.ListenListeners[i]
+		}
 		for range a {
 			addressAllow = append(addressAllow, allow)
+			addressListener = append(addressListener, listener)
 		}
 		addresses = append(addresses, a...)
 	}
@@ -298,6 +307,7 @@ func (s *Server) Start() error {
 		enc.close()
 	}
 	var listening []string
+	sockets := map[string][]string{}
 	// The addresses of the sockets without an allow of their own, whose networks are the default.
 	var listened []net.Addr
 	var connAllow [][]netip.Prefix
@@ -318,6 +328,9 @@ func (s *Server) Start() error {
 		}
 		listeners = append(listeners, l)
 		listening = append(listening, a)
+		if addressListener[i] != "" {
+			sockets[addressListener[i]] = append(sockets[addressListener[i]], "dns://"+a)
+		}
 		connAllow = append(connAllow, addressAllow[i])
 		if addressAllow[i] == nil {
 			listened = append(listened, c.LocalAddr())
@@ -334,6 +347,9 @@ func (s *Server) Start() error {
 		}
 	}
 	listening = append(listening, enc.listening...)
+	for name, texts := range enc.byListener {
+		sockets[name] = append(sockets[name], texts...)
+	}
 	for j, a := range enc.listened {
 		if s.config.Encrypted[entryOf[j]].Allow == nil {
 			listened = append(listened, a)
@@ -375,6 +391,7 @@ func (s *Server) Start() error {
 	}
 	s.mutex.Lock()
 	s.servers, s.listening, s.allow, s.serving = servers, listening, allow, true
+	s.listenerSockets = sockets
 	s.ddr = ddrEntries(s.config.Encrypted, enc.listened, entryOf)
 	s.mutex.Unlock()
 	started.Add(len(servers))
@@ -826,11 +843,32 @@ type Status struct {
 	// host:port, once started.
 	Listening []string `json:"listening"`
 	Allow     []string `json:"allow"`
-	Upstreams []string `json:"upstreams"`
-	Zones     []string `json:"zones"`
-	// The names of each zone that have addresses now, of its tasks.
+	// Whether Allow is the resolver's own, for all of its sockets, rather than its listeners',
+	// each on its own sockets, as ListenerAllow tells.
+	AllowOwn bool `json:"allow_own"`
+	// Of the listeners' allow: each entry of a listener with its own, as written: none with the
+	// resolver's own.
+	ListenerAllow []ListenerAllowStatus `json:"listener_allow,omitempty"`
+	Upstreams     []string              `json:"upstreams"`
+	Zones         []string              `json:"zones"`
+	// The names of each zone that have addresses now, of its tasks: its written records apart.
 	ZoneNames map[string]int `json:"zone_names"`
-	Serving   bool           `json:"serving"`
+	// The records written in each zone, as zone file lines: none without.
+	ZoneRecords map[string][]string `json:"zone_records,omitempty"`
+	// The TTL of each zone's names of its tasks, in seconds.
+	ZoneTTL map[string]int `json:"zone_ttl"`
+	// The names each zone's tasks publish, each with a task that does: none without.
+	ZoneTasks map[string]map[string]string `json:"zone_tasks,omitempty"`
+	// The credential of each zone, whose endpoint the names of its tasks are under.
+	ZoneCredentials map[string]string `json:"zone_credentials,omitempty"`
+	// Its own records, of no zone, as zone file lines: none without.
+	Records []string `json:"records,omitempty"`
+	// host:port, the servers asked the addresses of the upstreams given by host name: none without.
+	Bootstrap []string `json:"bootstrap,omitempty"`
+	// Whether the reverse of the private networks' addresses it has no name of is asked upstream,
+	// out of RFC 6303, rather than answered as no such name.
+	ForwardUnknownPrivateReverse bool `json:"forward_unknown_private_reverse"`
+	Serving                      bool `json:"serving"`
 	// Why it isn't serving, when it stopped on its own.
 	Error string `json:"error,omitempty"`
 	// The queries answered, by kind.
@@ -849,22 +887,38 @@ type Status struct {
 	Shared []SharedStatus `json:"shared,omitempty"`
 	// The keys of the dynamic updates, by name: none without.
 	Keys []KeyStatus `json:"keys,omitempty"`
+	// The sockets open of each listener's entries, by the listener's name, each with its scheme:
+	// dns://[::]:53, tls://[::]:853. None before it serves, or without listeners.
+	ListenerSockets map[string][]string `json:"listener_sockets,omitempty"`
+}
+
+// ListenerAllowStatus is a listen entry with the allow of its listener, on its sockets.
+type ListenerAllowStatus struct {
+	// As written: [::]:53, or tls://[::]:853.
+	Listen string `json:"listen"`
+	// Its listener's name, when known.
+	Listener string   `json:"listener,omitempty"`
+	Allow    []string `json:"allow"`
 }
 
 func (s *Server) Status() Status {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	status := Status{
-		Name:             s.config.Name,
-		Listening:        append([]string{}, s.listening...),
-		Allow:            []string{},
-		Upstreams:        append([]string{}, s.config.Upstreams...),
-		Zones:            []string{},
-		Serving:          s.serving,
-		CacheEntries:     s.cache.len(),
-		CacheSize:        s.config.CacheSize,
-		Queries:          make(map[string]uint64),
-		UpstreamFailures: make(map[string]uint64),
+		Name:                         s.config.Name,
+		Listening:                    append([]string{}, s.listening...),
+		ListenerSockets:              maps.Clone(s.listenerSockets),
+		Allow:                        []string{},
+		Upstreams:                    append([]string{}, s.config.Upstreams...),
+		Records:                      recordLines(s.config.Records),
+		Bootstrap:                    append([]string(nil), s.config.Bootstrap...),
+		ForwardUnknownPrivateReverse: s.config.ForwardUnknownPrivateReverse,
+		Zones:                        []string{},
+		Serving:                      s.serving,
+		CacheEntries:                 s.cache.len(),
+		CacheSize:                    s.config.CacheSize,
+		Queries:                      make(map[string]uint64),
+		UpstreamFailures:             make(map[string]uint64),
 	}
 	allow := s.allow
 	if s.allow == nil {
@@ -884,11 +938,60 @@ func (s *Server) Status() Status {
 			status.Allow = append(status.Allow, text)
 		}
 	}
+	status.AllowOwn = len(s.config.Allow) > 0
+	if !status.AllowOwn {
+		texts := func(prefixes []netip.Prefix) []string {
+			out := []string{}
+			for _, p := range prefixes {
+				out = append(out, p.String())
+			}
+			return out
+		}
+		for i, a := range s.config.ListenAllow {
+			if len(a) == 0 || i >= len(s.config.Listen) {
+				continue
+			}
+			line := s.config.Listen[i].String()
+			if i < len(s.config.ListenLines) && s.config.ListenLines[i] != "" {
+				line = s.config.ListenLines[i]
+			}
+			status.ListenerAllow = append(status.ListenerAllow, ListenerAllowStatus{Listen: line, Allow: texts(a)})
+		}
+		for _, e := range s.config.Encrypted {
+			if len(e.Allow) > 0 {
+				status.ListenerAllow = append(status.ListenerAllow, ListenerAllowStatus{Listen: e.Line, Listener: e.Listener, Allow: texts(e.Allow)})
+			}
+		}
+	}
 	status.ZoneNames = map[string]int{}
+	status.ZoneTTL = map[string]int{}
 	for _, z := range s.config.Zones {
 		name := strings.TrimSuffix(z.Name, ".")
 		status.Zones = append(status.Zones, name)
 		status.ZoneNames[name] = len(z.Addresses.Names())
+		status.ZoneTTL[name] = int(z.TTL.Seconds())
+		if len(z.Tasks) > 0 {
+			if status.ZoneTasks == nil {
+				status.ZoneTasks = map[string]map[string]string{}
+			}
+			tasks := map[string]string{}
+			for n, task := range z.Tasks {
+				tasks[strings.TrimSuffix(n, ".")] = task
+			}
+			status.ZoneTasks[name] = tasks
+		}
+		if lines := recordLines(z.Records); len(lines) > 0 {
+			if status.ZoneRecords == nil {
+				status.ZoneRecords = map[string][]string{}
+			}
+			status.ZoneRecords[name] = lines
+		}
+		if z.Credential != "" {
+			if status.ZoneCredentials == nil {
+				status.ZoneCredentials = map[string]string{}
+			}
+			status.ZoneCredentials[name] = z.Credential
+		}
 	}
 	if s.err != nil {
 		status.Error = s.err.Error()
@@ -925,4 +1028,13 @@ func (s *Server) Status() Status {
 	status.Shared = s.sharedStatus()
 	status.Keys = s.keysStatus()
 	return status
+}
+
+// recordLines is each record as a line of a zone file, its fields a space apart: nil for none.
+func recordLines(records []dns.RR) []string {
+	var lines []string
+	for _, rr := range records {
+		lines = append(lines, strings.ReplaceAll(rr.String(), "\t", " "))
+	}
+	return lines
 }
