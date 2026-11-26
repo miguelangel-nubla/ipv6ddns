@@ -11,11 +11,12 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 | `tasks` | object | **Required.** The DNS names to keep up to date, by task name. Each task takes the addresses its filters match, and those of the sources it lists, and gives them to the names under its endpoints. |
 | `credentials` | object | **Required.** The DNS providers to update, by credential name. Tasks name them under endpoints. |
 | `resolvers` | object | DNS servers for the clients on a network, by name. Each answers the zones of its resolver credentials, with the addresses the tasks give their names and with its own records, and asks its upstream servers everything else. See the [resolver](../resolver.md). |
+| `blocklists` | object | Lists of names that resolvers answer as blocked, by name, of ads, trackers or malware. Each is downloaded once, for every resolver whose block names it, and kept in state_dir, in blocklists/, so a start reads it offline and a download that fails keeps it. See [blocking](../resolver.md#blocking). |
 | `certificates` | object | The certificates the resolvers' encrypted entries and the web server's HTTPS ones show, by name: each server gives one as its tls, and two servers can show one. Each has files of its own, and is shown by at least one server. |
 | `listeners` | object | Where the resolvers and the web servers listen, by a name of your choice: each server names its listeners. A resolver and a web server can share one, on one HTTPS port: the resolver at /dns-query and the web server at every other path. See [listeners](../resolver.md#listeners). |
 | `discovery` | object | How hosts are found: on the local links, by the protocols turned on, and by plugins that read routers' tables. Every key is optional: a key left out has its default. |
 | `sources` | object | Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. |
-| `state_dir` | string | The folder where ipv6ddns keeps what it writes: the push sources' addresses, the certificates ACME gets, the dynamic updates' challenges and names, and the Home Assistant device's key. Relative to the configuration's folder, unless absolute; made when missing. Default: the configuration's folder. Give it when the configuration is read-only, as a file of Docker's or Kubernetes' secrets is. See [state](../configuration.md#state). |
+| `state_dir` | string | The folder where ipv6ddns keeps what it writes: the push sources' addresses, the certificates ACME gets, the dynamic updates' challenges and names, the Home Assistant device's key, and the blocklists' copies. Relative to the configuration's folder, unless absolute; made when missing. Default: the configuration's folder. Give it when the configuration is read-only, as a file of Docker's or Kubernetes' secrets is. See [state](../configuration.md#state). |
 | `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | How much the log says. Default: info. |
 | `webservers` | object | The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources, on its listeners. See [the web report](../installation.md#the-web-report). |
 | `homeassistant` | object | Makes ipv6ddns a device of Home Assistant's ESPHome integration. Home Assistant finds it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now. It also gives the states that homeassistant sources read. See docs/home-assistant-integration.md. |
@@ -101,6 +102,8 @@ DNS servers for the clients on a network, by name. Each answers the zones of its
 | `cache_size` | number | - | How many answers of the upstream servers it keeps, each for its TTL: a day at most, and an hour for a name that doesn't exist or has no data. When full, the one asked longest ago goes first. Default: 10000. 0 keeps none, and every query goes upstream. Local names are never kept: they follow discovery at once. |
 | `forward_unknown_private_reverse_queries` | boolean | `false` | Whether to ask the upstream servers for the reverse name of a private address the resolver has no name for: for an upstream server that knows more names, as a router does for its DHCP clients. By default, as RFC 6303 says, the resolver answers that there's no such name, and the question never leaves it. The private ranges are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, the loopback, link-local and documentation ones, fd00::/8, fe80::/10, ::1 and 2001:db8::/32. |
 | `updates` | object | - | Dynamic updates, by RFC 2136: the clients that hold one of keys may change records, each within its permissions, over plain DNS or DNS over TLS. A query signed with a key is answered with authority about the names of its permissions, as certbot and nsupdate find their zone; any other query, unsigned or not, as before. An unsigned update is refused. See [dynamic updates](../resolver.md#dynamic-updates). |
+| `block` | object | - | What it answers as blocked, of the names it would forward: the names of blocklists, and every name below each, but those of allow. Its zones, its records, the reverse names it answers and resolver.arpa are never blocked. A local CNAME whose target is blocked is answered as blocked. See [blocking](../resolver.md#blocking). |
+| `forward` | list of object | - | Domains whose names it asks servers of their own, instead of upstream: of a local DNS server that knows more names of a zone, or the reverse names of a network, as a DHCP server's. A name at or under a domain, of those it would ask upstream, goes to that domain's servers; under two, to the deepest's. Its zones' names and records, its records and the reverse names it answers come first, and a name of a block is still blocked. A domain under a private network's reverse zone is asked of its servers, not answered as no such name. Their answers are cached as the upstream servers'. See [forwarding a domain](../resolver.md#forwarding-a-domain). |
 
 ### updates
 
@@ -158,6 +161,41 @@ The names of the hosts of a zone, with their addresses, as a DHCP server's dynam
 | Key | Takes | |
 |---|---|---|
 | `zone` | string | **Required.** The zone of the names, as the DHCP server gives it: lan.example.com. |
+
+### block
+
+`resolvers.<name>.block`
+
+What it answers as blocked, of the names it would forward: the names of blocklists, and every name below each, but those of allow. Its zones, its records, the reverse names it answers and resolver.arpa are never blocked. A local CNAME whose target is blocked is answered as blocked. See [blocking](../resolver.md#blocking).
+
+| Key | Takes | Default | |
+|---|---|---|---|
+| `lists` | list, or comma separated | - | Required. The blocklists, by their names under blocklists. A name of any of them is blocked. |
+| `allow` | list, or comma separated | - | Names never blocked, with every name below them, whatever the lists say: school.example.com. A name of other letters is given in punycode, as xn--bcher-kva.example. |
+| `answer` | `nxdomain`, `null` | `nxdomain` | The answer to a name blocked: nxdomain, no such name; or null, the address 0.0.0.0 of an A query and :: of an AAAA one, and no data of another type. |
+| `ttl` | duration | `1m` | The TTL of the blocked answers, and of their SOA, which tells the clients how long to keep a no such name: 1s to 24h. Default: 1m, as the resolver's records: a name unblocked is answered at most a minute later. |
+
+### forward
+
+`resolvers.<name>.forward[]`
+
+Domains whose names it asks servers of their own, instead of upstream: of a local DNS server that knows more names of a zone, or the reverse names of a network, as a DHCP server's. A name at or under a domain, of those it would ask upstream, goes to that domain's servers; under two, to the deepest's. Its zones' names and records, its records and the reverse names it answers come first, and a name of a block is still blocked. A domain under a private network's reverse zone is asked of its servers, not answered as no such name. Their answers are cached as the upstream servers'. See [forwarding a domain](../resolver.md#forwarding-a-domain).
+
+| Key | Takes | |
+|---|---|---|
+| `domain` | string | Required. The domain, with every name below it: lan.example.com, or 3.2.10.in-addr.arpa for the reverse names of 10.2.3.0/24. Each domain once. |
+| `upstream` | list, or comma separated | Required. Its servers, in order, as the resolver's upstream takes them: plain DNS, 10.2.3.204 or 10.2.3.204:5353; tls://; https://; or a host name, which the resolver's bootstrap looks up. When none answers, the client gets SERVFAIL: the resolver's upstream isn't asked. |
+
+## Blocklists
+
+`blocklists.<name>`
+
+Lists of names that resolvers answer as blocked, by name, of ads, trackers or malware. Each is downloaded once, for every resolver whose block names it, and kept in state_dir, in blocklists/, so a start reads it offline and a download that fails keeps it. See [blocking](../resolver.md#blocking).
+
+| Key | Takes | |
+|---|---|---|
+| `url` | string | Required. Where the list is downloaded from, http:// or https://: https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt. A name per line, which blocks every name below it too; or a hosts file's lines, 0.0.0.0 ads.example.com, and adblock rules of a domain, \|\|ads.example.com^. Its host is looked up by the system's resolver. 64 MiB at most. |
+| `interval` | duration | How often it is downloaded again, asking the server whether it changed. Default: 24h. The least: 1h. |
 
 ## Sources
 

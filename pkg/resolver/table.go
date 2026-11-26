@@ -5,10 +5,12 @@
 // Per query, in order: a client outside allow is REFUSED; a name of the resolver's records is
 // answered from them; a name of the zone with the longest suffix, if a task publishes it or a
 // record has it, is answered from those, with no data of a type it doesn't have; the reverse of
-// an address that one of those names has, a PTR query, with the names; anything else is answered
-// from the cache, or forwarded, to the upstream servers in order, over plain DNS, TLS or HTTPS,
-// and SERVFAIL when none answers. A CNAME is followed among the local names, up to MaxChain
-// steps, and to the upstream servers past them.
+// an address that one of those names has, a PTR query, with the names; a name of a blocklist of
+// its block, but of its allow, as blocked; anything else is answered from the cache, or
+// forwarded, to the servers of the deepest domain forwarded that holds it, or to the upstream
+// servers, in order, over plain DNS, TLS or HTTPS, and SERVFAIL when
+// none answers. A CNAME is followed among the local names, up to MaxChain steps, and to the
+// upstream servers past them, but to a target blocked.
 package resolver
 
 import (
@@ -72,6 +74,12 @@ type Config struct {
 	UpdateKeys []UpdateKey
 	// The networks the keys may send from, of those that give none. None: Allow.
 	UpdateAllow []netip.Prefix
+	// What it answers as blocked, of the names it would forward: nil, nothing.
+	Block *Block
+	// The domains whose names, of those it would forward, are asked of servers of their own: the
+	// deepest that holds a name, before a private network's reverse zone. None: the upstream
+	// servers, for all.
+	Forwards []Forward
 	// Where the updates are logged, and the messages refused: nowhere, for nil.
 	Infof, Warnf func(string, ...any)
 }

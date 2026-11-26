@@ -21,7 +21,7 @@ Resolvers: 1, 1 serving
         Zones: lan.example.com (2 names, TTL 60s)
         Upstream: 192.168.1.1 (0 failed)
         Private reverse: the unknown answered here as no such name (RFC 6303)
-        Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0
+        Queries: local 1840, nodata 212, forwarded 9311, cached 30422, blocked 2187, refused 4, servfail 0
         Cache: 1274 of 10000
 
 Discovery: 4 hosts, 2 named, 5 addresses

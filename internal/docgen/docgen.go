@@ -247,6 +247,15 @@ func Configuration() (string, error) {
 		sub("permissions: "+kind, "resolvers.<name>.updates.keys.<name>.permissions[]."+kind, permission.Properties[kind], append(slices.Clone(permissionsPath), kind, "properties")...)
 	}
 
+	blockPath := []string{"properties", "resolvers", "additionalProperties", "properties", "block", "properties"}
+	sub("block", "resolvers.<name>.block", resolvers.Properties["block"], blockPath...)
+	forward := resolvers.Properties["forward"].Items
+	forward.Description = resolvers.Properties["forward"].Description
+	sub("forward", "resolvers.<name>.forward[]", forward, "properties", "resolvers", "additionalProperties", "properties", "forward", "items", "properties")
+
+	blocklists := asNode(root.Properties["blocklists"].AdditionalProperties)
+	section("Blocklists", "blocklists.<name>", root.Properties["blocklists"].Description, blocklists, "properties", "blocklists", "additionalProperties", "properties")
+
 	source := asNode(root.Properties["sources"].AdditionalProperties)
 	section("Sources", "sources.<name>", root.Properties["sources"].Description+" See [sources](../sources.md).", source, "properties", "sources", "additionalProperties", "properties")
 

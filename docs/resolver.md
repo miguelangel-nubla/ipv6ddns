@@ -700,7 +700,8 @@ The resolver goes through these steps in order, and the first one that applies g
 2. **A name in the resolver's own `records`** is answered from them.
 3. **A name in a zone** is answered when a task publishes it or a record has it. The answer is the task's current addresses, as A and AAAA, or the records of the type asked. Answers from a zone are authoritative (`AA`).
 4. **The reverse of an address** is answered with the names from steps 2 and 3 that have that address, if any. This is a `PTR` query for a name under `in-addr.arpa` or `ip6.arpa`. See [reverse names](#reverse-names).
-5. **Anything else** is answered from [the cache](#the-cache) if it's there, and otherwise forwarded to the upstream servers. That covers both a name outside every zone and a name inside a zone that the zone doesn't have.
+5. **A name of a blocklist** of the resolver's `block`, but of its `allow`, is answered as blocked: see [blocking](#blocking).
+6. **Anything else** is answered from [the cache](#the-cache) if it's there, and otherwise forwarded: to the servers of the deepest domain of [`forward`](#forwarding-a-domain) that holds it, or to the upstream servers. That covers both a name outside every zone and a name inside a zone that the zone doesn't have.
 
 ### Names in a zone
 
@@ -787,11 +788,49 @@ Every private reverse query the resolver has no name for then goes upstream, lik
 
 Only turn this on when the upstream servers are on your network. A public server knows none of these names, so the questions would leave the network for nothing.
 
+To ask a local server the reverse names of one network alone, and answer the rest of them here, [forward](#forwarding-a-domain) that network's reverse zone to it instead.
+
 ### Other addresses
 
 A reverse query for any other address is forwarded, like any other name.
 
 A resolver only gives the reverse of names it answers itself. With a split horizon, each of the two resolvers gives the name of an address as its own zone has it.
+
+## Forwarding a domain
+
+A local DNS server may know the names of a domain that the resolver doesn't: MAAS, which names its machines in `lan.example.com`, or a DHCP server, which names its clients and their addresses. `forward` asks such a server about its domain, and the upstream servers about the rest:
+
+```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.2
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 1.1.1.1
+    forward:
+      - domain: lan.example.com           # and every name below it
+        upstream:
+          - 10.2.3.204                    # MAAS's DNS
+      - domain: 3.2.10.in-addr.arpa       # the reverse names of 10.2.3.0/24
+        upstream:
+          - 10.2.3.204
+```
+
+- **The resolver's own names come first.** The names of its zones, their records, its own `records`, and the reverse names it answers are answered as always. A name of a zone that the zone doesn't have goes to the domain's servers. So with a zone `lan.example.com` of its own, the resolver answers the names its tasks publish, and MAAS the rest of the zone's.
+- **The name asked is what's routed,** and the target of a local CNAME: a local CNAME to a name of a domain forwarded goes to the domain's servers. A CNAME in an upstream server's answer isn't asked again: when the upstream servers answer `www.example.com` with a CNAME to `nas.lan.example.com`, their answer of it is the client's, and the domain's servers aren't asked.
+- **The deepest domain wins.** A name under two domains of `forward` goes to the deeper one's servers: with `example.com` and `lan.example.com`, `nas.lan.example.com` goes to the second.
+- **Only the domain's servers are asked,** in order, with 2 seconds each, as the upstream servers are. When none answers, the client gets `SERVFAIL`; the upstream servers aren't asked in their place, since they don't know the domain's names.
+- **`upstream` takes what the resolver's `upstream` takes:** an address with a port or not, `tls://` and `https://`, and a host name, which the resolver's `bootstrap` looks up.
+- **A reverse zone under a [private network's](#private-networks)** is asked of its servers, not answered as no such name: the rest of the private network's names still are. `forward_unknown_private_reverse_queries` isn't needed for it.
+- **Blocking still applies.** A name of a domain forwarded that a list of the resolver's [`block`](#blocking) has is answered as blocked, and isn't asked of the domain's servers. To keep a domain's names from being blocked, put it in the block's `allow`.
+- **The answers are kept in [the cache](#the-cache),** as the upstream servers' are, and counted as `forwarded` and `cached`.
+
+The [web report](installation.md#the-web-report) has a `Forward:` line for each domain, with its servers, the addresses found of those given by host name, and how many queries each didn't answer, in amber when any. `/status.json` has each resolver's `forwards`, each with its `domain`, `upstreams`, `upstream_addresses` and `upstream_failures`, and `/metrics` `ipv6ddns_resolver_forward_failures_total`, by `domain` and `upstream`.
 
 ## The cache
 
@@ -821,6 +860,96 @@ Local names are never cached. A task's name, a record or a reverse name comes fr
 Each resolver has its own cache. The cache is in memory, and is empty at the start.
 
 The cache adds no validation. Upstream answers are trusted as they arrive, as they were before the cache existed.
+
+## Blocking
+
+A resolver can answer the names of ads, trackers or malware as blocked, from lists that others keep, such as [hagezi's](https://github.com/hagezi/dns-blocklists). The lists are under `blocklists`, by a name of your choice. A resolver's `block` names those it uses, so two resolvers can block differently: the children's network more than the rest.
+
+```yaml
+blocklists:
+  pro:                                    # a name of your choice
+    url: https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt
+    interval: 24h                         # how often it is downloaded again (the default)
+  tif:
+    url: https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt
+
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.2
+  kids:
+    listen:
+      - dns://192.168.2.2
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 192.168.1.1
+    block:
+      lists:
+        - tif
+  kids:
+    listeners:
+      - kids
+    upstream:
+      - 192.168.1.1
+    block:
+      lists:                              # the lists whose names it blocks
+        - pro
+        - tif
+      allow:                              # never blocked, with every name below them
+        - school.example.com
+      answer: nxdomain                    # or null: 0.0.0.0 and ::
+      ttl: 1m                             # of the blocked answers (the default)
+```
+
+### What is blocked
+
+- **A name of a list, and every name below it.** A list with `ads.example.com` blocks `ads.example.com` and `x.ads.example.com`, but not `example.com`. That is how hagezi's wildcard lists, the `onlydomains` ones, are meant.
+- **Only names it would forward.** The names of its zones, its own records, the reverse names it answers, the [private networks' reverse names](#private-networks) that it answers itself, and `resolver.arpa` are never blocked, whatever the lists say. A name of a [domain forwarded](#forwarding-a-domain) is forwarded, so it can be blocked.
+- **A local CNAME whose target is blocked** is answered as blocked: the CNAMEs, and then the blocked answer of the target. The target isn't asked upstream.
+- **`allow` wins over the lists.** A name of `allow`, or below it, is answered as any other name.
+- Names are matched in any case, with or without a final dot. A name of other letters than ASCII is matched as the lists write it, in punycode: `xn--bcher-kva.example`, not `bücher.example`.
+
+### The answer
+
+- **`nxdomain`**, the default: no such name, `NXDOMAIN`, for any type. The client gives up at once.
+- **`null`**: `0.0.0.0` to an `A` query and `::` to an `AAAA` one, and no data to any other type. Some apps retry a name that doesn't exist, and take an address that leads nowhere quietly.
+
+Either comes with an SOA of the name, whose TTL, `ttl`, tells the client how long to keep the answer: a minute by default, and from `1s` to `24h`. A name you add to `allow` is answered within that time.
+
+A blocked answer is counted as `blocked`, in the status and in [the metrics](#at-start-and-stop).
+
+### The lists
+
+A list is a text file. Each line is read by itself, and may be:
+
+- **A name**, as hagezi's `onlydomains` lists have them: `ads.example.com`.
+- **A hosts file's line**: `0.0.0.0 ads.example.com`, or `127.0.0.1 ads.example.com`, of any address. The names of the machine itself, such as `localhost`, are skipped.
+- **An adblock rule of a domain**: `||ads.example.com^`, or `*.ads.example.com`. Each is the same as the name alone.
+- **A comment**, after `#` or `!`, or a blank line, which is skipped.
+
+Any other line is unreadable, such as an adblock rule of a page, `||example.com/ads^`, or with options, `||example.com^$third-party`. It is skipped and counted, and the report shows the count. Lists made for DNS, such as hagezi's `wildcard` or `hosts` formats, have none.
+
+A list takes little memory: the length of its names, and 4 bytes more each, about 25 MiB for a million names. Each list is held once, however many resolvers use it.
+
+### Downloads
+
+- **At start,** each list is read from its copy in `state_dir`, in `blocklists/<name>.txt`, so a start blocks at once and needs no network. A list without a copy, as at the first start, is downloaded then. Until that succeeds, the resolvers answer without it, and the report and the log say so. The start never waits for a list.
+- **Every `interval`,** 24 hours by default and an hour at least, the list is downloaded again. The server is asked whether it changed since the copy, with `If-None-Match` and `If-Modified-Since`, so a list that didn't change isn't sent again.
+- **A download that fails,** or that has no name it could read, keeps the list as it was, on disk and in memory. It is tried again 10 minutes later.
+- A download has 2 minutes, and a list may be 64 MiB at most. It follows 5 redirects at most, and none of an `https://` list to `http://`, which would have it in plain text.
+- `https://` URLs are checked against the system's certificate authorities. A proxy given by `HTTPS_PROXY` is used.
+- **The list's host is looked up by the system's resolver.** That may be this resolver itself, as when the machine's DNS is the resolver: the downloads start once the resolvers serve, so the lookup is forwarded to the upstream servers like any other name. A list's own host is not to be blocked by a list, or it is never downloaded again: put it in `allow` if one of the lists has it.
+
+### In the report
+
+The [web report](installation.md#the-web-report) has the lists under `Blocklists:`, each with its names, the memory they take, its URL, the resolvers that use it, the lines it couldn't read, its last success, its last download, with its error in amber when it failed, and its next. A list without names, which none of its downloads got yet, is in red. Each resolver has a `Block:` line, of its lists, its `allow`, its answer and its TTL.
+
+- **`/status.json`** has them under `blocklists`, each with `url`, `names`, `bytes`, `unreadable`, `last_refresh`, `last_success`, `next_refresh`, `last_error` and `resolvers`; and each resolver's `block`, with its `lists`, `allow`, `answer` and `ttl`.
+- **`/metrics`** has `ipv6ddns_blocklist_names`, `ipv6ddns_blocklist_last_success_timestamp_seconds` and `ipv6ddns_blocklist_last_refresh_failed`, by `blocklist`.
 
 ## The rules
 
@@ -865,6 +994,16 @@ The configuration is checked at the start. A mistake stops the start, and the er
 | A CNAME beside other records of its name | `credentials.home.settings.records: files.home.arpa. has a CNAME and other records: a name with a CNAME can't have others, since its data is the target's` |
 | A record for a name a task publishes | `credentials.home.settings.records: "nas TXT \"x\"": nas.home.arpa. is published by task nas, which gives its addresses: records are for other names` |
 | CNAMEs in a loop | `resolvers.lan: the CNAMEs a.home.arpa. -> b.home.arpa. -> a.home.arpa. are a loop` |
+| A `forward` domain given twice | `resolvers.lan.forward[1].domain: lan.example.com is forwarded already, by resolvers.lan.forward[0]: give each domain once, with all of its servers in its upstream` |
+| A `forward` domain that isn't one | `resolvers.lan.forward[0].domain: "dns://lan.example.com" is not a domain: give the name alone, as lan.example.com or 3.2.10.in-addr.arpa, with no scheme, port, path or wildcard` |
+| A `forward` without `upstream` | `resolvers.lan.forward[0].upstream is missing: give one or more servers to ask about the names of lan.example.com, as 10.2.3.204 or dns.lan.example.com. Without them, leave the domain out: its names are asked of the resolver's upstream` |
+| A `forward` upstream given by host name, without `bootstrap` | `resolvers.lan.forward: "maas.example.com" is a host name, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one` |
+| A `block` without `lists` | `resolvers.kids.block.lists is missing: give the blocklists whose names the resolver answers as blocked, by their names under blocklists`, with an example |
+| A `block` that names no blocklist there is | `resolvers.kids.block.lists: there's no blocklist pr: the blocklists are pro, tif` |
+| A name of `allow` that isn't one | `resolvers.kids.block.allow: "school example" is not a name, as school.example.com, which is answered with every name below it. A name of other letters is given in punycode, as xn--bcher-kva.example` |
+| A blocklist without `url`, or not of `http://` or `https://` | `blocklists.pro.url: "ftp://lists.example/pro.txt" is not a URL of http:// or https://, as https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt` |
+| A blocklist's `interval` under an hour | `blocklists.pro.interval: 10m0s is too short: the least is 1h0m0s, as a list's server would refuse more, and lists change daily` |
+| A blocklist's name that can't be a file's | `blocklists: the name "hagezi/pro" is that of its file in state_dir: use letters, digits, - and _ alone, as hagezi_pro` |
 
 ### The same address and port, written two ways
 
@@ -897,14 +1036,15 @@ An address already taken by another program, or by another instance, isn't caugh
   <img src="images/resolvers-light.svg" alt="The resolvers in the report. One resolver, lan, is serving, in green. It listens on 192.168.1.2 port 53, and over DNS over TLS and over QUIC on port 853, answers the LAN, and has the zone lan.example.com with 23 names, of a TTL of 60 seconds. Of its two upstream servers, one has 3 failed queries, in amber. Then its queries by kind, its cache, 1274 of 10000, and its certificate, home; and, under Certificates, home, which resolver lan shows, for dns.lan.example.com.">
 </picture>
 
-A resolver that isn't serving is in red, with the reason. An upstream server with failed queries is in amber. An upstream given by host name shows the addresses the bootstrap servers found for it, in brackets, and a `Bootstrap:` line names those servers. A zone counts the names its tasks have addresses for and, apart, the records written in it; those records are under the zone's endpoint in the DNS section, each as a zone file line, and the resolver's own `records` are under it, after `Records:`. `Allow:` says whose its networks are: the resolver's own `allow`, its listeners', each on its own sockets, with a line under it of each listen entry's, or, of none, the networks it listens on. A zone shows the TTL of its tasks' names; its names are under its endpoint, and the task of each in `/status.json`. Under `Keys:`, each key's permissions each tell its zone and names, or all of the zone, and its record types; a `challenges` permission's names are asked of its provider at the key's first update, and until then are not shown. `Private reverse:` says whether the reverse of a private address it has no name of is answered here or forwarded (`forward_unknown_private_reverse_queries`).
+A resolver that isn't serving is in red, with the reason. An upstream server with failed queries is in amber. An upstream given by host name shows the addresses the bootstrap servers found for it, in brackets, and a `Bootstrap:` line names those servers. A zone counts the names its tasks have addresses for and, apart, the records written in it; those records are under the zone's endpoint in the DNS section, each as a zone file line, and the resolver's own `records` are under it, after `Records:`. `Allow:` says whose its networks are: the resolver's own `allow`, its listeners', each on its own sockets, with a line under it of each listen entry's, or, of none, the networks it listens on. A zone shows the TTL of its tasks' names; its names are under its endpoint, and the task of each in `/status.json`. Under `Keys:`, each key's permissions each tell its zone and names, or all of the zone, and its record types; a `challenges` permission's names are asked of its provider at the key's first update, and until then are not shown. A `Forward:` line of each domain of [`forward`](#forwarding-a-domain) has its servers, with their failures. `Private reverse:` says whether the reverse of a private address it has no name of is answered here or forwarded (`forward_unknown_private_reverse_queries`).
 
-- **`/status.json`** has the resolvers under `resolvers`. Each has `upstream_addresses`, the addresses the bootstrap servers found for each upstream given by host name, and `bootstrap`, those servers; `zone_names`, the names of each zone's tasks with addresses, `zone_records`, the records written in each zone, `zone_credentials`, the credential of each, `zone_ttl`, the TTL of each zone's names in seconds, `zone_tasks`, each name with the task that publishes it, and `records`, its own; `allow_own`, whether `allow` is the resolver's own, and `listener_allow`, each listen entry's allow otherwise; under `keys`, each key's `grants`, of each its `permission`, `zone`, `names` and `types`; `forward_unknown_private_reverse`; and the cache's `cache_entries` out of `cache_size`.
+- **`/status.json`** has the resolvers under `resolvers`. Each has `upstream_addresses`, the addresses the bootstrap servers found for each upstream given by host name, and `bootstrap`, those servers; `zone_names`, the names of each zone's tasks with addresses, `zone_records`, the records written in each zone, `zone_credentials`, the credential of each, `zone_ttl`, the TTL of each zone's names in seconds, `zone_tasks`, each name with the task that publishes it, and `records`, its own; `allow_own`, whether `allow` is the resolver's own, and `listener_allow`, each listen entry's allow otherwise; under `keys`, each key's `grants`, of each its `permission`, `zone`, `names` and `types`; `forwards`, each domain forwarded with its `domain`, `upstreams`, `upstream_addresses` and `upstream_failures`; `forward_unknown_private_reverse`; and the cache's `cache_entries` out of `cache_size`.
 - **`/metrics`** has:
-  - `ipv6ddns_resolver_queries_total` by `kind`: `local`, `nodata`, `forwarded`, `cached`, `refused` and `servfail`. A query answered from the cache is `cached`, and one an upstream server answered is `forwarded`. A local name whose CNAME leads outside is `local` in both cases.
+  - `ipv6ddns_resolver_queries_total` by `kind`: `local`, `nodata`, `forwarded`, `cached`, `blocked`, `refused` and `servfail`. A query answered from the cache is `cached`, and one an upstream server answered is `forwarded`. A local name whose CNAME leads outside is `local` in both cases, and `blocked` when the name it leads to is blocked.
   - `ipv6ddns_resolver_cache_entries`.
   - `ipv6ddns_resolver_zone_names` and `ipv6ddns_resolver_zone_records` by `zone`: the names its tasks have addresses for, and the records written in it.
   - `ipv6ddns_resolver_upstream_failures_total` by `upstream`, where an encrypted upstream is named as written.
+  - `ipv6ddns_resolver_forward_failures_total` by `domain` and `upstream`: of the servers of each domain of [`forward`](#forwarding-a-domain).
   - `ipv6ddns_resolver_serving`.
 - **`/healthz`** fails, with 503, while a resolver isn't serving.
 

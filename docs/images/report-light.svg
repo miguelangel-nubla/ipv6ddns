@@ -65,7 +65,7 @@
 <text x="78.4" y="427" textLength="163.8" lengthAdjust="spacingAndGlyphs">Upstream: 192.168.1.1</text>
 <text x="250" y="427" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#5d6877">(0 failed)</text>
 <text x="78.4" y="446" textLength="538.2" lengthAdjust="spacingAndGlyphs">Private reverse: the unknown answered here as no such name (RFC 6303)</text>
-<text x="78.4" y="465" textLength="655.2" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, refused 4, servfail 0</text>
+<text x="78.4" y="465" textLength="764.4" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Queries: local 1840, nodata 212, forwarded 9311, cached 30422, blocked 2187, refused 4, servfail 0</text>
 <text x="78.4" y="484" textLength="156" lengthAdjust="spacingAndGlyphs" fill="#5d6877">Cache: 1274 of 10000</text>
 <text x="16" y="522" textLength="78" lengthAdjust="spacingAndGlyphs" fill="#1d2530" font-weight="600">Discovery:</text>
 <text x="101.8" y="522" textLength="226.2" lengthAdjust="spacingAndGlyphs">4 hosts, 2 named, 5 addresses</text>

@@ -57,6 +57,8 @@ What the live tests cover:
   - a fake upstream server that is slow, down, or truncates its answers;
   - a client outside `allow`;
   - two resolvers with different answers for one name;
+  - two resolvers with different blocklists, downloaded from a server of the test's, and a name of a block's `allow`;
+  - a domain and a private network's reverse zone forwarded to a server of their own, the zone's missing names and the reverse there asked of it, the rest of the upstream, and a server of the domain down;
   - a second machine with the same configuration, and a second instance on the first's addresses.
 - **The discovery protocols**, with three instances that have three configurations. An instance with a protocol disabled sends nothing for it on the wire, and one with it enabled does. A real mDNS responder, avahi-daemon, announces a host's name, and that name appears in the status of the instance that keeps names, and in no other.
 - **Template names**, for hosts that a real avahi-daemon names. A resolver answers them, with their reverse names, and a provider keeps them. A name written in the configuration and a zone's record stay as they are while a host leaves and comes back.

@@ -41,10 +41,12 @@ const (
 	Cached    = "cached"
 	Refused   = "refused"
 	ServFail  = "servfail"
+	// A name of a blocklist, answered as its block says.
+	Blocked = "blocked"
 )
 
 // Kinds are the kinds of answer, in order.
-var Kinds = []string{Local, NoData, Forwarded, Cached, Refused, ServFail}
+var Kinds = []string{Local, NoData, Forwarded, Cached, Blocked, Refused, ServFail}
 
 // Server is a resolver at work: New makes it, Start opens its addresses, Shutdown closes them.
 type Server struct {
@@ -59,6 +61,8 @@ type Server struct {
 	upstreams []*upstreamServer
 	// The upstream servers whose host is a host name, by their text as configured.
 	named map[string]*namedUpstream
+	// The domains forwarded to servers of their own, in the configuration's order.
+	forwards []*forwardZone
 	// The answers forwarded, kept: nil for none.
 	cache *cache
 	now   func() time.Time
@@ -117,6 +121,9 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkBlock(cfg); err != nil {
+		return nil, err
+	}
 	if errorf == nil {
 		errorf = func(string, ...any) {}
 	}
@@ -130,20 +137,11 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 		s.cache = newCache(cfg.CacheSize, func() time.Time { return s.now() })
 	}
 	s.named = make(map[string]*namedUpstream)
-	for _, u := range cfg.Upstreams {
-		s.failures[u] = new(atomic.Uint64)
-		srv, err := parseServer(u)
-		if err != nil {
-			return nil, fmt.Errorf("%s.upstream: %q: %w", cfg.Path, u, err)
-		}
-		if srv.isName() {
-			if len(cfg.Bootstrap) == 0 {
-				return nil, fmt.Errorf("%s.upstream: %q is a host name, and there's no bootstrap to look it up", cfg.Path, u)
-			}
-			srv.named = &namedUpstream{host: dns.Fqdn(srv.host), port: srv.port}
-			s.named[u] = srv.named
-		}
-		s.upstreams = append(s.upstreams, srv)
+	if s.upstreams, err = s.parseUpstreams(cfg.Path+".upstream", cfg.Upstreams, s.failures, s.named); err != nil {
+		return nil, err
+	}
+	if err := s.newForwards(); err != nil {
+		return nil, err
 	}
 	if !cfg.ForwardUnknownPrivateReverse {
 		s.private = privateZones()
@@ -291,6 +289,11 @@ func (s *Server) Start() error {
 	}
 	for _, srv := range s.upstreams {
 		srv.open(s)
+	}
+	for _, z := range s.forwards {
+		for _, srv := range z.upstreams {
+			srv.open(s)
+		}
 	}
 	var (
 		conns     []net.PacketConn
@@ -445,6 +448,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.cancel()
 	for _, srv := range s.upstreams {
 		srv.close()
+	}
+	for _, z := range s.forwards {
+		for _, srv := range z.upstreams {
+			srv.close()
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -654,10 +662,19 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 	}
 	// A name of a private network's reverse zone that it has nothing of: no such name, said here,
 	// not asked of servers that know nothing of it either. One whose address has a name of the
-	// resolver's, asked another type, has no data.
-	if first.kind == notLocal && q.Qclass == dns.ClassINET {
+	// resolver's, asked another type, has no data. One of a domain forwarded is asked of its servers,
+	// which know it.
+	if first.kind == notLocal && q.Qclass == dns.ClassINET && s.forwardOf(q.Name) == nil {
 		if zone := s.privateZone(q.Name); zone != "" {
 			return answerPrivate(req, zone, len(s.table.reverse(q.Name)) > 0)
+		}
+	}
+	// A name of a blocklist, of those it would forward: never one of its own.
+	if first.kind == notLocal && q.Qclass == dns.ClassINET {
+		if _, ok := s.blocked(q.Name); ok {
+			resp := reply(req, dns.RcodeSuccess)
+			s.answerBlocked(resp, q.Name, q.Qtype)
+			return resp, Blocked
 		}
 	}
 	if first.kind == notLocal {
@@ -690,6 +707,12 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 		l = s.table.lookup(cname.Target, q.Qtype)
 		if l.kind != notLocal {
 			continue
+		}
+		// A target blocked is answered as blocked, the local names before it.
+		if _, ok := s.blocked(cname.Target); ok {
+			s.answerBlocked(resp, cname.Target, q.Qtype)
+			kind = Blocked
+			break
 		}
 		// Past the local names: the upstream servers', appended, as a stub resolver follows no
 		// CNAME.
@@ -725,13 +748,21 @@ func reply(req *dns.Msg, rcode int) *dns.Msg {
 	return resp
 }
 
-// forward answers req from the cache, or asks the upstream servers, and keeps their answer when
-// it can be kept: with req's id, and its kind, Cached or Forwarded.
+// forward answers req from the cache, or asks the upstream servers, or those of the deepest domain
+// forwarded that its name is under, and keeps their answer when it can be kept: with req's id, and
+// its kind, Cached or Forwarded. A name is asked of the same servers always, so the cache holds
+// the answers of them all apart.
 func (s *Server) forward(req *dns.Msg) (*dns.Msg, string, error) {
 	if resp := s.cache.get(req); resp != nil {
 		return resp, Cached, nil
 	}
-	resp, err := s.exchange(s.ctx, req)
+	upstreams, failures := s.upstreams, s.failures
+	if len(req.Question) == 1 {
+		if z := s.forwardOf(req.Question[0].Name); z != nil {
+			upstreams, failures = z.upstreams, z.failures
+		}
+	}
+	resp, err := s.exchange(s.ctx, req, upstreams, failures)
 	if err != nil {
 		return nil, "", err
 	}
@@ -740,17 +771,17 @@ func (s *Server) forward(req *dns.Msg) (*dns.Msg, string, error) {
 	return resp, Forwarded, nil
 }
 
-// exchange asks the upstream servers q, in order, and returns the first answer, of whatever code,
+// exchange asks upstreams q, in order, each failure counted in failures, and returns the first answer, of whatever code,
 // with an id of its own. Plain DNS is asked over UDP, and again over TCP when the answer doesn't
 // fit; DNS over TLS on a connection kept open; over HTTPS by its client. Each address of a server
 // given by host name is tried; then the next server.
-func (s *Server) exchange(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
+func (s *Server) exchange(ctx context.Context, q *dns.Msg, upstreams []*upstreamServer, failures map[string]*atomic.Uint64) (*dns.Msg, error) {
 	// Of none, errors.Join would be nil: no answer, and no error either.
-	if len(s.upstreams) == 0 {
+	if len(upstreams) == 0 {
 		return nil, errors.New("no upstream server")
 	}
-	errs := make([]error, 0, len(s.upstreams))
-	for _, srv := range s.upstreams {
+	errs := make([]error, 0, len(upstreams))
+	for _, srv := range upstreams {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -766,7 +797,7 @@ func (s *Server) exchange(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
 		} else {
 			targets := s.targets(srv)
 			if len(targets) == 0 {
-				s.failures[srv.label].Add(1)
+				failures[srv.label].Add(1)
 				errs = append(errs, fmt.Errorf("%s: no address found by the bootstrap servers", srv.label))
 				continue
 			}
@@ -793,7 +824,7 @@ func (s *Server) exchange(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
 				failed = append(failed, fmt.Errorf("%s: %w", target, err))
 			}
 		}
-		s.failures[srv.label].Add(1)
+		failures[srv.label].Add(1)
 		errs = append(errs, fmt.Errorf("%s: %w", srv.label, errors.Join(failed...)))
 	}
 	return nil, errors.Join(errs...)
@@ -877,6 +908,8 @@ type Status struct {
 	UpstreamAddresses map[string][]string `json:"upstream_addresses,omitempty"`
 	// The queries an upstream server didn't answer, by server.
 	UpstreamFailures map[string]uint64 `json:"upstream_failures"`
+	// The domains it asks servers of their own, in the configuration's order: none without.
+	Forwards []ForwardStatus `json:"forwards,omitempty"`
 	// The answers in the cache; and how many it holds, 0 for no cache.
 	CacheEntries int `json:"cache_entries"`
 	CacheSize    int `json:"cache_size"`
@@ -887,6 +920,8 @@ type Status struct {
 	Shared []SharedStatus `json:"shared,omitempty"`
 	// The keys of the dynamic updates, by name: none without.
 	Keys []KeyStatus `json:"keys,omitempty"`
+	// What it answers as blocked: none without.
+	Block *BlockStatus `json:"block,omitempty"`
 	// The sockets open of each listener's entries, by the listener's name, each with its scheme:
 	// dns://[::]:53, tls://[::]:853. None before it serves, or without listeners.
 	ListenerSockets map[string][]string `json:"listener_sockets,omitempty"`
@@ -1002,16 +1037,8 @@ func (s *Server) Status() Status {
 	for k, v := range s.failures {
 		status.UpstreamFailures[k] = v.Load()
 	}
-	for upstream, n := range s.named {
-		n.mutex.Lock()
-		if len(n.addresses) > 0 {
-			if status.UpstreamAddresses == nil {
-				status.UpstreamAddresses = make(map[string][]string)
-			}
-			status.UpstreamAddresses[upstream] = append([]string{}, n.addresses...)
-		}
-		n.mutex.Unlock()
-	}
+	status.UpstreamAddresses = namedAddresses(s.named)
+	status.Forwards = s.forwardsStatus()
 	if len(s.config.Encrypted) > 0 {
 		var names []string
 		for _, e := range s.config.Encrypted {
@@ -1027,6 +1054,7 @@ func (s *Server) Status() Status {
 	}
 	status.Shared = s.sharedStatus()
 	status.Keys = s.keysStatus()
+	status.Block = s.blockStatus()
 	return status
 }
 

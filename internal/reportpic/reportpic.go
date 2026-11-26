@@ -132,7 +132,7 @@ func dnsLine(line, body string, indent int) pretty.Line {
 }
 
 // resolverLine is a line of a resolver: its name with whether it serves, what it is given as it
-// is, an upstream that failed set apart, and its counters as details.
+// is, an upstream that failed set apart, of a domain forwarded too, and its counters as details.
 func resolverLine(line, body string, indent int) pretty.Line {
 	switch {
 	case indent == 4:
@@ -144,7 +144,7 @@ func resolverLine(line, body string, indent int) pretty.Line {
 		return pretty.Line{pretty.As(pretty.Name, name), {Text: ": "}, pretty.As(role, state)}
 	case strings.HasPrefix(body, "Queries: "), strings.HasPrefix(body, "Cache: "):
 		return pretty.Line{pretty.As(pretty.Detail, line)}
-	case strings.HasPrefix(body, "Upstream: "):
+	case strings.HasPrefix(body, "Upstream: "), strings.HasPrefix(body, "Forward: "):
 		var out pretty.Line
 		last := 0
 		for _, m := range failed.FindAllStringSubmatchIndex(line, -1) {

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/blocklist"
 )
 
 // shownSettings are the settings of a credential that tell no secret, in a line: its zone, TTL,
@@ -103,6 +105,12 @@ func (c *Config) printServers(result *strings.Builder, prefix string, hideSensib
 			line(12, "Allow: %s", list(r.Allow))
 			line(12, "Upstream: %s", list(r.Upstream))
 			line(12, "Bootstrap: %s", list(r.Bootstrap))
+			if len(r.Forward) > 0 {
+				line(12, "Forward:")
+				for _, f := range r.Forward {
+					line(16, "%s: %s", f.Domain, list(f.Upstream))
+				}
+			}
 			if len(r.Records) > 0 {
 				line(12, "Records:")
 				for _, record := range r.Records {
@@ -114,6 +122,19 @@ func (c *Config) printServers(result *strings.Builder, prefix string, hideSensib
 			}
 			if r.ForwardUnknownPrivateReverseQueries {
 				line(12, "Forward unknown private reverse queries: true")
+			}
+			if r.Block != nil {
+				line(12, "Block:")
+				line(16, "Lists: %s", list(r.Block.Lists))
+				line(16, "Allow: %s", list(r.Block.Allow))
+				answer := r.Block.Answer
+				if answer == "" {
+					answer = "nxdomain"
+				}
+				line(16, "Answer: %s", answer)
+				if r.Block.TTL != nil {
+					line(16, "TTL: %s", r.Block.TTL.Duration)
+				}
 			}
 			if r.Updates == nil {
 				continue
@@ -145,6 +166,20 @@ func (c *Config) printServers(result *strings.Builder, prefix string, hideSensib
 				}
 				line(20, "Secret: %s", secret(key.Secret))
 			}
+		}
+	}
+
+	if len(c.Blocklists) > 0 {
+		line(4, "Blocklists:")
+		for _, name := range slices.Sorted(maps.Keys(c.Blocklists)) {
+			l := c.Blocklists[name]
+			line(8, "%s:", name)
+			shown := l.URL
+			if hideSensible {
+				shown = blocklist.Redacted(shown, hidden)
+			}
+			line(12, "URL: %s", shown)
+			line(12, "Interval: %s", l.IntervalOf().Duration)
 		}
 	}
 

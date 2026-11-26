@@ -61,7 +61,8 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		{Name: "lan", Listening: []string{"192.168.1.2:53"}, Allow: []string{"192.168.1.0/24"}, Zones: []string{"lan.example.com"}, ZoneNames: map[string]int{"lan.example.com": 1},
 			ZoneRecords: map[string][]string{"lan.example.com": {"files.lan.example.com. 3600 IN CNAME nas.lan.example.com."}}, Records: []string{"dns.example.com. 3600 IN A 192.168.1.2"},
 			UpstreamAddresses: map[string][]string{"tls://1.1.1.1": {"1.1.1.1:853"}}, Bootstrap: []string{"192.168.1.1:53"},
-			Serving: true, Upstreams: []string{"192.168.1.1", "tls://1.1.1.1"}, UpstreamFailures: map[string]uint64{"tls://1.1.1.1": 3}, Queries: map[string]uint64{resolver.Local: 7}, CacheSize: 10000, CacheEntries: 12},
+			Serving: true, Upstreams: []string{"192.168.1.1", "tls://1.1.1.1"}, UpstreamFailures: map[string]uint64{"tls://1.1.1.1": 3}, Queries: map[string]uint64{resolver.Local: 7}, CacheSize: 10000, CacheEntries: 12,
+			Forwards: []resolver.ForwardStatus{{Domain: "lan.example.com", Upstreams: []string{"10.2.3.204:53"}, UpstreamFailures: map[string]uint64{"10.2.3.204:53": 2}}}},
 		{Name: "guests", Error: "listen udp 192.168.2.1:53: bind: address already in use", Upstreams: []string{"192.168.1.1"}},
 		// Of encrypted DNS, with its certificate.
 		{Name: "dot", Listening: []string{"tls://192.168.1.2:853"}, Serving: true, Upstreams: []string{"192.168.1.1"}, Certificate: "home"},
@@ -97,7 +98,7 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		page = append(page, pretty.Line{})
 		page = append(page, disc.Page("")...)
 		text := page.String()
-		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 3, 2 serving", "Certificates:\n    home (resolver dot, web server main): dns.lan.example.com, until ", "none yet", "(getting it failed: the check: 403 unauthorized; again at ", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
+		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 3, 2 serving", "Certificates:\n    home (resolver dot, web server main): dns.lan.example.com, until ", "none yet", "(getting it failed: the check: 403 unauthorized; again at ", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        Forward: lan.example.com to 10.2.3.204:53 (2 failed)\n", "        names:", "            nas "} {
 			if !strings.Contains(text, has) {
 				t.Fatalf("the page of the test has no %q:\n%s", has, text)
 			}

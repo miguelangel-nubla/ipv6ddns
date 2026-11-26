@@ -44,6 +44,10 @@ type Resolver struct {
 	ForwardUnknownPrivateReverseQueries bool `json:"forward_unknown_private_reverse_queries,omitempty"`
 	// The dynamic updates it takes, by RFC 2136, of the clients that hold a key.
 	Updates *Updates `json:"updates,omitempty"`
+	// What it answers as blocked, of the names it would forward: of blocklists, by name.
+	Block *Block `json:"block,omitempty"`
+	// The domains whose names, of those it would forward, are asked of servers of their own.
+	Forward []Forward `json:"forward,omitempty"`
 
 	// The resolver, checked, with its zones.
 	Spec resolver.Config `json:"-"`
@@ -153,6 +157,10 @@ func (c *Config) setUpResolvers() error {
 			}
 			spec.Upstreams = append(spec.Upstreams, address)
 		}
+		forwardNamed, err := setUpForwards(path, r, &spec)
+		if err != nil {
+			return err
+		}
 		for _, b := range r.Bootstrap {
 			address, err := parseServerAddress(b)
 			if err != nil {
@@ -160,13 +168,18 @@ func (c *Config) setUpResolvers() error {
 			}
 			spec.Bootstrap = append(spec.Bootstrap, address)
 		}
+		// Of the upstream, or of a domain forwarded, whose servers the same bootstrap looks up.
+		at := path + ".upstream"
+		if named == "" && forwardNamed != "" {
+			named, at = forwardNamed, path+".forward"
+		}
 		switch {
 		case named != "" && len(spec.Bootstrap) == 0:
 			is := "is a host name"
 			if strings.Contains(named, "://") {
 				is = "is at a host name"
 			}
-			return fmt.Errorf("%s.upstream: %q %s, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one", path, named, is)
+			return fmt.Errorf("%s: %q %s, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one", at, named, is)
 		case named == "" && len(spec.Bootstrap) > 0:
 			return fmt.Errorf("%s.bootstrap only looks up upstream servers given by host name, and every upstream here is an address: leave it out", path)
 		}
@@ -179,6 +192,9 @@ func (c *Config) setUpResolvers() error {
 			spec.Lines = append(spec.Lines, line)
 		}
 		if err := c.setUpUpdates(path, &r, &spec, claimed); err != nil {
+			return err
+		}
+		if err := c.setUpBlock(path, r, &spec); err != nil {
 			return err
 		}
 		r.Spec = spec

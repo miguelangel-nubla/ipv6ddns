@@ -80,6 +80,7 @@ ipv6ddns writes a few files of its own, and reads them back at start, so that a 
 | The certificates of [ACME](resolver.md#a-certificate-from-lets-encrypt), their keys and the account's | `tls/<certificate>/`, or its `certificate` and `key` |
 | The challenges written for [other machines](guides/certificates-for-other-machines.md) | `challenges-<key>-<credential>.json` |
 | The names a [DHCP server](guides/dhcp-server-names.md) sent | `names-<zone>.json` |
+| The [blocklists](resolver.md#blocking), and what their servers said of them | `blocklists/<name>.txt` and `blocklists/<name>.json` |
 | The key Home Assistant gave the [device](home-assistant-integration.md) | its `key_provisioning_state_file` |
 
 They are in the configuration's folder, unless `state_dir` gives another, relative to that folder or absolute. Give one when the configuration is read-only, as a mounted secret is:

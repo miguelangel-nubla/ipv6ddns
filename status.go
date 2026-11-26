@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/blocklist"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -29,6 +30,8 @@ type Status struct {
 	// The device of Home Assistant's ESPHome integration, with the homeassistant block.
 	HomeAssistant *HomeAssistantStatus `json:"homeassistant,omitempty"`
 	Resolvers     []resolver.Status    `json:"resolvers"`
+	// The blocklists the resolvers' blocks name, by name.
+	Blocklists []blocklist.Status `json:"blocklists,omitempty"`
 	// The certificates of the configuration, by name.
 	Certificates []CertificateStatus `json:"certificates,omitempty"`
 	// The listeners and the web servers of the configuration, by name.
@@ -145,6 +148,9 @@ func (w *Worker) Status(hideSensible bool) Status {
 
 	for _, r := range w.resolvers {
 		status.Resolvers = append(status.Resolvers, r.Status())
+	}
+	if len(w.blocklists) > 0 {
+		status.Blocklists = w.blocklistStatuses(hideSensible)
 	}
 	if len(w.certs) > 0 {
 		status.Certificates = w.certificateStatuses()
@@ -342,7 +348,7 @@ func (s Status) WriteMetrics(out io.Writer) error {
 		}
 		fmt.Fprintf(&b, "ipv6ddns_resolver_serving%s %d\n", resolverLabels(r.Name), serving)
 	}
-	metric("ipv6ddns_resolver_queries_total", "counter", "The queries a resolver answered, by kind: local, nodata, forwarded, cached, refused, servfail.")
+	metric("ipv6ddns_resolver_queries_total", "counter", "The queries a resolver answered, by kind: local, nodata, forwarded, cached, blocked, refused, servfail.")
 	for _, r := range s.Resolvers {
 		for _, kind := range resolver.Kinds {
 			fmt.Fprintf(&b, "ipv6ddns_resolver_queries_total%s %d\n", resolverLabels(r.Name, "kind", kind), r.Queries[kind])
@@ -377,6 +383,36 @@ func (s Status) WriteMetrics(out io.Writer) error {
 		for _, upstream := range r.Upstreams {
 			fmt.Fprintf(&b, "ipv6ddns_resolver_upstream_failures_total%s %d\n", resolverLabels(r.Name, "upstream", upstream), r.UpstreamFailures[upstream])
 		}
+	}
+	metric("ipv6ddns_resolver_forward_failures_total", "counter", "The queries a server of a domain a resolver forwards didn't answer in time.")
+	for _, r := range s.Resolvers {
+		for _, f := range r.Forwards {
+			for _, upstream := range f.Upstreams {
+				fmt.Fprintf(&b, "ipv6ddns_resolver_forward_failures_total%s %d\n", resolverLabels(r.Name, "domain", f.Domain, "upstream", upstream), f.UpstreamFailures[upstream])
+			}
+		}
+	}
+
+	blocklistLabels := func(name string) string {
+		return fmt.Sprintf(`{blocklist="%s"}`, labelValue(name))
+	}
+	metric("ipv6ddns_blocklist_names", "gauge", "The names a blocklist has now: 0 before its first download, without a copy.")
+	for _, l := range s.Blocklists {
+		fmt.Fprintf(&b, "ipv6ddns_blocklist_names%s %d\n", blocklistLabels(l.Name), l.Names)
+	}
+	metric("ipv6ddns_blocklist_last_success_timestamp_seconds", "gauge", "When a blocklist was last downloaded, or found unchanged.")
+	for _, l := range s.Blocklists {
+		if l.LastSuccess != nil {
+			fmt.Fprintf(&b, "ipv6ddns_blocklist_last_success_timestamp_seconds%s %d\n", blocklistLabels(l.Name), l.LastSuccess.Unix())
+		}
+	}
+	metric("ipv6ddns_blocklist_last_refresh_failed", "gauge", "1 when the last download of a blocklist failed.")
+	for _, l := range s.Blocklists {
+		failed := 0
+		if l.LastError != "" {
+			failed = 1
+		}
+		fmt.Fprintf(&b, "ipv6ddns_blocklist_last_refresh_failed%s %d\n", blocklistLabels(l.Name), failed)
 	}
 
 	certificateLabels := func(name string) string {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/blocklist"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
@@ -53,6 +54,8 @@ type Worker struct {
 	running sync.WaitGroup
 	// The resolvers, by name's order.
 	resolvers []*resolver.Server
+	// The blocklists the resolvers' blocks name, by name's order: each once, for all of them.
+	blocklists []*blocklist.List
 	// The certificates of the configuration, by name's order.
 	certs []*certificate
 	// The sockets the web servers opened, by their listener's name, as WebListening tells them.
@@ -202,10 +205,20 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 	}
 	w.certs = certs
 
+	lists := w.setUpBlocklists()
+
 	// The resolvers, each with the addresses of its zones' endpoints: a zone no task names has its
 	// records still.
 	for _, name := range slices.Sorted(maps.Keys(cfg.Resolvers)) {
 		spec := cfg.Resolvers[name].Spec
+		if spec.Block != nil {
+			block := *spec.Block
+			block.Sets = nil
+			for _, l := range block.Lists {
+				block.Sets = append(block.Sets, lists[l])
+			}
+			spec.Block = &block
+		}
 		spec.Zones = slices.Clone(spec.Zones)
 		for i, z := range spec.Zones {
 			endpoint, err := w.endpoint(z.Credential)
@@ -400,6 +413,10 @@ func (w *Worker) Start(ctx context.Context) error {
 		if c.acme != nil {
 			w.running.Go(func() { c.run(ctx) })
 		}
+	}
+	// Once the resolvers serve: the system's resolver, which looks up the lists' hosts, may be one.
+	for _, l := range w.blocklists {
+		w.running.Go(func() { l.Run(ctx) })
 	}
 	w.stopped = ctx.Done()
 	// A start that fails past them leaves none listening.
@@ -707,6 +724,7 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 	for _, section := range []pretty.Page{
 		w.State.page(prefix, hideSensible, w.writtenRecords()),
 		w.resolversPage(prefix),
+		w.blocklistsPage(prefix, hideSensible),
 		w.listenersPage(prefix),
 		w.certificatesPage(prefix),
 		w.sourcesPage(prefix, hideSensible),
@@ -757,6 +775,28 @@ func (w *Worker) resolversPage(prefix string) pretty.Page {
 		statuses = append(statuses, r.Status())
 	}
 	return resolversPage(prefix, statuses)
+}
+
+// upstreamSpans are servers asked upstream, each with the addresses found of a host name and its
+// failures: one that failed stands out; one that never did steps back.
+func upstreamSpans(upstreams []string, failures map[string]uint64, found map[string][]string) pretty.Line {
+	var spans pretty.Line
+	for i, u := range upstreams {
+		sep := ""
+		if i > 0 {
+			sep = ", "
+		}
+		failed := pretty.Detail
+		if failures[u] > 0 {
+			failed = pretty.Warn
+		}
+		name := u
+		if addresses := found[u]; len(addresses) > 0 {
+			name += " [" + strings.Join(addresses, ", ") + "]"
+		}
+		spans = append(spans, pretty.Span{Text: sep + name + " "}, pretty.As(failed, fmt.Sprintf("(%d failed)", failures[u])))
+	}
+	return spans
 }
 
 // resolversPage is the page of the resolvers of those statuses.
@@ -852,27 +892,16 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 		for _, r := range s.Records {
 			plain("            %s", r)
 		}
-		// An upstream that failed stands out; one that never did steps back.
 		upstreams := pretty.Line{{Text: prefix + "        Upstream: "}}
 		if len(s.Upstreams) == 0 {
 			upstreams = append(upstreams, pretty.Span{Text: "none, its own names only"})
 		}
-		for i, u := range s.Upstreams {
-			sep := ""
-			if i > 0 {
-				sep = ", "
-			}
-			failed := pretty.Detail
-			if s.UpstreamFailures[u] > 0 {
-				failed = pretty.Warn
-			}
-			name := u
-			if addresses := s.UpstreamAddresses[u]; len(addresses) > 0 {
-				name += " [" + strings.Join(addresses, ", ") + "]"
-			}
-			upstreams = append(upstreams, pretty.Span{Text: sep + name + " "}, pretty.As(failed, fmt.Sprintf("(%d failed)", s.UpstreamFailures[u])))
+		page.Add(append(upstreams, upstreamSpans(s.Upstreams, s.UpstreamFailures, s.UpstreamAddresses)...)...)
+		// Each domain forwarded, with its own servers, of their own failures.
+		for _, f := range s.Forwards {
+			forward := pretty.Line{{Text: prefix + "        Forward: " + f.Domain + " to "}}
+			page.Add(append(forward, upstreamSpans(f.Upstreams, f.UpstreamFailures, f.UpstreamAddresses)...)...)
 		}
-		page.Add(upstreams...)
 		if len(s.Bootstrap) > 0 {
 			plain("        Bootstrap: %s", strings.Join(s.Bootstrap, ", "))
 		}
@@ -886,6 +915,13 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 			queries = append(queries, fmt.Sprintf("%s %d", kind, s.Queries[kind]))
 		}
 		detail("        Queries: %s", strings.Join(queries, ", "))
+		if b := s.Block; b != nil {
+			allow := ""
+			if len(b.Allow) > 0 {
+				allow = ", allow " + strings.Join(b.Allow, ", ")
+			}
+			plain("        Block: %s%s, answer %s, TTL %ds", strings.Join(b.Lists, ", "), allow, b.Answer, b.TTL)
+		}
 		cached := "none"
 		if s.CacheSize > 0 {
 			cached = fmt.Sprintf("%d of %d", s.CacheEntries, s.CacheSize)

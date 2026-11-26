@@ -27,8 +27,8 @@ func Schema() []byte { return configSchema }
 type Config struct {
 	BaseDir string `json:"-"`
 	// Where ipv6ddns keeps what it writes: the push sources' addresses, the certificates of ACME,
-	// the dynamic updates' challenges and names, the Home Assistant device's key. Relative to
-	// BaseDir, unless absolute. Default: BaseDir.
+	// the dynamic updates' challenges and names, the Home Assistant device's key, the blocklists'
+	// copies. Relative to BaseDir, unless absolute. Default: BaseDir.
 	StateDir string `json:"state_dir,omitempty"`
 	// StateDir, in full: BaseDir without one.
 	StateFolder string                `json:"-"`
@@ -41,6 +41,9 @@ type Config struct {
 	// DNS servers for the network's clients, by name, which answer the zones of the resolver
 	// credentials.
 	Resolvers map[string]Resolver `json:"resolvers,omitempty"`
+	// The lists of names the resolvers answer as blocked, by name, each downloaded once for all
+	// of those whose block names it.
+	Blocklists map[string]Blocklist `json:"blocklists,omitempty"`
 	// The certificates that the encrypted entries show, by name: of the resolvers, the web
 	// servers and the listeners, each of which gives one as its tls.
 	Certificates map[string]*TLS `json:"certificates,omitempty"`
@@ -365,6 +368,9 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := checkResolvers(byteValue); err != nil {
 		return config, err
 	}
+	if err := checkBlocks(byteValue); err != nil {
+		return config, err
+	}
 	if err := checkDiscovery(byteValue); err != nil {
 		return config, err
 	}
@@ -438,6 +444,9 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 	if err := config.setUpResolvers(); err != nil {
+		return config, err
+	}
+	if err := config.setUpBlocklists(); err != nil {
 		return config, err
 	}
 	if err := config.setUpWebservers(); err != nil {
