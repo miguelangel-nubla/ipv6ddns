@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -96,6 +97,12 @@ type target struct {
 // lifetime left zero is an hour; a rediscovery interval, a third of the shortest lifetime of the
 // families on.
 func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
+	// The state folder, which a configuration may give to be written in.
+	if cfg.StateDir != "" {
+		if err := os.MkdirAll(cfg.StateFolder, 0o700); err != nil {
+			return nil, fmt.Errorf("state_dir: %w", err)
+		}
+	}
 	discovery := cfg.Discovery.Config()
 	if discovery.Lifetime == 0 {
 		discovery.Lifetime = config.DefaultLifetime
@@ -114,7 +121,7 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 	// Home Assistant's states for its sources; nil, not a nil *homeAssistant, without it.
 	var states source.HomeAssistantStates
 	if cfg.HomeAssistant != nil {
-		h, err := newHomeAssistant(*cfg.HomeAssistant, cfg.BaseDir)
+		h, err := newHomeAssistant(*cfg.HomeAssistant, cfg.StateFolder)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +130,7 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 	}
 
 	for name, sourceConfig := range cfg.Sources {
-		s, err := source.New(name, sourceConfig, cfg.BaseDir, states)
+		s, err := source.New(name, sourceConfig, cfg.BaseDir, cfg.StateFolder, states)
 		if err != nil {
 			return nil, err
 		}

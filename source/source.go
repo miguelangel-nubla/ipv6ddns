@@ -63,9 +63,10 @@ type HomeAssistantStates interface {
 // for their lifetime, as through a failure.
 var ErrWaiting = errors.New("waiting")
 
-// New makes the source of the configuration. baseDir is where commands run; states, which can be
+// New makes the source of the configuration. baseDir is where commands run, and stateDir where a
+// push source keeps its addresses; states, which can be
 // nil without homeassistant sources, are Home Assistant's.
-func New(name string, cfg config.Source, baseDir string, states HomeAssistantStates) (*Source, error) {
+func New(name string, cfg config.Source, baseDir, stateDir string, states HomeAssistantStates) (*Source, error) {
 	s := &Source{name: name, config: cfg, addrs: ipv6disc.NewAddrCollection(), trigger: make(chan struct{}, 1)}
 	switch cfg.Type {
 	case config.SourceHTTP:
@@ -83,7 +84,7 @@ func New(name string, cfg config.Source, baseDir string, states HomeAssistantSta
 		s.fetch = homeAssistantFetcher(states, cfg.Entity, cfg.Attribute)
 	case config.SourcePush:
 		// Nothing runs: the router sends. What it sent before a restart is kept.
-		s.pushFile = pushFile(name, cfg, baseDir)
+		s.pushFile = pushFile(name, cfg, stateDir)
 		if err := s.load(); err != nil {
 			return nil, err
 		}

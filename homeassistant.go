@@ -65,7 +65,7 @@ type nameEntities struct {
 
 // newHomeAssistant makes the device: with the configuration's key, fixed, its MAC from it; or, with
 // key provisioning, its MAC from the identity kept in the state file, and the key Home Assistant
-// gives kept there. baseDir is the configuration's folder, which a relative state file is in.
+// gives kept there. baseDir is the state folder, which a relative state file is in.
 func newHomeAssistant(cfg config.HomeAssistant, baseDir string) (*homeAssistant, error) {
 	device := &esphome.Device{
 		Name: cfg.Name, FriendlyName: cfg.FriendlyName,

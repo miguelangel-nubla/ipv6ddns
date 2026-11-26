@@ -104,7 +104,8 @@ func (c *Config) setUpCertificate(name string, t *TLS) error {
 	if certificate == "" {
 		certificate, key = filepath.Join(acmeFolder, name, acmeCertificate), filepath.Join(acmeFolder, name, acmeKey)
 	}
-	t.CertFile, t.KeyFile = inFolder(c.BaseDir, certificate), inFolder(c.BaseDir, key)
+	// What ACME writes is state: in the state folder.
+	t.CertFile, t.KeyFile = inFolder(c.StateFolder, certificate), inFolder(c.StateFolder, key)
 	t.AccountKeyFile = filepath.Join(filepath.Dir(t.CertFile), acmeAccountKey)
 	return nil
 }

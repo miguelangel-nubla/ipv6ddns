@@ -70,6 +70,26 @@ At a MikroTik, OPNsense, AdGuard Home or UniFi provider, ipv6ddns treats a disab
 
 Technitium is different: it enables a name's disabled records of a type whenever a record of that type is added to the name, so a record can't stay disabled beside the name's records. There, disabled records behave like any other record: one of an address the name has is enabled, and one of an address it no longer has is removed.
 
+## State
+
+ipv6ddns writes a few files of its own, and reads them back at start, so that a restart loses nothing:
+
+| What | File |
+|---|---|
+| The addresses a [push source](sources.md#a-routers-updates) was sent last | `push-<source>.json`, or its `state_file` |
+| The certificates of [ACME](resolver.md#a-certificate-from-lets-encrypt), their keys and the account's | `tls/<certificate>/`, or its `certificate` and `key` |
+| The challenges written for [other machines](guides/certificates-for-other-machines.md) | `challenges-<key>-<credential>.json` |
+| The names a [DHCP server](guides/dhcp-server-names.md) sent | `names-<zone>.json` |
+| The key Home Assistant gave the [device](home-assistant-integration.md) | its `key_provisioning_state_file` |
+
+They are in the configuration's folder, unless `state_dir` gives another, relative to that folder or absolute. Give one when the configuration is read-only, as a mounted secret is:
+
+```yaml
+state_dir: /var/lib/ipv6ddns
+```
+
+A relative `state_file` or `certificate` of ACME is then relative to `state_dir` too. The files of a certificate you give, without ACME, are yours, and stay relative to the configuration's folder.
+
 ## Secrets
 
 Any string value in the configuration can contain:

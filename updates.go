@@ -59,7 +59,7 @@ func (w *Worker) grant(path, key string, p config.Permission) (resolver.Grant, e
 		if !ok {
 			return nil, fmt.Errorf("%s.credential: the provider of %s, %s, can't write the TXT records of the DNS challenge: give a credential of %s", path, p.Challenges.Credential, w.config.Credentials[p.Challenges.Credential].Provider, ddns.TXTProviders())
 		}
-		g := newChallengeGrant(writer, p.Challenges.Names, filepath.Join(w.config.BaseDir, "challenges-"+key+"-"+p.Challenges.Credential+".json"),
+		g := newChallengeGrant(writer, p.Challenges.Names, filepath.Join(w.config.StateFolder, "challenges-"+key+"-"+p.Challenges.Credential+".json"),
 			func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) })
 		if err := g.load(); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
@@ -84,7 +84,7 @@ func (w *Worker) grant(path, key string, p config.Permission) (resolver.Grant, e
 	zone := resolver.Name("", n.Zone)
 	g := &namesGrant{
 		state: w.discWorker.State, zone: zone, source: "updates." + key,
-		file:    filepath.Join(w.config.BaseDir, "names-"+strings.TrimSuffix(zone, ".")+".json"),
+		file:    filepath.Join(w.config.StateFolder, "names-"+strings.TrimSuffix(zone, ".")+".json"),
 		warnf:   func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) },
 		records: make(map[string][]dns.RR),
 	}
@@ -529,6 +529,9 @@ func (g *challengeGrant) load() error {
 func writeJSON(file string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
 	tmp := file + ".tmp"

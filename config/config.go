@@ -25,7 +25,13 @@ var configSchema []byte
 func Schema() []byte { return configSchema }
 
 type Config struct {
-	BaseDir     string                `json:"-"`
+	BaseDir string `json:"-"`
+	// Where ipv6ddns keeps what it writes: the push sources' addresses, the certificates of ACME,
+	// the dynamic updates' challenges and names, the Home Assistant device's key. Relative to
+	// BaseDir, unless absolute. Default: BaseDir.
+	StateDir string `json:"state_dir,omitempty"`
+	// StateDir, in full: BaseDir without one.
+	StateFolder string                `json:"-"`
 	Tasks       map[string]Task       `json:"tasks"`
 	Credentials map[string]Credential `json:"credentials"`
 	Discovery   Discovery             `json:"discovery"`
@@ -344,6 +350,10 @@ func NewConfig(filename string) (config Config, err error) {
 	config.Warnings = slices.Concat(familyWarnings(byteValue), discoveryWarnings)
 	// Before the web server and the resolvers, whose files are relative to it.
 	config.BaseDir = filepath.Dir(filename)
+	config.StateFolder = config.BaseDir
+	if config.StateDir != "" {
+		config.StateFolder = inFolder(config.BaseDir, config.StateDir)
+	}
 
 	if err := config.setUpSources(); err != nil {
 		return config, err

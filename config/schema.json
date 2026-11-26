@@ -755,6 +755,11 @@
                 "additionalProperties": false
             }
         },
+        "state_dir": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The folder where ipv6ddns keeps what it writes: the push sources' addresses, the certificates ACME gets, the dynamic updates' challenges and names, and the Home Assistant device's key. Relative to the configuration's folder, unless absolute; made when missing. Default: the configuration's folder. Give it when the configuration is read-only, as a file of Docker's or Kubernetes' secrets is. See [state](../configuration.md#state)."
+        },
         "log_level": {
             "type": "string",
             "enum": [

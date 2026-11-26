@@ -21,7 +21,7 @@ func pushSource(t *testing.T, dir string, lifetime time.Duration) *Source {
 	if lifetime == 0 {
 		cfg.Lifetime.Duration = config.PushForever
 	}
-	s, err := New("wan", cfg, dir, nil)
+	s, err := New("wan", cfg, dir, dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestPushKeptAcrossARestart(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "push-wan.json"), []byte("{"), 0o600)
 	cfg := config.Source{Type: config.SourcePush, Password: "secret"}
 	cfg.Lifetime.Duration = time.Hour
-	if _, err := New("wan", cfg, dir, nil); err == nil {
+	if _, err := New("wan", cfg, dir, dir, nil); err == nil {
 		t.Error("a broken file read")
 	}
 }
@@ -261,7 +261,7 @@ func TestPushFileErrors(t *testing.T) {
 			os.WriteFile(filepath.Join(dir, "push-wan.json"), []byte(c.content), 0o600)
 			cfg := config.Source{Type: config.SourcePush, Password: "secret"}
 			cfg.Lifetime.Duration = config.PushForever
-			_, err := New("wan", cfg, dir, nil)
+			_, err := New("wan", cfg, dir, dir, nil)
 			if err == nil || !strings.Contains(err.Error(), "source wan: ") || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("got %v, want %q", err, c.want)
 			}
@@ -272,7 +272,7 @@ func TestPushFileErrors(t *testing.T) {
 	os.Mkdir(filepath.Join(dir, "push-wan.json"), 0o700)
 	cfg := config.Source{Type: config.SourcePush, Password: "secret"}
 	cfg.Lifetime.Duration = config.PushForever
-	if _, err := New("wan", cfg, dir, nil); err == nil || !strings.HasPrefix(err.Error(), "source wan: ") {
+	if _, err := New("wan", cfg, dir, dir, nil); err == nil || !strings.HasPrefix(err.Error(), "source wan: ") {
 		t.Errorf("a folder for the file: %v", err)
 	}
 }
@@ -285,7 +285,7 @@ func TestPushSaveError(t *testing.T) {
 			dir := t.TempDir()
 			cfg := config.Source{Type: config.SourcePush, Password: "secret", StateFile: "state/push-wan.json"}
 			cfg.Lifetime.Duration = config.PushForever
-			s, err := New("wan", cfg, dir, nil)
+			s, err := New("wan", cfg, dir, dir, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -351,7 +351,7 @@ func TestPushReplace(t *testing.T) {
 func TestPushWithoutPassword(t *testing.T) {
 	cfg := config.Source{Type: config.SourcePush}
 	cfg.Lifetime.Duration = config.PushForever
-	s, err := New("vps", cfg, t.TempDir(), nil)
+	s, err := New("vps", cfg, t.TempDir(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

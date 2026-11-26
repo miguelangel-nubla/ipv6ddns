@@ -24,8 +24,8 @@ type pushState struct {
 	PrefixAt *time.Time `json:"prefix_at,omitempty"`
 }
 
-// pushFile is the file of a push source: its state_file, relative to the configuration's folder,
-// or push-<source>.json there.
+// pushFile is the file of a push source: its state_file, relative to the state folder, or
+// push-<source>.json there.
 func pushFile(name string, cfg config.Source, baseDir string) string {
 	file := cfg.StateFile
 	if file == "" {
