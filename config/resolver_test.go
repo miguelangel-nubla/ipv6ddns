@@ -572,11 +572,17 @@ func TestResolverConfigHostNames(t *testing.T) {
 // paths.
 func writeTestCertificate(t *testing.T) (certFile, keyFile string) {
 	t.Helper()
+	return writeTestCertificateFor(t, "dns.home.arpa")
+}
+
+// writeTestCertificateFor writes a certificate signed by itself for the names, and its key.
+func writeTestCertificateFor(t *testing.T, names ...string) (certFile, keyFile string) {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"dns.home.arpa"},
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: names,
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
@@ -669,7 +675,7 @@ listeners:
     listen:
       - "tls://192.168.1.0/24"
     tls: hom` + certificates, "listeners.lan.tls: there is no certificate hom: add it under certificates, or fix its name"},
-		{"two resolvers on one address over TLS", `
+		{"two resolvers on one address over TLS, of one certificate", `
   lan:
     listeners:
       - lan
@@ -686,7 +692,7 @@ listeners:
   lab:
     listen:
       - "tls://192.168.1.2:853"
-    tls: home` + certificates, "resolvers lab and lan both listen on "},
+    tls: home` + certificates, "listeners.lab.tls: listeners lan and lab share tls://192.168.1.2:853 with one certificate, home"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := resolverConfig(t, c.resolvers, homeCredential, nasTask)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -140,4 +141,34 @@ func (c *Certificate) Status() *Status {
 	}
 	st.NotAfter = leaf.NotAfter
 	return st
+}
+
+// Covers tells whether the certificate, read again first if its files changed, is for name: one
+// of its DNS names is, or a wildcard of them. None yet covers nothing.
+func (c *Certificate) Covers(name string) bool {
+	cert, err := c.Get(nil)
+	if err != nil || cert.Leaf == nil {
+		return false
+	}
+	return slices.ContainsFunc(cert.Leaf.DNSNames, func(n string) bool { return Matches(n, name) })
+}
+
+// Matches tells whether pattern, a DNS name of a certificate, is for name, as RFC 6125 has it: the
+// same name, in any case and with or without its final dot; or, of a wildcard, *.example.com, one
+// label more, of any text, in place of the star: a.example.com, not a.b.example.com.
+func Matches(pattern, name string) bool {
+	pattern, name = Canonical(pattern), Canonical(name)
+	if pattern == "" || name == "" {
+		return false
+	}
+	if parent, ok := strings.CutPrefix(pattern, "*."); ok {
+		label, rest, found := strings.Cut(name, ".")
+		return found && label != "" && rest == parent
+	}
+	return pattern == name
+}
+
+// Canonical is name as Matches compares it: in lower case, without its final dot.
+func Canonical(name string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
 }

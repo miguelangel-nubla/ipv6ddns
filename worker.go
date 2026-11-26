@@ -233,6 +233,10 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		}
 		w.resolvers = append(w.resolvers, server)
 	}
+	// The sockets that listeners of several share: each opened once, by the first's resolver.
+	if err := resolver.Share(w.resolvers); err != nil {
+		return nil, err
+	}
 
 	w.config.Warnings = append(slices.Clone(cfg.Warnings), w.zoneLaterWarnings()...)
 
@@ -756,6 +760,17 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 		page.Add(pretty.As(pretty.Name, prefix+"    "+s.Name), pretty.Span{Text: ": "}, state)
 		plain("        Listening: %s", strings.Join(s.Listening, ", "))
 		plain("        Allow: %s", strings.Join(s.Allow, ", "))
+		// A socket of listeners of several: which this one is, by the name its clients ask.
+		for _, sh := range s.Shared {
+			by := "the clients that ask " + sh.Name
+			if sh.Name == "" {
+				by = "the clients of its certificate's names"
+			}
+			if sh.Default {
+				by += ", or another name, or none"
+			}
+			plain("        Shared: %s, listener %s, with %s: %s", sh.Address, sh.Listener, strings.Join(sh.With, ", "), by)
+		}
 		var zones []string
 		for _, z := range s.Zones {
 			zones = append(zones, fmt.Sprintf("%s (%s)", z, countNames(s.ZoneNames[z])))

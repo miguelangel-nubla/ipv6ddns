@@ -102,3 +102,26 @@ func TestStatusNames(t *testing.T) {
 		})
 	}
 }
+
+// A name of a certificate is for the same name, in any case and with its final dot or without;
+// a wildcard, for one label more, as RFC 6125 has it.
+func TestMatches(t *testing.T) {
+	for _, c := range []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"dns.lan.example.com", "dns.lan.example.com", true},
+		{"DNS.lan.example.com", "dns.LAN.example.com.", true},
+		{"dns.lan.example.com", "lan.example.com", false},
+		{"*.lan.example.com", "kids.lan.example.com", true},
+		{"*.lan.example.com", "KIDS.lan.example.com.", true},
+		{"*.lan.example.com", "a.kids.lan.example.com", false},
+		{"*.lan.example.com", "lan.example.com", false},
+		{"*.lan.example.com", ".lan.example.com", false},
+		{"", "", false},
+	} {
+		if got := Matches(c.pattern, c.name); got != c.want {
+			t.Errorf("%q, %q: %t, want %t", c.pattern, c.name, got, c.want)
+		}
+	}
+}

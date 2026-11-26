@@ -118,6 +118,10 @@ func (c *Config) setUpResolvers() error {
 			}
 		}
 		for _, e := range spec.Encrypted {
+			// Of listeners that share it, which their set up checked.
+			if e.Shared {
+				continue
+			}
 			if err := claim(resolver.Protocol(e.Transport), e.Line, e.Entry); err != nil {
 				return err
 			}
@@ -264,11 +268,15 @@ func (c *Config) listenOnListeners(spec *resolver.Config, names []string) {
 					spec.ListenAllow = append(spec.ListenAllow, l.Allowed)
 				}
 			default:
-				enc := resolver.EncryptedListen{Transport: le.Scheme, Entry: le.Entry, Line: le.Line, CertificateName: l.TLS, Allow: l.Allowed}
+				enc := resolver.EncryptedListen{Transport: le.Scheme, Entry: le.Entry, Line: le.Line, CertificateName: l.TLS, Allow: l.Allowed,
+					Listener: name, Rank: l.Rank, ServerName: l.ServerName, Shared: le.Shared}
 				if le.Scheme == SchemeHTTPS && l.Web != "" {
 					enc.Web = name
 				}
-				if !slices.ContainsFunc(spec.Encrypted, func(o resolver.EncryptedListen) bool { return o.Transport == enc.Transport && o.Entry == enc.Entry }) {
+				// Of two listeners that share it, both: each with its own certificate and allow.
+				if !slices.ContainsFunc(spec.Encrypted, func(o resolver.EncryptedListen) bool {
+					return o.Transport == enc.Transport && o.Entry == enc.Entry && (o.Listener == enc.Listener || !enc.Shared)
+				}) {
 					spec.Encrypted = append(spec.Encrypted, enc)
 				}
 			}

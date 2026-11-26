@@ -68,6 +68,15 @@ type EncryptedListen struct {
 	// Of HTTPS: the web server whose handler SetWeb gave by this name answers every path but
 	// DoHPath. None: those paths are not found.
 	Web string
+	// Of a listener's entry: its name, and its place among the listeners, as written, the first 0.
+	Listener string
+	Rank     int
+	// The name the clients ask the listener by, which its certificate is for: none, the
+	// certificate's first.
+	ServerName string
+	// Whether other listeners share its socket, of the same transport, address and port: Share
+	// has one server open it, which tells the listeners apart by the name the client asks.
+	Shared bool
 }
 
 // DefaultPortOf is the port an entry of transport has when it gives none.
@@ -87,20 +96,31 @@ func DefaultPortOf(transport string) string {
 type encryptedListeners struct {
 	tls, https []net.Listener
 	quic       []net.PacketConn
-	// Of each of tls, https and quic, in their order: its entry.
-	tlsOf, httpsOf, quicOf []EncryptedListen
+	// Of each of tls, https and quic, in their order: its routes, one of an entry of its own.
+	tlsOf, httpsOf, quicOf [][]route
 	// host:port with its scheme, as the status says it, and the addresses themselves.
 	listening []string
 	listened  []net.Addr
 }
 
-// open listens on every address of e, over its transport: TCP for TLS and HTTPS, UDP for QUIC.
-func (l *encryptedListeners) open(e EncryptedListen) error {
+// open listens on every address of e, over its transport: TCP for TLS and HTTPS, UDP for QUIC. An
+// address of a socket that listeners share, and another server opens, is only told.
+func (l *encryptedListeners) open(s *Server, e EncryptedListen) error {
 	addresses, err := listen.Addresses([]listen.Entry{e.Entry})
 	if err != nil {
 		return err
 	}
 	for _, a := range addresses {
+		k := sharedKey(e.Transport, a)
+		if !s.opens(e, k) {
+			addr := sharedAddr(e.Transport, a)
+			if text := e.Transport + "://" + addr.String(); !slices.Contains(l.listening, text) {
+				l.listening = append(l.listening, text)
+			}
+			l.listened = append(l.listened, addr)
+			continue
+		}
+		routes := s.routesOf(e, k)
 		udp, tcp := networks(a)
 		if e.Transport == TransportQUIC {
 			c, err := net.ListenPacket(udp, a)
@@ -108,7 +128,7 @@ func (l *encryptedListeners) open(e EncryptedListen) error {
 				return err
 			}
 			l.quic = append(l.quic, c)
-			l.quicOf = append(l.quicOf, e)
+			l.quicOf = append(l.quicOf, routes)
 			l.listening = append(l.listening, e.Transport+"://"+c.LocalAddr().String())
 			l.listened = append(l.listened, c.LocalAddr())
 			continue
@@ -119,10 +139,10 @@ func (l *encryptedListeners) open(e EncryptedListen) error {
 		}
 		if e.Transport == TransportTLS {
 			l.tls = append(l.tls, tl)
-			l.tlsOf = append(l.tlsOf, e)
+			l.tlsOf = append(l.tlsOf, routes)
 		} else {
 			l.https = append(l.https, tl)
-			l.httpsOf = append(l.httpsOf, e)
+			l.httpsOf = append(l.httpsOf, routes)
 		}
 		l.listening = append(l.listening, e.Transport+"://"+tl.Addr().String())
 		l.listened = append(l.listened, tl.Addr())
@@ -140,18 +160,23 @@ func (l *encryptedListeners) close() {
 	}
 }
 
-// serveHTTPS answers DNS over HTTPS on the listeners, over HTTP/1.1 and HTTP/2.
-func (s *Server) serveHTTPS(listeners []net.Listener, entries []EncryptedListen) {
+// serveHTTPS answers DNS over HTTPS on the listeners, over HTTP/1.1 and HTTP/2. Of a socket that
+// listeners share, each request is the listener's of the name of its TLS handshake, whatever its
+// Host: the certificate shown was that one's.
+func (s *Server) serveHTTPS(listeners []net.Listener, routes [][]route) {
 	for i, l := range listeners {
-		e, cert := entries[i], s.certificateOf(entries[i])
-		allow := e.Allow
-		handler := func(w http.ResponseWriter, r *http.Request) { s.answerHTTPS(w, r, allow) }
-		if e.Web != "" {
-			handler = func(w http.ResponseWriter, r *http.Request) { s.answerHTTPSOrWeb(w, r, e.Web, allow) }
+		of := routes[i]
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			name := ""
+			if r.TLS != nil {
+				name = r.TLS.ServerName
+			}
+			c := choose(of, name)
+			c.s.answerHTTPSOf(w, r, c.e)
 		}
 		srv := &http.Server{
 			Handler:           http.HandlerFunc(handler),
-			TLSConfig:         cert.Config("h2", "http/1.1"),
+			TLSConfig:         tlsConfig(of, "h2", "http/1.1"),
 			ReadHeaderTimeout: encryptedTimeout,
 			ReadTimeout:       encryptedTimeout,
 			WriteTimeout:      encryptedTimeout,
@@ -245,7 +270,8 @@ func (s *Server) answerHTTPS(w http.ResponseWriter, r *http.Request, allow []net
 		http.Error(w, "no client address", http.StatusBadRequest)
 		return
 	}
-	resp := s.respond(req, client{remote, allow})
+	local, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	resp := s.respond(req, client{remote, allow, local})
 	if resp == nil {
 		http.Error(w, "not a query", http.StatusBadRequest)
 		return
@@ -295,11 +321,12 @@ func freshness(resp *dns.Msg) uint32 {
 	return *least
 }
 
-// serveQUIC answers DNS over QUIC, RFC 9250, on the sockets: each query on a stream of its own.
-func (s *Server) serveQUIC(conns []net.PacketConn, entries []EncryptedListen) {
+// serveQUIC answers DNS over QUIC, RFC 9250, on the sockets: each query on a stream of its own. Of
+// a socket that listeners share, each connection is the listener's of the name of its handshake.
+func (s *Server) serveQUIC(conns []net.PacketConn, routes [][]route) {
 	for i, c := range conns {
-		allow := entries[i].Allow
-		l, err := quic.Listen(c, s.certificateOf(entries[i]).Config(alpnQUIC), &quic.Config{
+		of := routes[i]
+		l, err := quic.Listen(c, tlsConfig(of, alpnQUIC), &quic.Config{
 			MaxIdleTimeout:     30 * time.Second,
 			MaxIncomingStreams: 100,
 		})
@@ -323,7 +350,8 @@ func (s *Server) serveQUIC(conns []net.PacketConn, entries []EncryptedListen) {
 					}
 					return
 				}
-				go s.serveQUICConn(conn, allow)
+				r := choose(of, conn.ConnectionState().TLS.ServerName)
+				go r.s.serveQUICConn(conn, r.e.Allow)
 			}
 		}()
 	}
@@ -378,7 +406,7 @@ func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream, allow []netip.
 		_ = conn.CloseWithError(doqProtocolError, "a message that is no query of DNS over QUIC")
 		return
 	}
-	resp := s.respond(req, client{conn.RemoteAddr(), allow})
+	resp := s.respond(req, client{conn.RemoteAddr(), allow, conn.LocalAddr()})
 	if resp == nil {
 		_ = conn.CloseWithError(doqProtocolError, "not a query")
 		return

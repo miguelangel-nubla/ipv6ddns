@@ -72,6 +72,17 @@ type Server struct {
 	// The reverse zones of the private networks it answers itself: absolute, in lower case.
 	private []string
 
+	// The encrypted entries that Discovery of Designated Resolvers tells the clients of, once
+	// started: none, and resolver.arpa is asked upstream as any other name.
+	ddr []ddrEntry
+
+	// The sockets of its encrypted entries that listeners share, by sharedKey: the routes there, of
+	// every server's listeners, in their order, as Share gives them.
+	shared map[string][]route
+	// The listeners whose server name their certificate is no longer for, logged once.
+	uncoveredMutex sync.Mutex
+	uncovered      map[string]bool
+
 	// The web servers' handlers, by the names of the HTTPS entries they share, as SetWeb gives them.
 	web map[string]http.Handler
 
@@ -312,16 +323,20 @@ func (s *Server) Start() error {
 			listened = append(listened, c.LocalAddr())
 		}
 	}
-	for _, e := range s.config.Encrypted {
-		if err := enc.open(e); err != nil {
+	var entryOf []int
+	for i, e := range s.config.Encrypted {
+		if err := enc.open(s, e); err != nil {
 			closeAll()
 			return fmt.Errorf("%s: %s: %w", s.config.Path, e.Line, err)
 		}
+		for len(entryOf) < len(enc.listened) {
+			entryOf = append(entryOf, i)
+		}
 	}
 	listening = append(listening, enc.listening...)
-	for i, e := range slices.Concat(enc.tlsOf, enc.httpsOf, enc.quicOf) {
-		if e.Allow == nil {
-			listened = append(listened, enc.listened[i])
+	for j, a := range enc.listened {
+		if s.config.Encrypted[entryOf[j]].Allow == nil {
+			listened = append(listened, a)
 		}
 	}
 	allow := s.config.Allow
@@ -344,9 +359,13 @@ func (s *Server) Start() error {
 				ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
 	for i, l := range enc.tls {
-		e := enc.tlsOf[i]
-		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, s.certificateOf(e).Config(alpnTLS)), Net: "tcp-tls",
-			Handler: socket{s, e.Allow}, NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
+		routes := enc.tlsOf[i]
+		var h dns.Handler = socket{s, routes[0].e.Allow}
+		if len(routes) > 1 {
+			h = sharedSocket(routes)
+		}
+		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, tlsConfig(routes, alpnTLS)), Net: "tcp-tls",
+			Handler: h, NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
 	// With keys, the signatures are checked, and updates taken.
 	if len(s.keys) > 0 {
@@ -356,6 +375,7 @@ func (s *Server) Start() error {
 	}
 	s.mutex.Lock()
 	s.servers, s.listening, s.allow, s.serving = servers, listening, allow, true
+	s.ddr = ddrEntries(s.config.Encrypted, enc.listened, entryOf)
 	s.mutex.Unlock()
 	started.Add(len(servers))
 	for _, srv := range servers {
@@ -497,6 +517,9 @@ func listenedNetworks(listened []net.Addr) ([]netip.Prefix, error) {
 type client struct {
 	net.Addr
 	allow []netip.Prefix
+	// The address the query came to, for Discovery of Designated Resolvers: of a UDP socket on
+	// all addresses, that one.
+	local net.Addr
 }
 
 // allowOf is the allow of a client: of its socket, unless the resolver gives its own, which
@@ -541,7 +564,7 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) { s.serveDNS(w, re
 
 // serveDNS answers a query over plain DNS, or over TLS, of a socket with allow.
 func (s *Server) serveDNS(w dns.ResponseWriter, req *dns.Msg, allow []netip.Prefix) {
-	remote := client{w.RemoteAddr(), allow}
+	remote := client{w.RemoteAddr(), allow, w.LocalAddr()}
 	// A signature is checked by the server, of the keys', and with keys alone: without, it is
 	// unchecked, and the message is as any other.
 	if t := req.IsTsig(); t != nil && len(s.keys) > 0 && !req.Response {
@@ -595,6 +618,10 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 		return reply(req, dns.RcodeFormatError), ""
 	}
 	q := req.Question[0]
+	// Of a resolver with encrypted entries, which it tells of there: never forwarded.
+	if q.Qclass == dns.ClassINET && len(s.ddr) > 0 && isDDR(q.Name) {
+		return s.answerDDR(req, remote)
+	}
 	var first lookup
 	if q.Qclass == dns.ClassINET {
 		first = s.table.lookup(q.Name, q.Qtype)
@@ -817,6 +844,9 @@ type Status struct {
 	CacheSize    int `json:"cache_size"`
 	// The certificate of the encrypted transports, of certificates, by its name: none without them.
 	Certificate string `json:"certificate,omitempty"`
+	// The sockets its listeners share with others, which the clients tell apart by name: none
+	// without.
+	Shared []SharedStatus `json:"shared,omitempty"`
 	// The keys of the dynamic updates, by name: none without.
 	Keys []KeyStatus `json:"keys,omitempty"`
 }
@@ -892,6 +922,7 @@ func (s *Server) Status() Status {
 		}
 		status.Certificate = strings.Join(names, ", ")
 	}
+	status.Shared = s.sharedStatus()
 	status.Keys = s.keysStatus()
 	return status
 }

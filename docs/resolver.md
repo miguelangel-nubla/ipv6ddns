@@ -206,6 +206,61 @@ certificates:
     key: /etc/ssl/dns/privkey.pem
 ```
 
+### Several listeners on one port
+
+Encrypted entries of several listeners can share one address and port, as `tls://192.168.1.2` of two, each listener with its resolver. A client is given the listener of the name it asks in its TLS handshake (its SNI): the one whose certificate, or [`server_name`](#discovery-by-the-clients), is for that name. A client that asks no name, as Android's Private DNS set to automatic, which asks by address, or a name of no listener there, gets the first of them, as written in the file. So one address can serve a resolver for the adults and another for the children, each with its own `allow`, `upstream` and records:
+
+```yaml
+listeners:
+  lan:                         # first: the clients that ask no name, or another
+    listen:
+      - dns://192.168.1.2
+      - tls://192.168.1.2
+      - https://192.168.1.2
+      - quic://192.168.1.2
+    tls: lan
+  kids:
+    listen:
+      - dns://192.168.1.2:5300 # plain DNS has no name a client asks: a port of its own
+      - tls://192.168.1.2
+      - https://192.168.1.2
+      - quic://192.168.1.2
+    tls: kids
+    server_name: kids.dns.local.example.com
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 192.168.1.1
+  kids:
+    listeners:
+      - kids
+    upstream:
+      - 9.9.9.11               # a filtering one
+
+certificates:
+  lan:                         # for dns.lan.example.com
+    certificate: /etc/ssl/dns.lan.example.com/fullchain.pem
+    key: /etc/ssl/dns.lan.example.com/privkey.pem
+  kids:                        # for dns.local.example.com and *.dns.local.example.com
+    certificate: /etc/ssl/dns.local.example.com/fullchain.pem
+    key: /etc/ssl/dns.local.example.com/privkey.pem
+```
+
+A client set to `kids.dns.local.example.com` gets the `kids` resolver; one set to `dns.lan.example.com`, or to the address alone, the `lan` one.
+
+The rules, checked at start:
+
+- **Only encrypted entries of one scheme share a port**: `tls://` with `tls://`, `quic://` with `quic://`, `https://` with `https://`. A `dns://` entry never does: plain DNS has no name a client asks. Entries share when they listen on the same address and port, however written: `tls://192.168.1.2` and `tls://192.168.1.2:853` are one. Entries that only overlap, as `tls://853`, every address, and `tls://192.168.1.2`, can't both listen: the configuration is refused at load, and the error says to write the same address in both.
+- **Each listener there has a resolver**, and its own certificate.
+- **No name is of two of the certificates.** A name both would be shown for, as `dns.lan.example.com` in both, or `kids.lan.example.com` and the wildcard `*.lan.example.com`, couldn't tell the client which listener it gets. A wildcard is for one label: `*.lan.example.com` is for `kids.lan.example.com`, not `a.kids.lan.example.com`, nor `lan.example.com`. Of a certificate from Let's Encrypt, the names are compared as written under `acme.names`.
+
+Over HTTPS, a request is the listener's of the name of the TLS handshake, whatever its `Host` header says: the certificate the client checked was that one's. On a shared `https://` entry, every path but `/dns-query` is the web server's of that listener, if it has one, and not found otherwise. Over a shared `tls://` entry, the [keys](#dynamic-updates) are the first listener's resolver's: an update, or a signed query, to another listener there is refused. Send them over plain DNS, or an entry of the resolver's own.
+
+The report shows each shared socket under each resolver, with its listener, the others there, and the clients it gets: `Shared: tls://192.168.1.2:853, listener kids, with lan: the clients that ask kids.dns.local.example.com`. In `/status.json`, it is `shared`, of each resolver.
+
 ## Encrypted upstream servers
 
 The resolver can ask an upstream server over an encrypted connection. The network in between, such as your ISP's, then can't read the names asked or change the answers.
@@ -396,6 +451,14 @@ tasks:
 ```
 
 At a provider, the name is public, with a private address. Nothing on the internet reaches that address, but some routers' DNS refuse a public name of one, against DNS rebinding: OpenWrt's dnsmasq with `rebind_protection`, pfSense's and OPNsense's resolver with its private address filter. On such a network, allow the name there, as `rebind_domain` of OpenWrt or the domain overrides of pfSense, or keep the record in the router's own DNS instead.
+
+### Discovery by the clients
+
+A client set to use the resolver's plain address can find its encrypted transports by itself, by Discovery of Designated Resolvers ([RFC 9462](https://www.rfc-editor.org/rfc/rfc9462)): it asks the `SVCB` records of `_dns.resolver.arpa`, and the resolver answers them itself, with authority, and never asks upstream. Each record is one encrypted entry the client's [`allow`](#allow) admits: its listener's `server_name`, or else the first name of its certificate that is no wildcard, which the client checks, the protocol (`dot`, `h2` with the path `/dns-query{?dns}`, or `doq`), the port when it isn't the default, and the addresses it listens on: of an entry on all addresses, as `tls://:853`, the one the client asked, and never a link-local one, which would need its interface. An entry whose certificate has only wildcard names, and no `server_name`, isn't told. The name is read from the certificate at each answer, so a renewal for another name is told at once.
+
+A listener's **`server_name`** is the name its clients use, as `kids.dns.local.example.com` of a certificate for `*.dns.local.example.com`: it must be a name of its certificate, which is checked at start. A renewed certificate that is no longer for it is logged once, and the certificate's own name is told instead. On a port that [several listeners share](#several-listeners-on-one-port), each resolver tells its own listener's name: a client of each finds its own. Other types at `_dns.resolver.arpa` have no data, and other names under `resolver.arpa` don't exist. A resolver without encrypted entries forwards these names as any other.
+
+Windows 11 and Apple's systems ask it. The limit is the certificate: verified discovery (RFC 9462, section 4.2), the only one most clients accept, needs the certificate to hold the IP address of the plain resolver the client asked, and a public authority doesn't sign a private address such as `192.168.1.2`. On a LAN, that leaves opportunistic discovery (section 4.3), which a client may use when the encrypted resolver has the same private address as the plain one, without checking the certificate's name, and which few clients do. For the rest, set the name in the client, as above.
 
 ### Ports
 
@@ -595,6 +658,7 @@ The resolver goes through these steps in order, and the first one that applies g
 
 1. **A message signed with a key** of [dynamic updates](#dynamic-updates) is an update, or a query answered with authority about the key's names. Any other name it asks goes on to the steps below.
 1. **A client outside `allow`** gets `REFUSED`. Nothing is asked upstream.
+1. **`_dns.resolver.arpa`**, and any name under `resolver.arpa`, of a resolver with encrypted entries, is answered by the resolver itself: see [discovery by the clients](#discovery-by-the-clients).
 2. **A name in the resolver's own `records`** is answered from them.
 3. **A name in a zone** is answered when a task publishes it or a record has it. The answer is the task's current addresses, as A and AAAA, or the records of the type asked. Answers from a zone are authoritative (`AA`).
 4. **The reverse of an address** is answered with the names from steps 2 and 3 that have that address, if any. This is a `PTR` query for a name under `in-addr.arpa` or `ip6.arpa`. See [reverse names](#reverse-names).

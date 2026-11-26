@@ -30,6 +30,12 @@ const encryptedHost = "dns.home.arpa"
 // its key, as PEM files in dir: the authority's for the clients, the others for the resolver.
 func writeTestCA(t *testing.T, dir string) (caFile, certFile, keyFile string) {
 	t.Helper()
+	return writeTestCAFor(t, dir, encryptedHost)
+}
+
+// writeTestCAFor is writeTestCA, of a certificate for the names given, the first its common name.
+func writeTestCAFor(t *testing.T, dir string, names ...string) (caFile, certFile, keyFile string) {
+	t.Helper()
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -46,8 +52,8 @@ func writeTestCA(t *testing.T, dir string) (caFile, certFile, keyFile string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: encryptedHost},
-		DNSNames: []string{encryptedHost}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
+	template := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: names[0]},
+		DNSNames: names, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
 	if err != nil {

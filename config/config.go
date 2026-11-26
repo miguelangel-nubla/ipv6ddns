@@ -55,6 +55,8 @@ type Config struct {
 
 	// What in the configuration runs but does nothing: NewConfig sets them, to log.
 	Warnings []string `json:"-"`
+	// The names of the listeners, in the order written, which NewConfig reads: none, by name.
+	ListenerOrder []string `json:"-"`
 }
 
 // hidden is what the page has in place of what it doesn't show.
@@ -315,7 +317,10 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 
-	if strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
+	isYAML := strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml")
+	// Before JSON, whose objects have no order.
+	listenerOrder := listenerOrder(byteValue, isYAML)
+	if isYAML {
 		// Strict: a key given twice, as a task's name after a copy, is an error, rather than the
 		// last one alone being kept.
 		byteValue, err = yaml.YAMLToJSONStrict(byteValue)
@@ -347,6 +352,7 @@ func NewConfig(filename string) (config Config, err error) {
 
 	// Set defaults
 	config.Discovery = DefaultDiscovery()
+	config.ListenerOrder = listenerOrder
 
 	if err := json.Unmarshal(byteValue, &config); err != nil {
 		return config, err
@@ -404,6 +410,9 @@ func NewConfig(filename string) (config Config, err error) {
 		return config, err
 	}
 	if err := config.noteListenerUsers(); err != nil {
+		return config, err
+	}
+	if err := config.checkListenersShared(); err != nil {
 		return config, err
 	}
 	if err := config.setUpResolvers(); err != nil {

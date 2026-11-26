@@ -18,6 +18,8 @@ type bound struct {
 	address string
 	// The protocols it listens over: plain DNS's are UDP and TCP.
 	protocols []string
+	// Of an entry that listeners share, its socket, by sharedKey: those of one are no collision.
+	shared string
 }
 
 // Protocol is the protocol of IP a transport listens over: TCP for DNS over TLS and over HTTPS,
@@ -66,13 +68,17 @@ func overlap(a, b string) string {
 	return ""
 }
 
+// Overlap is overlap, for the configuration's check of the entries listeners share.
+func Overlap(a, b string) string { return overlap(a, b) }
+
 // CheckListen tells of two resolvers that would listen on one address and port, however their
 // entries spell it: a network and an address in it, a host name and its address, a port alone and
-// any address. Each entry is read as Start reads it, before anything listens.
+// any address. Each entry is read as Start reads it, before anything listens. The entries of one
+// socket that listeners share, as Share has them, are none.
 func CheckListen(servers []*Server) error {
 	var all []bound
 	for _, s := range servers {
-		add := func(e listen.Entry, text string, protocols ...string) error {
+		add := func(e listen.Entry, text, transport string, shared bool, protocols ...string) error {
 			addresses, err := listen.Addresses([]listen.Entry{e})
 			if err != nil {
 				return fmt.Errorf("%s: %w", s.config.Path, err)
@@ -82,7 +88,11 @@ func CheckListen(servers []*Server) error {
 				if _, port, _ := net.SplitHostPort(a); port == "0" {
 					continue
 				}
-				all = append(all, bound{resolver: s.config.Name, entry: text, address: a, protocols: protocols})
+				b := bound{resolver: s.config.Name, entry: text, address: a, protocols: protocols}
+				if shared {
+					b.shared = sharedKey(transport, a)
+				}
+				all = append(all, b)
 			}
 			return nil
 		}
@@ -91,19 +101,19 @@ func CheckListen(servers []*Server) error {
 			if i < len(s.config.ListenLines) {
 				text = s.config.ListenLines[i]
 			}
-			if err := add(e, text, "udp", "tcp"); err != nil {
+			if err := add(e, text, "", false, "udp", "tcp"); err != nil {
 				return err
 			}
 		}
 		for _, e := range s.config.Encrypted {
-			if err := add(e.Entry, e.Line, Protocol(e.Transport)); err != nil {
+			if err := add(e.Entry, e.Line, e.Transport, e.Shared, Protocol(e.Transport)); err != nil {
 				return err
 			}
 		}
 	}
 	for i, a := range all {
 		for _, b := range all[i+1:] {
-			if a.resolver == b.resolver || !slices.ContainsFunc(a.protocols, func(p string) bool { return slices.Contains(b.protocols, p) }) {
+			if a.resolver == b.resolver || a.shared != "" && a.shared == b.shared || !slices.ContainsFunc(a.protocols, func(p string) bool { return slices.Contains(b.protocols, p) }) {
 				continue
 			}
 			if at := overlap(a.address, b.address); at != "" {

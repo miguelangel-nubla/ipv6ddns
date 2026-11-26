@@ -220,11 +220,13 @@ func TestDocExamples(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			// The files of a certificate and its key: a pair of the test's, in their place.
-			if certificateFile.MatchString(block) {
-				certFile, keyFile := certificatePair(t)
-				block = certificateFile.ReplaceAllString(block, "${1}"+certFile+"${2}"+keyFile)
-			}
+			// The files of a certificate and its key: a pair of the test's, in their place, each
+			// of its own.
+			block = certificateFile.ReplaceAllStringFunc(block, func(match string) string {
+				m := certificateFile.FindStringSubmatch(match)
+				certFile, keyFile := certificatePair(t, certificateNames(m[2])...)
+				return m[1] + certFile + m[3] + keyFile
+			})
 			path := filepath.Join(dir, "config.yaml")
 			if err := os.WriteFile(path, []byte(block), 0o600); err != nil {
 				t.Fatal(err)
@@ -316,17 +318,27 @@ func dedent(block string) string {
 }
 
 // A certificate of certificates, of its file and then its key's, with the file each names.
-var certificateFile = regexp.MustCompile(`(?m)^(\s+certificate:\s*)\S+(\n\s+key:\s*)\S+`)
+var certificateFile = regexp.MustCompile(`(?m)^(\s+certificate:\s*)(\S+)(\n\s+key:\s*)\S+`)
 
-// certificatePair writes a certificate signed by itself and its key, as PEM files, for the
-// examples that name such files.
-func certificatePair(t *testing.T) (certFile, keyFile string) {
+// certificateNames are the names of the certificate of an example's file: of a folder named as
+// a host, /etc/ssl/dns.local.example.com/fullchain.pem, that name and its wildcard, as listeners
+// that share a port need certificates of names of their own; else dns.lan.example.com.
+func certificateNames(file string) []string {
+	if folder := filepath.Base(filepath.Dir(file)); strings.Contains(folder, ".") {
+		return []string{folder, "*." + folder}
+	}
+	return []string{"dns.lan.example.com"}
+}
+
+// certificatePair writes a certificate signed by itself for the names and its key, as PEM files,
+// for the examples that name such files.
+func certificatePair(t *testing.T, names ...string) (certFile, keyFile string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"dns.lan.example.com"},
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: names,
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {

@@ -22,19 +22,26 @@ type Listener struct {
 	TLS string `json:"tls,omitempty"`
 	// The clients its servers answer, unless a server gives its own allow, which replaces it.
 	Allow StringList `json:"allow,omitempty"`
+	// The name the clients use for its encrypted entries, which its certificate must be for: the
+	// target that DDR tells them. None: the certificate's first name that is no wildcard.
+	ServerName string `json:"server_name,omitempty"`
 
-	// Read: the entries, allow, and the servers that use it, by their paths.
+	// Read: the entries, allow, and the servers that use it, by their paths; and its place
+	// among the listeners, as written, the first 0.
 	Entries  []ListenerEntry `json:"-"`
 	Allowed  []netip.Prefix  `json:"-"`
 	Resolver string          `json:"-"`
 	Web      string          `json:"-"`
+	Rank     int             `json:"-"`
 }
 
-// ListenerEntry is an entry of a listener: its scheme, the entry, and its text, as written.
+// ListenerEntry is an entry of a listener: its scheme, the entry, and its text, as written; and
+// whether other listeners share its socket, telling each other apart by the name a client asks.
 type ListenerEntry struct {
 	Scheme string
 	Entry  listen.Entry
 	Line   string
+	Shared bool
 }
 
 // The schemes of a listener's entries.
@@ -56,10 +63,12 @@ var listenerSchemes = map[string]string{
 // setUpListeners reads the listeners: their entries, their certificate and their allow. Which
 // servers use them, the servers' set up says.
 func (c *Config) setUpListeners() error {
+	order := c.listenersInOrder()
 	for _, name := range slices.Sorted(maps.Keys(c.Listeners)) {
 		l := c.Listeners[name]
 		path := "listeners." + name
 		l.Entries, l.Allowed, l.Resolver, l.Web = nil, nil, "", ""
+		l.Rank = slices.Index(order, name)
 		if len(l.Listen) == 0 {
 			return fmt.Errorf("%s.listen is missing: give where it listens, each entry with its scheme, as https://192.168.1.2", path)
 		}
@@ -86,6 +95,9 @@ func (c *Config) setUpListeners() error {
 			encrypted = encrypted || scheme == resolver.TransportTLS || scheme == resolver.TransportQUIC || scheme == SchemeHTTPS
 		}
 		if err := c.useCertificate(path, l.TLS, encrypted, "tls://, quic:// or https://", "https://192.168.1.2"); err != nil {
+			return err
+		}
+		if err := c.checkServerName(path, l); err != nil {
 			return err
 		}
 		for _, a := range l.Allow {
