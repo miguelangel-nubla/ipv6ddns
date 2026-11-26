@@ -271,10 +271,21 @@ func TestLiveResolver(t *testing.T) {
 	upstream2 := startUpstream(t, up2, "192.0.2.54")
 
 	config := fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+  lan:
+    listen:
+      - dns://198.18.15.0/24
+      - "dns://fd00:c612:15::/64"
+  lab:
+    listen:
+      - dns://10.77.0.0/24
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 discovery:
   lifetime: 9s
   rediscover: 3s
@@ -282,9 +293,8 @@ discovery:
     ipv6: true
 resolvers:
   lan:
-    listen:
-      - 198.18.15.0/24
-      - "fd00:c612:15::/64"
+    listeners:
+      - lan
     # Hosts 1 to 63: the outsider, 70, isn't.
     allow:
       - 198.18.15.0/26
@@ -296,7 +306,8 @@ resolvers:
       - www.example.com. CNAME peer.home.arpa.
       - ext.example.com. CNAME far.upstream.test.
   lab:
-    listen: 10.77.0.0/24
+    listeners:
+      - lab
     upstream: %[1]s
 credentials:
   home:
@@ -500,13 +511,13 @@ tasks:
 
 	// A second instance with resolvers on the first's addresses doesn't start: lab's, first in
 	// order, is taken.
-	second := configure(t, srv, router, "srv-again", 8054, strings.Replace(config, "[8053]", "[8054]", 1)).start()
+	second := configure(t, srv, router, "srv-again", 8054, strings.Replace(config, "- http://8053", "- http://8054", 1)).start()
 	select {
 	case <-second.exited:
 	case <-time.After(20 * time.Second):
 		t.Fatalf("a second instance on the address started:\n%s", second.output.String())
 	}
-	if out := second.output.String(); !strings.Contains(out, "resolvers.lab.listen: ") || !strings.Contains(out, "address already in use") {
+	if out := second.output.String(); !strings.Contains(out, "resolvers.lab: ") || !strings.Contains(out, "address already in use") {
 		t.Errorf("the second instance:\n%s", out)
 	}
 	// And the first goes on.
@@ -532,13 +543,21 @@ func TestLiveResolverUpstreamByName(t *testing.T) {
 	bootstrap := startUpstream(t, boot, up.IPv4.String())
 
 	config := fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+  lan:
+    listen:
+      - dns://198.18.16.0/24
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 resolvers:
   lan:
-    listen: 198.18.16.0/24
+    listeners:
+      - lan
     upstream: dns.upstream.test
     bootstrap: %s
 credentials: {}

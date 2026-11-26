@@ -65,17 +65,25 @@ func TestLiveACME(t *testing.T) {
 		return l.Addr().(*net.TCPAddr).Port
 	}
 	cfg := loadConfig(t, fmt.Sprintf(`
-webservers:
-  main:
-    listen: "https://127.0.0.1:%d"
+listeners:
+  web:
+    listen:
+      - "https://127.0.0.1:%d"
     tls: home
-resolvers:
   lan:
     listen:
-      - 127.0.0.1:%d
+      - dns://127.0.0.1:%d
       - "tls://127.0.0.1:%d"
-    upstream: 192.0.2.1
     tls: home
+webservers:
+  main:
+    listeners:
+      - web
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream: 192.0.2.1
 certificates:
   home:
     acme:
@@ -172,7 +180,7 @@ tasks: {}
 	if _, err := os.Stat(home.AccountKeyFile); err != nil || home.CertFile != filepath.Join(cfg.BaseDir, "tls", "home", "fullchain.pem") {
 		t.Errorf("the files: %+v, %v", home, err)
 	}
-	if page := w.Page("", false).String(); !strings.Contains(page, "Certificates:\n    home (resolver lan, web server main): ") || !strings.Contains(page, "        Certificate: home\n") {
+	if page := w.Page("", false).String(); !strings.Contains(page, "Certificates:\n    home (listener lan, listener web): ") || !strings.Contains(page, "        Certificate: home\n") {
 		t.Errorf("the report:\n%s", page)
 	}
 

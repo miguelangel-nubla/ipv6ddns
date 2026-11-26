@@ -171,19 +171,27 @@ func TestDiscoveryErrors(t *testing.T) {
 func TestSettings(t *testing.T) {
 	cfg, err := loadConfig(t, `
 log_level: debug
+listeners:
+  web:
+    listen:
+      - http://8053
+      - "http://[::1]:8054"
+      - http://10.2.3.0/24
 webservers:
   main:
-    listen:
-      - 8053
-      - "[::1]:8054"
-      - 10.2.3.0/24
+    listeners:
+      - web
 tasks: {}
 `+duckCredential)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.LogLevel != "debug" || !slices.Equal(cfg.Webservers["main"].Listen, []string{"8053", "[::1]:8054", "10.2.3.0/24"}) {
-		t.Errorf("settings: %q, %v", cfg.LogLevel, cfg.Webservers["main"].Listen)
+	var entries []string
+	for _, e := range cfg.Webservers["main"].Entries {
+		entries = append(entries, e.Entry.String())
+	}
+	if cfg.LogLevel != "debug" || !slices.Equal(cfg.Webservers["main"].Listeners, []string{"web"}) || !slices.Equal(entries, []string{":8053", "[::1]:8054", "10.2.3.0/24 port 8053"}) {
+		t.Errorf("settings: %q, %v, %v", cfg.LogLevel, cfg.Webservers["main"].Listeners, entries)
 	}
 	if len(cfg.Warnings) != 0 {
 		t.Errorf("warnings: %q", cfg.Warnings)
@@ -199,8 +207,8 @@ tasks: {}
 
 	for name, bad := range map[string]string{
 		"a log level":         "log_level: loud\n",
-		"a webserver entry":   "webservers:\n  main:\n    listen:\n      - 'a:b:c'\n",
-		"a webserver network": "webservers:\n  main:\n    listen:\n      - '10.2.3.0/24:80'\n",
+		"a webserver entry":   "listeners:\n  web:\n    listen:\n      - 'http://a:b:c'\nwebservers:\n  main:\n    listeners:\n      - web\n",
+		"a webserver network": "listeners:\n  web:\n    listen:\n      - 'http://10.2.3.0/24:80'\nwebservers:\n  main:\n    listeners:\n      - web\n",
 		"a webserver key":     "webservers:\n  main:\n    port: 80\n",
 	} {
 		if _, err := loadConfig(t, bad+"tasks: {}\n"+duckCredential); err == nil {

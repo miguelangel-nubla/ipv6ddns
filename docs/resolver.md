@@ -11,9 +11,15 @@ Give the devices the resolver's address as their DNS server, by DHCP or in the r
 Nothing is sent to a provider. An update of a zone happens in memory, takes effect at once, and never fails.
 
 ```yaml
+listeners:
+  lan:                                    # where it answers, by a name of your choice
+    listen:
+      - dns://192.168.1.0/24              # the machine's address in this network, port 53
+
 resolvers:
   lan:                                    # the resolver's name; you can have several
-    listen: 192.168.1.0/24                # the machine's address in this network, port 53
+    listeners:
+      - lan
     allow:                                # the clients it answers; default: the networks it listens on
       - 192.168.1.0/24
       - fd00::/64
@@ -45,32 +51,21 @@ tasks:
         - nas
 ```
 
-Every key is in the reference: [`resolvers`](reference/configuration.md#resolvers), and [the provider's settings](reference/providers.md#resolver). For a whole setup, see the guide [every machine on the network by name](guides/network-wide-names.md).
+Every key is in the reference: [`resolvers`](reference/configuration.md#resolvers), [`listeners`](reference/configuration.md#listeners), and [the provider's settings](reference/providers.md#resolver). For a whole setup, see the guide [every machine on the network by name](guides/network-wide-names.md).
 
 ## A resolver
 
 Each entry under `resolvers` is one resolver, with a name of your choice. Its keys:
 
-### `listen` (required)
+### `listeners` (required)
 
-Where the resolver answers, over UDP and TCP. It takes the same forms as [`webservers.<name>.listen`](installation.md#the-web-report):
-
-- a network, such as `192.168.1.0/24`, which means each of the machine's addresses in that network;
-- an address, such as `192.168.1.2` or `[fd00::2]:5353`;
-- a host name;
-- a port alone, which means every address of the machine.
-
-Without a port, the port is 53.
-
-On a router, a port alone includes the router's public address. Give the clients' network there instead.
-
-An entry that starts with `tls://`, `https://` or `quic://` answers over that encrypted transport instead of plain DNS: see [encrypted DNS for the clients](#encrypted-dns-for-the-clients).
+The [listeners](#listeners) the resolver answers on, by name: their `dns://` entries, over UDP and TCP, their [encrypted](#encrypted-dns-for-the-clients) `tls://` and `quic://` entries, and `/dns-query` of their `https://` ones.
 
 ### `allow`
 
-The networks or addresses of the clients the resolver answers. Any other client gets `REFUSED`.
+The networks or addresses of the clients the resolver answers. Any other client gets `REFUSED`. It replaces the `allow` of its listeners.
 
-By default, `allow` is the networks of the machine's addresses the resolver listens on. In the example above that is `192.168.1.0/24`, taken from the machine's interface. With a port alone, the default is every network of the machine.
+By default, `allow` is each listener's, on that listener's entries. Without one, it is the networks of the machine's addresses the resolver listens on. In the example above that is `192.168.1.0/24`, taken from the machine's interface. With a port alone, the default is every network of the machine.
 
 ### `upstream` (required)
 
@@ -86,9 +81,15 @@ Servers that look up the addresses of an upstream given by host name. You need `
 The system's resolver isn't used for this lookup, because it may be this very resolver, which would be asking itself.
 
 ```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24
+
 resolvers:
   lan:
-    listen: 192.168.1.0/24
+    listeners:
+      - lan
     upstream:
       - dns.example.net
       - 1.1.1.1
@@ -111,6 +112,100 @@ Records for names outside all of the resolver's zones. For example, a public dom
 
 How many upstream answers the resolver keeps in [its cache](#the-cache): `10000` by default, `0` for none.
 
+## Listeners
+
+A listener is where servers listen: a set of entries under the top-level `listeners`, by a name of your choice. A resolver names it in its `listeners`, and so does a [web server](installation.md#the-web-report).
+
+```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24    # plain DNS, UDP and TCP, port 53
+      - http://192.168.1.0/24   # the web report, port 8053
+    allow:                      # the clients its servers answer
+      - 192.168.1.0/24
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 192.168.1.1
+
+webservers:
+  main:
+    listeners:
+      - lan
+```
+
+Each entry starts with its scheme, which says what it serves and its port by default:
+
+| Scheme | What | Port |
+|---|---|---|
+| `dns://` | plain DNS, over UDP and TCP, for a resolver | 53 |
+| `tls://` | [DNS over TLS](#encrypted-dns-for-the-clients), for a resolver | 853 |
+| `quic://` | [DNS over QUIC](#encrypted-dns-for-the-clients), over UDP, for a resolver | 853 |
+| `https://` | HTTPS: DNS over HTTPS at `/dns-query`, for a resolver, and the report, for a web server | 443 |
+| `http://` | HTTP, for a web server's report | 8053 |
+
+After the scheme, an entry is one of:
+
+- a network, such as `dns://192.168.1.0/24`, which means each of the machine's addresses in that network;
+- an address, such as `dns://192.168.1.2` or `dns://[fd00::2]:5353`;
+- a host name, which means each address it resolves to at the start;
+- a port alone, such as `http://8053`, which means every address of the machine.
+
+On a router, a port alone includes the router's public address. Give the clients' network there instead.
+
+The listener's keys besides `listen`:
+
+- **`tls`** is the certificate of its encrypted entries, `tls://`, `quic://` and `https://`, whichever server answers them: the name of one of [`certificates`](#the-certificate-it-shows). It is required with an encrypted entry, and only then.
+- **`allow`** is the clients its servers answer there. A server's own `allow` replaces it, on all its listeners. Without either, a resolver answers the networks of the addresses it listens on, and a web server everyone. The web server's clients outside its `allow` get `403`.
+
+The rules:
+
+- **A listener has one resolver and one web server at most.** A server can name several listeners.
+- **Every entry needs a server that serves it.** A `dns://`, `tls://` or `quic://` entry needs a resolver that uses the listener, an `http://` entry a web server, and an `https://` entry either. A listener that no server uses is refused at start too.
+
+### Sharing an HTTPS port
+
+A resolver and a web server can share a listener. On its `https://` entries, `/dns-query` is the resolver's DNS over HTTPS, and every other path is the web server's: `https://dns.lan.example.com/dns-query` for the clients, and `https://dns.lan.example.com/` for the report.
+
+```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.2      # plain DNS, UDP and TCP, port 53
+      - tls://192.168.1.2      # DNS over TLS, port 853
+      - https://192.168.1.2    # DNS over HTTPS, and the report, port 443
+    tls: home
+    allow:
+      - 192.168.1.0/24
+  web:
+    listen:
+      - http://8053            # the report over HTTP too
+    allow:
+      - 192.168.1.0/24
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 192.168.1.1
+
+webservers:
+  main:
+    listeners:
+      - lan
+      - web
+
+certificates:
+  home:
+    certificate: /etc/ssl/dns/fullchain.pem
+    key: /etc/ssl/dns/privkey.pem
+```
+
 ## Encrypted upstream servers
 
 The resolver can ask an upstream server over an encrypted connection. The network in between, such as your ISP's, then can't read the names asked or change the answers.
@@ -119,9 +214,15 @@ The resolver can ask an upstream server over an encrypted connection. The networ
 - **`https://host[:port]/path`** is DNS over HTTPS ([RFC 8484](https://www.rfc-editor.org/rfc/rfc8484)). The port is 443 unless you give another. The path is where the server answers, and you have to give it. For most servers it is `/dns-query`. Each query is a `POST` of `application/dns-message`, over HTTP/2 when the server supports it. Redirects aren't followed.
 
 ```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24
+
 resolvers:
   lan:
-    listen: 192.168.1.0/24
+    listeners:
+      - lan
     upstream:
       - https://dns.quad9.net/dns-query   # found by bootstrap
       - tls://1.1.1.1                     # an address: no bootstrap for it
@@ -160,21 +261,26 @@ Everything else works as for any upstream: each server gets 2 seconds, then the 
 
 The resolver can also answer the clients over an encrypted connection, so that nobody on the LAN, such as another device on the Wi-Fi, can read the names asked or change the answers. Phones, computers and browsers can be set to use it, as [below](#setting-up-the-clients).
 
-Each transport is a `listen` entry with its scheme. It takes the same forms as a plain entry, and has its own default port:
+Each transport is an entry of a [listener](#listeners) with its scheme, and has its own default port:
 
 - **`tls://`** is DNS over TLS ([RFC 7858](https://www.rfc-editor.org/rfc/rfc7858)), TCP port 853.
 - **`https://`** is DNS over HTTPS ([RFC 8484](https://www.rfc-editor.org/rfc/rfc8484)), TCP port 443, at the path `/dns-query`, by `GET` and by `POST`, over HTTP/1.1 and HTTP/2.
 - **`quic://`** is DNS over QUIC ([RFC 9250](https://www.rfc-editor.org/rfc/rfc9250)), UDP port 853.
 
 ```yaml
-resolvers:
+listeners:
   lan:
     listen:
-      - 192.168.1.0/24          # plain DNS, port 53
+      - dns://192.168.1.0/24    # plain DNS, port 53
       - tls://192.168.1.0/24    # DNS over TLS, port 853
       - https://192.168.1.0/24  # DNS over HTTPS, port 443
       - quic://192.168.1.0/24   # DNS over QUIC, port 853
     tls: home                   # the certificate, of certificates
+
+resolvers:
+  lan:
+    listeners:
+      - lan
     upstream:
       - 192.168.1.1
 
@@ -196,9 +302,9 @@ Everything else is the same on every transport: the same answers, the same [`all
 
 ### The certificate it shows
 
-The encrypted transports show a certificate of the top-level `certificates`, which `tls` names. Each certificate has a name of your choice, and either `certificate` and `key`, the files of the certificate with its chain, and of its private key, in PEM, relative to the configuration's folder unless absolute, or [`acme`](#a-certificate-from-lets-encrypt). Let's Encrypt names the files `fullchain.pem` and `privkey.pem`. ipv6ddns doesn't start if they don't read as a pair.
+The encrypted transports show a certificate of the top-level `certificates`, which their listener's `tls` names. Each certificate has a name of your choice, and either `certificate` and `key`, the files of the certificate with its chain, and of its private key, in PEM, relative to the configuration's folder unless absolute, or [`acme`](#a-certificate-from-lets-encrypt). Let's Encrypt names the files `fullchain.pem` and `privkey.pem`. ipv6ddns doesn't start if they don't read as a pair.
 
-Several servers can show one certificate: resolvers, and the web server's [HTTPS](installation.md#over-https), each with the same `tls`. It is read once, and with `acme` got and renewed once, for all of them, so give it every name the clients use. Two certificates can't share a file, and a certificate that no server shows stops the start, so a mistyped name doesn't go unnoticed.
+Several servers can show one certificate: resolvers, and the web server's [HTTPS](installation.md#over-https), their listeners each with the same `tls`. It is read once, and with `acme` got and renewed once, for all of them, so give it every name the clients use. Two certificates can't share a file, and a certificate that no server shows stops the start, so a mistyped name doesn't go unnoticed.
 
 Clients check the certificate. Most of them only accept one that a public authority signed, for the name they were told to use. So pick a name in a domain you own, such as `dns.lan.example.com`, and give it this machine's address, as the record `dns A 192.168.1.2` above: the clients look this name up, and the certificate is for it. Then either let ipv6ddns get the certificate, as [below](#a-certificate-from-lets-encrypt), or get it yourself: with certbot, acme.sh, or the Home Assistant app of Let's Encrypt, by the DNS challenge, which works for a name that the internet can't reach. When a renewal writes new files, the resolver takes them within seconds, without a restart.
 
@@ -211,12 +317,17 @@ The report names the certificate under its resolver, and has a `Certificates:` s
 With `acme`, ipv6ddns gets the certificate itself, from Let's Encrypt, and renews it. It proves the name is yours by the DNS challenge: it writes a TXT record, `_acme-challenge.dns.lan.example.com`, at the DNS provider of your public domain, which Let's Encrypt reads, and removes it after. The name needs no address on the internet.
 
 ```yaml
-resolvers:
+listeners:
   lan:
     listen:
-      - 192.168.1.0/24
+      - dns://192.168.1.0/24
       - tls://192.168.1.0/24
     tls: home
+
+resolvers:
+  lan:
+    listeners:
+      - lan
     upstream:
       - 192.168.1.1
 
@@ -290,48 +401,7 @@ At a provider, the name is public, with a private address. Nothing on the intern
 
 Port 443 is often taken already, by a reverse proxy or a web interface. Give DNS over HTTPS another port, as `https://192.168.1.2:8443`, or another address, and write that port in the clients' URL. DNS over TLS and DNS over QUIC can share port 853, one over TCP and the other over UDP.
 
-ipv6ddns's own web server can share port 443 with DNS over HTTPS, as [below](#sharing-a-port).
-
-### Sharing a port
-
-A listener is a set of addresses that servers share, under the top-level `listeners`, by a name of your choice. A resolver and a web server name it in their `listeners`. On an `https://` entry of one, `/dns-query` is the resolver's DNS over HTTPS, and every other path is the web server's: `https://dns.lan.example.com/dns-query` for the clients, and `https://dns.lan.example.com/` for the report.
-
-```yaml
-listeners:
-  lan:
-    listen:
-      - dns://192.168.1.2      # plain DNS, UDP and TCP, port 53
-      - tls://192.168.1.2      # DNS over TLS, port 853
-      - https://192.168.1.2    # DNS over HTTPS, and the report, port 443
-    tls: home
-    allow:
-      - 192.168.1.0/24
-
-resolvers:
-  lan:
-    listeners:
-      - lan
-    upstream:
-      - 192.168.1.1
-
-webservers:
-  main:
-    listen:
-      - 8053                   # the report over HTTP too, as before
-    listeners:
-      - lan
-
-certificates:
-  home:
-    certificate: /etc/ssl/dns/fullchain.pem
-    key: /etc/ssl/dns/privkey.pem
-```
-
-- **Each entry has its scheme:** `dns://`, `tls://`, `quic://`, `https://`, or `http://` for the web server's plain HTTP, on port 8053 by default. A resolver takes the DNS ones, and a web server the HTTP ones. On `https://`, they share.
-- **One certificate,** the listener's `tls`, for all its encrypted entries, whichever server answers. The servers' own `tls` is only for their own `listen`.
-- **`allow` goes from the listener to its servers.** A listener's `allow` is the clients its servers answer there. A server's own `allow` replaces it, on all its listeners, as a key's `allow` replaces that of its resolver. Without either, a resolver answers the networks of the addresses it listens on, and a web server everyone. The web server's clients outside its `allow` get `403`.
-- **A listener has one resolver and one web server at most.** A server can name several listeners, and still have entries of its own in `listen`.
-- **Every entry needs a server that serves it.** A `dns://` entry of a listener that no resolver uses is refused at start, as is a listener that no server uses.
+ipv6ddns's own web server can share port 443 with DNS over HTTPS, on one [listener](#sharing-an-https-port).
 
 ## A zone
 
@@ -378,9 +448,15 @@ Two things to know with a domain of your own:
 Write each record as a line of a zone file: a name, an optional TTL, an optional class `IN`, a type, and its data.
 
 ```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24
+
 resolvers:
   lan:
-    listen: 192.168.1.0/24
+    listeners:
+      - lan
     upstream: 192.168.1.1
 credentials:
   home:
@@ -415,10 +491,15 @@ credentials:
       ttl: 1h
       proxied: false
 
-resolvers:
+listeners:
   home:
     listen:
-      - 192.168.1.2
+      - dns://192.168.1.2
+
+resolvers:
+  home:
+    listeners:
+      - home
     upstream:
       - 1.1.1.1
     updates:
@@ -460,11 +541,14 @@ sources:
   vps:
     type: push
 
-resolvers:
+listeners:
   home:
     listen:
-      - 192.168.1.2
-      - 203.0.113.7
+      - dns://192.168.1.2
+      - dns://203.0.113.7
+
+resolvers:
+  home:
     updates:
       keys:
         vps:
@@ -583,9 +667,15 @@ This holds whatever the upstream servers are, including a router on the network.
 A local server may know more of these names than the resolver does. A router knows its DHCP clients, and another server may answer the reverse names of another VLAN. To ask such a server, against RFC 6303, set `forward_unknown_private_reverse_queries`:
 
 ```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24
+
 resolvers:
   lan:
-    listen: 192.168.1.0/24
+    listeners:
+      - lan
     upstream:
       - 192.168.1.1   # the router, which names its DHCP clients
     forward_unknown_private_reverse_queries: true
@@ -636,7 +726,14 @@ The configuration is checked at the start. A mistake stops the start, and the er
 
 | The mistake | The error |
 |---|---|
-| A resolver without `listen` | `resolvers.lan.listen is missing: give where the resolver answers. That's the clients' network, as 192.168.1.0/24, for this machine's address in it, or the address itself. Without a port, 53` |
+| A resolver without `listeners` | `resolvers.lan.listeners is missing: give the listeners where the resolver answers, under listeners, as dns://192.168.1.2 for this machine's address on the clients' network. Without a port, 53` |
+| A resolver's `listen` or `tls`, of a configuration from before listeners | `resolvers.lan.listen is a listener's now: move the resolver's listen and tls to one under listeners, its plain entries as dns://, and name it in the resolver's listeners`, with an example |
+| A resolver that names no listener there is | `resolvers.lan.listeners: there is no listener lam: add it under listeners, or fix its name` |
+| A listener's entry without its scheme | `listeners.lan.listen: "192.168.1.2" has no scheme: write it as dns://, tls://, quic://, https:// or http://, as https://192.168.1.2` |
+| An encrypted entry without `tls` | `listeners.lan.tls is missing: an entry of listen is encrypted, tls://, quic:// or https://, and the clients must be shown a certificate: give the name of one of certificates, as tls: home` |
+| `tls` without an encrypted entry | `listeners.lan.tls is for the encrypted entries of listen, and there is none: add one, as https://192.168.1.2, or leave tls out` |
+| A DNS entry of a listener that no resolver uses | `listeners.lan.listen: dns://192.168.1.2 is DNS, which only a resolver serves, and none uses lan: name it in a resolver's listeners, or leave the entry out` |
+| A listener that no server uses | `listeners.web: no server uses it: name it in a resolver's or a web server's listeners, or leave it out` |
 | A resolver without `upstream` | `resolvers.lan.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own, as 192.168.1.1 or 1.1.1.1:53. Without them, it answers no other name` |
 | An upstream given by host name, without `bootstrap` | `resolvers.lan.upstream: "dns.google" is a host name, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one` |
 | An encrypted upstream at a host name, without `bootstrap` | `resolvers.lan.upstream: "tls://dns.example.net" is at a host name, and there's no bootstrap to look it up. Add bootstrap, servers used for that lookup only, as bootstrap: 9.9.9.9. The system's resolver isn't used, as it may be this one` |
@@ -651,10 +748,10 @@ The configuration is checked at the start. A mistake stops the start, and the er
 | A `bootstrap` server given by host name | `resolvers.lan.bootstrap: "dns.quad9.net" is not an address, with or without a port, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53` |
 | A credential whose `resolver` names no resolver | `credentials.home.settings.resolver: there's no resolver wan: the resolvers are lan` |
 | A credential without `resolver`, when there are two resolvers | `credentials.home.settings.resolver is missing: say which of lab, lan answers the zone` |
-| A `resolver` credential, when there is no resolver at all | `credentials.home: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listen and upstream` |
+| A `resolver` credential, when there is no resolver at all | `credentials.home: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listeners and upstream` |
 | Two credentials for the same zone on one resolver | `credentials home and office are both the zone home.arpa of resolver lan: a zone can belong to only one credential` |
-| Two resolvers with the same `listen` entry | `resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port can belong to only one resolver` |
-| Two resolvers on one address and port, written two ways | `resolvers lab and lan both listen on 192.168.1.2:53: lab as 192.168.1.0/24, lan as 192.168.1.2: an address and port can belong to only one resolver` |
+| Two resolvers with the same entry, on two listeners | `resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port can belong to only one resolver` |
+| Two resolvers on one address and port, written two ways | `resolvers lab and lan both listen on 192.168.1.2:53: lab as dns://192.168.1.0/24, lan as dns://192.168.1.2: an address and port can belong to only one resolver` |
 | A zone's record for a name outside the zone | `credentials.home.settings.records: "printer.example.com. A 192.168.1.20": printer.example.com. isn't in the zone home.arpa: a zone's records must be for its names, relative to it or absolute within it` |
 | A resolver's record without its trailing dot | `resolvers.lan.records: "www.example.com CNAME nas.home.arpa.": the name www.example.com must be absolute, ending in a dot, as www.example.com.: these records belong to no zone` |
 | A resolver's record for a name in one of its zones | `resolvers.lan.records: "tv.home.arpa. A 192.168.1.30": tv.home.arpa. is in the zone home.arpa, of credential home: give it in that credential's records` |
@@ -665,7 +762,7 @@ The configuration is checked at the start. A mistake stops the start, and the er
 
 ### The same address and port, written two ways
 
-Two resolvers can't share an address and port, however each `listen` entry is written. The entries are resolved to the machine's actual addresses at the start, before either resolver listens, and then compared. That catches:
+Two resolvers can't share an address and port, however the entries of their listeners are written. The entries are resolved to the machine's actual addresses at the start, before either resolver listens, and then compared. That catches:
 
 - a network and the machine's address in it;
 - a host name and the address it resolves to;
@@ -716,7 +813,7 @@ A port under 1024 needs root, or the `CAP_NET_BIND_SERVICE` capability.
 
 Another DNS server on the same machine holds port 53 on its own addresses:
 
-- **systemd-resolved**, on most Linux desktops and many servers, listens only on `127.0.0.53:53` and `127.0.0.54:53`. A resolver that listens on the LAN address, written for example as `192.168.1.0/24`, starts beside it. A resolver that listens on a port alone, which is every address, can't start.
+- **systemd-resolved**, on most Linux desktops and many servers, listens only on `127.0.0.53:53` and `127.0.0.54:53`. A resolver that listens on the LAN address, written for example as `dns://192.168.1.0/24`, starts beside it. A resolver that listens on a port alone, which is every address, can't start.
 - **dnsmasq, Pi-hole, AdGuard Home**, or a router's own DNS on the same machine, take every address. The resolver can't start: `address already in use`.
 
 ## Several resolvers

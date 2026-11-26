@@ -30,10 +30,15 @@ credentials:
       ttl: 1h
       proxied: false
 
-resolvers:
+listeners:
   home:
     listen:
-      - 192.168.1.2
+      - dns://192.168.1.2
+
+resolvers:
+  home:
+    listeners:
+      - home
     upstream:
       - 1.1.1.1
     updates:

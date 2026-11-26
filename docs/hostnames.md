@@ -3,9 +3,15 @@
 A task's name can be a template. Instead of one fixed name, a template makes a name for every host the task matches, from what the host calls itself. Every device on the LAN that announces a name gets one in DNS, such as `printer.lan.example.com` or `laptop.lan.example.com`, with no task of its own. Names appear as hosts arrive, and go when they leave.
 
 ```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24
+
 resolvers:
   lan:
-    listen: 192.168.1.0/24
+    listeners:
+      - lan
     upstream:
       - 192.168.1.1
 

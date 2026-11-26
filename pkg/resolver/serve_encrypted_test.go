@@ -417,7 +417,7 @@ func TestEncryptedStartWithoutCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Start(); err == nil || !strings.Contains(err.Error(), "resolvers.lan.tls: ") {
+	if err := s.Start(); err == nil || !strings.Contains(err.Error(), "resolvers.lan: no certificate for ") {
 		t.Errorf("started: %v", err)
 	}
 }

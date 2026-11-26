@@ -39,9 +39,14 @@ func freeDNSPort(t *testing.T) string {
 func resolverWorker(t *testing.T, port string) *Worker {
 	t.Helper()
 	text := fmt.Sprintf(`
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
 resolvers:
   lan:
-    listen: 127.0.0.1:%s
+    listeners:
+      - lan
     upstream: 127.0.0.1:%s
 credentials:
   home:
@@ -170,7 +175,7 @@ func TestWorkerResolver(t *testing.T) {
 	other := resolverWorker(t, port)
 	otherCtx, otherCancel := context.WithCancel(context.Background())
 	defer otherCancel()
-	if err := other.Start(otherCtx); err == nil || !strings.Contains(err.Error(), "resolvers.lan.listen: ") || !strings.Contains(err.Error(), "address already in use") {
+	if err := other.Start(otherCtx); err == nil || !strings.Contains(err.Error(), "resolvers.lan: ") || !strings.Contains(err.Error(), "address already in use") {
 		t.Errorf("a second on the address: %v", err)
 	}
 
@@ -211,17 +216,26 @@ func workerOf(t *testing.T, text string) *Worker {
 func TestWorkerResolversCollide(t *testing.T) {
 	port := freeDNSPort(t)
 	for _, c := range []struct{ lab, lan, want string }{
-		{"127.0.0.0/8", "127.0.0.1", "resolvers lab and lan both listen on 127.0.0.1:53: lab as 127.0.0.0/8, lan as 127.0.0.1: an address and port can belong to only one resolver"},
-		{port, "127.0.0.1:" + port, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as " + port + ", lan as 127.0.0.1:" + port + ": an address and port can belong to only one resolver"},
-		{"0.0.0.0:" + port, `["[::1]:` + port + `", "127.0.0.1:` + port + `"]`, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as 0.0.0.0:" + port + ", lan as 127.0.0.1:" + port + ": an address and port can belong to only one resolver"},
+		{"dns://127.0.0.0/8", "dns://127.0.0.1", "resolvers lab and lan both listen on 127.0.0.1:53: lab as dns://127.0.0.0/8, lan as dns://127.0.0.1: an address and port can belong to only one resolver"},
+		{"dns://" + port, "dns://127.0.0.1:" + port, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as dns://" + port + ", lan as dns://127.0.0.1:" + port + ": an address and port can belong to only one resolver"},
+		{"dns://0.0.0.0:" + port, `"dns://[::1]:` + port + `"` + "\n      - " + `"dns://127.0.0.1:` + port + `"`, "resolvers lab and lan both listen on 127.0.0.1:" + port + ": lab as dns://0.0.0.0:" + port + ", lan as dns://127.0.0.1:" + port + ": an address and port can belong to only one resolver"},
 	} {
 		w := workerOf(t, fmt.Sprintf(`
+listeners:
+  lab:
+    listen:
+      - %s
+  lan:
+    listen:
+      - %s
 resolvers:
   lab:
-    listen: %s
+    listeners:
+      - lab
     upstream: 192.0.2.1
   lan:
-    listen: %s
+    listeners:
+      - lan
     upstream: 192.0.2.1
 credentials: {}
 tasks: {}
@@ -236,8 +250,8 @@ discovery:
 			t.Errorf("got %v\nwant %s", err, c.want)
 		}
 		// Neither listens: the port is free.
-		if _, ok := strings.CutPrefix(c.lan, "127.0.0.1:"); ok {
-			l, err := net.Listen("tcp4", c.lan)
+		if lan, ok := strings.CutPrefix(c.lan, "dns://"); ok && strings.HasPrefix(lan, "127.0.0.1:") {
+			l, err := net.Listen("tcp4", lan)
 			if err != nil {
 				t.Errorf("%s was left listening: %v", c.lan, err)
 			} else {
@@ -262,9 +276,14 @@ func TestWorkerResolverShutdown(t *testing.T) {
 	}
 	port := freeDNSPort(t)
 	w := workerOf(t, fmt.Sprintf(`
+listeners:
+  lan:
+    listen:
+      - "dns://127.0.0.1:%s"
 resolvers:
   lan:
-    listen: "127.0.0.1:%s"
+    listeners:
+      - lan
     upstream:
       - %s
 credentials: {}

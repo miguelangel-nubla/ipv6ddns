@@ -194,22 +194,13 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "listen": {
-                        "$ref": "#/$defs/stringList",
-                        "description": "Where it answers: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Plain DNS, over UDP and TCP, port 53 by default. An entry that starts with tls://, https:// or quic:// answers over that encrypted transport instead: DNS over TLS, port 853 by default, as tls://192.168.1.0/24; DNS over HTTPS, port 443, at /dns-query, as https://192.168.1.0/24; DNS over QUIC, UDP port 853, as quic://192.168.1.0/24. The encrypted ones need tls. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port over the same protocol, however each writes it. Required without listeners."
-                    },
                     "listeners": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The listeners it answers on too, by name: their dns://, tls:// and quic:// entries, and /dns-query of their https:// ones, with each listener's certificate and allow. A listener has one resolver at most."
-                    },
-                    "tls": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "The certificate the encrypted entries of listen show: the name of one of certificates, as home. Required with an encrypted entry, and only then."
+                        "description": "Required. The listeners it answers on, by name: their dns://, tls:// and quic:// entries, and /dns-query of their https:// ones, with each listener's certificate and allow. A listener has one resolver at most."
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: the networks of the addresses it listens on, and on a listener's entries, that listener's allow."
+                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, the networks of the addresses it listens on."
                     },
                     "upstream": {
                         "$ref": "#/$defs/stringList",
@@ -360,19 +351,8 @@
                     }
                 },
                 "required": [
+                    "listeners",
                     "upstream"
-                ],
-                "anyOf": [
-                    {
-                        "required": [
-                            "listen"
-                        ]
-                    },
-                    {
-                        "required": [
-                            "listeners"
-                        ]
-                    }
                 ]
             }
         },
@@ -385,7 +365,7 @@
         },
         "listeners": {
             "type": "object",
-            "description": "Where servers listen that can share it, by a name of your choice: a resolver and a web server on one HTTPS port, the resolver at /dns-query and the web server at every other path. A server uses one by its listeners. See [sharing a port](../resolver.md#sharing-a-port).",
+            "description": "Where the resolvers and the web servers listen, by a name of your choice: each server names its listeners. A resolver and a web server can share one, on one HTTPS port: the resolver at /dns-query and the web server at every other path. See [listeners](../resolver.md#listeners).",
             "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
@@ -395,7 +375,7 @@
                 "properties": {
                     "listen": {
                         "$ref": "#/$defs/stringList",
-                        "description": "Where it listens, each entry with its scheme: dns:// for plain DNS, UDP and TCP, port 53 by default; tls:// for DNS over TLS and quic:// for DNS over QUIC, port 853; https:// for HTTPS, port 443; http:// for HTTP, port 8053. After the scheme, an entry takes the same forms as a resolver's listen: as https://192.168.1.2 or dns://192.168.1.0/24. DNS entries need a resolver that uses the listener, http:// ones a web server, and https:// ones either."
+                        "description": "Required. Where it listens, each entry with its scheme: dns:// for plain DNS, over UDP and TCP, port 53 by default; tls:// for DNS over TLS and quic:// for DNS over QUIC, port 853; https:// for HTTPS, port 443; http:// for HTTP, port 8053. After the scheme: networks of the machine's addresses, addresses, host names or ports, as dns://192.168.1.0/24, https://192.168.1.2, tls://[fd00::2]:8853 or http://8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it; a port alone, on every address of the machine, including a public one on a router. DNS entries need a resolver that uses the listener, http:// ones a web server, and https:// ones either: with both, /dns-query is the resolver's, every other path the web server's. Two resolvers can't share an address and port over the same protocol, however each writes it."
                     },
                     "tls": {
                         "type": "string",
@@ -816,30 +796,24 @@
         },
         "webservers": {
             "type": "object",
-            "description": "The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources. See [the web report](../installation.md#the-web-report).",
+            "description": "The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources, on its listeners. See [the web report](../installation.md#the-web-report).",
             "additionalProperties": {
                 "type": "object",
                 "additionalProperties": false,
                 "description": "The web server, with the status page, /status.json and /metrics.",
                 "properties": {
-                    "listen": {
+                    "listeners": {
                         "$ref": "#/$defs/stringList",
-                        "description": "Where it serves: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it. An entry that starts with https:// serves HTTPS there, with the certificate of tls, on port 8443 without one: as https://192.168.1.2. The plain ones stay HTTP, as the Home Assistant app's page needs. Required without listeners. To share an HTTPS port with a resolver's DNS over HTTPS, use a listener instead."
-                    },
-                    "tls": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "The certificate of the HTTPS entries of listen: the name of one of certificates, as home. Required with one, and only then."
+                        "description": "Required. The listeners it serves on, by name: their http:// entries, and every path but /dns-query of their https:// ones. A listener has one web server at most."
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. Default: everyone on its own listen entries, and on a listener's, that listener's allow, which this replaces."
-                    },
-                    "listeners": {
-                        "$ref": "#/$defs/stringList",
-                        "description": "The listeners it serves on too, by name: their http:// entries, and every path but /dns-query of their https:// ones. A listener has one web server at most."
+                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, everyone."
                     }
-                }
+                },
+                "required": [
+                    "listeners"
+                ]
             }
         },
         "homeassistant": {

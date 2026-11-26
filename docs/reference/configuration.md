@@ -12,12 +12,12 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 | `credentials` | object | **Required.** The DNS providers to update, by credential name. Tasks name them under endpoints. |
 | `resolvers` | object | DNS servers for the clients on a network, by name. Each answers the zones of its resolver credentials, with the addresses the tasks give their names and with its own records, and asks its upstream servers everything else. See the [resolver](../resolver.md). |
 | `certificates` | object | The certificates the resolvers' encrypted entries and the web server's HTTPS ones show, by name: each server gives one as its tls, and two servers can show one. Each has files of its own, and is shown by at least one server. |
-| `listeners` | object | Where servers listen that can share it, by a name of your choice: a resolver and a web server on one HTTPS port, the resolver at /dns-query and the web server at every other path. A server uses one by its listeners. See [sharing a port](../resolver.md#sharing-a-port). |
+| `listeners` | object | Where the resolvers and the web servers listen, by a name of your choice: each server names its listeners. A resolver and a web server can share one, on one HTTPS port: the resolver at /dns-query and the web server at every other path. See [listeners](../resolver.md#listeners). |
 | `discovery` | object | How hosts are found: on the local links, by the protocols turned on, and by plugins that read routers' tables. Every key is optional: a key left out has its default. |
 | `sources` | object | Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. |
 | `state_dir` | string | The folder where ipv6ddns keeps what it writes: the push sources' addresses, the certificates ACME gets, the dynamic updates' challenges and names, and the Home Assistant device's key. Relative to the configuration's folder, unless absolute; made when missing. Default: the configuration's folder. Give it when the configuration is read-only, as a file of Docker's or Kubernetes' secrets is. See [state](../configuration.md#state). |
 | `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | How much the log says. Default: info. |
-| `webservers` | object | The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources. See [the web report](../installation.md#the-web-report). |
+| `webservers` | object | The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources, on its listeners. See [the web report](../installation.md#the-web-report). |
 | `homeassistant` | object | Makes ipv6ddns a device of Home Assistant's ESPHome integration. Home Assistant finds it, and shows each name's addresses, last update and problems, and the hosts discovered, with a button to update now. It also gives the states that homeassistant sources read. See docs/home-assistant-integration.md. |
 
 ## Tasks
@@ -93,10 +93,8 @@ DNS servers for the clients on a network, by name. Each answers the zones of its
 
 | Key | Takes | Default | |
 |---|---|---|---|
-| `listen` | list, or comma separated | - | Where it answers: networks of the machine's addresses, addresses, host names or ports, as 192.168.1.0/24, 192.168.1.2 or [fd00::2]:5353. Plain DNS, over UDP and TCP, port 53 by default. An entry that starts with tls://, https:// or quic:// answers over that encrypted transport instead: DNS over TLS, port 853 by default, as tls://192.168.1.0/24; DNS over HTTPS, port 443, at /dns-query, as https://192.168.1.0/24; DNS over QUIC, UDP port 853, as quic://192.168.1.0/24. The encrypted ones need tls. A port alone means every address of the machine, including a public one on a router: give the clients' network instead. Two resolvers can't share an address and port over the same protocol, however each writes it. Required without listeners. |
-| `listeners` | list, or comma separated | - | The listeners it answers on too, by name: their dns://, tls:// and quic:// entries, and /dns-query of their https:// ones, with each listener's certificate and allow. A listener has one resolver at most. |
-| `tls` | string | - | The certificate the encrypted entries of listen show: the name of one of certificates, as home. Required with an encrypted entry, and only then. |
-| `allow` | list, or comma separated | - | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: the networks of the addresses it listens on, and on a listener's entries, that listener's allow. |
+| `listeners` | list, or comma separated | - | **Required.** Required. The listeners it answers on, by name: their dns://, tls:// and quic:// entries, and /dns-query of their https:// ones, with each listener's certificate and allow. A listener has one resolver at most. |
+| `allow` | list, or comma separated | - | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, the networks of the addresses it listens on. |
 | `upstream` | list, or comma separated | - | **Required.** The servers it asks about names that aren't its own, in order, giving each 2s. Plain DNS, over UDP, and over TCP when the answer doesn't fit: 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, port 53 by default. DNS over TLS: tls://1.1.1.1 or tls://dns.example.net, port 853 by default. DNS over HTTPS: https://dns.example.net/dns-query, port 443 by default. An encrypted server's certificate is checked against the system's certificate authorities, for the host given, and its connections are reused. A host name needs bootstrap. When none answers, the client gets SERVFAIL. |
 | `bootstrap` | list, or comma separated | - | Only for upstream servers given by host name, plain or encrypted: the servers that look up their addresses, and nothing else. Addresses, with or without a port, asked in order over plain DNS. The system's resolver isn't used, since it may be this one. The addresses found are kept for their TTL, between a minute and an hour, and for as long as these servers don't answer. |
 | `records` | list of string | - | Records of names outside its zones, one per entry, in zone file syntax, with every name absolute and ending in a dot: www.example.com. CNAME nas.lan.example.com. A record without a TTL gets 1m. |
@@ -186,24 +184,22 @@ Sources of addresses that have no MAC, such as the network's public IPv4, by nam
 
 `webservers.<name>`
 
-The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources. See [the web report](../installation.md#the-web-report).
+The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources, on its listeners. See [the web report](../installation.md#the-web-report).
 
 | Key | Takes | |
 |---|---|---|
-| `listen` | list, or comma separated | Where it serves: ports, addresses, networks of the machine's addresses or host names, as 8053, 192.0.2.1:8053, [2001:db8::1]:8053, 10.2.3.0/24 or myhost. Without a port, 8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it. An entry that starts with https:// serves HTTPS there, with the certificate of tls, on port 8443 without one: as https://192.168.1.2. The plain ones stay HTTP, as the Home Assistant app's page needs. Required without listeners. To share an HTTPS port with a resolver's DNS over HTTPS, use a listener instead. |
-| `tls` | string | The certificate of the HTTPS entries of listen: the name of one of certificates, as home. Required with one, and only then. |
-| `allow` | list, or comma separated | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. Default: everyone on its own listen entries, and on a listener's, that listener's allow, which this replaces. |
-| `listeners` | list, or comma separated | The listeners it serves on too, by name: their http:// entries, and every path but /dns-query of their https:// ones. A listener has one web server at most. |
+| `listeners` | list, or comma separated | **Required.** Required. The listeners it serves on, by name: their http:// entries, and every path but /dns-query of their https:// ones. A listener has one web server at most. |
+| `allow` | list, or comma separated | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, everyone. |
 
 ## Listeners
 
 `listeners.<name>`
 
-Where servers listen that can share it, by a name of your choice: a resolver and a web server on one HTTPS port, the resolver at /dns-query and the web server at every other path. A server uses one by its listeners. See [sharing a port](../resolver.md#sharing-a-port).
+Where the resolvers and the web servers listen, by a name of your choice: each server names its listeners. A resolver and a web server can share one, on one HTTPS port: the resolver at /dns-query and the web server at every other path. See [listeners](../resolver.md#listeners).
 
 | Key | Takes | |
 |---|---|---|
-| `listen` | list, or comma separated | **Required.** Where it listens, each entry with its scheme: dns:// for plain DNS, UDP and TCP, port 53 by default; tls:// for DNS over TLS and quic:// for DNS over QUIC, port 853; https:// for HTTPS, port 443; http:// for HTTP, port 8053. After the scheme, an entry takes the same forms as a resolver's listen: as https://192.168.1.2 or dns://192.168.1.0/24. DNS entries need a resolver that uses the listener, http:// ones a web server, and https:// ones either. |
+| `listen` | list, or comma separated | **Required.** Required. Where it listens, each entry with its scheme: dns:// for plain DNS, over UDP and TCP, port 53 by default; tls:// for DNS over TLS and quic:// for DNS over QUIC, port 853; https:// for HTTPS, port 443; http:// for HTTP, port 8053. After the scheme: networks of the machine's addresses, addresses, host names or ports, as dns://192.168.1.0/24, https://192.168.1.2, tls://[fd00::2]:8853 or http://8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it; a port alone, on every address of the machine, including a public one on a router. DNS entries need a resolver that uses the listener, http:// ones a web server, and https:// ones either: with both, /dns-query is the resolver's, every other path the web server's. Two resolvers can't share an address and port over the same protocol, however each writes it. |
 | `tls` | string | The certificate its encrypted entries show, tls://, quic:// and https://, whichever server answers: the name of one of certificates, as home. Required with an encrypted entry, and only then. |
 | `allow` | list, or comma separated | The networks or addresses of the clients its servers answer, as 192.168.1.0/24 or fd00::/64. A server's own allow replaces it. Default: for a resolver, the networks of the addresses it listens on; for a web server, everyone. |
 

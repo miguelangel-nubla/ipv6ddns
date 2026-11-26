@@ -82,7 +82,8 @@ Add the flake to your system's, and enable the service:
               enable = true;
               environmentFile = "/run/secrets/ipv6ddns.env";
               settings = {
-                webservers.main.listen = [ "127.0.0.1:8053" ];
+                listeners.web.listen = [ "http://127.0.0.1:8053" ];
+                webservers.main.listeners = [ "web" ];
                 tasks.server = {
                   filter = [
                     {
@@ -144,7 +145,7 @@ services:
         - "http://127.0.0.1:8053/healthz"
 ```
 
-The health check needs to reach the web server at `127.0.0.1:8053`, so set `webservers.<name>.listen` to `8053`, `:8053` or `127.0.0.1:8053`.
+The health check needs to reach the web server at `127.0.0.1:8053`, so give the web server a listener with `http://8053`, `http://:8053` or `http://127.0.0.1:8053`.
 
 The image includes `bash`, `curl`, `jq`, `dig` and `ip`, for the scripts that [command sources](sources.md) run.
 
@@ -168,7 +169,7 @@ The alternative is `key_provisioning: true`, where Home Assistant provides the k
 | `--live` | Show the report in the terminal, updating live, instead of the log. It needs a terminal. `q`, Esc, Ctrl-C or a signal ends it. It uses the terminal's colors, and none when `NO_COLOR` is set. Only errors that stop the start are logged, so you don't see the configuration's warnings or the plugins' errors |
 | `--version` | Print the version |
 
-Everything else is set in the [configuration file](reference/configuration.md). For example, `log_level` sets the log level, `webservers.<name>.listen` sets where the web report is served, and `discovery.lifetime` sets how long addresses last.
+Everything else is set in the [configuration file](reference/configuration.md). For example, `log_level` sets the log level, `webservers` and `listeners` set where the web report is served, and `discovery.lifetime` sets how long addresses last.
 
 An unknown flag is an error. The error lists the flags that exist, as `--help` does.
 
@@ -176,15 +177,22 @@ To turn a boolean flag off, write `--live=false`, not `--live false`. A word tha
 
 ## The web report
 
-Each web server, under `webservers`, has a name of your choice, as `main`. Its `listen` says where the web report is served. It takes a list of entries, in any combination, or a single comma-separated string:
+Each web server, under `webservers`, has a name of your choice, as `main`. Its `listeners` name where the web report is served: [listeners](resolver.md#listeners), under the top-level `listeners`, each with a name of your choice too. A listener's `listen` takes a list of entries, in any combination, or a single comma-separated string. A web server serves its listeners' `http://` entries, port 8053 by default, and their `https://` ones, port 443:
 
 ```yaml
+listeners:
+  web:
+    listen:
+      - http://127.0.0.1:8053
+      - http://10.2.3.0/24
+
 webservers:
   main:
-    listen:
-      - 127.0.0.1:8053
-      - 10.2.3.0/24
+    listeners:
+      - web
 ```
+
+After its scheme, an `http://` entry is one of these, as `http://8053`:
 
 | Entry | Listens on |
 |---|---|
@@ -201,23 +209,28 @@ Networks and host names are resolved once, at start:
 - A network with none of the machine's addresses, or a name that doesn't resolve, stops the start.
 - A network entry doesn't include link-local addresses, because those need their interface. List them one by one, in the form `fe80::1%eth0`.
 
-[`homeassistant.listen`](home-assistant-integration.md#where-it-listens) takes the same entries, with its own default port, 6053.
+[`homeassistant.listen`](home-assistant-integration.md#where-it-listens) takes the same entries, without the scheme, with its own default port, 6053.
 
-The report has no authentication. `allow` limits it to some networks, as `192.168.1.0/24`; any other client gets `403`. If you put it behind a reverse proxy, listen only on an address the proxy reaches.
+The report has no authentication. `allow` limits it to some networks, as `192.168.1.0/24`; any other client gets `403`. Give it to the web server, or to its listener: a web server's own `allow` replaces its listeners'. If you put it behind a reverse proxy, listen only on an address the proxy reaches.
 
-To serve the report on port 443 beside a resolver's DNS over HTTPS, as `https://dns.lan.example.com/`, use a [listener](resolver.md#sharing-a-port) that both name.
+To serve the report on port 443 beside a resolver's DNS over HTTPS, as `https://dns.lan.example.com/`, use a [listener](resolver.md#sharing-an-https-port) that both name.
 
 ### Over HTTPS
 
-An entry that starts with `https://` serves HTTPS there, HTTP/1.1 and HTTP/2, on port 8443 when it gives none. The plain entries stay HTTP, so one web server can serve both, for example HTTP on the address the Home Assistant app's page reaches and HTTPS on the LAN. `webservers.<name>.tls` names its certificate, of the top-level `certificates`, as a resolver's [encrypted DNS](resolver.md#the-certificate-it-shows) does: files you give, or one ipv6ddns gets from Let's Encrypt by the DNS challenge and renews. A resolver and the web server can show the same one.
+An entry that starts with `https://` serves HTTPS there, HTTP/1.1 and HTTP/2, on port 443 when it gives none. The `http://` entries stay HTTP, so one web server can serve both, for example HTTP on the address the Home Assistant app's page reaches and HTTPS on the LAN. The listener's `tls` names its certificate, of the top-level `certificates`, as for a resolver's [encrypted DNS](resolver.md#the-certificate-it-shows): files you give, or one ipv6ddns gets from Let's Encrypt by the DNS challenge and renews. A resolver and the web server can show the same one. When port 443 is taken, give another, as `https://192.168.1.2:8443`.
 
 ```yaml
-webservers:
-  main:
+listeners:
+  web:
     listen:
-      - 172.30.32.1:8053
+      - http://172.30.32.1:8053
       - https://192.168.1.0/24
     tls: home
+
+webservers:
+  main:
+    listeners:
+      - web
 
 certificates:
   home:
@@ -240,7 +253,7 @@ The settings of `acme` are in [a certificate from Let's Encrypt](resolver.md#a-c
 
 - With `acme`, the certificate and its key are written to `tls/home/` in the configuration's folder, unless the certificate's `certificate` and `key` say elsewhere. Until the first one is got, the HTTPS entries refuse their connections, and the report says why.
 - A certificate written over its files, by ipv6ddns or anything else, is shown to the next client without a restart.
-- Browsers check the certificate is for the name in the address: open `https://status.lan.example.com:8443`, with a [record](resolver.md#records) or a task that gives the name the server's address, not the address itself.
+- Browsers check the certificate is for the name in the address: open `https://status.lan.example.com`, with a [record](resolver.md#records) or a task that gives the name the server's address, not the address itself.
 - The report's `Certificates:` section has it, with the servers that show it, its names and when it ends, amber within two weeks and red once ended; `/status.json` has it in `certificates`.
 - [Push sources](sources.md#a-routers-updates) can take their updates over HTTPS too, if the router's client checks the certificate.
 
@@ -272,7 +285,7 @@ Two instances on one machine must differ in anything both would claim:
 
 | Setting | Each instance needs | Otherwise |
 |---|---|---|
-| [`webservers.<name>.listen`](#the-web-report) | Its own port, or address | The one started second doesn't start: `address already in use`, with the address |
+| The web servers' [listeners](#the-web-report) | Its own port, or address | The one started second doesn't start: `address already in use`, with the address |
 | [`homeassistant`](home-assistant-integration.md#several-devices) `port`, or `listen` | Its own port, when both have the block. The default is 6053 | The same error |
 | `homeassistant.key_provisioning_state_file`, with `key_provisioning: true` | Its own file. The default is `homeassistant.state` beside the configuration, so two configurations in one folder must each name theirs. Not needed with a `key` | The one started second doesn't start, and says which file |
 | `homeassistant.name` | Its own name. The default is `ipv6ddns` | The one started second runs, but isn't announced to Home Assistant, and logs why |

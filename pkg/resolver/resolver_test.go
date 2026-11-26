@@ -538,7 +538,7 @@ func TestStartTaken(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = second.Start()
-	if err == nil || !strings.Contains(err.Error(), "address already in use") || !strings.HasPrefix(err.Error(), "resolvers.lan.listen: ") {
+	if err == nil || !strings.Contains(err.Error(), "address already in use") || !strings.HasPrefix(err.Error(), "resolvers.lan: ") {
 		second.Shutdown(context.Background())
 		t.Fatalf("got %v", err)
 	}

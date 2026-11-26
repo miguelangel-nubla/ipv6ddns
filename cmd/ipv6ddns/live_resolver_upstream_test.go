@@ -214,31 +214,55 @@ func TestLiveResolverEncrypted(t *testing.T) {
 
 	server := srv.IPv4.String()
 	config := fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+  dot:
+    listen:
+      - "dns://%[1]s:5301"
+  dotaddr:
+    listen:
+      - "dns://%[1]s:5302"
+  doh:
+    listen:
+      - "dns://%[1]s:5303"
+  wrongdot:
+    listen:
+      - "dns://%[1]s:5304"
+  wrongdoh:
+    listen:
+      - "dns://%[1]s:5305"
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 resolvers:
   dot:
-    listen: "%[1]s:5301"
+    listeners:
+      - dot
     upstream: tls://dns.upstream.test
     bootstrap: %[2]s
   dotaddr:
-    listen: "%[1]s:5302"
+    listeners:
+      - dotaddr
     upstream: tls://%[3]s
   doh:
-    listen: "%[1]s:5303"
+    listeners:
+      - doh
     upstream: https://dns.upstream.test/dns-query
     bootstrap: %[2]s
   wrongdot:
-    listen: "%[1]s:5304"
+    listeners:
+      - wrongdot
     upstream:
       - "tls://wrong.upstream.test"
       - "tls://untrusted.upstream.test:8853"
       - %[4]s
     bootstrap: %[2]s
   wrongdoh:
-    listen: "%[1]s:5305"
+    listeners:
+      - wrongdoh
     upstream:
       - "https://wrong.upstream.test/dns-query"
       - "https://untrusted.upstream.test:8443/dns-query"
@@ -346,16 +370,28 @@ func TestLiveResolverCache(t *testing.T) {
 
 	server := srv.IPv4.String()
 	instance := configure(t, srv, lan.Router, "srv", 8053, fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+  lan:
+    listen:
+      - dns://198.18.18.0/24
+  nocache:
+    listen:
+      - "dns://%[2]s:5300"
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 resolvers:
   lan:
-    listen: 198.18.18.0/24
+    listeners:
+      - lan
     upstream: %[1]s
   nocache:
-    listen: "%[2]s:5300"
+    listeners:
+      - nocache
     upstream: %[1]s
     cache_size: 0
 credentials: {}
@@ -461,16 +497,28 @@ func TestLiveResolverCollision(t *testing.T) {
 	srv := lan.Machine(t, "srv", 10)
 	config := func(lab, lan string) string {
 		return fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+  lab:
+    listen:
+      - %s
+  lan:
+    listen:
+      - %s
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 resolvers:
   lab:
-    listen: %s
+    listeners:
+      - lab
     upstream: 192.0.2.1
   lan:
-    listen: %s
+    listeners:
+      - lan
     upstream: 192.0.2.1
 credentials: {}
 tasks: {}
@@ -479,11 +527,11 @@ tasks: {}
 	address6 := "[" + srv.IPv6.String() + "]"
 	for i, c := range []struct{ lab, lan, want string }{
 		// A network, and the machine's address in it.
-		{"198.18.19.0/24", srv.IPv4.String(), fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as 198.18.19.0/24, lan as %[1]s: an address and port can belong to only one resolver", srv.IPv4)},
+		{"dns://198.18.19.0/24", "dns://" + srv.IPv4.String(), fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as dns://198.18.19.0/24, lan as dns://%[1]s: an address and port can belong to only one resolver", srv.IPv4)},
 		// A port alone, every address, and one of them.
-		{`"` + address6 + `"`, "53", fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as %[1]s, lan as 53: an address and port can belong to only one resolver", address6)},
+		{`"dns://` + address6 + `"`, "dns://53", fmt.Sprintf("resolvers lab and lan both listen on %[1]s:53: lab as dns://%[1]s, lan as dns://53: an address and port can belong to only one resolver", address6)},
 		// Every IPv4 address, and one of them, the second of its resolver's entries.
-		{"0.0.0.0:5353", `["127.0.0.1", "` + srv.IPv4.String() + `:5353"]`, fmt.Sprintf("resolvers lab and lan both listen on %[1]s:5353: lab as 0.0.0.0:5353, lan as %[1]s:5353: an address and port can belong to only one resolver", srv.IPv4)},
+		{"dns://0.0.0.0:5353", `"dns://127.0.0.1"` + "\n      - " + `"dns://` + srv.IPv4.String() + `:5353"`, fmt.Sprintf("resolvers lab and lan both listen on %[1]s:5353: lab as dns://0.0.0.0:5353, lan as dns://%[1]s:5353: an address and port can belong to only one resolver", srv.IPv4)},
 	} {
 		wrote := configure(t, srv, lan.Router, fmt.Sprintf("colliding-%d", i), 8053, config(c.lab, c.lan)).start().fails()
 		if !strings.Contains(wrote, c.want) {
@@ -494,5 +542,5 @@ tasks: {}
 		}
 	}
 	// One address each: both start.
-	configure(t, srv, lan.Router, "apart", 8053, config("198.18.19.0/24", `"`+address6+`"`)).start().serving()
+	configure(t, srv, lan.Router, "apart", 8053, config("dns://198.18.19.0/24", `"dns://`+address6+`"`)).start().serving()
 }

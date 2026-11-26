@@ -8,8 +8,8 @@ The steps below cover those three things, for every guide. Each guide for the ap
 
 1. **Install the app**, and start it once, as [its documentation](../../../homeassistant/addon/DOCS.md#installation) says. It writes a starting `config.yaml`. Until you add tasks, it only discovers.
 2. **Edit `config.yaml`** with the File editor or Studio Code Server app. The file is in the app's folder, `addon_configs/<id>_ipv6ddns` (`app_configs` in recent versions of Home Assistant).
-3. **Keep what the starting file has.** It has three blocks:
-   - `webservers` serves the app's page.
+3. **Keep what the starting file has.** It has four blocks:
+   - `listeners` and `webservers` serve the app's page.
    - `homeassistant` makes ipv6ddns a device in Home Assistant.
    - `discovery` leaves out Home Assistant's own containers.
 

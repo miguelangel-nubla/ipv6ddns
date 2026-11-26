@@ -91,10 +91,15 @@ A command that can't tell what the addresses are, for example because the servic
 A router's dynamic DNS can send its public addresses to ipv6ddns, as it would to a DynDNS service, as soon as they change. A `push` source takes them, through the [web server](installation.md#the-web-report), at `/nic/update`, in the dyndns2 protocol that most routers speak:
 
 ```yaml
+listeners:
+  web:
+    listen:
+      - http://192.168.1.2:8053 # the router must reach it
+
 webservers:
   main:
-    listen:
-      - 192.168.1.2:8053        # the router must reach it
+    listeners:
+      - web
 
 sources:
   wan:
@@ -175,10 +180,15 @@ sources:
   vps:
     type: push
 
-resolvers:
+listeners:
   home:
     listen:
-      - 192.168.1.2
+      - dns://192.168.1.2
+
+resolvers:
+  home:
+    listeners:
+      - home
     upstream:
       - 1.1.1.1
     updates:

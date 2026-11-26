@@ -24,7 +24,7 @@ map:
   - addon_config:rw
   - ssl
 # The report, on the app's page: at the port the starting config.yaml serves it,
-# webservers.main.listen.
+# the listener app's.
 ingress: true
 ingress_port: 8053
 panel_icon: mdi:dns

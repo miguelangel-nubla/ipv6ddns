@@ -253,7 +253,7 @@ func (s *Server) Start() error {
 	for i, e := range s.config.Listen {
 		a, err := listen.Addresses([]listen.Entry{e})
 		if err != nil {
-			return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+			return fmt.Errorf("%s: %w", s.config.Path, err)
 		}
 		var allow []netip.Prefix
 		if i < len(s.config.ListenAllow) {
@@ -266,7 +266,7 @@ func (s *Server) Start() error {
 	}
 	for _, e := range s.config.Encrypted {
 		if s.certificateOf(e) == nil {
-			return fmt.Errorf("%s.tls: no certificate for %s", s.config.Path, e.Line)
+			return fmt.Errorf("%s: no certificate for %s", s.config.Path, e.Line)
 		}
 	}
 	for _, srv := range s.upstreams {
@@ -295,7 +295,7 @@ func (s *Server) Start() error {
 		c, err := net.ListenPacket(udp, a)
 		if err != nil {
 			closeAll()
-			return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+			return fmt.Errorf("%s: %w", s.config.Path, err)
 		}
 		conns = append(conns, c)
 		// The port the UDP socket has, for the TCP one: the same, when the entry's is 0.
@@ -303,7 +303,7 @@ func (s *Server) Start() error {
 		l, err := net.Listen(tcp, a)
 		if err != nil {
 			closeAll()
-			return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+			return fmt.Errorf("%s: %w", s.config.Path, err)
 		}
 		listeners = append(listeners, l)
 		listening = append(listening, a)
@@ -315,7 +315,7 @@ func (s *Server) Start() error {
 	for _, e := range s.config.Encrypted {
 		if err := enc.open(e); err != nil {
 			closeAll()
-			return fmt.Errorf("%s.listen: %s: %w", s.config.Path, e.Line, err)
+			return fmt.Errorf("%s: %s: %w", s.config.Path, e.Line, err)
 		}
 	}
 	listening = append(listening, enc.listening...)

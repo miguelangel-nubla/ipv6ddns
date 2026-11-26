@@ -1,8 +1,16 @@
 log_level: info               # debug, info, warn, error
+# Where the servers below listen, each entry with its scheme. See docs/resolver.md#listeners.
+listeners:
+  web:
+    listen:                     # the report, /status.json and /metrics; or "http://8053,http://[::1]:8054"
+      - http://8053
+  lan:
+    listen:
+      - dns://192.168.1.0/24    # the machine's address in it, port 53
 webservers:
   main:
-    listen:                     # the report, /status.json and /metrics; or "8053,[::1]:8054"
-      - 8053
+    listeners:
+      - web
 
 # Addresses without a MAC, for the tasks that name them.
 sources:
@@ -87,7 +95,8 @@ tasks:
 # credentials and asks the router the rest. See docs/resolver.md.
 resolvers:
   lan:
-    listen: 192.168.1.0/24    # the machine's address in it, port 53
+    listeners:
+      - lan
     upstream:
       - 192.168.1.1
       - 1.1.1.1

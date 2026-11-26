@@ -20,9 +20,18 @@ discovery:
   ipv4:
     enabled: true          # find IPv4 addresses too; the default is IPv6 only
 
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24 # this machine's address on the LAN, port 53
+  web:
+    listen:
+      - http://8053          # the web report: http://192.168.1.2:8053
+
 resolvers:
   lan:
-    listen: 192.168.1.0/24 # this machine's address on the LAN, port 53
+    listeners:
+      - lan
     upstream:
       - 192.168.1.1        # answers every other name: your router, or 1.1.1.1
 
@@ -48,17 +57,17 @@ tasks:
 
 webservers:
   main:
-    listen:
-      - 8053                 # the web report: http://192.168.1.2:8053
+    listeners:
+      - web
 ```
 
 What each part does:
 
 - **`discovery`** finds the hosts. IPv6 is on by default. `ipv4: enabled: true` adds the IPv4 addresses, so that a name also works for devices and clients without IPv6.
-- **`resolvers.lan`** makes ipv6ddns a DNS server, which answers on the machine's LAN address. When it's asked a name it doesn't have itself, such as `github.com`, it asks `upstream`, and keeps the answer in a cache.
+- **`resolvers.lan`** makes ipv6ddns a DNS server, which answers on the machine's LAN address, the `dns://` entry of its [listener](../resolver.md#listeners) `lan`. When it's asked a name it doesn't have itself, such as `github.com`, it asks `upstream`, and keeps the answer in a cache.
 - **`credentials.home`** is the zone the resolver answers: `lan.example.com`. Write a subdomain of a domain you own there. No domain of your own? Use `home.arpa`, which is [set aside for home networks](https://www.rfc-editor.org/rfc/rfc8375). Don't use `.local`. See [choosing a domain](../resolver.md#choosing-a-domain).
 - **`tasks.lan`** gives every host a name. Its filter takes every address of every host, except link-local addresses, which only work on one link. `{hostname}` is the name the host says it has.
-- **`webservers`** serves the [web report](../installation.md#the-web-report): the hosts found, their names, and what the resolver answers. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
+- **`webservers`** serves the [web report](../installation.md#the-web-report), on the listener `web`: the hosts found, their names, and what the resolver answers. The report has no password. If the machine also faces the internet, give a LAN address, such as `http://192.168.1.2:8053`.
 
 A host is named by what it says it is called:
 
@@ -75,7 +84,7 @@ To make a bare `nas` work too, and not only `nas.lan.example.com`, set the route
 Devices can also get a DNS server over IPv6, from the router's advertisements (RDNSS) or from DHCPv6. They then ask the router at its IPv6 address, which doesn't know these names. Choose one of these:
 
 - **Turn the router's IPv6 DNS advertisement off.** The resolver above answers on IPv4 only, and the devices then use the IPv4 DNS server.
-- **Answer over IPv6 too.** Add the machine's IPv6 network to `listen`, and advertise the machine's address in that network in place of the router's. Use a stable ULA network, such as `fd00::/64`, because a global prefix changes with the ISP.
+- **Answer over IPv6 too.** Add the machine's IPv6 network to the listener's `listen`, as `dns://fd00::/64`, and advertise the machine's address in that network in place of the router's. Use a stable ULA network, such as `fd00::/64`, because a global prefix changes with the ISP.
 
 The devices take the new settings when they renew their lease. To check now, reconnect one.
 
@@ -162,10 +171,15 @@ tasks:
         - "{hostname}"
         - "{n}.{hostname}"
 
+listeners:
+  web:
+    listen:
+      - http://8053
+
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 ```
 
 [MikroTik as a DNS provider](../mikrotik.md#dns-provider) describes the user ipv6ddns needs on the router. The other routers have pages of their own, [OpenWrt](../openwrt.md#dns-provider), [OPNsense](../opnsense.md#dns-provider), [pfSense](../pfsense.md#dns-provider) and [UniFi](../unifi.md#dns-provider), and their settings are in the [providers reference](../reference/providers.md).

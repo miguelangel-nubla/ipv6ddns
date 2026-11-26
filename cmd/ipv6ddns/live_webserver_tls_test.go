@@ -23,12 +23,16 @@ func TestLiveWebserverHTTPS(t *testing.T) {
 	caFile, certFile, keyFile := writeTestCA(t, t.TempDir())
 	address := srv.IPv4.String()
 	config := fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+      - "https://%[1]s:8443"
+    tls: home
 webservers:
   main:
-    listen:
-      - 8053
-      - "https://%[1]s"
-    tls: home
+    listeners:
+      - web
 certificates:
   home:
     certificate: %[2]s

@@ -24,10 +24,15 @@ credentials:
     settings:
       zone: lan.example.com
 
-resolvers:
+listeners:
   lan:
     listen:
-      - 192.168.1.2
+      - dns://192.168.1.2
+
+resolvers:
+  lan:
+    listeners:
+      - lan
     upstream:
       - 1.1.1.1
     updates:

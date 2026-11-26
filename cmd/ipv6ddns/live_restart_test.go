@@ -23,10 +23,14 @@ func TestLiveRestart(t *testing.T) {
 	dns := startProvider(t, router, 5392, "token-restart", "restart.example")
 	const domain = "peer.restart.example"
 	config := fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 discovery:
   lifetime: 30s
   rediscover: 3s

@@ -50,9 +50,14 @@ credentials: {}
 # The app's page in Home Assistant: the report, served to Home Assistant alone, at the address
 # its Supervisor reaches the app at, which the network outside doesn't. Keep these lines:
 # without them the app still runs, and its page shows an error.
+listeners:
+  app:
+    listen:
+      - http://172.30.32.1:8053
 webservers:
   main:
-    listen: 172.30.32.1:8053
+    listeners:
+      - app
 
 # How much the log says: debug, info, warn or error.
 log_level: info

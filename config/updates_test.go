@@ -36,8 +36,8 @@ credentials:
       zone: home.arpa
 webservers:
   main:
-    listen:
-      - 127.0.0.1:8053
+    listeners:
+      - web
 sources:
   wan:
     type: push
@@ -60,11 +60,18 @@ certificates:
       names:
         - dns.lan
       credential: public
-resolvers:
+listeners:
+  web:
+    listen:
+      - http://127.0.0.1:8053
   home:
     listen:
 `+listen+`
     tls: dns
+resolvers:
+  home:
+    listeners:
+      - home
     upstream:
       - 1.1.1.1
     updates:
@@ -72,7 +79,7 @@ resolvers:
 }
 
 const (
-	plainAndTLS = `      - 192.168.1.2
+	plainAndTLS = `      - dns://192.168.1.2
       - tls://192.168.1.2`
 	testSecretYAML = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 )
@@ -256,10 +263,17 @@ tasks:
     endpoints:
       public:
         - printer
-resolvers:
+listeners:
   a:
     listen:
-      - 192.168.1.2
+      - dns://192.168.1.2
+  b:
+    listen:
+      - dns://192.168.2.2
+resolvers:
+  a:
+    listeners:
+      - a
     upstream:
       - 1.1.1.1
     updates:
@@ -272,8 +286,8 @@ resolvers:
                 names:
                   - nas.lan
   b:
-    listen:
-      - 192.168.2.2
+    listeners:
+      - b
     upstream:
       - 1.1.1.1
     updates:
@@ -312,10 +326,14 @@ credentials:
     provider: resolver
     settings:
       zone: home.arpa
-resolvers:
+listeners:
   home:
     listen:
-      - 192.168.1.2
+      - dns://192.168.1.2
+resolvers:
+  home:
+    listeners:
+      - home
     upstream:
       - 1.1.1.1
 ` + keys

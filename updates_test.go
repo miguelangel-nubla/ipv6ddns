@@ -83,9 +83,14 @@ credentials:
     provider: txtrec
     settings:
       id: %s
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
 resolvers:
   lan:
-    listen: 127.0.0.1:%s
+    listeners:
+      - lan
     upstream: 127.0.0.1:%s
     updates:
       keys:
@@ -284,9 +289,14 @@ credentials:
     provider: fake
     settings:
       id: notxt
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
 resolvers:
   lan:
-    listen: 127.0.0.1:%s
+    listeners:
+      - lan
     upstream: 127.0.0.1:%s
     updates:
       keys:
@@ -333,9 +343,14 @@ credentials:
     settings:
       id: %s
     debounce: 1ms
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
 resolvers:
   lan:
-    listen: 127.0.0.1:%s
+    listeners:
+      - lan
     upstream: 127.0.0.1:%s
     updates:
       keys:
@@ -472,9 +487,14 @@ credentials:
     settings:
       id: %s
     debounce: 1ms
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
 resolvers:
   lan:
-    listen: 127.0.0.1:%s
+    listeners:
+      - lan
     upstream: 127.0.0.1:%s
     updates:
       keys:

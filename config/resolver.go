@@ -15,23 +15,15 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
-	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 )
 
 // Resolver is a DNS server for the clients of a network: it answers the zones of its resolver
 // credentials and its own records, and asks its upstream servers the rest. See docs/resolver.md.
 type Resolver struct {
-	// Where it answers, as listen takes it; without a port, 53. An entry that starts with tls://,
-	// https:// or quic:// answers over that encrypted transport, on its port by default. Required
-	// without Listeners.
-	Listen StringList `json:"listen,omitempty"`
-	// The listeners it answers on too, by name: their DNS entries, and /dns-query of their HTTPS
-	// ones.
+	// Required. The listeners it answers on, by name: their DNS entries, plain, of TLS and of
+	// QUIC, and /dns-query of their HTTPS ones.
 	Listeners StringList `json:"listeners,omitempty"`
-	// The certificate the encrypted transports show: the name of one of certificates. Required
-	// with an encrypted entry, and only then.
-	TLS string `json:"tls,omitempty"`
 	// The networks, or addresses, of the clients it answers; any other is refused. Default: the
 	// networks of the machine's addresses it listens on.
 	Allow StringList `json:"allow,omitempty"`
@@ -81,9 +73,13 @@ func checkResolvers(configData []byte) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Resolvers)) {
 		r := c.Resolvers[name]
-		_, listeners := r["listeners"]
-		if _, ok := r["listen"]; !ok && !listeners {
-			return fmt.Errorf("resolvers.%s.listen is missing: give where the resolver answers. That's the clients' network, as 192.168.1.0/24, for this machine's address in it, or the address itself. Without a port, 53", name)
+		for _, key := range []string{"listen", "tls"} {
+			if _, ok := r[key]; ok {
+				return fmt.Errorf("resolvers.%s.%s is a listener's now: move the resolver's listen and tls to one under listeners, its plain entries as dns://, and name it in the resolver's listeners, as\n\nlisteners:\n  %s:\n    listen:\n      - dns://192.168.1.2\n      - tls://192.168.1.2\n    tls: home\nresolvers:\n  %s:\n    listeners:\n      - %s", name, key, name, name, name)
+			}
+		}
+		if _, ok := r["listeners"]; !ok {
+			return fmt.Errorf("resolvers.%s.listeners is missing: give the listeners where the resolver answers, under listeners, as dns://192.168.1.2 for this machine's address on the clients' network. Without a port, 53", name)
 		}
 		if _, ok := r["upstream"]; !ok {
 			return fmt.Errorf("resolvers.%s.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own, as 192.168.1.1 or 1.1.1.1:53. Without them, it answers no other name", name)
@@ -104,34 +100,6 @@ func (c *Config) setUpResolvers() error {
 		r := c.Resolvers[name]
 		path := "resolvers." + name
 		spec := resolver.Config{Name: name, Path: path}
-		if len(r.Listen) == 0 && len(r.Listeners) == 0 {
-			return fmt.Errorf("%s.listen is missing: give where the resolver answers", path)
-		}
-		// One by one: each entry with its text, as written, which the errors at start quote.
-		for _, line := range r.Listen {
-			transport, rest := listenTransport(line)
-			entries, err := listen.Parse([]string{rest}, resolver.DefaultPortOf(transport))
-			if err != nil {
-				return fmt.Errorf("%s.listen: %w", path, err)
-			}
-			e := entries[0]
-			if transport != "" {
-				enc := resolver.EncryptedListen{Transport: transport, Entry: e, Line: strings.TrimSpace(line)}
-				if !slices.ContainsFunc(spec.Encrypted, func(o resolver.EncryptedListen) bool { return o.Transport == transport && o.Entry == e }) {
-					spec.Encrypted = append(spec.Encrypted, enc)
-				}
-				continue
-			}
-			if !slices.Contains(spec.Listen, e) {
-				spec.Listen = append(spec.Listen, e)
-				spec.ListenLines = append(spec.ListenLines, strings.TrimSpace(line))
-				spec.ListenAllow = append(spec.ListenAllow, nil)
-			}
-		}
-		if err := c.useCertificate(path, r.TLS, len(spec.Encrypted) > 0, "tls://, https:// or quic://", "tls://192.168.1.0/24"); err != nil {
-			return err
-		}
-		spec.CertificateName = r.TLS
 		c.listenOnListeners(&spec, r.Listeners)
 		// By protocol: plain DNS has UDP and TCP, DNS over TLS and over HTTPS TCP, over QUIC UDP.
 		claim := func(protocol, shown string, e fmt.Stringer) error {
@@ -225,7 +193,7 @@ func (c *Config) setUpResolvers() error {
 		name := settings.Resolver
 		switch {
 		case name == "" && len(names) == 0:
-			return fmt.Errorf("%s: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listen and upstream", path)
+			return fmt.Errorf("%s: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listeners and upstream", path)
 		case name == "" && len(names) > 1:
 			return fmt.Errorf("%s.settings.resolver is missing: say which of %s answers the zone", path, strings.Join(names, ", "))
 		case name == "":
@@ -442,23 +410,6 @@ func parseServerAddress(s string) (string, error) {
 // DefaultResolverDebounce is the debounce of a resolver credential that gives none: nothing is
 // sent anywhere, so a change is answered at once.
 const DefaultResolverDebounce = time.Duration(0)
-
-// listenTransport reads the scheme of a listen entry: tls://, https:// or quic://, the encrypted
-// transport it answers over, and the rest of the entry; none, for plain DNS. A path after an
-// https:// entry can only be /dns-query, where DNS over HTTPS answers.
-func listenTransport(line string) (transport, rest string) {
-	line = strings.TrimSpace(line)
-	for _, t := range []string{resolver.TransportTLS, resolver.TransportHTTPS, resolver.TransportQUIC} {
-		if after, ok := cutScheme(line, t+"://"); ok {
-			rest = after
-			if t == resolver.TransportHTTPS {
-				rest = strings.TrimSuffix(rest, resolver.DoHPath)
-			}
-			return t, rest
-		}
-	}
-	return "", line
-}
 
 // inFolder is the path of a file, relative to the folder unless absolute.
 func inFolder(folder, file string) string {

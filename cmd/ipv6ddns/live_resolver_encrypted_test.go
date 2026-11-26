@@ -94,18 +94,25 @@ func TestLiveResolverServesEncrypted(t *testing.T) {
 	address := srv.IPv4.String()
 
 	config := fmt.Sprintf(`
-webservers:
-  main:
+listeners:
+  web:
     listen:
-      - 8053
-resolvers:
+      - http://8053
   lan:
     listen:
-      - %[1]s
+      - dns://%[1]s
       - "tls://%[1]s"
       - "https://%[1]s"
       - "quic://%[1]s"
     tls: home
+webservers:
+  main:
+    listeners:
+      - web
+resolvers:
+  lan:
+    listeners:
+      - lan
     # Nothing is forwarded in this test: a server that doesn't answer.
     upstream: 192.0.2.1
 certificates:
@@ -167,7 +174,7 @@ tasks:
 	}
 
 	report := one.page("/status.txt")
-	for _, has := range []string{"tls://" + address + ":853", "https://" + address + ":443", "quic://" + address + ":853", "        Certificate: home\n", "home (resolver lan): " + encryptedHost + ", until "} {
+	for _, has := range []string{"tls://" + address + ":853", "https://" + address + ":443", "quic://" + address + ":853", "        Certificate: home\n", "home (listener lan): " + encryptedHost + ", until "} {
 		if !strings.Contains(report, has) {
 			t.Errorf("the report has no %q:\n%s", has, report)
 		}

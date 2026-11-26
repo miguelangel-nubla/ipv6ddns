@@ -96,9 +96,14 @@ func TestTemplatesOfTheConfiguration(t *testing.T) {
 // given as the hosts are.
 func TestTemplateIsNoNameOfAZone(t *testing.T) {
 	cfg, err := loadConfig(t, `
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.0/24
 resolvers:
   lan:
-    listen: 192.168.1.0/24
+    listeners:
+      - lan
     upstream: 192.168.1.1
 credentials:
   home:

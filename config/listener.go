@@ -72,6 +72,10 @@ func (c *Config) setUpListeners() error {
 			if !ok || !known {
 				return fmt.Errorf("%s.listen: %q has no scheme: write it as dns://, tls://, quic://, https:// or http://, as https://%s", path, text, text)
 			}
+			if scheme == SchemeHTTPS {
+				// Where DNS over HTTPS answers, written as the clients' URL has it.
+				rest = strings.TrimSuffix(rest, resolver.DoHPath)
+			}
 			entries, err := listen.Parse([]string{rest}, port)
 			if err != nil {
 				return fmt.Errorf("%s.listen: %w", path, err)

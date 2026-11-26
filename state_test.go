@@ -26,11 +26,16 @@ credentials:
     provider: txtrec
     settings:
       id: state
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
+    tls: dns
 resolvers:
   lan:
-    listen: 127.0.0.1:%s
+    listeners:
+      - lan
     upstream: 127.0.0.1:%s
-    tls: dns
     updates:
       keys:
         nas:
@@ -66,7 +71,7 @@ discovery:
     enabled: false
 `, stateDir, freeDNSPort(t), freeDNSPort(t), updatesTestSecret)
 	// The resolver has an encrypted entry, for its certificate to be used.
-	text = strings.Replace(text, "    listen: 127.0.0.1:", "    listen:\n      - tls://127.0.0.1:"+freeDNSPort(t)+"\n      - 127.0.0.1:", 1)
+	text = strings.Replace(text, "      - dns://127.0.0.1:", "      - tls://127.0.0.1:"+freeDNSPort(t)+"\n      - dns://127.0.0.1:", 1)
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}

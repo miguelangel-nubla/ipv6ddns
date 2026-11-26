@@ -51,7 +51,9 @@ listeners:
 // listener's certificate and allow, and its HTTPS one, whose other paths are the web server's;
 // the web server its HTTP entry, and the HTTPS one through the resolver, of the listener's allow.
 func TestListenerShared(t *testing.T) {
-	cfg, err := loadConfig(t, listenerConfig(t, sharedListener+`
+	cfg, err := loadConfig(t, listenerConfig(t, sharedListener+`  web:
+    listen:
+      - http://127.0.0.1:18053
 resolvers:
   lan:
     listeners:
@@ -60,9 +62,8 @@ resolvers:
       - 1.1.1.1
 webservers:
   main:
-    listen:
-      - 127.0.0.1:18053
     listeners:
+      - web
       - lan
 `))
 	if err != nil {
@@ -164,21 +165,23 @@ func TestListenerErrors(t *testing.T) {
 		{"an entry without a scheme", "\nlisteners:\n  lan:\n    listen:\n      - 127.0.0.1\n" + resolverOf("lan"), `listeners.lan.listen: "127.0.0.1" has no scheme`},
 		{"an unknown scheme", "\nlisteners:\n  lan:\n    listen:\n      - ftp://127.0.0.1\n" + resolverOf("lan"), `listeners.lan.listen: "ftp://127.0.0.1" has no scheme`},
 		{"encrypted without tls", "\nlisteners:\n  lan:\n    listen:\n      - https://127.0.0.1\n" + resolverOf("lan"), "listeners.lan.tls is missing"},
-		{"a listener no server uses", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n" + "\nresolvers:\n  lan:\n    listen:\n      - 127.0.0.1:5353\n    upstream:\n      - 1.1.1.1\n", "listeners.lan: no server uses it"},
+		{"a listener no server uses", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n  other:\n    listen:\n      - dns://127.0.0.1:5353\n" + resolverOf("other"), "listeners.lan: no server uses it"},
 		{"DNS without a resolver", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n\nwebservers:\n  main:\n    listeners:\n      - lan\n", "listeners.lan.listen: dns://127.0.0.1 is DNS, which only a resolver serves"},
 		{"HTTP without a web server", "\nlisteners:\n  lan:\n    listen:\n      - http://127.0.0.1\n" + resolverOf("lan"), "listeners.lan.listen: http://127.0.0.1 is HTTP, which only a web server serves"},
 		{"two resolvers on one listener", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n" + resolverOf("lan") + "  guests:\n    listeners:\n      - lan\n    upstream:\n      - 1.1.1.1\n", "resolvers.lan.listeners: lan is resolvers.guests's already"},
 		{"the web server of before", "\nwebserver:\n  listen:\n    - 8053\n", "webserver is now webservers"},
-		{"a web server without listen", "\nwebservers:\n  main:\n    allow:\n      - 10.0.0.0/8\n", "webservers.main.listen is missing"},
+		{"a web server without listeners", "\nwebservers:\n  main:\n    allow:\n      - 10.0.0.0/8\n", "webservers.main.listeners is missing"},
+		{"a web server with listen", "\nwebservers:\n  main:\n    listen:\n      - 8053\n", "webservers.main.listen is a listener's now"},
+		{"a resolver with listen", "\nresolvers:\n  lan:\n    listen:\n      - 127.0.0.1\n    upstream:\n      - 1.1.1.1\n", "resolvers.lan.listen is a listener's now"},
+		{"a resolver with tls", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n\nresolvers:\n  lan:\n    listeners:\n      - lan\n    tls: home\n    upstream:\n      - 1.1.1.1\n", "resolvers.lan.tls is a listener's now"},
+		{"a resolver without listeners", "\nresolvers:\n  lan:\n    upstream:\n      - 1.1.1.1\n", "resolvers.lan.listeners is missing"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			blocks := c.blocks
-			if !strings.Contains(blocks, "tls: home") {
-				// The certificate, used: a server of its own shows it.
-				blocks += "\nwebservers:\n  cert:\n    listen:\n      - https://127.0.0.1:9443\n    tls: home\n"
-				if strings.Contains(c.blocks, "webservers:") {
-					blocks = strings.Replace(c.blocks, "webservers:\n", "webservers:\n  cert:\n    listen:\n      - https://127.0.0.1:9443\n    tls: home\n", 1)
-				}
+			if !strings.Contains(blocks, "    tls: home") {
+				// The certificate, used: a listener of a web server of its own shows it.
+				blocks = withBlock(blocks, "listeners", "  cert:\n    listen:\n      - https://127.0.0.1:9443\n    tls: home\n")
+				blocks = withBlock(blocks, "webservers", "  cert:\n    listeners:\n      - cert\n")
 			}
 			_, err := loadConfig(t, listenerConfig(t, blocks))
 			if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -186,4 +189,12 @@ func TestListenerErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// withBlock adds the entries to the top-level block key of blocks, or the block, if it has none.
+func withBlock(blocks, key, entries string) string {
+	if strings.Contains(blocks, "\n"+key+":\n") {
+		return strings.Replace(blocks, "\n"+key+":\n", "\n"+key+":\n"+entries, 1)
+	}
+	return blocks + "\n" + key + ":\n" + entries
 }

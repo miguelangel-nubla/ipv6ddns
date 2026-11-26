@@ -29,10 +29,17 @@ func TestLiveSeen(t *testing.T) {
 	startUpstream(t, up, "192.0.2.53")
 
 	one := configure(t, srv, lan.Router, "srv", 8053, fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+  lan:
+    listen:
+      - dns://198.18.26.0/24
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 discovery:
   rediscover: 3s
   protocols:
@@ -40,7 +47,8 @@ discovery:
       enabled: true
 resolvers:
   lan:
-    listen: 198.18.26.0/24
+    listeners:
+      - lan
     upstream: %s
 credentials:
   home:

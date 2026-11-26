@@ -9,11 +9,19 @@ This page is the app's side of the guide [every machine on the network by name](
 This is the whole `config.yaml`: the blocks of the starting file, with the guide's configuration added to them. The examples use `192.168.1.0/24` for the LAN, `192.168.1.1` for the router, and `192.168.1.2` for the Home Assistant machine. Use your own.
 
 ```yaml
-resolvers:
+listeners:
   lan:
     listen:
-      - 192.168.1.0/24     # Home Assistant's address on the LAN, port 53
-      - 172.30.32.1        # and on the internal network, for Home Assistant and its apps
+      - dns://192.168.1.0/24   # Home Assistant's address on the LAN, port 53
+      - dns://172.30.32.1      # and on the internal network, for Home Assistant and its apps
+  app:                         # from the starting file: keep it
+    listen:
+      - http://172.30.32.1:8053
+
+resolvers:
+  lan:
+    listeners:
+      - lan
     upstream:
       - 192.168.1.1        # the rest of the world's names: your router, or 1.1.1.1
 
@@ -52,7 +60,8 @@ tasks:
 # From the starting file: keep these.
 webservers:
   main:
-    listen: 172.30.32.1:8053
+    listeners:
+      - app
 
 log_level: info
 
@@ -73,7 +82,7 @@ This configuration differs from the plain guide's in three ways:
 
 - **The `homeassistant` task** names Home Assistant itself. `self: true` takes the addresses of the machine the app runs on, so the name doesn't depend on Home Assistant saying its name. The apps on the host's network, such as Mosquitto or Node-RED, are at the same addresses. If you want names for them, such as `mqtt`, add the names under the same endpoint.
 - **`discovery.ipv4`** goes into the `discovery` block the file already has, beside `exclude_interfaces`.
-- **There is no new `webservers` block.** The plain guide's web report is the app's page here, and the `webservers` block of the starting file already serves it.
+- **There is no new `webservers` block.** The plain guide's web report is the app's page here, and the starting file's listener `app` and `webservers` block already serve it. The guide's listener `lan` goes into the same `listeners` block.
 
 The resolver listens on port 53 at two addresses:
 

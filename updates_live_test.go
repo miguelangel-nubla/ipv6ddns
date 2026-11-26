@@ -63,9 +63,14 @@ credentials:
   public:
     provider: rfc2136
     settings: %s
+listeners:
+  lan:
+    listen:
+      - dns://0.0.0.0:%s
 resolvers:
   lan:
-    listen: 0.0.0.0:%s
+    listeners:
+      - lan
     allow:
       - 0.0.0.0/0
       - ::/0
@@ -299,9 +304,14 @@ credentials:
     provider: rfc2136
     settings: %s
     debounce: 1ms
+listeners:
+  lan:
+    listen:
+      - dns://0.0.0.0:%s
 resolvers:
   lan:
-    listen: 0.0.0.0:%s
+    listeners:
+      - lan
     allow:
       - 0.0.0.0/0
       - ::/0
@@ -421,9 +431,14 @@ credentials:
     provider: rfc2136
     settings: %s
     debounce: 1ms
+listeners:
+  lan:
+    listen:
+      - dns://0.0.0.0:%s
 resolvers:
   lan:
-    listen: 0.0.0.0:%s
+    listeners:
+      - lan
     allow:
       - 0.0.0.0/0
       - ::/0

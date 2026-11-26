@@ -43,10 +43,14 @@ func TestLivePush(t *testing.T) {
 	server := srv.IPv4.String() + ":8053"
 
 	config := `
+listeners:
+  web:
+    listen:
+      - http://8053
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 sources:
   wan:
     type: push

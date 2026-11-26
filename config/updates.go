@@ -119,7 +119,7 @@ func (c *Config) setUpUpdates(path string, r *Resolver, spec *resolver.Config, a
 	}
 	path += ".updates"
 	if len(spec.Listen) == 0 && !slices.ContainsFunc(spec.Encrypted, func(e resolver.EncryptedListen) bool { return e.Transport == resolver.TransportTLS }) {
-		return fmt.Errorf("%s: updates come over plain DNS or DNS over TLS, and the resolver listens on neither: add an entry of listen without a scheme, as 192.168.1.0/24", path)
+		return fmt.Errorf("%s: updates come over plain DNS or DNS over TLS, and the resolver listens on neither: add an entry of dns:// to one of its listeners, as dns://192.168.1.0/24", path)
 	}
 	if len(u.Keys) == 0 {
 		return fmt.Errorf("%s.keys is missing: give the TSIG keys that may send updates, each with its secret and its permissions", path)

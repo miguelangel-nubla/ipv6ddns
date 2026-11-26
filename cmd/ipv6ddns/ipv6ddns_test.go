@@ -353,9 +353,14 @@ func TestWebserverDefaultPort(t *testing.T) {
 func TestHealthzResolver(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	os.WriteFile(path, []byte(`
+listeners:
+  lan:
+    listen:
+      - dns://192.0.2.1
 resolvers:
   lan:
-    listen: 192.0.2.1
+    listeners:
+      - lan
     upstream: 192.0.2.53
 credentials:
   home:

@@ -43,9 +43,14 @@ tasks:
         - ha               # ha.example.com
 
 # From the starting file: keep these.
+listeners:
+  app:
+    listen:
+      - http://172.30.32.1:8053
 webservers:
   main:
-    listen: 172.30.32.1:8053
+    listeners:
+      - app
 
 log_level: info
 
@@ -64,7 +69,7 @@ This configuration differs from the plain guide's in three ways:
 
 - **The `homeassistant` task** gives Home Assistant itself a public name. `self: true` takes the addresses of the machine the app runs on, so there is no MAC to look up. For its own machine, the app knows which addresses are temporary, and `"!temporary"` leaves them out. Leave the task out if you don't want Home Assistant reached from outside.
 - **The token's file** is `/config/cloudflare_token`, not a name alone.
-- **There is no new `webservers` block.** The plain guide's web report is the app's page here, and the `webservers` block of the starting file already serves it.
+- **There is no new `webservers` block.** The plain guide's web report is the app's page here, and the `listeners` and `webservers` blocks of the starting file already serve it.
 
 Restart the app. Its page lists both names under `DNS`, each with its addresses and its last update.
 

@@ -36,10 +36,14 @@ func TestLiveProtocolsAndNames(t *testing.T) {
 
 	config := func(discovery string) string {
 		return fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 discovery:
   lifetime: 30s
   rediscover: 3s

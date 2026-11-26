@@ -2,11 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
 	"slices"
-	"strings"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 )
@@ -14,19 +14,12 @@ import (
 // Webserver is a web server, of the report, /status.json and /metrics, and of /nic/update for the
 // push sources: one of webservers, by its name.
 type Webserver struct {
-	// Where: ports, addresses, networks of the machine's addresses and host names, as listen
-	// takes them; without a port, 8053. An entry that starts with https:// serves HTTPS there,
-	// with the certificate of tls, on port 8443 without one.
-	Listen StringList `json:"listen,omitempty"`
-	// The certificate of the HTTPS entries: the name of one of certificates. Required with one,
-	// and only then.
-	TLS string `json:"tls,omitempty"`
-	// The clients it answers; any other gets 403. Default: everyone on its listen, and each
-	// listener's allow on that listener's entries, which this replaces.
-	Allow StringList `json:"allow,omitempty"`
-	// The listeners it serves on too, by name: their HTTP entries, and every path but /dns-query
-	// of their HTTPS ones.
+	// Required. The listeners it serves on, by name: their HTTP entries, and every path but
+	// /dns-query of their HTTPS ones.
 	Listeners StringList `json:"listeners,omitempty"`
+	// The clients it answers; any other gets 403. It replaces its listeners' allow. Default: each
+	// listener's, on that listener's entries; without one, everyone.
+	Allow StringList `json:"allow,omitempty"`
 
 	// Read: where its errors are, as webservers.main; the sockets it opens itself, and the HTTPS
 	// entries of resolvers it shares, by the listeners' names.
@@ -51,11 +44,8 @@ type SharedWebEntry struct {
 	Allow              []netip.Prefix
 }
 
-// The ports of the web server's entries that give none: of HTTP, and of HTTPS.
-const (
-	DefaultWebserverPort      = "8053"
-	DefaultWebserverHTTPSPort = "8443"
-)
+// DefaultWebserverPort is the port of a listener's http:// entries that give none.
+const DefaultWebserverPort = "8053"
 
 // checkWebserverRenamed tells, of a configuration not yet checked by the schema, that webserver
 // is named now, under webservers, with its block as it was.
@@ -64,21 +54,36 @@ func checkWebserverRenamed(configData []byte) error {
 	if json.Unmarshal(configData, &c) != nil {
 		return nil
 	}
+	const example = "\n\nlisteners:\n  web:\n    listen:\n      - http://8053\n      - https://192.168.1.2:8443\n    tls: home\nwebservers:\n  main:\n    listeners:\n      - web"
 	if _, ok := c["webserver"]; ok {
-		return fmt.Errorf("webserver is now webservers, each web server by a name of your choice: indent the block under one, as\n\nwebservers:\n  main:\n    listen:\n      - 8053")
+		return errors.New("webserver is now webservers, each web server by a name of your choice, with its listen and tls in a listener under listeners, its plain entries as http://, as" + example)
+	}
+	var webservers map[string]map[string]json.RawMessage
+	if json.Unmarshal(c["webservers"], &webservers) != nil {
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(webservers)) {
+		for _, key := range []string{"listen", "tls"} {
+			if _, ok := webservers[name][key]; ok {
+				return fmt.Errorf("webservers.%s.%s is a listener's now: move the web server's listen and tls to one under listeners, its plain entries as http://, and name it in the web server's listeners, as%s", name, key, example)
+			}
+		}
+		if _, ok := webservers[name]["listeners"]; !ok {
+			return fmt.Errorf("webservers.%s.listeners is missing: give the listeners where it serves, under listeners, as http://8053", name)
+		}
 	}
 	return nil
 }
 
-// setUpWebservers reads the web servers' entries, HTTP and HTTPS, and their listeners', and checks
-// the certificates of the HTTPS ones.
+// setUpWebservers reads the web servers' entries, of their listeners: of HTTP, of HTTPS, and of
+// HTTPS a resolver opens and shares.
 func (c *Config) setUpWebservers() error {
 	for _, name := range slices.Sorted(maps.Keys(c.Webservers)) {
 		w := c.Webservers[name]
 		w.Path = "webservers." + name
 		w.Entries, w.Shared = nil, nil
-		if len(w.Listen) == 0 && len(w.Listeners) == 0 {
-			return fmt.Errorf("%s.listen is missing: give where it serves, as 8053", w.Path)
+		if len(w.Listeners) == 0 {
+			return fmt.Errorf("%s.listeners is missing: give the listeners where it serves, under listeners, as http://8053", w.Path)
 		}
 		var allow []netip.Prefix
 		for _, a := range w.Allow {
@@ -87,24 +92,6 @@ func (c *Config) setUpWebservers() error {
 				return fmt.Errorf("%s.allow: %w", w.Path, err)
 			}
 			allow = append(allow, p)
-		}
-		https := false
-		for _, line := range w.Listen {
-			text := strings.TrimSpace(line)
-			port, certificate := DefaultWebserverPort, ""
-			if after, ok := cutScheme(text, "https://"); ok {
-				text, port, certificate, https = after, DefaultWebserverHTTPSPort, w.TLS, true
-			}
-			entries, err := listen.Parse([]string{text}, port)
-			if err != nil {
-				return fmt.Errorf("%s.listen: %w", w.Path, err)
-			}
-			for _, e := range entries {
-				w.Entries = append(w.Entries, WebEntry{Entry: e, Certificate: certificate, Allow: allow})
-			}
-		}
-		if err := c.useCertificate(w.Path, w.TLS, https, "https://", "https://192.168.1.2"); err != nil {
-			return err
 		}
 		for _, ln := range w.Listeners {
 			l := c.Listeners[ln]
@@ -135,12 +122,4 @@ func (c *Config) setUpWebservers() error {
 // HasWebserver tells whether a web server serves anywhere: for /nic/update, of the push sources.
 func (c *Config) HasWebserver() bool {
 	return len(c.Webservers) > 0
-}
-
-// cutScheme is the entry after its scheme, if it has it, whatever its letters' case.
-func cutScheme(entry, scheme string) (string, bool) {
-	if len(entry) >= len(scheme) && strings.EqualFold(entry[:len(scheme)], scheme) {
-		return entry[len(scheme):], true
-	}
-	return "", false
 }

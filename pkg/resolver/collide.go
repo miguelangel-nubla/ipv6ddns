@@ -75,7 +75,7 @@ func CheckListen(servers []*Server) error {
 		add := func(e listen.Entry, text string, protocols ...string) error {
 			addresses, err := listen.Addresses([]listen.Entry{e})
 			if err != nil {
-				return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+				return fmt.Errorf("%s: %w", s.config.Path, err)
 			}
 			for _, a := range addresses {
 				// Any port that is free: never another's.

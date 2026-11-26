@@ -48,10 +48,15 @@ discovery:
   ipv6:
     lifetime: 10m          # an address the devices dropped leaves the name within 10 minutes
 
+listeners:
+  web:
+    listen:
+      - http://8053
+
 webservers:
   main:
-    listen:
-      - 8053
+    listeners:
+      - web
 ```
 
 - **`discovery.ipv6.lifetime`** is how long an address stays after it was last seen. Once the devices drop a dead ISP's addresses, they leave the name within this time. The default is an hour. A shorter one has ipv6ddns probe the devices more often: every third of it.
