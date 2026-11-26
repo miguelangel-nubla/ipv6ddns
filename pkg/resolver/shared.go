@@ -74,18 +74,59 @@ func (s *Server) routesOf(e EncryptedListen, k string) []route {
 	return []route{{s, e}}
 }
 
-// choose is the route of a client that asks name in its TLS handshake: of the first listener whose
-// server name, or certificate, is for it; or, of none, as a client by address alone asks, of the
-// first, the default.
+// choose is the route of a client that asks name in its TLS handshake: of the listener whose server
+// name it is; or else of the first, in their order, whose certificate is for it; or, of none, as a
+// client by address alone asks, of the first, the default. So of two of one certificate, a name of
+// it is the second's only asked as its server name.
 func choose(routes []route, name string) route {
 	if len(routes) > 1 && name != "" {
 		for _, r := range routes {
-			if r.e.ServerName != "" && certfile.Matches(r.e.ServerName, name) || r.certificate().Covers(name) {
+			if r.e.ServerName != "" && certfile.Canonical(r.e.ServerName) == certfile.Canonical(name) {
+				return r
+			}
+		}
+		for _, r := range routes {
+			if r.certificate().Covers(name) {
 				return r
 			}
 		}
 	}
 	return routes[0]
+}
+
+// othersOf tells whether the route at i of routes is chosen by a name other than its server name:
+// one of its certificate that no route before it, nor another's server name, is for.
+func othersOf(routes []route, i int) bool {
+	names := certificateNames(routes[i].certificate())
+	for _, n := range names {
+		if certfile.Canonical(n) == certfile.Canonical(routes[i].e.ServerName) {
+			continue
+		}
+		taken := slices.ContainsFunc(routes, func(o route) bool {
+			return o.e.ServerName != "" && o.e.Listener != routes[i].e.Listener && certfile.Matches(n, o.e.ServerName) && !strings.HasPrefix(n, "*")
+		})
+		for _, o := range routes[:i] {
+			taken = taken || slices.ContainsFunc(certificateNames(o.certificate()), func(p string) bool {
+				return certfile.Canonical(p) == certfile.Canonical(n) || certfile.Matches(p, n)
+			})
+		}
+		if !taken {
+			return true
+		}
+	}
+	return false
+}
+
+// certificateNames are the DNS names of the certificate: none of one not read yet.
+func certificateNames(c *certfile.Certificate) []string {
+	if c == nil {
+		return nil
+	}
+	cert, err := c.Get(nil)
+	if err != nil || cert.Leaf == nil {
+		return nil
+	}
+	return cert.Leaf.DNSNames
 }
 
 // tlsConfig is the configuration of TLS of a socket of the routes, which speaks protocols: of one,
@@ -208,6 +249,10 @@ type SharedStatus struct {
 	Name string `json:"name,omitempty"`
 	// Whether it answers the clients that ask no name of another: the first listener.
 	Default bool `json:"default"`
+	// Whether it answers, too, the clients that ask another name of its certificate: one no
+	// listener before it there is for, nor another's server name. Of one certificate of two, the
+	// second's isn't: it answers its server name alone.
+	Others bool `json:"others,omitempty"`
 	// The other listeners there.
 	With []string `json:"with"`
 }
@@ -221,7 +266,7 @@ func (s *Server) sharedStatus() []SharedStatus {
 			if r.s != s {
 				continue
 			}
-			st := SharedStatus{Address: k, Listener: r.e.Listener, Name: strings.TrimSuffix(s.serverName(r.e), "."), Default: i == 0, With: []string{}}
+			st := SharedStatus{Address: k, Listener: r.e.Listener, Name: strings.TrimSuffix(s.serverName(r.e), "."), Default: i == 0, Others: othersOf(routes, i), With: []string{}}
 			for _, o := range routes {
 				if o.e.Listener != r.e.Listener {
 					st.With = append(st.With, o.e.Listener)

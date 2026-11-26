@@ -19,11 +19,18 @@ const sharedCredential = `
 
 // sharedConfig is a configuration of two resolvers, lan and kids, each of its listener, whose
 // entries and keys are lan's and kids', with certificates of the names given: lan's, dns, and
-// kids', local.
+// kids', local; of no names given dns, local alone.
 func sharedConfig(t *testing.T, lan, kids string, dnsNames, localNames []string) (Config, error) {
 	t.Helper()
-	dnsCert, dnsKey := writeTestCertificateFor(t, dnsNames...)
 	localCert, localKey := writeTestCertificateFor(t, localNames...)
+	dns := ""
+	if dnsNames != nil {
+		dnsCert, dnsKey := writeTestCertificateFor(t, dnsNames...)
+		dns = `
+  dns:
+    certificate: ` + dnsCert + `
+    key: ` + dnsKey
+	}
 	text := `listeners:
   lan:` + lan + `
   kids:` + kids + `
@@ -38,10 +45,7 @@ resolvers:
       - kids
     upstream:
       - 192.168.1.1
-certificates:
-  dns:
-    certificate: ` + dnsCert + `
-    key: ` + dnsKey + `
+certificates:` + dns + `
   local:
     certificate: ` + localCert + `
     key: ` + localKey + `
@@ -101,6 +105,59 @@ func TestListenersShared(t *testing.T) {
 	}
 }
 
+// Two listeners of one certificate, or of certificates both for a name, share a port when the
+// second has a server name: a client that asks it gets the second, and one that asks another name
+// of both, the first. The first needs none.
+func TestListenersSharedOneCertificate(t *testing.T) {
+	localNames := []string{"dns.local.example.com", "*.dns.local.example.com"}
+	for _, c := range []struct {
+		name, lan, kids  string
+		dnsNames, locals []string
+	}{
+		{"one certificate, both with a server name", `
+    listen:
+      - tls://127.0.0.1
+      - https://127.0.0.1:8443
+    tls: local
+    server_name: dns.local.example.com`, `
+    listen:
+      - tls://127.0.0.1
+      - https://127.0.0.1:8443
+    tls: local
+    server_name: kids.dns.local.example.com`, nil, localNames},
+		{"one certificate, the first without a server name", `
+    listen:
+      - tls://127.0.0.1
+    tls: local`, `
+    listen:
+      - tls://127.0.0.1
+    tls: local
+    server_name: kids.dns.local.example.com`, nil, localNames},
+		{"certificates both for a name", `
+    listen:
+      - tls://127.0.0.1
+    tls: dns`, `
+    listen:
+      - tls://127.0.0.1
+    tls: local
+    server_name: kids.dns.local.example.com`, []string{"kids.dns.local.example.com"}, localNames},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := sharedConfig(t, c.lan, c.kids, c.dnsNames, c.locals)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"lan", "kids"} {
+				for _, e := range cfg.Resolvers[name].Spec.Encrypted {
+					if !e.Shared || e.Listener != name {
+						t.Errorf("%s: %s: shared %t, listener %s", name, e.Line, e.Shared, e.Listener)
+					}
+				}
+			}
+		})
+	}
+}
+
 // Entries on different addresses or ports, or of different protocols, aren't shared.
 func TestListenersNotShared(t *testing.T) {
 	cfg, err := sharedConfig(t, `
@@ -155,6 +212,31 @@ func TestListenersSharedErrors(t *testing.T) {
     listen:
       - tls://127.0.0.1
     tls: local`, []string{"kids.dns.local.example.com"}, localNames, "listeners.kids.tls: listeners lan and kids share tls://127.0.0.1, and both their certificates, dns and local, are for kids.dns.local.example.com"},
+		{"one certificate, the second without a server name", `
+    listen:
+      - tls://127.0.0.1
+    tls: local
+    server_name: dns.local.example.com`, `
+    listen:
+      - tls://127.0.0.1
+    tls: local`, dnsNames, localNames, "listeners.kids.tls: listeners lan and kids share tls://127.0.0.1 with one certificate, local, and the name a client asks can't tell them apart: add a server_name to kids, a name of the certificate its clients ask, as server_name: kids.dns.local.example.com, or give each"},
+		{"one server name of both", `
+    listen:
+      - tls://127.0.0.1
+    tls: local
+    server_name: kids.dns.local.example.com`, `
+    listen:
+      - tls://127.0.0.1
+    tls: local
+    server_name: KIDS.dns.local.example.com.`, dnsNames, localNames, "listeners.kids.server_name: listeners lan and kids share tls://127.0.0.1, and both have the server_name KIDS.dns.local.example.com.: a client that asks it can't be told which. Give each a name of its own"},
+		{"a name of both, the second without a server name", `
+    listen:
+      - tls://127.0.0.1
+    tls: dns
+    server_name: dns.lan.example.com`, `
+    listen:
+      - tls://127.0.0.1
+    tls: local`, dnsNames, []string{"dns.local.example.com", "dns.lan.example.com"}, "listeners.kids.tls: listeners lan and kids share tls://127.0.0.1, and both their certificates, dns and local, are for dns.lan.example.com: a client that asks it can't be told which. Add a server_name to kids"},
 		{"a server name of another certificate", `
     listen:
       - tls://127.0.0.1

@@ -526,3 +526,23 @@ func TestResolversPageAllowAndGrants(t *testing.T) {
 		t.Errorf("the resolver's own allow:\n%s", own)
 	}
 }
+
+// The sockets a resolver's listeners share, and the clients each answers there: the first's, of
+// any name; another's, of its server name, and of its certificate's other names unless one before
+// it is for them, as of one certificate of both.
+func TestResolversPageShared(t *testing.T) {
+	page := resolversPage("", []resolver.Status{
+		{Name: "lan", Shared: []resolver.SharedStatus{{Address: "tls://10.2.3.75:853", Listener: "lan", Name: "dns.local.example.com", Default: true, With: []string{"kids"}}}},
+		{Name: "kids", Shared: []resolver.SharedStatus{{Address: "tls://10.2.3.75:853", Listener: "kids", Name: "kids.dns.local.example.com", With: []string{"lan"}}}},
+		{Name: "lab", Shared: []resolver.SharedStatus{{Address: "tls://10.2.3.75:853", Listener: "lab", Name: "dns.lab.example.com", Others: true, With: []string{"lan"}}}},
+	}).String()
+	for _, want := range []string{
+		"        Shared: tls://10.2.3.75:853, listener lan, with kids: the clients that ask dns.local.example.com, or another name, or none\n",
+		"        Shared: tls://10.2.3.75:853, listener kids, with lan: the clients that ask kids.dns.local.example.com, by that name alone\n",
+		"        Shared: tls://10.2.3.75:853, listener lab, with lan: the clients that ask dns.lab.example.com, or another name of its certificate that none before it is for\n",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("without %q:\n%s", want, page)
+		}
+	}
+}

@@ -208,7 +208,13 @@ certificates:
 
 ### Several listeners on one port
 
-Encrypted entries of several listeners can share one address and port, as `tls://192.168.1.2` of two, each listener with its resolver. A client is given the listener of the name it asks in its TLS handshake (its SNI): the one whose certificate, or [`server_name`](#discovery-by-the-clients), is for that name. A client that asks no name, as Android's Private DNS set to automatic, which asks by address, or a name of no listener there, gets the first of them, as written in the file. So one address can serve a resolver for the adults and another for the children, each with its own `allow`, `upstream` and records:
+Encrypted entries of several listeners can share one address and port, as `tls://192.168.1.2` of two, each listener with its resolver. A client is given the listener of the name it asks in its TLS handshake (its SNI), in this order:
+
+1. the listener whose [`server_name`](#discovery-by-the-clients) is that name, in any case, with or without its final dot;
+2. else the first listener, as written in the file, whose certificate is for that name;
+3. else, of a client that asks no name, as Android's Private DNS set to automatic, which asks by address, or a name of no listener there, the first of them, as written in the file.
+
+So one address can serve a resolver for the adults and another for the children, each with its own `allow`, `upstream` and records:
 
 ```yaml
 listeners:
@@ -254,8 +260,44 @@ A client set to `kids.dns.local.example.com` gets the `kids` resolver; one set t
 The rules, checked at start:
 
 - **Only encrypted entries of one scheme share a port**: `tls://` with `tls://`, `quic://` with `quic://`, `https://` with `https://`. A `dns://` entry never does: plain DNS has no name a client asks. Entries share when they listen on the same address and port, however written: `tls://192.168.1.2` and `tls://192.168.1.2:853` are one. Entries that only overlap, as `tls://853`, every address, and `tls://192.168.1.2`, can't both listen: the configuration is refused at load, and the error says to write the same address in both.
-- **Each listener there has a resolver**, and its own certificate.
-- **No name is of two of the certificates.** A name both would be shown for, as `dns.lan.example.com` in both, or `kids.lan.example.com` and the wildcard `*.lan.example.com`, couldn't tell the client which listener it gets. A wildcard is for one label: `*.lan.example.com` is for `kids.lan.example.com`, not `a.kids.lan.example.com`, nor `lan.example.com`. Of a certificate from Let's Encrypt, the names are compared as written under `acme.names`.
+- **Each listener there has a resolver**, and a certificate.
+- **Two listeners of one certificate, or of certificates both for a name, are told apart by `server_name`.** A name both would be shown for, as `dns.lan.example.com` in both, or `kids.lan.example.com` and the wildcard `*.lan.example.com`, goes to the first of them, so the later one needs a `server_name`, the name its clients ask: without it, the configuration is refused at load, and the error says to add it. The first needs none. A wildcard is for one label: `*.lan.example.com` is for `kids.lan.example.com`, not `a.kids.lan.example.com`, nor `lan.example.com`. Of a certificate from Let's Encrypt, the names are compared as written under `acme.names`.
+- **No two listeners there have one `server_name`.**
+
+So one certificate, for `dns.local.example.com` and `*.dns.local.example.com`, can serve both listeners:
+
+```yaml
+listeners:
+  lan:                         # first: the clients that ask no name, or another
+    listen:
+      - tls://192.168.1.2
+    tls: local
+    server_name: dns.local.example.com
+  kids:
+    listen:
+      - tls://192.168.1.2
+    tls: local
+    server_name: kids.dns.local.example.com
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 192.168.1.1
+  kids:
+    listeners:
+      - kids
+    upstream:
+      - 9.9.9.11
+
+certificates:
+  local:                       # for dns.local.example.com and *.dns.local.example.com
+    certificate: /etc/ssl/dns.local.example.com/fullchain.pem
+    key: /etc/ssl/dns.local.example.com/privkey.pem
+```
+
+A client set to `kids.dns.local.example.com` gets `kids`; one set to `dns.local.example.com`, to another name of the certificate, as `other.dns.local.example.com`, or to the address alone, gets `lan`. Each listener keeps its own `allow`, resolver and web server, and each resolver's DDR tells its own listener's `server_name`. The report tells, of each shared socket, the clients each listener answers: of `kids` here, those that ask its name alone.
 
 Over HTTPS, a request is the listener's of the name of the TLS handshake, whatever its `Host` header says: the certificate the client checked was that one's. On a shared `https://` entry, every path but `/dns-query` is the web server's of that listener, if it has one, and not found otherwise. Over a shared `tls://` entry, the [keys](#dynamic-updates) are the first listener's resolver's: an update, or a signed query, to another listener there is refused. Send them over plain DNS, or an entry of the resolver's own.
 

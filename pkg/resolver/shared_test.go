@@ -44,17 +44,29 @@ func freePort(t *testing.T) string {
 // for names. allow is of each transport's entry.
 func sharedServer(t *testing.T, ca *testCA, name string, rank int, port, httpsPort, serverName string, names []string, allow map[string][]netip.Prefix) *Server {
 	t.Helper()
+	return sharedServerOf(t, loadShared(t, ca, names), name, rank, port, httpsPort, serverName, allow)
+}
+
+// loadShared is a certificate of the CA for names.
+func loadShared(t *testing.T, ca *testCA, names []string) *certfile.Certificate {
+	t.Helper()
+	certFile, keyFile := writeCertificate(t, t.TempDir(), ca.leaf(t, names))
+	cert, err := certfile.Load(certFile, keyFile, false, t.Errorf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+// sharedServerOf is sharedServer of the certificate cert, which another can be of too.
+func sharedServerOf(t *testing.T, cert *certfile.Certificate, name string, rank int, port, httpsPort, serverName string, allow map[string][]netip.Prefix) *Server {
+	t.Helper()
 	cfg, _ := testConfig(t)
 	cfg.Name, cfg.Path = name, "resolvers."+name
 	// Its plain DNS on a port free over both: a port of the system's, 0, is UDP's, and the shared
 	// HTTPS port, of TCP alone, can be one.
 	cfg.Listen = []listen.Entry{{Host: "127.0.0.1", Port: freePort(t)}}
 	cfg.Records = append(cfg.Records, mustRecords(t, "", `who.test. TXT "`+name+`"`)...)
-	certFile, keyFile := writeCertificate(t, t.TempDir(), ca.leaf(t, names))
-	cert, err := certfile.Load(certFile, keyFile, false, t.Errorf)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, transport := range []string{TransportTLS, TransportHTTPS, TransportQUIC} {
 		port := port
 		if transport == TransportHTTPS {
@@ -254,8 +266,69 @@ func TestServeShared(t *testing.T) {
 	}
 }
 
-// The listener chosen: of a name its server name or certificate is for, the first; else the
-// first of all.
+// Two listeners of one certificate share a port over TLS, HTTPS and QUIC, told apart by their
+// server names: a client that asks the second's gets its resolver; one that asks the first's,
+// another name of the certificate, or none, the first's. Each status tells it.
+func TestServeSharedOneCertificate(t *testing.T) {
+	ca := newTestCA(t)
+	port, httpsPort := freePort(t), freePort(t)
+	cert := loadShared(t, ca, []string{"dns.local.test", "*.dns.local.test"})
+	lan := sharedServerOf(t, cert, "lan", 0, port, httpsPort, "dns.local.test", nil)
+	kids := sharedServerOf(t, cert, "kids", 1, port, httpsPort, "kids.dns.local.test", nil)
+	servers := []*Server{kids, lan}
+	if err := Share(servers); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckListen(servers); err != nil {
+		t.Fatalf("the shared entries collide: %v", err)
+	}
+	for _, s := range servers {
+		if err := s.Start(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		for _, s := range servers {
+			s.Shutdown(context.Background())
+		}
+	})
+	for _, c := range []struct{ name, want string }{
+		{"kids.dns.local.test", "kids"},
+		{"KIDS.dns.local.test.", "kids"},
+		{"dns.local.test", "lan"},
+		{"other.dns.local.test", "lan"},
+		{"", "lan"},
+	} {
+		for _, transport := range []string{TransportTLS, TransportHTTPS, TransportQUIC} {
+			address := "127.0.0.1:" + port
+			if transport == TransportHTTPS {
+				address = "127.0.0.1:" + httpsPort
+			}
+			if got := whoOver(t, ca, transport, address, c.name); got != c.want {
+				t.Errorf("%s, asking %q: %s, want %s", transport, c.name, got, c.want)
+			}
+		}
+	}
+	for _, c := range []struct {
+		s             *Server
+		name          string
+		defaultListen bool
+	}{{lan, "dns.local.test", true}, {kids, "kids.dns.local.test", false}} {
+		st := c.s.Status()
+		if len(st.Shared) != 3 {
+			t.Fatalf("%s: shared %v, want 3", c.s.Name(), st.Shared)
+		}
+		for _, sh := range st.Shared {
+			// kids's certificate's other names are lan's, before it.
+			if sh.Name != c.name || sh.Default != c.defaultListen || sh.Others != c.defaultListen {
+				t.Errorf("%s: shared %+v", c.s.Name(), sh)
+			}
+		}
+	}
+}
+
+// The listener chosen: of a name that is its server name, that one; else the first whose
+// certificate is for it; else the first of all.
 func TestChoose(t *testing.T) {
 	ca := newTestCA(t)
 	load := func(names ...string) *certfile.Certificate {
@@ -280,6 +353,28 @@ func TestChoose(t *testing.T) {
 		{"b.kids.test", "kids"},
 		{"a.b.kids.test", "lan"},
 		{"more.test", "more"},
+		{"other.test", "lan"},
+	} {
+		if got := choose(routes, c.name).e.Listener; got != c.want {
+			t.Errorf("%q: %s, want %s", c.name, got, c.want)
+		}
+	}
+
+	// One certificate of two, the second told by its server name alone; a server name before a
+	// certificate of an earlier route.
+	local := load("dns.local.test", "*.dns.local.test")
+	routes = []route{
+		{s, EncryptedListen{Listener: "lan", Certificate: local, ServerName: "dns.local.test"}},
+		{s, EncryptedListen{Listener: "kids", Certificate: local, ServerName: "kids.dns.local.test"}},
+		{s, EncryptedListen{Listener: "lab", Certificate: load("lab.test", "*.dns.local.test")}},
+	}
+	for _, c := range []struct{ name, want string }{
+		{"", "lan"},
+		{"dns.local.test", "lan"},
+		{"kids.dns.local.test", "kids"},
+		{"Kids.DNS.local.test.", "kids"},
+		{"other.dns.local.test", "lan"},
+		{"lab.test", "lab"},
 		{"other.test", "lan"},
 	} {
 		if got := choose(routes, c.name).e.Listener; got != c.want {

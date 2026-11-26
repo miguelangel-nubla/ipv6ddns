@@ -866,8 +866,14 @@ func resolversPage(prefix string, statuses []resolver.Status) pretty.Page {
 			if sh.Name == "" {
 				by = "the clients of its certificate's names"
 			}
-			if sh.Default {
+			switch {
+			case sh.Default:
 				by += ", or another name, or none"
+			case sh.Name != "" && sh.Others:
+				by += ", or another name of its certificate that none before it is for"
+			case sh.Name != "":
+				// Its certificate's other names, of one before it too, are that one's.
+				by += ", by that name alone"
 			}
 			plain("        Shared: %s, listener %s, with %s: %s", sh.Address, sh.Listener, strings.Join(sh.With, ", "), by)
 		}

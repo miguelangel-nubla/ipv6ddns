@@ -158,9 +158,11 @@ func protocolsOf(scheme string) []string { return []string{resolver.Protocol(sch
 
 // checkListenersShared checks the entries of different listeners on one address and port, of one
 // protocol, however written: a port alone and every address are the same. Only encrypted entries of
-// one scheme share one, plain DNS never, which has no name a client asks, each listener with a resolver and a certificate of its own names, which no
-// other's is for: a client is told the listener by the name it asks in its handshake, and one that
-// asks none, or another, gets the first, as written. Those are marked Shared.
+// one scheme share one, plain DNS never, which has no name a client asks, each listener with a
+// resolver and a certificate: a client is told the listener by the name it asks in its handshake,
+// its server_name, or else the first, as written, whose certificate is for it, and one that asks
+// none, or another, gets the first. Two of one certificate, or whose certificates are both for a
+// name, are told apart by the later one's server_name, which no other's is. Those are marked Shared.
 func (c *Config) checkListenersShared() error {
 	order := c.listenersInOrder()
 	var all []sharing
@@ -227,8 +229,14 @@ func (c *Config) checkShared(a, b sharing) error {
 			alone = b.listener
 		}
 		return fmt.Errorf("listeners.%s.listen: %s is shared with another listener, and only a resolver's entries are shared: name %s in a resolver's listeners, or give the entry an address or port of its own", alone, map[string]string{a.listener: ea.Line, b.listener: eb.Line}[alone], alone)
+	case la.ServerName != "" && certfile.Canonical(la.ServerName) == certfile.Canonical(lb.ServerName):
+		return fmt.Errorf("%s.server_name: listeners %s and %s share %s, and both have the server_name %s: a client that asks it can't be told which. Give each a name of its own", path, a.listener, b.listener, eb.Line, lb.ServerName)
+	case lb.ServerName != "":
+		// Told apart by its server_name, asked exactly: a name both certificates are for, and
+		// no server_name, is a's, the first.
+		return nil
 	case la.TLS == lb.TLS:
-		return fmt.Errorf("%s.tls: listeners %s and %s share %s with one certificate, %s, and the name a client asks can't tell them apart: give each a certificate of its own names", path, a.listener, b.listener, eb.Line, la.TLS)
+		return fmt.Errorf("%s.tls: listeners %s and %s share %s with one certificate, %s, and the name a client asks can't tell them apart: add a server_name to %s, a name of the certificate its clients ask%s or give each a certificate of its own names", path, a.listener, b.listener, eb.Line, la.TLS, b.listener, c.serverNameExample(la, b.listener))
 	}
 	na, _, err := c.certificateNames(la.TLS)
 	if err != nil {
@@ -239,9 +247,31 @@ func (c *Config) checkShared(a, b sharing) error {
 		return err
 	}
 	if name := namesOverlap(na, nb); name != "" {
-		return fmt.Errorf("%s.tls: listeners %s and %s share %s, and both their certificates, %s and %s, are for %s: a client that asks it can't be told which. Give each certificate names the other's isn't for", path, a.listener, b.listener, eb.Line, la.TLS, lb.TLS, name)
+		return fmt.Errorf("%s.tls: listeners %s and %s share %s, and both their certificates, %s and %s, are for %s: a client that asks it can't be told which. Add a server_name to %s, the name its clients ask, or give each certificate names the other's isn't for", path, a.listener, b.listener, eb.Line, la.TLS, lb.TLS, name, b.listener)
 	}
 	return nil
+}
+
+// serverNameExample is ", as server_name: <name>," of a name of l's certificate a listener of
+// the name listener could be given, other than l's server_name: of a wildcard, the listener's name
+// below it, else another name of it. It is "", of none.
+func (c *Config) serverNameExample(l Listener, listener string) string {
+	names, _, err := c.certificateNames(l.TLS)
+	if err != nil {
+		return ""
+	}
+	taken := certfile.Canonical(l.ServerName)
+	for _, n := range names {
+		if base, ok := strings.CutPrefix(n, "*."); ok && certfile.Canonical(listener+"."+base) != taken {
+			return fmt.Sprintf(", as server_name: %s,", listener+"."+base)
+		}
+	}
+	for _, n := range names {
+		if !strings.HasPrefix(n, "*") && certfile.Canonical(n) != taken {
+			return fmt.Sprintf(", as server_name: %s,", n)
+		}
+	}
+	return ""
 }
 
 // namesOverlap is a name that certificates of the names a and b would both be shown for, or ""

@@ -145,8 +145,117 @@ tasks:
 	report := one.page("/status.txt")
 	for _, has := range []string{
 		"Shared: tls://" + address + ":853, listener lan, with kids: the clients that ask " + sharedLanHost + ", or another name, or none",
-		"Shared: quic://" + address + ":853, listener kids, with lan: the clients that ask " + sharedKidsHost + "\n",
+		"Shared: quic://" + address + ":853, listener kids, with lan: the clients that ask " + sharedKidsHost + ", or another name of its certificate that none before it is for\n",
 		"Shared: https://" + address + ":443, listener kids, with lan",
+	} {
+		if !strings.Contains(report, has) {
+			t.Errorf("the report has no %q:\n%s", has, report)
+		}
+	}
+}
+
+// A machine runs ipv6ddns with two resolvers, lan and kids, whose listeners share the address's
+// ports of TLS, HTTPS and QUIC with one certificate, for dns.local.home.arpa and its wildcard,
+// told apart by their server names. A client that asks kids's gets kids's address over each
+// transport; one that asks lan's, another name of the certificate, or none, lan's. The report
+// tells kids is asked by its name alone.
+func TestLiveResolverSharedOneCertificate(t *testing.T) {
+	for _, tool := range []string{"kdig"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Fatalf("the live test of shared listeners asks with %s, of knot-dnsutils: not found", tool)
+		}
+	}
+	const lanHost, kidsHost, otherHost = "dns.local.home.arpa", "kids.dns.local.home.arpa", "other.dns.local.home.arpa"
+	lan := livetest.NewLAN(t, 35)
+	srv := lan.Machine(t, "srv", 10)
+	client := lan.Machine(t, "client", 30)
+	ca, cert, key := writeTestCAFor(t, t.TempDir(), "dns.local.home.arpa", "*.dns.local.home.arpa")
+	address := srv.IPv4.String()
+
+	config := fmt.Sprintf(`
+listeners:
+  web:
+    listen:
+      - http://8053
+  lan:
+    listen:
+      - dns://%[1]s
+      - "tls://%[1]s"
+      - "https://%[1]s"
+      - "quic://%[1]s"
+    tls: local
+    server_name: %[4]s
+    allow:
+      - 0.0.0.0/0
+  kids:
+    listen:
+      - dns://%[1]s:5300
+      - "tls://%[1]s"
+      - "https://%[1]s"
+      - "quic://%[1]s"
+    tls: local
+    server_name: %[5]s
+    allow:
+      - 0.0.0.0/0
+webservers:
+  main:
+    listeners:
+      - web
+resolvers:
+  lan:
+    listeners:
+      - lan
+    # Nothing is forwarded in this test: a server that doesn't answer.
+    upstream: 192.0.2.1
+    records:
+      - who.home.example. A 198.18.35.1
+  kids:
+    listeners:
+      - kids
+    upstream: 192.0.2.1
+    records:
+      - who.home.example. A 198.18.35.2
+certificates:
+  local:
+    certificate: %[2]s
+    key: %[3]s
+credentials:
+  home:
+    provider: resolver
+    settings:
+      resolver: lan
+      zone: home.arpa
+tasks:
+  nobody:
+    filter:
+      - mac:
+          address: "02:00:00:00:00:99"
+    endpoints:
+      home:
+        - nobody
+`, address, cert, key, lanHost, kidsHost)
+	one := configure(t, srv, lan.Router, "srv", 8053, config).start().serving()
+
+	for _, transport := range []string{"+tls", "+https", "+quic"} {
+		for _, c := range []struct{ name, want string }{
+			{lanHost, "198.18.35.1"},
+			{kidsHost, "198.18.35.2"},
+			{otherHost, "198.18.35.1"},
+		} {
+			got, err := kdig(t, client, address, transport, "+tls-ca="+ca, "+tls-hostname="+c.name, "who.home.example", "A")
+			if err != nil || got != c.want {
+				t.Errorf("kdig %s, asking %s: %q, %v; want %s", transport, c.name, got, err, c.want)
+			}
+		}
+		if got, err := kdig(t, client, address, transport, "who.home.example", "A"); err != nil || got != "198.18.35.1" {
+			t.Errorf("kdig %s, asking no name: %q, %v; want lan's, 198.18.35.1", transport, got, err)
+		}
+	}
+
+	report := one.page("/status.txt")
+	for _, has := range []string{
+		"Shared: tls://" + address + ":853, listener lan, with kids: the clients that ask " + lanHost + ", or another name, or none",
+		"Shared: tls://" + address + ":853, listener kids, with lan: the clients that ask " + kidsHost + ", by that name alone",
 	} {
 		if !strings.Contains(report, has) {
 			t.Errorf("the report has no %q:\n%s", has, report)
