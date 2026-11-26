@@ -70,6 +70,16 @@ type holder interface {
 	Holds(name string) bool
 }
 
+// limited is a Grant whose updates are each a provider's write, which a client in a loop would
+// repeat as fast as the provider answers: they are limited, of each key, to updateLimit a minute.
+type limited interface {
+	Limited() bool
+}
+
+// updateLimit is how many updates of a limited grant a key may send a minute, and at once: a
+// certificate of 30 names, each added and removed.
+const updateLimit = 60
+
 // warnEvery is how often a client's signatures refused are logged, of each key it names: a host
 // that sends many is told of once a minute, and the log isn't flooded.
 const warnEvery = time.Minute
@@ -98,7 +108,10 @@ type keyState struct {
 
 	counts map[string]*atomic.Uint64
 	mutex  sync.Mutex
-	last   time.Time
+	// The updates of limited grants it may send now, and when they were counted last.
+	allowance float64
+	refilled  time.Time
+	last      time.Time
 	// What the last update did, or why it was refused.
 	lastResult, lastMessage string
 }
@@ -125,7 +138,7 @@ func newKeys(path string, keys []UpdateKey) (map[string]*keyState, error) {
 			return nil, fmt.Errorf("%s.updates.keys.%s has no permissions", path, k.Name)
 		}
 		k.Name = name
-		ks := &keyState{UpdateKey: k, secret: secret, counts: make(map[string]*atomic.Uint64)}
+		ks := &keyState{UpdateKey: k, secret: secret, counts: make(map[string]*atomic.Uint64), allowance: updateLimit}
 		for _, r := range []string{UpdateApplied, UpdateRefused, UpdateFailed} {
 			ks.counts[r] = new(atomic.Uint64)
 		}
@@ -252,6 +265,22 @@ func (key *keyState) scopes() ([]scope, error) {
 		out = append(out, sc)
 	}
 	return out, errors.Join(errs...)
+}
+
+// take takes one update of the key's allowance, at now: false when none is left. The allowance
+// fills again, updateLimit a minute, up to updateLimit.
+func (key *keyState) take(now time.Time) bool {
+	key.mutex.Lock()
+	defer key.mutex.Unlock()
+	if !key.refilled.IsZero() {
+		key.allowance = min(updateLimit, key.allowance+now.Sub(key.refilled).Minutes()*updateLimit)
+	}
+	key.refilled = now
+	if key.allowance < 1 {
+		return false
+	}
+	key.allowance--
+	return true
 }
 
 // lowerName is name absolute, in lower case.
@@ -541,6 +570,16 @@ func (s *Server) update(req *dns.Msg, key *keyState) *dns.Msg {
 		return refuse(dns.RcodeRefused, outside+" is outside its permissions")
 	}
 
+	if l, ok := sc.grant.(limited); ok && l.Limited() && !key.take(s.now()) {
+		// Counted, and logged once a minute: the client that sends them would flood the log too.
+		why := fmt.Sprintf("more than %d updates of %s a minute: a client that tries again and again?", updateLimit, sc.grant.Kind())
+		s.note(key, UpdateRefused, why)
+		if s.shouldWarn("limit " + key.Name) {
+			s.warnf("resolver %s: key %s: update refused: %s", s.config.Name, strings.TrimSuffix(key.Name, "."), why)
+		}
+		return reply(req, dns.RcodeRefused)
+	}
+
 	s.updateMutex.Lock()
 	defer s.updateMutex.Unlock()
 	if rcode, why := checkPrerequisites(sc, req.Answer); rcode != dns.RcodeSuccess {
@@ -722,12 +761,17 @@ func sameRecords(a, b []dns.RR) bool {
 	return true
 }
 
-// updated notes what an update of key did, and logs it.
-func (s *Server) updated(key *keyState, result, message string) {
+// note notes what an update of key did: its count, and its last.
+func (s *Server) note(key *keyState, result, message string) {
 	key.counts[result].Add(1)
 	key.mutex.Lock()
 	key.last, key.lastResult, key.lastMessage = s.now(), result, message
 	key.mutex.Unlock()
+}
+
+// updated notes what an update of key did, and logs it.
+func (s *Server) updated(key *keyState, result, message string) {
+	s.note(key, result, message)
 	name := strings.TrimSuffix(key.Name, ".")
 	if result == UpdateApplied {
 		s.infof("resolver %s: key %s: updated %s", s.config.Name, name, message)

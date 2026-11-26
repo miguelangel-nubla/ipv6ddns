@@ -354,6 +354,9 @@ func newChallengeGrant(writer ddns.TXTWriter, names []string, file string, warnf
 
 func (g *challengeGrant) Kind() string { return config.PermissionChallenges }
 
+// Limited: each update is a write of the provider's.
+func (g *challengeGrant) Limited() bool { return true }
+
 func (g *challengeGrant) Types() []uint16 { return []uint16{dns.TypeTXT} }
 
 // Scope asks the provider the names in full, the first time: Route 53 learns its zone of AWS, and

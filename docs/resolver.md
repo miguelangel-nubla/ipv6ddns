@@ -452,7 +452,7 @@ Before an update, certbot and nsupdate look for the zone of the name, with SOA q
 |---|---|
 | `NOERROR` | The update is applied, or it changed nothing |
 | `NOTAUTH`, with a TSIG error | The key is unknown, or of another algorithm (`BADKEY`); the signature is wrong (`BADSIG`); or the clocks are more than 5 minutes apart (`BADTIME`) |
-| `REFUSED` | Unsigned; from outside the key's `allow`; of a zone of none of its permissions; or of a record outside them |
+| `REFUSED` | Unsigned; from outside the key's `allow`; of a zone of none of its permissions; of a record outside them; or, of `challenges`, past 60 updates a minute of the key |
 | `NOTZONE` | A record of a name outside the update's zone |
 | `FORMERR` | A message RFC 2136 doesn't allow |
 | `YXDOMAIN`, `NXDOMAIN`, `YXRRSET`, `NXRRSET` | A prerequisite that doesn't hold, as RFC 4703's conflict checks ask them |

@@ -785,3 +785,71 @@ func TestUpdateGrantHolds(t *testing.T) {
 		}
 	}
 }
+
+// limitedGrant is a fake grant whose updates are limited, as a provider's writes.
+type limitedGrant struct{ *fakeGrant }
+
+func (limitedGrant) Limited() bool { return true }
+
+// A key's updates of a limited grant: updateLimit at once, refused past them, and allowed again as
+// the minute goes, logged once; those of another grant, not limited.
+func TestUpdateLimit(t *testing.T) {
+	name := "_acme-challenge.nas.example.com."
+	g := limitedGrant{newFakeGrant("example.com.", []string{name}, dns.TypeTXT)}
+	free := newFakeGrant("example.com.", []string{"vps.example.com."}, dns.TypeA)
+	cfg := updateConfig(t, g, free)
+	var warned []string
+	var mutex sync.Mutex
+	cfg.Warnf = func(f string, a ...any) { mutex.Lock(); warned = append(warned, fmt.Sprintf(f, a...)); mutex.Unlock() }
+	now := time.Now()
+	var clock sync.Mutex
+	s := startWith(t, cfg, func(s *Server) {
+		s.now = func() time.Time { clock.Lock(); defer clock.Unlock(); return now }
+	})
+	challenge := func(i int) int {
+		m := updateOf("example.com")
+		m.Insert([]dns.RR{rr(t, fmt.Sprintf(`%s 60 IN TXT "v%d"`, name, i))})
+		// Signed of the real time: the server's clock is the test's, for the limit alone.
+		resp, err := signedExchange(t, s, "tcp", m, "nas", dns.HmacSHA256, testSecret, time.Now())
+		if err != nil {
+			t.Fatalf("%d: %v", i, err)
+		}
+		return resp.Rcode
+	}
+	for i := range updateLimit {
+		if rcode := challenge(i); rcode != dns.RcodeSuccess {
+			t.Fatalf("update %d of %d: %s", i+1, updateLimit, dns.RcodeToString[rcode])
+		}
+	}
+	for i := range 3 {
+		if rcode := challenge(100 + i); rcode != dns.RcodeRefused {
+			t.Errorf("past the limit: %s", dns.RcodeToString[rcode])
+		}
+	}
+	// Another grant's, of the same key: not limited.
+	m := updateOf("example.com")
+	m.Insert([]dns.RR{rr(t, "vps.example.com. 60 IN A 192.0.2.7")})
+	if resp := send(t, s, m); resp.Rcode != dns.RcodeSuccess {
+		t.Errorf("an update not limited: %s", dns.RcodeToString[resp.Rcode])
+	}
+	// Two seconds on, two more.
+	clock.Lock()
+	now = now.Add(2 * time.Second)
+	clock.Unlock()
+	for i := range 2 {
+		if rcode := challenge(200 + i); rcode != dns.RcodeSuccess {
+			t.Errorf("after two seconds, %d: %s", i+1, dns.RcodeToString[rcode])
+		}
+	}
+	if rcode := challenge(300); rcode != dns.RcodeRefused {
+		t.Errorf("then past it again: %s", dns.RcodeToString[rcode])
+	}
+	if st := s.Status().Keys[0]; st.Updates[UpdateRefused] != 4 {
+		t.Errorf("refused %d, want 4", st.Updates[UpdateRefused])
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if len(warned) != 1 || !strings.Contains(warned[0], "more than 60 updates of fake a minute") {
+		t.Errorf("warned %q, want once", warned)
+	}
+}
