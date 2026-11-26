@@ -205,6 +205,10 @@ func (s *Server) answerHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/dns-message")
 	w.Header().Set("Cache-Control", "max-age="+strconv.Itoa(int(freshness(resp))))
+	// Its length, of every answer: Go says it alone of a body within its buffer, of 4 KB, and
+	// clients read the message by it, as dig, which took a larger one, as a name's signed with
+	// ML-DSA-44, for one shorter than its header.
+	w.Header().Set("Content-Length", strconv.Itoa(len(packed)))
 	// A client gone: nothing to do.
 	_, _ = w.Write(packed)
 }

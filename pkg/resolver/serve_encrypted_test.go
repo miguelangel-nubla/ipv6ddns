@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -48,9 +49,9 @@ func writeCertificate(t *testing.T, dir string, cert tls.Certificate) (certFile,
 
 // encryptedConfig is testConfig, answering also over TLS, HTTPS and QUIC on 127.0.0.1, with a
 // certificate of the CA for encryptedName.
-func encryptedConfig(t *testing.T, ca *testCA) Config {
+func encryptedConfig(t *testing.T, ca *testCA, upstreams ...string) Config {
 	t.Helper()
-	cfg, _ := testConfig(t)
+	cfg, _ := testConfig(t, upstreams...)
 	for _, transport := range []string{TransportTLS, TransportHTTPS, TransportQUIC} {
 		cfg.Encrypted = append(cfg.Encrypted, EncryptedListen{Transport: transport, Entry: listen.Entry{Host: "127.0.0.1", Port: "0"}, Line: transport + "://127.0.0.1:0"})
 	}
@@ -623,5 +624,95 @@ func TestServeWithoutUpstream(t *testing.T) {
 	}
 	if resp := query(t, s, "udp", "elsewhere.example.", dns.TypeA, nil); resp.Rcode != dns.RcodeServerFailure {
 		t.Errorf("plain DNS: %s", dns.RcodeToString[resp.Rcode])
+	}
+}
+
+// An answer larger than the HTTP server's buffer, of 4 KB, as a name signed with ML-DSA-44 has:
+// its length is said, which clients read the body by, as dig: without it, Go streams the body,
+// and dig took it for a message shorter than its header.
+func TestServeHTTPSLargeAnswer(t *testing.T) {
+	ca := newTestCA(t)
+	cfg := encryptedConfig(t, ca)
+	for i := range 40 {
+		cfg.Records = append(cfg.Records, mustRecords(t, "", fmt.Sprintf(`big.example.com. TXT "%03d %s"`, i, strings.Repeat("x", 200)))...)
+	}
+	s := start(t, cfg)
+	checkLargeHTTPS(t, ca, addressOf(t, s, TransportHTTPS), "big.example.com.", 40)
+}
+
+// checkLargeHTTPS asks name's TXT records of DNS over HTTPS, by GET and by POST, over HTTP/2 and
+// HTTP/1.1, and checks each answer: records of it, its body past 4 KB, and its length said, the
+// body's exactly.
+func checkLargeHTTPS(t *testing.T, ca *testCA, address, name string, records int) {
+	t.Helper()
+	m := new(dns.Msg)
+	m.SetQuestion(name, dns.TypeTXT)
+	m.SetEdns0(1232, true)
+	m.Id = 0
+	wire, err := m.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "https://" + address + DoHPath
+	for _, protocol := range []string{"h2", "http/1.1"} {
+		client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: clientTLS(ca, protocol), ForceAttemptHTTP2: protocol == "h2"}}
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			var req *http.Request
+			if method == http.MethodGet {
+				req, _ = http.NewRequest(method, url+"?dns="+base64.RawURLEncoding.EncodeToString(wire), nil)
+			} else {
+				req, _ = http.NewRequest(method, url, bytes.NewReader(wire))
+				req.Header.Set("Content-Type", "application/dns-message")
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("%s, %s: %v", protocol, method, err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			what := fmt.Sprintf("%s, %s", resp.Proto, method)
+			answer := new(dns.Msg)
+			switch {
+			case resp.StatusCode != http.StatusOK:
+				t.Errorf("%s: %s", what, resp.Status)
+			case answer.Unpack(body) != nil || len(answer.Answer) != records:
+				t.Errorf("%s: %d records of %d bytes, want %d", what, len(answer.Answer), len(body), records)
+			case len(body) <= 4096:
+				t.Errorf("%s: a body of %d bytes, which the test wants past 4096", what, len(body))
+			case resp.ContentLength != int64(len(body)):
+				t.Errorf("%s: the length said is %d, the body's %d", what, resp.ContentLength, len(body))
+			}
+		}
+	}
+}
+
+// An answer of the upstream past 8 KB, as of a name signed with ML-DSA-44, which the upstream
+// truncates over UDP and gives over TCP: the resolver asks it again over TCP, and gives it whole
+// over each transport that carries it, DNS over HTTPS with its length; over UDP, it is truncated,
+// for the client to ask over TCP. As dnscheck.tools found, of DNS over HTTPS.
+func TestServeLargeForwardedAnswer(t *testing.T) {
+	up := newUpstream(t)
+	up.truncate.Store(true)
+	up.long.Store(true)
+	ca := newTestCA(t)
+	s := start(t, encryptedConfig(t, ca, up.address))
+	const name = "pq.example.net."
+
+	checkLargeHTTPS(t, ca, addressOf(t, s, TransportHTTPS), name, 40)
+
+	resp, err := queryTLS(t, ca, addressOf(t, s, TransportTLS), name, dns.TypeTXT)
+	if err != nil || len(resp.Answer) != 40 {
+		t.Errorf("DNS over TLS: %v, %v", resp, err)
+	}
+	conn := dialQUIC(t, ca, addressOf(t, s, TransportQUIC))
+	if resp, err := queryQUIC(conn, name, dns.TypeTXT, 0); err != nil || len(resp.Answer) != 40 {
+		t.Errorf("DNS over QUIC: %v, %v", resp, err)
+	}
+	if resp := query(t, s, "tcp", name, dns.TypeTXT, nil); len(resp.Answer) != 40 {
+		t.Errorf("over TCP: %d records", len(resp.Answer))
+	}
+	// Measured compressed, as it was sent: the client's copy isn't.
+	if resp := query(t, s, "udp", name, dns.TypeTXT, func(m *dns.Msg) { m.SetEdns0(1232, true) }); !resp.Truncated || func() int { resp.Compress = true; return resp.Len() }() > 1232 {
+		t.Errorf("over UDP: truncated %v, %d bytes", resp.Truncated, resp.Len())
 	}
 }

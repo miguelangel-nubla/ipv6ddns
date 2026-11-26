@@ -70,12 +70,14 @@ func TestParseRecord(t *testing.T) {
 }
 
 // upstream is a DNS server of the test's, on 127.0.0.1: it answers every A query with 192.0.2.53
-// and a TXT of what it was asked, unless told to be slow, or to truncate over UDP.
+// and a TXT of what it was asked, unless told to be slow, or to truncate over UDP; and of long TXT
+// records, told to, of an answer past 8 KB, as a name's signed with ML-DSA-44.
 type upstream struct {
 	address  string
 	queries  atomic.Int64
 	slow     atomic.Bool
 	truncate atomic.Bool
+	long     atomic.Bool
 	// The last query, as received.
 	mutex sync.Mutex
 	last  *dns.Msg
@@ -125,7 +127,11 @@ func newUpstream(t *testing.T) *upstream {
 		case dns.TypeTXT:
 			// Many, so that over UDP without EDNS they don't fit.
 			for i := range 40 {
-				resp.Answer = append(resp.Answer, &dns.TXT{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 30}, Txt: []string{fmt.Sprintf("upstream record %02d", i)}})
+				text := fmt.Sprintf("upstream record %02d", i)
+				if u.long.Load() {
+					text += " " + strings.Repeat("x", 200)
+				}
+				resp.Answer = append(resp.Answer, &dns.TXT{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 30}, Txt: []string{text}})
 			}
 		default:
 			resp.Rcode = dns.RcodeNameError
