@@ -30,6 +30,13 @@ func shownSettings(raw json.RawMessage) string {
 				continue
 			}
 			shown = append(shown, fmt.Sprintf("records %d", len(records)))
+		case "resolvers":
+			var names []string
+			if json.Unmarshal(value, &names) != nil {
+				rest = true
+				continue
+			}
+			shown = append(shown, key+" "+strings.Join(names, ", "))
 		case "zone", "ttl", "resolver", "region", "site", "endpoint", "proxied", "use_tls", "tsig_algorithm":
 			shown = append(shown, key+" "+settingValue(value))
 		case "address", "server":

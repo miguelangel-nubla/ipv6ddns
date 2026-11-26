@@ -224,6 +224,117 @@ func TestWorkerResolver(t *testing.T) {
 	}
 }
 
+// One zone of two resolvers: both answer its task's name, its record and the reverse, from the
+// one provider; the report has the endpoint once, and each resolver the zone, as the status and
+// the metrics.
+func TestWorkerZoneOfTwoResolvers(t *testing.T) {
+	lanPort, kidsPort := freeDNSPort(t), freeDNSPort(t)
+	w := workerOf(t, fmt.Sprintf(`
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
+  kids:
+    listen:
+      - dns://127.0.0.1:%s
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream: 127.0.0.1:%s
+  kids:
+    listeners:
+      - kids
+    allow:
+      - 127.0.0.1
+    upstream: 127.0.0.1:%s
+credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: home.arpa
+      resolvers:
+        - lan
+        - kids
+      records:
+        - files CNAME nas
+sources:
+  wan:
+    type: static
+    addresses:
+      - 192.0.2.7
+tasks:
+  nas:
+    sources:
+      - wan
+    endpoints:
+      home:
+        - nas
+discovery:
+  ipv6:
+    enabled: false
+`, lanPort, kidsPort, freeDNSPort(t), freeDNSPort(t)))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := w.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cancel()
+		stopping, done := context.WithTimeout(context.Background(), 10*time.Second)
+		defer done()
+		if err := w.Shutdown(stopping); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	for _, port := range []string{lanPort, kidsPort} {
+		address := net.JoinHostPort("127.0.0.1", port)
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			resp := ask(t, address, "files.home.arpa.", dns.TypeA)
+			if len(resp.Answer) == 2 && resp.Answer[1].(*dns.A).A.String() == "192.0.2.7" {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: nas never answered: %v", address, resp)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if resp := ask(t, address, "7.2.0.192.in-addr.arpa.", dns.TypePTR); len(resp.Answer) != 1 || resp.Answer[0].(*dns.PTR).Ptr != "nas.home.arpa." {
+			t.Errorf("%s: reverse: %v", address, resp)
+		}
+	}
+
+	status := w.Status(true)
+	if len(status.Resolvers) != 2 {
+		t.Fatalf("status: %+v", status.Resolvers)
+	}
+	var metrics strings.Builder
+	status.WriteMetrics(&metrics)
+	for _, r := range status.Resolvers {
+		if !slices.Equal(r.Zones, []string{"home.arpa"}) || r.ZoneNames["home.arpa"] != 1 || r.ZoneCredentials["home.arpa"] != "home" {
+			t.Errorf("status of %s: %+v", r.Name, r)
+		}
+		if want := fmt.Sprintf(`ipv6ddns_resolver_zone_names{resolver=%q,zone="home.arpa"} 1`, r.Name); !strings.Contains(metrics.String(), want) {
+			t.Errorf("metrics without %s:\n%s", want, metrics.String())
+		}
+	}
+	report := w.PrettyPrint("", true)
+	if n := strings.Count(report, "Endpoint: home\n            files.home.arpa. "); n != 1 {
+		t.Errorf("the endpoint %d times in the report:\n%s", n, report)
+	}
+	if n := strings.Count(report, "nas.home.arpa: "); n != 1 {
+		t.Errorf("the task's name %d times in the report:\n%s", n, report)
+	}
+	if !strings.Contains(report, "Settings: records 1, resolvers lan, kids, zone home.arpa\n") {
+		t.Errorf("report without the credential's resolvers:\n%s", report)
+	}
+	if n := strings.Count(report, "        Zones: home.arpa (1 name, 1 written record, TTL 60s)\n"); n != 2 {
+		t.Errorf("the zone of %d resolvers in the report:\n%s", n, report)
+	}
+}
+
 // workerOf is a worker of a configuration.
 func workerOf(t *testing.T, text string) *Worker {
 	t.Helper()

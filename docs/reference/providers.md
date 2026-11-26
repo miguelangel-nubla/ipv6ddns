@@ -218,7 +218,8 @@ A zone that one of ipv6ddns's resolvers answers from memory, for the clients on 
 
 | Key | Takes | |
 |---|---|---|
-| `resolver` | string | Which of the resolvers answers the zone. Needed only when there's more than one. |
+| `resolver` | string | Which of the resolvers answers the zone. Needed only when there's more than one, and not with resolvers. |
+| `resolvers` | list of string | The resolvers that answer the zone, when it's more than one, as two that differ in upstream or allow: each answers the same names, records and reverse names, and sees every change at once. Not with resolver. |
 | `zone` | string | **Required.** The zone: a subdomain of a domain you own, such as lan.example.com, or home.arpa. |
 | `records` | list of string | Records of names in the zone that no task publishes, one per entry, in zone file syntax, relative to the zone or absolute within it: printer A 192.168.1.20, files CNAME nas, _ipp._tcp SRV 0 0 631 printer. A record without a TTL gets the zone's. |
 | `ttl` | string | The TTL of the names' addresses, and of the records that give none, as 5m or 1h. Default: 1m. An address that expires sooner is answered with the time it has left. |

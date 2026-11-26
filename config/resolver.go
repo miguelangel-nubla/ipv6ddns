@@ -55,10 +55,11 @@ const ResolverProvider = "resolver"
 // resolverSettings are the settings of a resolver credential that the configuration reads: the
 // provider checks them all, at start.
 type resolverSettings struct {
-	Resolver string            `json:"resolver"`
-	Zone     string            `json:"zone"`
-	Records  []string          `json:"records"`
-	TTL      duration.Duration `json:"ttl"`
+	Resolver  string            `json:"resolver"`
+	Resolvers []string          `json:"resolvers"`
+	Zone      string            `json:"zone"`
+	Records   []string          `json:"records"`
+	TTL       duration.Duration `json:"ttl"`
 }
 
 // checkResolvers tells, of a configuration not yet checked by the schema, that a resolver is to
@@ -194,21 +195,9 @@ func (c *Config) setUpResolvers() error {
 		if err := json.Unmarshal(cred.RawSettings, &settings); err != nil {
 			return fmt.Errorf("%s.settings: %w", path, err)
 		}
-		name := settings.Resolver
-		switch {
-		case name == "" && len(names) == 0:
-			return fmt.Errorf("%s: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listeners and upstream", path)
-		case name == "" && len(names) > 1:
-			return fmt.Errorf("%s.settings.resolver is missing: say which of %s answers the zone", path, strings.Join(names, ", "))
-		case name == "":
-			name = names[0]
-		}
-		r, ok := c.Resolvers[name]
-		if !ok {
-			if len(names) == 0 {
-				return fmt.Errorf("%s.settings.resolver: there's no resolver %s: resolvers is empty", path, name)
-			}
-			return fmt.Errorf("%s.settings.resolver: there's no resolver %s: the resolvers are %s", path, name, strings.Join(names, ", "))
+		answering, err := zoneResolvers(path, settings, cred.RawSettings, names)
+		if err != nil {
+			return err
 		}
 		zone := strings.Trim(settings.Zone, ".")
 		if zone == "" {
@@ -239,8 +228,13 @@ func (c *Config) setUpResolvers() error {
 				}
 			}
 		}
-		r.Spec.Zones = append(r.Spec.Zones, z)
-		c.Resolvers[name] = r
+		// One zone of each resolver, and the same: its names' addresses, the provider's, are
+		// shared by them all, which answer the same at once.
+		for _, name := range answering {
+			r := c.Resolvers[name]
+			r.Spec.Zones = append(r.Spec.Zones, z)
+			c.Resolvers[name] = r
+		}
 	}
 
 	for _, name := range names {
@@ -249,6 +243,53 @@ func (c *Config) setUpResolvers() error {
 		}
 	}
 	return c.checkPushSources()
+}
+
+// zoneResolvers are the resolvers that answer the zone of a credential, at path: those its
+// settings name, by resolver or resolvers, or the only one there is.
+func zoneResolvers(path string, settings resolverSettings, raw json.RawMessage, names []string) ([]string, error) {
+	var given struct {
+		Resolvers json.RawMessage `json:"resolvers"`
+	}
+	_ = json.Unmarshal(raw, &given)
+	listed := given.Resolvers != nil && string(given.Resolvers) != "null"
+	unknown := func(key, name string) error {
+		if len(names) == 0 {
+			return fmt.Errorf("%s.settings.%s: there's no resolver %s: resolvers is empty", path, key, name)
+		}
+		return fmt.Errorf("%s.settings.%s: there's no resolver %s: the resolvers are %s", path, key, name, strings.Join(names, ", "))
+	}
+	switch {
+	case listed && settings.Resolver != "":
+		return nil, fmt.Errorf("%s.settings has both resolver and resolvers: give resolvers alone, with %s among them", path, settings.Resolver)
+	case listed && len(settings.Resolvers) == 0 && len(names) == 0:
+		return nil, fmt.Errorf("%s: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listeners and upstream", path)
+	case listed && len(settings.Resolvers) == 0:
+		return nil, fmt.Errorf("%s.settings.resolvers is empty: give the resolvers that answer the zone, one or more of %s", path, strings.Join(names, ", "))
+	case listed:
+		for i, name := range settings.Resolvers {
+			if slices.Contains(settings.Resolvers[:i], name) {
+				return nil, fmt.Errorf("%s.settings.resolvers: %s is given twice: give each resolver once", path, name)
+			}
+			if !slices.Contains(names, name) {
+				return nil, unknown("resolvers", name)
+			}
+		}
+		return settings.Resolvers, nil
+	}
+	name := settings.Resolver
+	switch {
+	case name == "" && len(names) == 0:
+		return nil, fmt.Errorf("%s: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listeners and upstream", path)
+	case name == "" && len(names) > 1:
+		return nil, fmt.Errorf("%s.settings.resolver is missing: say which of %s answers the zone", path, strings.Join(names, ", "))
+	case name == "":
+		name = names[0]
+	}
+	if !slices.Contains(names, name) {
+		return nil, unknown("resolver", name)
+	}
+	return []string{name}, nil
 }
 
 // listenOnListeners adds to spec the DNS entries of the listeners named, each with the listener's

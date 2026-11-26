@@ -7,7 +7,17 @@
         "resolver": {
             "type": "string",
             "minLength": 1,
-            "description": "Which of the resolvers answers the zone. Needed only when there's more than one."
+            "description": "Which of the resolvers answers the zone. Needed only when there's more than one, and not with resolvers."
+        },
+        "resolvers": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "minLength": 1
+            },
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "The resolvers that answer the zone, when it's more than one, as two that differ in upstream or allow: each answers the same names, records and reverse names, and sees every change at once. Not with resolver."
         },
         "zone": {
             "type": "string",

@@ -472,6 +472,7 @@ A credential with the provider `resolver` is a zone that a resolver answers. Its
 
 - **`zone`** is the zone's name.
 - **`resolver`** is the name of the resolver that answers it. You can leave it out when there's only one resolver.
+- **`resolvers`** are the names of several resolvers that answer it, instead of `resolver`.
 - **`records`** are records for the zone's other names, the ones no task publishes. Write each name relative to the zone, or in full within it, such as `printer.lan.example.com.`.
 - **`ttl`** is the TTL of a name's addresses, and of the zone's records that don't give their own. It is `1m` by default. An answer never outlasts its addresses: when one of them expires sooner than `ttl`, the answer has the time it has left, so clients drop it when the resolver does.
 
@@ -480,6 +481,43 @@ The names in the zone come from the tasks' endpoints, as for any provider: `nas`
 The credential's [`debounce`](configuration.md#its-parts) is zero by default for this provider, so a change is answered at once.
 
 A zone with no task still serves its records.
+
+One zone can be answered by several resolvers, as two that differ in their upstream servers or their allow: a resolver for the whole network, and one for the children's devices with a filtering upstream. List them in `resolvers`:
+
+```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.2
+  kids:
+    listen:
+      - dns://192.168.1.3
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 1.1.1.1
+  kids:
+    listeners:
+      - kids
+    allow:
+      - 192.168.1.128/25
+    upstream:
+      - 1.1.1.3                           # a filtering upstream
+
+credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: lan.example.com
+      resolvers:
+        - lan
+        - kids
+```
+
+Both resolvers then answer the same zone: its records, the tasks' names with their current addresses, its wildcards and the reverse names of those addresses. The zone is held once, so a change of an address, or a dynamic update that changes it, is answered by both at once. Neither asks its upstream servers a name the zone has. A key of [dynamic updates](#dynamic-updates) still belongs to one resolver, which takes its updates, and what it changes is seen by every resolver of the zone.
 
 Two resolvers can each have a zone with the same name, through two credentials. The same name then has a different answer on each network, which is called a split horizon. For example, `nas.lan.example.com` can have the LAN's addresses on one resolver and the VPN's on the other.
 
@@ -812,6 +850,10 @@ The configuration is checked at the start. A mistake stops the start, and the er
 | A `bootstrap` server given by host name | `resolvers.lan.bootstrap: "dns.quad9.net" is not an address, with or without a port, as 192.168.1.1, 1.1.1.1:53 or [2001:db8::1]:53` |
 | A credential whose `resolver` names no resolver | `credentials.home.settings.resolver: there's no resolver wan: the resolvers are lan` |
 | A credential without `resolver`, when there are two resolvers | `credentials.home.settings.resolver is missing: say which of lab, lan answers the zone` |
+| A credential with both `resolver` and `resolvers` | `credentials.home.settings has both resolver and resolvers: give resolvers alone, with lan among them` |
+| A credential whose `resolvers` names no resolver | `credentials.home.settings.resolvers: there's no resolver wan: the resolvers are lab, lan` |
+| A credential whose `resolvers` names one twice | `credentials.home.settings.resolvers: lan is given twice: give each resolver once` |
+| A credential with an empty `resolvers` | `credentials.home.settings.resolvers is empty: give the resolvers that answer the zone, one or more of lab, lan` |
 | A `resolver` credential, when there is no resolver at all | `credentials.home: the resolver provider is a zone that one of the resolvers answers, and there are none: add one under resolvers, with its listeners and upstream` |
 | Two credentials for the same zone on one resolver | `credentials home and office are both the zone home.arpa of resolver lan: a zone can belong to only one credential` |
 | Two resolvers with the same entry, on two listeners | `resolvers lab and lan both listen on 192.168.1.0/24 port 53: an address and port can belong to only one resolver` |

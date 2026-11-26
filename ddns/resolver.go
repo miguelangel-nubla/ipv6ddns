@@ -8,14 +8,16 @@ import (
 	"github.com/miguelangel-nubla/ipv6disc"
 )
 
-// Resolver is a zone that a resolver of the configuration answers: the names' addresses are kept
-// in memory, where the resolver reads them. The resolvers block is the resolver; the records here
-// are read by the configuration, which checks them with the resolver's.
+// Resolver is a zone that resolvers of the configuration answer: the names' addresses are kept in
+// memory, one copy, where every resolver that answers the zone reads them. The resolvers block is
+// the resolver; the records here are read by the configuration, which checks them with the
+// resolver's.
 type Resolver struct {
-	Resolver string            `json:"resolver"`
-	Zone     string            `json:"zone"`
-	Records  []string          `json:"records"`
-	TTL      duration.Duration `json:"ttl"`
+	Resolver  string            `json:"resolver"`
+	Resolvers []string          `json:"resolvers"`
+	Zone      string            `json:"zone"`
+	Records   []string          `json:"records"`
+	TTL       duration.Duration `json:"ttl"`
 
 	addresses *resolver.Addresses
 }

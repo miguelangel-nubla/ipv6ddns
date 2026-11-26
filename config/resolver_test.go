@@ -58,6 +58,15 @@ const (
         - printer A 192.168.1.20
         - files CNAME nas
         - "_ipp._tcp SRV 0 0 631 printer"`
+	// twoResolvers are lan, and lab on a listener of its own.
+	twoResolvers = lanResolver + `
+  lab:
+    listeners:
+      - lab
+    upstream: 10.0.0.1
+` + lanListener + `  lab:
+    listen:
+      - dns://10.0.0.2`
 	nasTask = `
   nas:
     filter:
@@ -139,6 +148,21 @@ func TestResolverConfig(t *testing.T) {
 	// One zone on two resolvers: split horizon.
 	if lab := cfg.Resolvers["lab"].Spec; len(lab.Zones) != 1 || lab.Zones[0].Credential != "labs" {
 		t.Errorf("lab: %+v", lab.Zones)
+	}
+
+	// One zone of two resolvers, the same: the provider's addresses are shared.
+	cfg, err = resolverConfig(t, twoResolvers, homeCredential+`
+      resolvers:
+        - lan
+        - lab`, nasTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"lan", "lab"} {
+		zones := cfg.Resolvers[name].Spec.Zones
+		if len(zones) != 1 || zones[0].Credential != "home" || zones[0].Tasks["nas.home.arpa."] != "nas" || len(zones[0].Records) != 3 {
+			t.Errorf("%s: %+v", name, zones)
+		}
 	}
 
 	// A zone with no task serves its records.
@@ -342,6 +366,35 @@ listeners:
     listen:
       - dns://10.0.0.2`, homeCredential, nasTask,
 			"credentials.home.settings.resolver is missing: say which of lab, lan answers the zone"},
+		{"resolver and resolvers", twoResolvers, homeCredential + `
+      resolver: lan
+      resolvers:
+        - lan
+        - lab`, nasTask,
+			"credentials.home.settings has both resolver and resolvers: give resolvers alone, with lan among them"},
+		{"resolvers naming none", twoResolvers, homeCredential + `
+      resolvers:
+        - lan
+        - wan`, nasTask,
+			"credentials.home.settings.resolvers: there's no resolver wan: the resolvers are lab, lan"},
+		{"a resolver twice", twoResolvers, homeCredential + `
+      resolvers:
+        - lan
+        - lan`, nasTask,
+			"credentials.home.settings.resolvers: lan is given twice: give each resolver once"},
+		{"no resolvers", twoResolvers, homeCredential + `
+      resolvers: []`, nasTask,
+			"credentials.home.settings.resolvers is empty: give the resolvers that answer the zone, one or more of lab, lan"},
+		{"one zone twice, of resolvers", twoResolvers, homeCredential + `
+      resolvers:
+        - lan
+        - lab
+  office:
+    provider: resolver
+    settings:
+      resolver: lab
+      zone: home.arpa`, nasTask,
+			"credentials home and office are both the zone home.arpa of resolver lab: a zone can belong to only one credential"},
 		{"no zone", lanResolver, `
   home:
     provider: resolver

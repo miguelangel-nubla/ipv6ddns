@@ -119,10 +119,18 @@ discovery:
     enabled: false
 `, id, port, freeDNSPort(t), updatesTestSecret))
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 	if err := w.Start(ctx); err != nil {
+		cancel()
 		t.Fatal(err)
 	}
+	// Stopped, and waited for, before its directory goes: a challenge's timer still writes its
+	// file once it expired.
+	t.Cleanup(func() {
+		cancel()
+		if err := w.Shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
 	return w
 }
 
