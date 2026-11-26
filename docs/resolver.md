@@ -265,7 +265,26 @@ The certificate and its key go to the certificate's `certificate` and `key`, by 
 | Linux with systemd-resolved | TLS | `DNS=192.168.1.2#dns.lan.example.com` and `DNSOverTLS=yes` |
 | AdGuard's apps, dnsproxy | QUIC | `quic://dns.lan.example.com` |
 
-A client that uses the name finds it through the DNS it has already, so the name needs its record in the resolver's zone, or at your DNS provider.
+A client that uses the name finds it through the DNS it has already, before it uses the resolver, so the name needs a record wherever that DNS looks: in the resolver's zone, when the clients already use it, or at your DNS provider, which every DNS finds. ipv6ddns can keep that record itself, with a task of a [static source](sources.md#types):
+
+```yaml
+# Added to the configuration above: the resolver's name, of its address, at the provider.
+sources:
+  resolver-address:
+    type: static
+    addresses:
+      - 192.168.1.2
+
+tasks:
+  resolver:
+    sources:
+      - resolver-address
+    endpoints:
+      public:
+        - dns.lan
+```
+
+At a provider, the name is public, with a private address. Nothing on the internet reaches that address, but some routers' DNS refuse a public name of one, against DNS rebinding: OpenWrt's dnsmasq with `rebind_protection`, pfSense's and OPNsense's resolver with its private address filter. On such a network, allow the name there, as `rebind_domain` of OpenWrt or the domain overrides of pfSense, or keep the record in the router's own DNS instead.
 
 ### Ports
 

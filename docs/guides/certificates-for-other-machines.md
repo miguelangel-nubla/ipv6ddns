@@ -74,6 +74,7 @@ certbot certonly --dns-rfc2136 --dns-rfc2136-credentials /etc/letsencrypt/rfc213
   --dns-rfc2136-propagation-seconds 30 -d nas.lan.example.com -d '*.nas.lan.example.com'
 ```
 
+- **`dns_rfc2136_server`** is an address: certbot's plugin takes no name.
 - **`sign_query = true`** is needed: certbot finds the zone with SOA queries, and ipv6ddns answers them, for the key's names, only when they are signed.
 - **`--dns-rfc2136-propagation-seconds`** is how long certbot waits before Let's Encrypt checks. ipv6ddns answers once the provider took the record; 30 seconds leaves time for its servers to serve it.
 
@@ -89,7 +90,7 @@ DNSUPDATE_TSIG_ALGORITHM=hmac-sha256. \
 lego run --email you@example.com --dns dnsupdate --domains nas.lan.example.com
 ```
 
-lego finds the zone through the public DNS, and checks the record there before Let's Encrypt does. Before lego 5, the provider was `rfc2136`, and its variables `RFC2136_NAMESERVER` and so on.
+lego finds the zone through the public DNS, and checks the record there before Let's Encrypt does, of the machine's own DNS servers. When those cache, that check can fail: see [the record doesn't show](#common-problems). Give it a public resolver to ask, `--dns.resolvers 1.1.1.1:53`, and it sees the record as Let's Encrypt does. Before lego 5, the provider was `rfc2136`, and its variables `RFC2136_NAMESERVER` and so on.
 
 ### acme.sh
 
@@ -126,6 +127,7 @@ The web report lists the key under the resolver, with its counts and its last up
 - **`SERVFAIL`.** The provider refused to write the record: the log has its error, such as a token without the permission to edit DNS.
 - **certbot can't find the zone.** `dns_rfc2136_sign_query` must be `true`.
 - **Let's Encrypt doesn't see the record.** Wait longer before it checks: a larger `--dns-rfc2136-propagation-seconds`.
+- **The client times out waiting for the record, which the provider has.** The client checks the record itself, through a DNS server of the network that cached its absence, from an earlier try: a name that wasn't there is remembered as absent for the zone's negative TTL, half an hour at Cloudflare. lego does so: give it `--dns.resolvers 1.1.1.1:53`, which asks a public resolver, or wait that long. certbot only waits its propagation seconds, and doesn't check.
 
 ## What to know
 
