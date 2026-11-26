@@ -238,11 +238,17 @@ func (m *Manager) obtain(ctx context.Context) error {
 		authzURLs = append(authzURLs, authz.URI)
 	}
 	names := slices.Sorted(maps.Keys(records))
+	if len(names) == 0 {
+		m.config.Logf("the authority knows the names already: no challenge to write")
+	}
 	defer func() {
 		for _, name := range names {
 			if err := m.config.Challenge.SetTXT(name, nil); err != nil {
 				m.config.Errorf("removing the challenge's record %s: %s", name, err)
 			}
+		}
+		if len(names) > 0 {
+			m.config.Logf("removed the challenge's records")
 		}
 	}()
 	for _, name := range names {
@@ -251,6 +257,7 @@ func (m *Manager) obtain(ctx context.Context) error {
 		}
 	}
 	if len(challenges) > 0 {
+		m.config.Logf("wrote the challenge's records, %s: the authority checks them in %s, once the provider's servers have them", strings.Join(names, ", "), m.config.Propagation)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -262,14 +269,19 @@ func (m *Manager) obtain(ctx context.Context) error {
 			return fmt.Errorf("asking for the check of %s: %w", chal.URI, err)
 		}
 	}
+	if len(challenges) > 0 {
+		m.config.Logf("the authority is checking the records")
+	}
 	for _, u := range authzURLs {
 		if _, err := client.WaitAuthorization(ctx, u); err != nil {
-			return fmt.Errorf("the check: %w", err)
+			// The authority's own words, of what it found: as a record it didn't see.
+			return fmt.Errorf("the authority's check failed: %w", err)
 		}
 	}
 	if order, err = client.WaitOrder(ctx, order.URI); err != nil {
 		return fmt.Errorf("the order: %w", err)
 	}
+	m.config.Logf("the authority checked the names: asking for the certificate")
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

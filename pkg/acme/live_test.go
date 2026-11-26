@@ -11,12 +11,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -110,7 +112,16 @@ func TestLiveCertificate(t *testing.T) {
 		CertFile: filepath.Join(dir, "tls", "fullchain.pem"), KeyFile: filepath.Join(dir, "tls", "privkey.pem"),
 		AccountKeyFile: filepath.Join(dir, "tls", "account.key"),
 		Challenge:      writer, Propagation: 100 * time.Millisecond, HTTPClient: client,
-		Logf: t.Logf, Errorf: t.Errorf,
+		Errorf: t.Errorf,
+	}
+	// What it logs, each step of the order.
+	var logged []string
+	var logMutex sync.Mutex
+	cfg.Logf = func(f string, args ...any) {
+		t.Logf(f, args...)
+		logMutex.Lock()
+		logged = append(logged, fmt.Sprintf(f, args...))
+		logMutex.Unlock()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -120,6 +131,19 @@ func TestLiveCertificate(t *testing.T) {
 	if st := m.Status(); st.LastError != "" {
 		t.Fatalf("the certificate: %s", st.LastError)
 	}
+	logMutex.Lock()
+	steps := []string{"getting a certificate for ", "wrote the challenge's records, _acme-challenge.", "the authority is checking the records",
+		"the authority checked the names: asking for the certificate", "removed the challenge's records", "got a certificate for "}
+	i := 0
+	for _, line := range logged {
+		if i < len(steps) && strings.HasPrefix(line, steps[i]) {
+			i++
+		}
+	}
+	if i != len(steps) {
+		t.Errorf("logged %q: missing, in order, %q", logged, steps[i:])
+	}
+	logMutex.Unlock()
 	pair, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 	if err != nil {
 		t.Fatalf("the certificate and its key: %v", err)
