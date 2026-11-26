@@ -45,9 +45,10 @@ func TestLiveSoak(t *testing.T) {
 	provider := startProvider(t, router, 5391, "token-soak", "soak.example")
 
 	one := configure(t, srv, router, "srv", 8053, fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 discovery:
   lifetime: 6s
   rediscover: 2s

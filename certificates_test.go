@@ -74,9 +74,10 @@ func selfSigned(t *testing.T, dir string, names ...string) (certFile, keyFile st
 func certificateConfig(t *testing.T, home, credentials string) config.Config {
 	t.Helper()
 	text := fmt.Sprintf(`
-webserver:
-  listen: "https://127.0.0.1:%d"
-  tls: home
+webservers:
+  main:
+    listen: "https://127.0.0.1:%d"
+    tls: home
 resolvers:
   lan:
     listen: "tls://127.0.0.1:%d"
@@ -142,28 +143,25 @@ func TestCertificateShared(t *testing.T) {
 	if len(w.certs) != 1 || w.resolvers[0].Status().Certificate != "home" {
 		t.Fatalf("the certificates: %d, the resolver's: %q", len(w.certs), w.resolvers[0].Status().Certificate)
 	}
-	if w.webCert != w.certs[0].file {
-		t.Error("the web server has a certificate of its own")
-	}
-	if got := shown(t, w.WebserverTLS("http/1.1")); !slices.Equal(got, []string{"dns.lan.example.com", "status.lan.example.com"}) {
+	if got := shown(t, w.TLS("home", "http/1.1")); !slices.Equal(got, []string{"dns.lan.example.com", "status.lan.example.com"}) {
 		t.Errorf("the web server shows %v", got)
 	}
 
 	st := w.Status(false).Certificates
-	if len(st) != 1 || st[0].Name != "home" || !slices.Equal(st[0].UsedBy, []string{"resolvers.lan", "webserver"}) || st[0].Managed || st[0].Renewal != "" {
+	if len(st) != 1 || st[0].Name != "home" || !slices.Equal(st[0].UsedBy, []string{"resolvers.lan", "webservers.main"}) || st[0].Managed || st[0].Renewal != "" {
 		t.Fatalf("the status: %+v", st)
 	}
 	data, err := json.Marshal(st[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"name":"home"`, `"used_by":["resolvers.lan","webserver"]`, `"names":["dns.lan.example.com","status.lan.example.com"]`, `"not_after":`} {
+	for _, key := range []string{`"name":"home"`, `"used_by":["resolvers.lan","webservers.main"]`, `"names":["dns.lan.example.com","status.lan.example.com"]`, `"not_after":`} {
 		if !strings.Contains(string(data), key) {
 			t.Errorf("the status's JSON has no %s: %s", key, data)
 		}
 	}
 	page := w.Page("", false).String()
-	for _, has := range []string{"        Certificate: home\n", "Certificates:\n    home (resolver lan, webserver): dns.lan.example.com, status.lan.example.com, until "} {
+	for _, has := range []string{"        Certificate: home\n", "Certificates:\n    home (resolver lan, web server main): dns.lan.example.com, status.lan.example.com, until "} {
 		if !strings.Contains(page, has) {
 			t.Errorf("the report has no %q:\n%s", has, page)
 		}
@@ -246,7 +244,7 @@ func TestCertificateACMEFailing(t *testing.T) {
 			if c.failNames == "false" && st.NextAttempt.Before(time.Now()) {
 				t.Errorf("no next attempt: %+v", st.Status)
 			}
-			if page := w.Page("", false).String(); !strings.Contains(page, "home (resolver lan, webserver): none yet (getting it failed: ") {
+			if page := w.Page("", false).String(); !strings.Contains(page, "home (resolver lan, web server main): none yet (getting it failed: ") {
 				t.Errorf("the report:\n%s", page)
 			}
 		})

@@ -271,9 +271,10 @@ func TestLiveResolver(t *testing.T) {
 	upstream2 := startUpstream(t, up2, "192.0.2.54")
 
 	config := fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 discovery:
   lifetime: 9s
   rediscover: 3s
@@ -531,9 +532,10 @@ func TestLiveResolverUpstreamByName(t *testing.T) {
 	bootstrap := startUpstream(t, boot, up.IPv4.String())
 
 	config := fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 resolvers:
   lan:
     listen: 198.18.16.0/24

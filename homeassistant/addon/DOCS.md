@@ -43,11 +43,14 @@ of ipv6ddns describes the file.
   The starting configuration has it at `info`.
 
 Keep these lines of the starting configuration. They serve the report on
-[the app's page](#the-apps-page):
+[the app's page](#the-apps-page). A configuration from before 0.30.0 has them
+as `webserver:`, which the app now refuses: write them as here, the block under
+a name.
 
 ```yaml
-webserver:
-  listen: 172.30.32.1:8053
+webservers:
+  main:
+    listen: 172.30.32.1:8053
 ```
 
 ## Publishing Home Assistant itself
@@ -127,7 +130,7 @@ the hosts discovered.
 
 The report is served to Home Assistant only, not to your network. It's served
 at `172.30.32.1:8053`, the address where Home Assistant's Supervisor reaches
-the app. `webserver.listen` in the starting `config.yaml` sets that address.
+the app. `webservers.main.listen` in the starting `config.yaml` sets that address.
 
 ## Network
 
@@ -182,8 +185,9 @@ Assistant alone: add the machine's address on the LAN, for the router to
 reach it.
 
 ```yaml
-webserver:
-  listen:
-    - 172.30.32.1:8053
-    - 192.168.1.2:8053
+webservers:
+  main:
+    listen:
+      - 172.30.32.1:8053
+      - 192.168.1.2:8053
 ```

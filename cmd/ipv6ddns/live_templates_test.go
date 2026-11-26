@@ -37,9 +37,10 @@ func TestLiveHostnameTemplates(t *testing.T) {
 	dns := startProvider(t, router, 5390, "token-templates", "lan.example")
 
 	one := configure(t, srv, router, "srv", 8053, fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 discovery:
   lifetime: 9s
   rediscover: 3s
@@ -201,9 +202,10 @@ func TestLiveSharedHostname(t *testing.T) {
 	startUpstream(t, up, "192.0.2.53")
 
 	one := configure(t, srv, lan.Router, "srv", 8053, fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 discovery:
   protocols:
     mdns:

@@ -42,16 +42,17 @@ tasks:
       cloudflare:
         - nas              # nas.example.com
 
-webserver:
-  listen:
-    - 8053                 # the web report: http://192.168.1.2:8053
+webservers:
+  main:
+    listen:
+      - 8053                 # the web report: http://192.168.1.2:8053
 ```
 
 What each part does:
 
 - **`credentials.cloudflare`** is where the names are kept: the zone `example.com` at Cloudflare. `proxied: false` makes the name answer with the device's own address. `ttl` is how long others keep an answer, so a short one makes a new prefix take effect sooner.
 - **`tasks.nas`** gives the name `nas` the addresses of one device. Its filter takes the addresses found at this MAC that are `global`, which leaves out the link-local and private ones. A filter takes IPv6 addresses only, unless you say otherwise.
-- **`webserver`** serves the [web report](../installation.md#the-web-report): the hosts found, the names, and the state of their updates. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
+- **`webservers`** serves the [web report](../installation.md#the-web-report): the hosts found, the names, and the state of their updates. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
 
 For another device, add another task with its MAC and its name. A task can have several names: write them all under the endpoint.
 
@@ -152,9 +153,10 @@ tasks:
       duck:
         - mynas            # mynas.duckdns.org
 
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 ```
 
 The settings of Route 53 and of every other provider are in the [providers reference](../reference/providers.md).

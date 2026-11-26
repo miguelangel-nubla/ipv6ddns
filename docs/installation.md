@@ -82,7 +82,7 @@ Add the flake to your system's, and enable the service:
               enable = true;
               environmentFile = "/run/secrets/ipv6ddns.env";
               settings = {
-                webserver.listen = [ "127.0.0.1:8053" ];
+                webservers.main.listen = [ "127.0.0.1:8053" ];
                 tasks.server = {
                   filter = [
                     {
@@ -144,7 +144,7 @@ services:
         - "http://127.0.0.1:8053/healthz"
 ```
 
-The health check needs to reach the web server at `127.0.0.1:8053`, so set `webserver.listen` to `8053`, `:8053` or `127.0.0.1:8053`.
+The health check needs to reach the web server at `127.0.0.1:8053`, so set `webservers.<name>.listen` to `8053`, `:8053` or `127.0.0.1:8053`.
 
 The image includes `bash`, `curl`, `jq`, `dig` and `ip`, for the scripts that [command sources](sources.md) run.
 
@@ -168,7 +168,7 @@ The alternative is `key_provisioning: true`, where Home Assistant provides the k
 | `--live` | Show the report in the terminal, updating live, instead of the log. It needs a terminal. `q`, Esc, Ctrl-C or a signal ends it. It uses the terminal's colors, and none when `NO_COLOR` is set. Only errors that stop the start are logged, so you don't see the configuration's warnings or the plugins' errors |
 | `--version` | Print the version |
 
-Everything else is set in the [configuration file](reference/configuration.md). For example, `log_level` sets the log level, `webserver.listen` sets where the web report is served, and `discovery.lifetime` sets how long addresses last.
+Everything else is set in the [configuration file](reference/configuration.md). For example, `log_level` sets the log level, `webservers.<name>.listen` sets where the web report is served, and `discovery.lifetime` sets how long addresses last.
 
 An unknown flag is an error. The error lists the flags that exist, as `--help` does.
 
@@ -176,13 +176,14 @@ To turn a boolean flag off, write `--live=false`, not `--live false`. A word tha
 
 ## The web report
 
-`webserver.listen` says where the web report is served. It takes a list of entries, in any combination, or a single comma-separated string:
+Each web server, under `webservers`, has a name of your choice, as `main`. Its `listen` says where the web report is served. It takes a list of entries, in any combination, or a single comma-separated string:
 
 ```yaml
-webserver:
-  listen:
-    - 127.0.0.1:8053
-    - 10.2.3.0/24
+webservers:
+  main:
+    listen:
+      - 127.0.0.1:8053
+      - 10.2.3.0/24
 ```
 
 | Entry | Listens on |
@@ -202,18 +203,21 @@ Networks and host names are resolved once, at start:
 
 [`homeassistant.listen`](home-assistant-integration.md#where-it-listens) takes the same entries, with its own default port, 6053.
 
-The report has no authentication. If you put it behind a reverse proxy, listen only on an address the proxy reaches.
+The report has no authentication. `allow` limits it to some networks, as `192.168.1.0/24`; any other client gets `403`. If you put it behind a reverse proxy, listen only on an address the proxy reaches.
+
+To serve the report on port 443 beside a resolver's DNS over HTTPS, as `https://dns.lan.example.com/`, use a [listener](resolver.md#sharing-a-port) that both name.
 
 ### Over HTTPS
 
-An entry that starts with `https://` serves HTTPS there, HTTP/1.1 and HTTP/2, on port 8443 when it gives none. The plain entries stay HTTP, so one web server can serve both, for example HTTP on the address the Home Assistant app's page reaches and HTTPS on the LAN. `webserver.tls` names its certificate, of the top-level `certificates`, as a resolver's [encrypted DNS](resolver.md#the-certificate-it-shows) does: files you give, or one ipv6ddns gets from Let's Encrypt by the DNS challenge and renews. A resolver and the web server can show the same one.
+An entry that starts with `https://` serves HTTPS there, HTTP/1.1 and HTTP/2, on port 8443 when it gives none. The plain entries stay HTTP, so one web server can serve both, for example HTTP on the address the Home Assistant app's page reaches and HTTPS on the LAN. `webservers.<name>.tls` names its certificate, of the top-level `certificates`, as a resolver's [encrypted DNS](resolver.md#the-certificate-it-shows) does: files you give, or one ipv6ddns gets from Let's Encrypt by the DNS challenge and renews. A resolver and the web server can show the same one.
 
 ```yaml
-webserver:
-  listen:
-    - 172.30.32.1:8053
-    - https://192.168.1.0/24
-  tls: home
+webservers:
+  main:
+    listen:
+      - 172.30.32.1:8053
+      - https://192.168.1.0/24
+    tls: home
 
 certificates:
   home:
@@ -268,7 +272,7 @@ Two instances on one machine must differ in anything both would claim:
 
 | Setting | Each instance needs | Otherwise |
 |---|---|---|
-| [`webserver.listen`](#the-web-report) | Its own port, or address | The one started second doesn't start: `address already in use`, with the address |
+| [`webservers.<name>.listen`](#the-web-report) | Its own port, or address | The one started second doesn't start: `address already in use`, with the address |
 | [`homeassistant`](home-assistant-integration.md#several-devices) `port`, or `listen` | Its own port, when both have the block. The default is 6053 | The same error |
 | `homeassistant.key_provisioning_state_file`, with `key_provisioning: true` | Its own file. The default is `homeassistant.state` beside the configuration, so two configurations in one folder must each name theirs. Not needed with a `key` | The one started second doesn't start, and says which file |
 | `homeassistant.name` | Its own name. The default is `ipv6ddns` | The one started second runs, but isn't announced to Home Assistant, and logs why |

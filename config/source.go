@@ -209,8 +209,8 @@ func (c *Config) setUpSources() error {
 		c.Sources[name] = source
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
-		if c.Sources[name].Type == SourcePush && c.Sources[name].Password != "" && len(c.Webserver.Listen) == 0 {
-			return fmt.Errorf("source %s: a router pushes its addresses through the web server, at /nic/update: give webserver.listen", name)
+		if c.Sources[name].Type == SourcePush && c.Sources[name].Password != "" && !c.HasWebserver() {
+			return fmt.Errorf("source %s: a router pushes its addresses through a web server, at /nic/update: add one under webservers", name)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {

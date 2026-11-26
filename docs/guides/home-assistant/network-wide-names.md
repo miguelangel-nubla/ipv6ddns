@@ -50,8 +50,9 @@ tasks:
         - homeassistant    # homeassistant.lan.example.com
 
 # From the starting file: keep these.
-webserver:
-  listen: 172.30.32.1:8053
+webservers:
+  main:
+    listen: 172.30.32.1:8053
 
 log_level: info
 
@@ -72,7 +73,7 @@ This configuration differs from the plain guide's in three ways:
 
 - **The `homeassistant` task** names Home Assistant itself. `self: true` takes the addresses of the machine the app runs on, so the name doesn't depend on Home Assistant saying its name. The apps on the host's network, such as Mosquitto or Node-RED, are at the same addresses. If you want names for them, such as `mqtt`, add the names under the same endpoint.
 - **`discovery.ipv4`** goes into the `discovery` block the file already has, beside `exclude_interfaces`.
-- **There is no new `webserver` block.** The plain guide's web report is the app's page here, and the `webserver` block of the starting file already serves it.
+- **There is no new `webservers` block.** The plain guide's web report is the app's page here, and the `webservers` block of the starting file already serves it.
 
 The resolver listens on port 53 at two addresses:
 

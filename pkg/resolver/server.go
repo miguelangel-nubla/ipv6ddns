@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/certfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/quic-go/quic-go"
 )
@@ -70,6 +71,9 @@ type Server struct {
 
 	// The reverse zones of the private networks it answers itself: absolute, in lower case.
 	private []string
+
+	// The web servers' handlers, by the names of the HTTPS entries they share, as SetWeb gives them.
+	web map[string]http.Handler
 
 	// The keys of the dynamic updates, by name, absolute and in lower case: none without.
 	keys keyring
@@ -243,13 +247,27 @@ func (s *Server) lookUp(host string) ([]string, time.Duration) {
 // transports on theirs, and answers there until Shutdown. An address it can't listen on stops it,
 // closing the others: no resolver serves half of its addresses.
 func (s *Server) Start() error {
-	addresses, err := listen.Addresses(s.config.Listen)
-	if err != nil {
-		return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+	// Each address with the allow of its entry's socket, of a listener's: none, the resolver's.
+	var addresses []string
+	var addressAllow [][]netip.Prefix
+	for i, e := range s.config.Listen {
+		a, err := listen.Addresses([]listen.Entry{e})
+		if err != nil {
+			return fmt.Errorf("%s.listen: %w", s.config.Path, err)
+		}
+		var allow []netip.Prefix
+		if i < len(s.config.ListenAllow) {
+			allow = s.config.ListenAllow[i]
+		}
+		for range a {
+			addressAllow = append(addressAllow, allow)
+		}
+		addresses = append(addresses, a...)
 	}
-	cert := s.config.Certificate
-	if len(s.config.Encrypted) > 0 && cert == nil {
-		return fmt.Errorf("%s.tls: no certificate", s.config.Path)
+	for _, e := range s.config.Encrypted {
+		if s.certificateOf(e) == nil {
+			return fmt.Errorf("%s.tls: no certificate for %s", s.config.Path, e.Line)
+		}
 	}
 	for _, srv := range s.upstreams {
 		srv.open(s)
@@ -269,8 +287,10 @@ func (s *Server) Start() error {
 		enc.close()
 	}
 	var listening []string
+	// The addresses of the sockets without an allow of their own, whose networks are the default.
 	var listened []net.Addr
-	for _, a := range addresses {
+	var connAllow [][]netip.Prefix
+	for i, a := range addresses {
 		udp, tcp := networks(a)
 		c, err := net.ListenPacket(udp, a)
 		if err != nil {
@@ -287,7 +307,10 @@ func (s *Server) Start() error {
 		}
 		listeners = append(listeners, l)
 		listening = append(listening, a)
-		listened = append(listened, c.LocalAddr())
+		connAllow = append(connAllow, addressAllow[i])
+		if addressAllow[i] == nil {
+			listened = append(listened, c.LocalAddr())
+		}
 	}
 	for _, e := range s.config.Encrypted {
 		if err := enc.open(e); err != nil {
@@ -296,9 +319,14 @@ func (s *Server) Start() error {
 		}
 	}
 	listening = append(listening, enc.listening...)
-	listened = append(listened, enc.listened...)
+	for i, e := range slices.Concat(enc.tlsOf, enc.httpsOf, enc.quicOf) {
+		if e.Allow == nil {
+			listened = append(listened, enc.listened[i])
+		}
+	}
 	allow := s.config.Allow
-	if len(allow) == 0 {
+	if len(allow) == 0 && len(listened) > 0 {
+		var err error
 		allow, err = listenedNetworks(listened)
 		if err != nil {
 			closeAll()
@@ -309,14 +337,16 @@ func (s *Server) Start() error {
 	var started sync.WaitGroup
 	var servers []*dns.Server
 	for i := range conns {
+		h := socket{s, connAllow[i]}
 		servers = append(servers,
-			&dns.Server{PacketConn: conns[i], Handler: s, NotifyStartedFunc: started.Done},
-			&dns.Server{Listener: listeners[i], Handler: s, NotifyStartedFunc: started.Done,
+			&dns.Server{PacketConn: conns[i], Handler: h, NotifyStartedFunc: started.Done},
+			&dns.Server{Listener: listeners[i], Handler: h, NotifyStartedFunc: started.Done,
 				ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
-	for _, l := range enc.tls {
-		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, cert.Config(alpnTLS)), Net: "tcp-tls", Handler: s,
-			NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
+	for i, l := range enc.tls {
+		e := enc.tlsOf[i]
+		servers = append(servers, &dns.Server{Listener: tls.NewListener(l, s.certificateOf(e).Config(alpnTLS)), Net: "tcp-tls",
+			Handler: socket{s, e.Allow}, NotifyStartedFunc: started.Done, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second})
 	}
 	// With keys, the signatures are checked, and updates taken.
 	if len(s.keys) > 0 {
@@ -334,8 +364,8 @@ func (s *Server) Start() error {
 		}()
 	}
 	started.Wait()
-	s.serveHTTPS(enc.https, cert)
-	s.serveQUIC(enc.quic, cert)
+	s.serveHTTPS(enc.https, enc.httpsOf)
+	s.serveQUIC(enc.quic, enc.quicOf)
 	return nil
 }
 
@@ -462,34 +492,64 @@ func listenedNetworks(listened []net.Addr) ([]netip.Prefix, error) {
 	return result, nil
 }
 
-// allowed tells whether a client at addr is answered.
-func (s *Server) allowed(addr net.Addr) bool {
-	var ip netip.Addr
-	switch a := addr.(type) {
-	case *net.UDPAddr:
-		ip, _ = netip.AddrFromSlice(a.IP)
-	case *net.TCPAddr:
-		ip, _ = netip.AddrFromSlice(a.IP)
-	default:
-		return false
-	}
-	ip = ip.Unmap()
-	s.mutex.Lock()
-	allow := s.allow
-	s.mutex.Unlock()
-	return slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Contains(ip) })
+// client is a client's address, with the allow of the socket it came to, of a listener's: nil,
+// the resolver's.
+type client struct {
+	net.Addr
+	allow []netip.Prefix
 }
 
-// ServeDNS answers a query over plain DNS, or over TLS.
-func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+// allowOf is the allow of a client: of its socket, unless the resolver gives its own, which
+// replaces a listener's; the resolver's otherwise.
+func (s *Server) allowOf(addr net.Addr) []netip.Prefix {
+	if c, ok := addr.(client); ok && c.allow != nil && len(s.config.Allow) == 0 {
+		return c.allow
+	}
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.allow
+}
+
+// allowed tells whether a client at addr is answered.
+func (s *Server) allowed(addr net.Addr) bool {
+	ip, ok := addrOf(addr)
+	if !ok {
+		return false
+	}
+	return slices.ContainsFunc(s.allowOf(addr), func(p netip.Prefix) bool { return p.Contains(ip) })
+}
+
+// certificateOf is the certificate an encrypted entry shows: its own, of a listener's; the
+// resolver's otherwise.
+func (s *Server) certificateOf(e EncryptedListen) *certfile.Certificate {
+	if e.Certificate != nil {
+		return e.Certificate
+	}
+	return s.config.Certificate
+}
+
+// socket answers the queries of a socket, plain or of DNS over TLS, with its allow.
+type socket struct {
+	s     *Server
+	allow []netip.Prefix
+}
+
+func (h socket) ServeDNS(w dns.ResponseWriter, req *dns.Msg) { h.s.serveDNS(w, req, h.allow) }
+
+// ServeDNS answers a query over plain DNS, or over TLS, with the resolver's allow.
+func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) { s.serveDNS(w, req, nil) }
+
+// serveDNS answers a query over plain DNS, or over TLS, of a socket with allow.
+func (s *Server) serveDNS(w dns.ResponseWriter, req *dns.Msg, allow []netip.Prefix) {
+	remote := client{w.RemoteAddr(), allow}
 	// A signature is checked by the server, of the keys', and with keys alone: without, it is
 	// unchecked, and the message is as any other.
 	if t := req.IsTsig(); t != nil && len(s.keys) > 0 && !req.Response {
-		s.serveSigned(w, req, t)
+		s.serveSigned(w, req, t, remote)
 		return
 	}
 	_, overUDP := w.RemoteAddr().(*net.UDPAddr)
-	resp := s.respond(req, w.RemoteAddr())
+	resp := s.respond(req, remote)
 	if resp == nil {
 		return
 	}
@@ -776,12 +836,22 @@ func (s *Server) Status() Status {
 		Queries:          make(map[string]uint64),
 		UpstreamFailures: make(map[string]uint64),
 	}
-	for _, p := range s.allow {
-		status.Allow = append(status.Allow, p.String())
-	}
+	allow := s.allow
 	if s.allow == nil {
-		for _, p := range s.config.Allow {
-			status.Allow = append(status.Allow, p.String())
+		allow = s.config.Allow
+	}
+	// With none of its own, the resolver answers on a listener's sockets that listener's clients.
+	if len(s.config.Allow) == 0 {
+		for _, a := range s.config.ListenAllow {
+			allow = append(allow, a...)
+		}
+		for _, e := range s.config.Encrypted {
+			allow = append(allow, e.Allow...)
+		}
+	}
+	for _, p := range allow {
+		if text := p.String(); !slices.Contains(status.Allow, text) {
+			status.Allow = append(status.Allow, text)
 		}
 	}
 	status.ZoneNames = map[string]int{}
@@ -810,7 +880,17 @@ func (s *Server) Status() Status {
 		n.mutex.Unlock()
 	}
 	if len(s.config.Encrypted) > 0 {
-		status.Certificate = s.config.CertificateName
+		var names []string
+		for _, e := range s.config.Encrypted {
+			name := e.CertificateName
+			if name == "" {
+				name = s.config.CertificateName
+			}
+			if name != "" && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+		status.Certificate = strings.Join(names, ", ")
 	}
 	status.Keys = s.keysStatus()
 	return status

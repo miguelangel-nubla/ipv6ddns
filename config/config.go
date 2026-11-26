@@ -41,13 +41,17 @@ type Config struct {
 	// DNS servers for the network's clients, by name, which answer the zones of the resolver
 	// credentials.
 	Resolvers map[string]Resolver `json:"resolvers,omitempty"`
-	// The certificates that the resolvers' encrypted entries, and the web server's HTTPS ones,
-	// show, by name: each server gives one as its tls.
+	// The certificates that the encrypted entries show, by name: of the resolvers, the web
+	// servers and the listeners, each of which gives one as its tls.
 	Certificates map[string]*TLS `json:"certificates,omitempty"`
+	// Where servers listen that several can share, by name: a resolver and a web server on one
+	// HTTPS port.
+	Listeners map[string]Listener `json:"listeners,omitempty"`
 
 	// The level of the log: info without it.
-	LogLevel  string    `json:"log_level,omitempty"`
-	Webserver Webserver `json:"webserver,omitzero"`
+	LogLevel string `json:"log_level,omitempty"`
+	// The web servers, by name.
+	Webservers map[string]Webserver `json:"webservers,omitempty"`
 
 	// What in the configuration runs but does nothing: NewConfig sets them, to log.
 	Warnings []string `json:"-"`
@@ -328,6 +332,9 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := checkHomeAssistant(byteValue); err != nil {
 		return config, err
 	}
+	if err := checkWebserverRenamed(byteValue); err != nil {
+		return config, err
+	}
 	if err := checkResolvers(byteValue); err != nil {
 		return config, err
 	}
@@ -393,10 +400,19 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := config.setUpCertificates(); err != nil {
 		return config, err
 	}
+	if err := config.setUpListeners(); err != nil {
+		return config, err
+	}
+	if err := config.noteListenerUsers(); err != nil {
+		return config, err
+	}
 	if err := config.setUpResolvers(); err != nil {
 		return config, err
 	}
-	if err := config.setUpWebserver(); err != nil {
+	if err := config.setUpWebservers(); err != nil {
+		return config, err
+	}
+	if err := config.checkListenersServed(); err != nil {
 		return config, err
 	}
 	if err := config.checkCertificatesUsed(); err != nil {

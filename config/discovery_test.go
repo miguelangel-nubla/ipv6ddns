@@ -171,18 +171,19 @@ func TestDiscoveryErrors(t *testing.T) {
 func TestSettings(t *testing.T) {
 	cfg, err := loadConfig(t, `
 log_level: debug
-webserver:
-  listen:
-    - 8053
-    - "[::1]:8054"
-    - 10.2.3.0/24
+webservers:
+  main:
+    listen:
+      - 8053
+      - "[::1]:8054"
+      - 10.2.3.0/24
 tasks: {}
 `+duckCredential)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.LogLevel != "debug" || !slices.Equal(cfg.Webserver.Listen, []string{"8053", "[::1]:8054", "10.2.3.0/24"}) {
-		t.Errorf("settings: %q, %v", cfg.LogLevel, cfg.Webserver.Listen)
+	if cfg.LogLevel != "debug" || !slices.Equal(cfg.Webservers["main"].Listen, []string{"8053", "[::1]:8054", "10.2.3.0/24"}) {
+		t.Errorf("settings: %q, %v", cfg.LogLevel, cfg.Webservers["main"].Listen)
 	}
 	if len(cfg.Warnings) != 0 {
 		t.Errorf("warnings: %q", cfg.Warnings)
@@ -192,15 +193,15 @@ tasks: {}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.Discovery.Lifetime != disc.Duration(DefaultLifetime) || defaults.LogLevel != "" || defaults.Webserver.Listen != nil {
-		t.Errorf("defaults: %s, %q, %v", defaults.Discovery.Lifetime, defaults.LogLevel, defaults.Webserver.Listen)
+	if defaults.Discovery.Lifetime != disc.Duration(DefaultLifetime) || defaults.LogLevel != "" || defaults.Webservers != nil {
+		t.Errorf("defaults: %s, %q, %v", defaults.Discovery.Lifetime, defaults.LogLevel, defaults.Webservers)
 	}
 
 	for name, bad := range map[string]string{
 		"a log level":         "log_level: loud\n",
-		"a webserver entry":   "webserver:\n  listen:\n    - 'a:b:c'\n",
-		"a webserver network": "webserver:\n  listen:\n    - '10.2.3.0/24:80'\n",
-		"a webserver key":     "webserver:\n  port: 80\n",
+		"a webserver entry":   "webservers:\n  main:\n    listen:\n      - 'a:b:c'\n",
+		"a webserver network": "webservers:\n  main:\n    listen:\n      - '10.2.3.0/24:80'\n",
+		"a webserver key":     "webservers:\n  main:\n    port: 80\n",
 	} {
 		if _, err := loadConfig(t, bad+"tasks: {}\n"+duckCredential); err == nil {
 			t.Errorf("%s: want an error", name)

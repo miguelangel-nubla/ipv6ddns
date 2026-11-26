@@ -28,7 +28,7 @@ in
       default = { };
       example = lib.literalExpression ''
         {
-          webserver.listen = [ "127.0.0.1:8053" ];
+          webservers.main.listen = [ "127.0.0.1:8053" ];
           tasks.server = {
             filter = [
               {

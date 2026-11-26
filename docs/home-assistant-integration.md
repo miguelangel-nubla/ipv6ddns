@@ -146,7 +146,7 @@ Without `listen`, ipv6ddns doesn't start:
 homeassistant.listen is missing: give where Home Assistant can connect to the device. That's the network Home Assistant is on, as 192.168.1.0/24, or this machine's address on it. A port alone, as 6053, means every address of the machine, including the internet-facing one on a router
 ```
 
-`listen` takes the same entries as [`webserver.listen`](installation.md#the-web-report): a port, an address, a network of the machine's addresses, or a host name, each with or without `:port`. An entry without a port uses `port`, which is 6053 by default.
+`listen` takes the same entries as [`webservers.<name>.listen`](installation.md#the-web-report): a port, an address, a network of the machine's addresses, or a host name, each with or without `:port`. An entry without a port uses `port`, which is 6053 by default.
 
 The device announces the port it listens on. With `listen: 10.2.3.4:7000`, Home Assistant finds it at 7000. The device can announce only one port, so entries with different ports need `announce: false`.
 

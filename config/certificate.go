@@ -136,7 +136,7 @@ func (c *Config) useCertificate(path, name string, encrypted bool, schemes, exam
 func (c *Config) checkCertificatesUsed() error {
 	for _, name := range slices.Sorted(maps.Keys(c.Certificates)) {
 		if len(c.Certificates[name].UsedBy) == 0 {
-			return fmt.Errorf("certificates.%s: no server shows it: give it as the tls of a resolver, or of the web server, or leave it out", name)
+			return fmt.Errorf("certificates.%s: no server shows it: give it as the tls of a resolver, a web server or a listener, or leave it out", name)
 		}
 	}
 	return nil

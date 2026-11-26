@@ -767,12 +767,13 @@ func TestWebserverTLS(t *testing.T) {
 		return NewConfig(path)
 	}
 	certificates := filesCertificate(certFile, keyFile)
-	cfg, err := load(`webserver:
-  listen:
-    - 172.30.32.1:8053
-    - "https://192.168.1.2"
-    - "HTTPS://192.168.1.3:9443"
-  tls: home
+	cfg, err := load(`webservers:
+  main:
+    listen:
+      - 172.30.32.1:8053
+      - "https://192.168.1.2"
+      - "HTTPS://192.168.1.3:9443"
+    tls: home
 resolvers:
   lan:
     listen: "tls://192.168.1.0/24"
@@ -782,28 +783,32 @@ resolvers:
 		t.Fatal(err)
 	}
 	var plain, https []string
-	for _, e := range cfg.Webserver.Plain {
-		plain = append(plain, e.String())
+	for _, e := range cfg.Webservers["main"].Entries {
+		if e.Certificate == "" {
+			plain = append(plain, e.Entry.String())
+		} else if e.Certificate == "home" {
+			https = append(https, e.Entry.String())
+		}
 	}
-	for _, e := range cfg.Webserver.HTTPS {
-		https = append(https, e.String())
+	if !slices.Equal(plain, []string{"172.30.32.1:8053"}) || !slices.Equal(https, []string{"192.168.1.2:8443", "192.168.1.3:9443"}) {
+		t.Errorf("plain %v, https %v", plain, https)
 	}
-	if !slices.Equal(plain, []string{"172.30.32.1:8053"}) || !slices.Equal(https, []string{"192.168.1.2:8443", "192.168.1.3:9443"}) || cfg.Webserver.TLS != "home" {
-		t.Errorf("plain %v, https %v, tls %q", plain, https, cfg.Webserver.TLS)
-	}
-	if used := cfg.Certificates["home"].UsedBy; !slices.Equal(used, []string{"resolvers.lan", "webserver"}) {
+	if used := cfg.Certificates["home"].UsedBy; !slices.Equal(used, []string{"resolvers.lan", "webservers.main"}) {
 		t.Errorf("used by %v", used)
 	}
 
 	for _, c := range []struct{ name, text, want string }{
-		{"an https entry without tls", `webserver:
-  listen: "https://192.168.1.2"`, "webserver.tls is missing: an entry of listen is encrypted, https://"},
-		{"tls without an https entry", `webserver:
-  listen: 192.168.1.2
-  tls: home` + certificates, "webserver.tls is for the encrypted entries of listen, and there is none: add one, as https://192.168.1.2"},
-		{"a bad https entry", `webserver:
-  listen: "https://192.168.1.0/33"
-  tls: home` + certificates, "webserver.listen: "},
+		{"an https entry without tls", `webservers:
+  main:
+    listen: "https://192.168.1.2"`, "webservers.main.tls is missing: an entry of listen is encrypted, https://"},
+		{"tls without an https entry", `webservers:
+  main:
+    listen: 192.168.1.2
+    tls: home` + certificates, "webservers.main.tls is for the encrypted entries of listen, and there is none: add one, as https://192.168.1.2"},
+		{"a bad https entry", `webservers:
+  main:
+    listen: "https://192.168.1.0/33"
+    tls: home` + certificates, "webservers.main.listen: "},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if _, err := load(c.text + "\nresolvers:" + lanResolver); err == nil || !strings.HasPrefix(err.Error(), c.want) {

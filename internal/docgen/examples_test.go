@@ -50,8 +50,8 @@ func TestAddonStarterConfig(t *testing.T) {
 
 	// The add-on's page is served where Home Assistant's Supervisor asks for it, at the port the
 	// add-on says is its ingress: the starting configuration says so, as nothing else does.
-	if !slices.Equal(cfg.Webserver.Listen, []string{"172.30.32.1:8053"}) || cfg.LogLevel != "info" {
-		t.Errorf("the starting configuration serves the report at %v, and logs at %q", cfg.Webserver.Listen, cfg.LogLevel)
+	if !slices.Equal(cfg.Webservers["main"].Listen, []string{"172.30.32.1:8053"}) || cfg.LogLevel != "info" {
+		t.Errorf("the starting configuration serves the report at %v, and logs at %q", cfg.Webservers["main"].Listen, cfg.LogLevel)
 	}
 	addon, err := os.ReadFile(filepath.Join("..", "..", "homeassistant", "addon", "config.yaml"))
 	if err != nil {
@@ -87,7 +87,7 @@ func TestAddonStarterConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const lines = "webserver:\n  listen: 172.30.32.1:8053\n"
+	const lines = "webservers:\n  main:\n    listen: 172.30.32.1:8053\n"
 	if !strings.Contains(string(docs), "```yaml\n"+lines+"```") || !strings.Contains(string(content), "\n"+lines) {
 		t.Errorf("the add-on's documentation, or its starting configuration, doesn't have the lines of its page:\n%s", lines)
 	}

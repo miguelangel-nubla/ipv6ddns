@@ -8,10 +8,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +23,7 @@ import (
 	"github.com/miguelangel-nubla/ipv6ddns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	_ "github.com/miguelangel-nubla/ipv6disc/pkg/plugins/all"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/terminal"
@@ -160,39 +164,48 @@ func main() {
 	}
 	defer closeTerminal()
 
+	// The web servers on the HTTPS entries of the listeners they share with a resolver: the
+	// resolver opens them, and gives the web server every path but its DNS over HTTPS.
+	webNames := slices.Sorted(maps.Keys(config.Webservers))
+	for _, name := range webNames {
+		for _, shared := range config.Webservers[name].Shared {
+			worker.SetWeb(strings.TrimPrefix(shared.Resolver, "resolvers."), shared.Listener, allowOnly(webHandler(worker), shared.Allow))
+		}
+	}
 	err = worker.Start(ctx)
 	if err != nil {
 		closeTerminal()
 		sugar.Fatalf("can't start worker: %s", err)
 	}
 
-	// The web server: of HTTP on its plain entries, and of HTTPS, HTTP/1.1 and HTTP/2, with the
-	// certificate of webserver.tls, on its https:// ones.
+	// The web servers: of HTTP on their plain entries, and of HTTPS, HTTP/1.1 and HTTP/2, with
+	// their certificates, on the others; each with its allow.
 	var servers []*http.Server
-	for _, part := range []struct {
-		entries []listen.Entry
-		tls     *tls.Config
-	}{
-		{config.Webserver.Plain, nil},
-		{config.Webserver.HTTPS, worker.WebserverTLS("h2", "http/1.1")},
-	} {
-		if len(part.entries) == 0 {
-			continue
+	for _, name := range webNames {
+		web := config.Webservers[name]
+		for _, entry := range web.Entries {
+			listeners, err := listen.Listen([]listen.Entry{entry.Entry})
+			if err != nil {
+				closeTerminal()
+				sugar.Fatalf("%s failed: %s", web.Path, err)
+			}
+			var tlsConfig *tls.Config
+			if entry.Certificate != "" {
+				tlsConfig = worker.TLS(entry.Certificate, "h2", "http/1.1")
+			}
+			for _, listener := range listeners {
+				server := &http.Server{Handler: allowOnly(webHandler(worker), entry.Allow), ReadHeaderTimeout: 10 * time.Second, TLSConfig: tlsConfig}
+				servers = append(servers, server)
+				go func() {
+					if err := serveWeb(sugar, web.Path, server, listener); err != nil {
+						closeTerminal()
+						sugar.Fatalf("%s failed: %s", web.Path, err)
+					}
+				}()
+			}
 		}
-		listeners, err := listen.Listen(part.entries)
-		if err != nil {
-			closeTerminal()
-			sugar.Fatalf("web server failed: %s", err)
-		}
-		for _, listener := range listeners {
-			server := &http.Server{Handler: webHandler(worker), ReadHeaderTimeout: 10 * time.Second, TLSConfig: part.tls}
-			servers = append(servers, server)
-			go func() {
-				if err := serveWeb(sugar, server, listener); err != nil {
-					closeTerminal()
-					sugar.Fatalf("web server failed: %s", err)
-				}
-			}()
+		for _, shared := range web.Shared {
+			sugar.Infof("Starting %s on %s, of listeners.%s, whose %s serves DNS over HTTPS at %s", web.Path, strings.Join(shared.Lines, ", "), shared.Listener, shared.Resolver, resolver.DoHPath)
 		}
 	}
 
@@ -365,21 +378,36 @@ const statusHTMLTail = `</pre>
 </html>
 `
 
-// serveWeb serves the web server on the listener until it is shut down: over HTTPS, when it has
-// a TLS configuration. Its shutdown is no error.
-func serveWeb(logger *zap.SugaredLogger, server *http.Server, listener net.Listener) error {
+// serveWeb serves the web server at path, as webservers.main, on the listener until it is shut
+// down: over HTTPS, when it has a TLS configuration. Its shutdown is no error.
+func serveWeb(logger *zap.SugaredLogger, path string, server *http.Server, listener net.Listener) error {
 	var err error
 	if server.TLSConfig != nil {
-		logger.Infof("Starting web server on https://%s", listener.Addr())
+		logger.Infof("Starting %s on https://%s", path, listener.Addr())
 		err = server.ServeTLS(listener, "", "")
 	} else {
-		logger.Infof("Starting web server on %s", listener.Addr())
+		logger.Infof("Starting %s on %s", path, listener.Addr())
 		err = server.Serve(listener)
 	}
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
+}
+
+// allowOnly has h answer the clients in allow alone, the others 403: nil, everyone.
+func allowOnly(h http.Handler, allow []netip.Prefix) http.Handler {
+	if allow == nil {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		client, err := netip.ParseAddrPort(r.RemoteAddr)
+		if err != nil || !slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Contains(client.Addr().Unmap()) }) {
+			http.Error(w, "forbidden: this address is not one the web server answers", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // webserverPort is that of the web server's entries that give none.

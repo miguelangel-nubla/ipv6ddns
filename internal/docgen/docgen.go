@@ -250,10 +250,13 @@ func Configuration() (string, error) {
 	source := asNode(root.Properties["sources"].AdditionalProperties)
 	section("Sources", "sources.<name>", root.Properties["sources"].Description+" See [sources](../sources.md).", source, "properties", "sources", "additionalProperties", "properties")
 
-	webserver := root.Properties["webserver"]
-	section("Web server", "webserver", webserver.Description+" See [the web report](../installation.md#the-web-report).", webserver, "properties", "webserver", "properties")
+	webservers := asNode(root.Properties["webservers"].AdditionalProperties)
+	section("Web servers", "webservers.<name>", root.Properties["webservers"].Description, webservers, "properties", "webservers", "additionalProperties", "properties")
 
-	// The certificates of the resolvers' encrypted entries and of the web server's HTTPS ones.
+	listeners := asNode(root.Properties["listeners"].AdditionalProperties)
+	section("Listeners", "listeners.<name>", root.Properties["listeners"].Description, listeners, "properties", "listeners", "additionalProperties", "properties")
+
+	// The certificates of the encrypted entries: of the resolvers, the web servers and the listeners.
 	tlsDef := defs["tls"]
 	fmt.Fprintf(&b, "## Certificates\n\n`certificates.<name>`\n\n%s %s See [encrypted DNS for the clients](../resolver.md#encrypted-dns-for-the-clients).\n\n", root.Properties["certificates"].Description, tlsDef.Description)
 	table(&b, tlsDef, order(raw, "$defs", "tls", "properties"), defs)

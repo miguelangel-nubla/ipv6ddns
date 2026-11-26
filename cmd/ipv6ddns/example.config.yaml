@@ -1,7 +1,8 @@
 log_level: info               # debug, info, warn, error
-webserver:
-  listen:                     # the report, /status.json and /metrics; or "8053,[::1]:8054"
-    - 8053
+webservers:
+  main:
+    listen:                     # the report, /status.json and /metrics; or "8053,[::1]:8054"
+      - 8053
 
 # Addresses without a MAC, for the tasks that name them.
 sources:

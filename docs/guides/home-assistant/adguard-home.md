@@ -43,8 +43,9 @@ tasks:
         - homeassistant    # homeassistant.lan.example.com
 
 # From the starting file: keep these.
-webserver:
-  listen: 172.30.32.1:8053
+webservers:
+  main:
+    listen: 172.30.32.1:8053
 
 log_level: info
 
@@ -66,7 +67,7 @@ This configuration differs from the plain guide's in four ways:
 - **The address is `http://127.0.0.1:45158`, with no user.** Both apps are on the Home Assistant machine's own network. The AdGuard Home app has its web interface there, on that port, and asks for no login: Home Assistant does that for it.
 - **The `homeassistant` task** names Home Assistant itself. `self: true` takes the addresses of the machine the app runs on, so the name doesn't depend on Home Assistant saying its name.
 - **`discovery.ipv4`** goes into the `discovery` block the file already has, beside `exclude_interfaces`.
-- **There is no new `webserver` block.** The plain guide's web report is the app's page here, and the `webserver` block of the starting file already serves it.
+- **There is no new `webservers` block.** The plain guide's web report is the app's page here, and the `webservers` block of the starting file already serves it.
 
 Restart the app. Its page lists the names under `DNS`, each with its addresses and its last update.
 

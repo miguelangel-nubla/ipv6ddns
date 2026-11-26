@@ -67,7 +67,7 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 
 	// A certificate of each state: valid, ending soon, ended, and of files that don't read; of ACME,
 	// none yet, its attempt failed; and one, whose renewal failed.
-	used := []string{"resolvers.dot", "webserver"}
+	used := []string{"resolvers.dot", "webservers.main"}
 	certificates := certificatesPage("", []CertificateStatus{
 		{Name: "home", UsedBy: used, Status: &certfile.Status{Names: []string{"dns.lan.example.com"}, NotAfter: time.Now().Add(60 * 24 * time.Hour)}},
 		{Name: "soon", UsedBy: used, Status: &certfile.Status{Names: []string{"dns.lan.example.com", "192.168.1.2"}, NotAfter: time.Now().Add(5 * 24 * time.Hour), Error: "open /ssl/privkey.pem: permission denied"}},
@@ -95,7 +95,7 @@ func TestReportPictureHasTheRolesOfTheProgram(t *testing.T) {
 		page = append(page, pretty.Line{})
 		page = append(page, disc.Page("")...)
 		text := page.String()
-		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 3, 2 serving", "Certificates:\n    home (resolver dot, webserver): dns.lan.example.com, until ", "none yet", "(getting it failed: the check: 403 unauthorized; again at ", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
+		for _, has := range []string{"1 failing", "retrying after the error", "(last update error: ", "(no address: the last one went", "(no address)\n", "debounce", "Resolvers: 3, 2 serving", "Certificates:\n    home (resolver dot, web server main): dns.lan.example.com, until ", "none yet", "(getting it failed: the check: 403 unauthorized; again at ", ", in 4 days", "expired on ", "(its files don't read again: ", "(3 failed)", "(0 failed)", "not serving: listen", "Cache: 12 of 10000", "        names:", "            nas "} {
 			if !strings.Contains(text, has) {
 				t.Fatalf("the page of the test has no %q:\n%s", has, text)
 			}

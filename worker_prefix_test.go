@@ -13,8 +13,9 @@ import (
 // lifetime; before any prefix, the name has both.
 func TestPrefixSourceFollowsTheRouter(t *testing.T) {
 	cfg := loadConfig(t, `
-webserver:
-  listen: 127.0.0.1:8053
+webservers:
+  main:
+    listen: 127.0.0.1:8053
 sources:
   wan:
     type: push

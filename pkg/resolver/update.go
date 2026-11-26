@@ -289,8 +289,7 @@ func lowerName(name string) string { return strings.ToLower(dns.Fqdn(name)) }
 // serveSigned answers a message signed with TSIG: with the keys', an update or a query, signed
 // with its key; and of a key it doesn't know, or a signature that is wrong, NOTAUTH, unsigned,
 // as RFC 8945 has it.
-func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG) {
-	remote := w.RemoteAddr()
+func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG, remote net.Addr) {
 	key := s.keys[strings.ToLower(t.Hdr.Name)]
 	var tsigError uint16
 	switch err := w.TsigStatus(); {
@@ -354,7 +353,7 @@ func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG) {
 	default:
 		resp = reply(req, dns.RcodeNotImplemented)
 	}
-	if _, overUDP := remote.(*net.UDPAddr); overUDP {
+	if _, overUDP := w.RemoteAddr().(*net.UDPAddr); overUDP {
 		size := dns.MinMsgSize
 		if opt := req.IsEdns0(); opt != nil {
 			size = max(int(opt.UDPSize()), dns.MinMsgSize)
@@ -444,9 +443,7 @@ func (s *Server) keyAllowed(key *keyState, remote net.Addr) bool {
 		allow = s.config.UpdateAllow
 	}
 	if allow == nil {
-		s.mutex.Lock()
-		allow = s.allow
-		s.mutex.Unlock()
+		allow = s.allowOf(remote)
 	}
 	return slices.ContainsFunc(allow, func(p netip.Prefix) bool { return p.Contains(ip) })
 }
@@ -455,6 +452,8 @@ func (s *Server) keyAllowed(key *keyState, remote net.Addr) bool {
 func addrOf(addr net.Addr) (netip.Addr, bool) {
 	var ip netip.Addr
 	switch a := addr.(type) {
+	case client:
+		return addrOf(a.Addr)
 	case *net.UDPAddr:
 		ip, _ = netip.AddrFromSlice(a.IP)
 	case *net.TCPAddr:

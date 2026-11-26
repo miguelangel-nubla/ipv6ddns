@@ -58,8 +58,9 @@ The two times on each line are how long the address has left before it expires, 
 This `config.yaml` keeps one server's global addresses at Cloudflare:
 
 ```yaml
-webserver:
-  listen: 127.0.0.1:8053
+webservers:
+  main:
+    listen: 127.0.0.1:8053
 
 tasks:
   webserver:

@@ -53,7 +53,7 @@ Each entry under `resolvers` is one resolver, with a name of your choice. Its ke
 
 ### `listen` (required)
 
-Where the resolver answers, over UDP and TCP. It takes the same forms as [`webserver.listen`](installation.md#the-web-report):
+Where the resolver answers, over UDP and TCP. It takes the same forms as [`webservers.<name>.listen`](installation.md#the-web-report):
 
 - a network, such as `192.168.1.0/24`, which means each of the machine's addresses in that network;
 - an address, such as `192.168.1.2` or `[fd00::2]:5353`;
@@ -289,6 +289,49 @@ At a provider, the name is public, with a private address. Nothing on the intern
 ### Ports
 
 Port 443 is often taken already, by a reverse proxy or a web interface. Give DNS over HTTPS another port, as `https://192.168.1.2:8443`, or another address, and write that port in the clients' URL. DNS over TLS and DNS over QUIC can share port 853, one over TCP and the other over UDP.
+
+ipv6ddns's own web server can share port 443 with DNS over HTTPS, as [below](#sharing-a-port).
+
+### Sharing a port
+
+A listener is a set of addresses that servers share, under the top-level `listeners`, by a name of your choice. A resolver and a web server name it in their `listeners`. On an `https://` entry of one, `/dns-query` is the resolver's DNS over HTTPS, and every other path is the web server's: `https://dns.lan.example.com/dns-query` for the clients, and `https://dns.lan.example.com/` for the report.
+
+```yaml
+listeners:
+  lan:
+    listen:
+      - dns://192.168.1.2      # plain DNS, UDP and TCP, port 53
+      - tls://192.168.1.2      # DNS over TLS, port 853
+      - https://192.168.1.2    # DNS over HTTPS, and the report, port 443
+    tls: home
+    allow:
+      - 192.168.1.0/24
+
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 192.168.1.1
+
+webservers:
+  main:
+    listen:
+      - 8053                   # the report over HTTP too, as before
+    listeners:
+      - lan
+
+certificates:
+  home:
+    certificate: /etc/ssl/dns/fullchain.pem
+    key: /etc/ssl/dns/privkey.pem
+```
+
+- **Each entry has its scheme:** `dns://`, `tls://`, `quic://`, `https://`, or `http://` for the web server's plain HTTP, on port 8053 by default. A resolver takes the DNS ones, and a web server the HTTP ones. On `https://`, they share.
+- **One certificate,** the listener's `tls`, for all its encrypted entries, whichever server answers. The servers' own `tls` is only for their own `listen`.
+- **`allow` goes from the listener to its servers.** A listener's `allow` is the clients its servers answer there. A server's own `allow` replaces it, on all its listeners, as a key's `allow` replaces that of its resolver. Without either, a resolver answers the networks of the addresses it listens on, and a web server everyone. The web server's clients outside its `allow` get `403`.
+- **A listener has one resolver and one web server at most.** A server can name several listeners, and still have entries of its own in `listen`.
+- **Every entry needs a server that serves it.** A `dns://` entry of a listener that no resolver uses is refused at start, as is a listener that no server uses.
 
 ## A zone
 

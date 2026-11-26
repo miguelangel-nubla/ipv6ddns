@@ -65,9 +65,10 @@ func TestLiveACME(t *testing.T) {
 		return l.Addr().(*net.TCPAddr).Port
 	}
 	cfg := loadConfig(t, fmt.Sprintf(`
-webserver:
-  listen: "https://127.0.0.1:%d"
-  tls: home
+webservers:
+  main:
+    listen: "https://127.0.0.1:%d"
+    tls: home
 resolvers:
   lan:
     listen:
@@ -164,19 +165,19 @@ tasks: {}
 		t.Fatalf("the certificates: %+v", statuses)
 	}
 	st := statuses[0]
-	if !st.Managed || !slices.Equal(slices.Sorted(slices.Values(st.Names)), []string{name, web}) || st.Renewal != "" || !slices.Equal(st.UsedBy, []string{"resolvers.lan", "webserver"}) {
+	if !st.Managed || !slices.Equal(slices.Sorted(slices.Values(st.Names)), []string{name, web}) || st.Renewal != "" || !slices.Equal(st.UsedBy, []string{"resolvers.lan", "webservers.main"}) {
 		t.Errorf("the status: %+v, %+v", st, st.Status)
 	}
 	home := cfg.Certificates["home"]
 	if _, err := os.Stat(home.AccountKeyFile); err != nil || home.CertFile != filepath.Join(cfg.BaseDir, "tls", "home", "fullchain.pem") {
 		t.Errorf("the files: %+v, %v", home, err)
 	}
-	if page := w.Page("", false).String(); !strings.Contains(page, "Certificates:\n    home (resolver lan, webserver): ") || !strings.Contains(page, "        Certificate: home\n") {
+	if page := w.Page("", false).String(); !strings.Contains(page, "Certificates:\n    home (resolver lan, web server main): ") || !strings.Contains(page, "        Certificate: home\n") {
 		t.Errorf("the report:\n%s", page)
 	}
 
 	// The web server shows the same one.
-	l, err := tls.Listen("tcp", "127.0.0.1:0", w.WebserverTLS("http/1.1"))
+	l, err := tls.Listen("tcp", "127.0.0.1:0", w.TLS("home", "http/1.1"))
 	if err != nil {
 		t.Fatal(err)
 	}

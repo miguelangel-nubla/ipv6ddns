@@ -50,9 +50,10 @@ credentials: {}
 
 # The report, at http://127.0.0.1:8053, for this machine alone: it has no authentication. To
 # open it to a network, add the network, as 192.168.1.0/24.
-webserver:
-  listen:
-    - 127.0.0.1:8053
+webservers:
+  main:
+    listen:
+      - 127.0.0.1:8053
 
 # How much the log says: debug, info, warn or error. The log: journalctl -u ipv6ddns
 log_level: info

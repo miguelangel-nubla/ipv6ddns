@@ -94,9 +94,10 @@ func TestLiveResolverServesEncrypted(t *testing.T) {
 	address := srv.IPv4.String()
 
 	config := fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 resolvers:
   lan:
     listen:

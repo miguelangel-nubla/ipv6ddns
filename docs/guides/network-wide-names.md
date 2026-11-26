@@ -46,9 +46,10 @@ tasks:
         - "{hostname}"     # printer.lan.example.com
         - "{n}.{hostname}" # 1.printer.lan.example.com, 2.printer.lan.example.com when two say printer
 
-webserver:
-  listen:
-    - 8053                 # the web report: http://192.168.1.2:8053
+webservers:
+  main:
+    listen:
+      - 8053                 # the web report: http://192.168.1.2:8053
 ```
 
 What each part does:
@@ -57,7 +58,7 @@ What each part does:
 - **`resolvers.lan`** makes ipv6ddns a DNS server, which answers on the machine's LAN address. When it's asked a name it doesn't have itself, such as `github.com`, it asks `upstream`, and keeps the answer in a cache.
 - **`credentials.home`** is the zone the resolver answers: `lan.example.com`. Write a subdomain of a domain you own there. No domain of your own? Use `home.arpa`, which is [set aside for home networks](https://www.rfc-editor.org/rfc/rfc8375). Don't use `.local`. See [choosing a domain](../resolver.md#choosing-a-domain).
 - **`tasks.lan`** gives every host a name. Its filter takes every address of every host, except link-local addresses, which only work on one link. `{hostname}` is the name the host says it has.
-- **`webserver`** serves the [web report](../installation.md#the-web-report): the hosts found, their names, and what the resolver answers. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
+- **`webservers`** serves the [web report](../installation.md#the-web-report): the hosts found, their names, and what the resolver answers. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
 
 A host is named by what it says it is called:
 
@@ -161,9 +162,10 @@ tasks:
         - "{hostname}"
         - "{n}.{hostname}"
 
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 ```
 
 [MikroTik as a DNS provider](../mikrotik.md#dns-provider) describes the user ipv6ddns needs on the router. The other routers have pages of their own, [OpenWrt](../openwrt.md#dns-provider), [OPNsense](../opnsense.md#dns-provider), [pfSense](../pfsense.md#dns-provider) and [UniFi](../unifi.md#dns-provider), and their settings are in the [providers reference](../reference/providers.md).

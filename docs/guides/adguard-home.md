@@ -46,9 +46,10 @@ tasks:
         - "{hostname}"     # printer.lan.example.com
         - "{n}.{hostname}" # 1.printer.lan.example.com, 2.printer.lan.example.com when two say printer
 
-webserver:
-  listen:
-    - 8053                 # the web report: http://192.168.1.2:8053
+webservers:
+  main:
+    listen:
+      - 8053                 # the web report: http://192.168.1.2:8053
 ```
 
 What each part does:
@@ -56,7 +57,7 @@ What each part does:
 - **`discovery`** finds the hosts. IPv6 is on by default. `ipv4: enabled: true` adds the IPv4 addresses, so that a name also works for devices and clients without IPv6.
 - **`credentials.adguard`** is your AdGuard Home. `zone` is the domain the names are under. AdGuard Home has no zones, so any domain works: a subdomain of a domain you own, or `home.arpa`, which is [set aside for home networks](https://www.rfc-editor.org/rfc/rfc8375). Don't use `.local`.
 - **`tasks.lan`** gives every host a name. Its filter takes every address of every host, except link-local addresses, which only work on one link. `{hostname}` is the name the host says it has.
-- **`webserver`** serves the [web report](../installation.md#the-web-report): the hosts found, their names, and the state of each update. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
+- **`webservers`** serves the [web report](../installation.md#the-web-report): the hosts found, their names, and the state of each update. The report has no password. If the machine also faces the internet, give a LAN address, such as `192.168.1.2:8053`.
 
 How a host gets its name, and what to do for one that says no name, is in [every machine on the network by name](network-wide-names.md#the-configuration). To give a device a name of your choice, by its MAC, see [a name that matters](network-wide-names.md#a-name-that-matters): the task there works here, with `adguard` as its endpoint.
 

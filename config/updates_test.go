@@ -34,9 +34,10 @@ credentials:
     provider: resolver
     settings:
       zone: home.arpa
-webserver:
-  listen:
-    - 127.0.0.1:8053
+webservers:
+  main:
+    listen:
+      - 127.0.0.1:8053
 sources:
   wan:
     type: push

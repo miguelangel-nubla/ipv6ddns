@@ -22,9 +22,13 @@ import (
 // Resolver is a DNS server for the clients of a network: it answers the zones of its resolver
 // credentials and its own records, and asks its upstream servers the rest. See docs/resolver.md.
 type Resolver struct {
-	// Required. Where it answers, as listen takes it; without a port, 53. An entry that starts with
-	// tls://, https:// or quic:// answers over that encrypted transport, on its port by default.
+	// Where it answers, as listen takes it; without a port, 53. An entry that starts with tls://,
+	// https:// or quic:// answers over that encrypted transport, on its port by default. Required
+	// without Listeners.
 	Listen StringList `json:"listen,omitempty"`
+	// The listeners it answers on too, by name: their DNS entries, and /dns-query of their HTTPS
+	// ones.
+	Listeners StringList `json:"listeners,omitempty"`
 	// The certificate the encrypted transports show: the name of one of certificates. Required
 	// with an encrypted entry, and only then.
 	TLS string `json:"tls,omitempty"`
@@ -77,7 +81,8 @@ func checkResolvers(configData []byte) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Resolvers)) {
 		r := c.Resolvers[name]
-		if _, ok := r["listen"]; !ok {
+		_, listeners := r["listeners"]
+		if _, ok := r["listen"]; !ok && !listeners {
 			return fmt.Errorf("resolvers.%s.listen is missing: give where the resolver answers. That's the clients' network, as 192.168.1.0/24, for this machine's address in it, or the address itself. Without a port, 53", name)
 		}
 		if _, ok := r["upstream"]; !ok {
@@ -99,7 +104,7 @@ func (c *Config) setUpResolvers() error {
 		r := c.Resolvers[name]
 		path := "resolvers." + name
 		spec := resolver.Config{Name: name, Path: path}
-		if len(r.Listen) == 0 {
+		if len(r.Listen) == 0 && len(r.Listeners) == 0 {
 			return fmt.Errorf("%s.listen is missing: give where the resolver answers", path)
 		}
 		// One by one: each entry with its text, as written, which the errors at start quote.
@@ -120,12 +125,14 @@ func (c *Config) setUpResolvers() error {
 			if !slices.Contains(spec.Listen, e) {
 				spec.Listen = append(spec.Listen, e)
 				spec.ListenLines = append(spec.ListenLines, strings.TrimSpace(line))
+				spec.ListenAllow = append(spec.ListenAllow, nil)
 			}
 		}
 		if err := c.useCertificate(path, r.TLS, len(spec.Encrypted) > 0, "tls://, https:// or quic://", "tls://192.168.1.0/24"); err != nil {
 			return err
 		}
 		spec.CertificateName = r.TLS
+		c.listenOnListeners(&spec, r.Listeners)
 		// By protocol: plain DNS has UDP and TCP, DNS over TLS and over HTTPS TCP, over QUIC UDP.
 		claim := func(protocol, shown string, e fmt.Stringer) error {
 			key := protocol + " " + e.String()
@@ -270,6 +277,35 @@ func (c *Config) setUpResolvers() error {
 		}
 	}
 	return c.checkPushSources()
+}
+
+// listenOnListeners adds to spec the DNS entries of the listeners named, each with the listener's
+// certificate and allow: plain DNS, DNS over TLS, over QUIC, and over HTTPS, whose other paths are
+// the web server's that uses the listener too, if one does.
+func (c *Config) listenOnListeners(spec *resolver.Config, names []string) {
+	for _, name := range names {
+		l := c.Listeners[name]
+		for _, le := range l.Entries {
+			switch le.Scheme {
+			case SchemeHTTP:
+				// The web server's.
+			case SchemeDNS:
+				if !slices.Contains(spec.Listen, le.Entry) {
+					spec.Listen = append(spec.Listen, le.Entry)
+					spec.ListenLines = append(spec.ListenLines, le.Line)
+					spec.ListenAllow = append(spec.ListenAllow, l.Allowed)
+				}
+			default:
+				enc := resolver.EncryptedListen{Transport: le.Scheme, Entry: le.Entry, Line: le.Line, CertificateName: l.TLS, Allow: l.Allowed}
+				if le.Scheme == SchemeHTTPS && l.Web != "" {
+					enc.Web = name
+				}
+				if !slices.ContainsFunc(spec.Encrypted, func(o resolver.EncryptedListen) bool { return o.Transport == enc.Transport && o.Entry == enc.Entry }) {
+					spec.Encrypted = append(spec.Encrypted, enc)
+				}
+			}
+		}
+	}
 }
 
 // checkPushSources tells of a push source without a password that no key sends addresses to: it

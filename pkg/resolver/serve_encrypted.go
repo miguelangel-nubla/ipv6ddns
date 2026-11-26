@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strconv"
 	"sync"
@@ -58,6 +59,15 @@ type EncryptedListen struct {
 	Entry     listen.Entry
 	// As written, for errors.
 	Line string
+	// The certificate it shows, of a listener's entry: none, the resolver's.
+	Certificate     *certfile.Certificate
+	CertificateName string
+	// The clients it answers, of a listener's entry: none, the resolver's. Config.Allow, when
+	// given, replaces it.
+	Allow []netip.Prefix
+	// Of HTTPS: the web server whose handler SetWeb gave by this name answers every path but
+	// DoHPath. None: those paths are not found.
+	Web string
 }
 
 // DefaultPortOf is the port an entry of transport has when it gives none.
@@ -77,6 +87,8 @@ func DefaultPortOf(transport string) string {
 type encryptedListeners struct {
 	tls, https []net.Listener
 	quic       []net.PacketConn
+	// Of each of tls, https and quic, in their order: its entry.
+	tlsOf, httpsOf, quicOf []EncryptedListen
 	// host:port with its scheme, as the status says it, and the addresses themselves.
 	listening []string
 	listened  []net.Addr
@@ -96,6 +108,7 @@ func (l *encryptedListeners) open(e EncryptedListen) error {
 				return err
 			}
 			l.quic = append(l.quic, c)
+			l.quicOf = append(l.quicOf, e)
 			l.listening = append(l.listening, e.Transport+"://"+c.LocalAddr().String())
 			l.listened = append(l.listened, c.LocalAddr())
 			continue
@@ -106,8 +119,10 @@ func (l *encryptedListeners) open(e EncryptedListen) error {
 		}
 		if e.Transport == TransportTLS {
 			l.tls = append(l.tls, tl)
+			l.tlsOf = append(l.tlsOf, e)
 		} else {
 			l.https = append(l.https, tl)
+			l.httpsOf = append(l.httpsOf, e)
 		}
 		l.listening = append(l.listening, e.Transport+"://"+tl.Addr().String())
 		l.listened = append(l.listened, tl.Addr())
@@ -126,10 +141,16 @@ func (l *encryptedListeners) close() {
 }
 
 // serveHTTPS answers DNS over HTTPS on the listeners, over HTTP/1.1 and HTTP/2.
-func (s *Server) serveHTTPS(listeners []net.Listener, cert *certfile.Certificate) {
-	for _, l := range listeners {
+func (s *Server) serveHTTPS(listeners []net.Listener, entries []EncryptedListen) {
+	for i, l := range listeners {
+		e, cert := entries[i], s.certificateOf(entries[i])
+		allow := e.Allow
+		handler := func(w http.ResponseWriter, r *http.Request) { s.answerHTTPS(w, r, allow) }
+		if e.Web != "" {
+			handler = func(w http.ResponseWriter, r *http.Request) { s.answerHTTPSOrWeb(w, r, e.Web, allow) }
+		}
 		srv := &http.Server{
-			Handler:           http.HandlerFunc(s.answerHTTPS),
+			Handler:           http.HandlerFunc(handler),
 			TLSConfig:         cert.Config("h2", "http/1.1"),
 			ReadHeaderTimeout: encryptedTimeout,
 			ReadTimeout:       encryptedTimeout,
@@ -150,9 +171,40 @@ func (s *Server) serveHTTPS(listeners []net.Listener, cert *certfile.Certificate
 	}
 }
 
+// Name is the resolver's, of the configuration.
+func (s *Server) Name() string { return s.config.Name }
+
+// SetWeb gives the handler of a web server, by the name the HTTPS entries it shares give as their
+// Web: it answers there every path but DoHPath, and checks its own allow. Before Start.
+func (s *Server) SetWeb(name string, h http.Handler) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.web == nil {
+		s.web = make(map[string]http.Handler)
+	}
+	s.web[name] = h
+}
+
+// answerHTTPSOrWeb answers DNS over HTTPS at DoHPath, and has the web server of name answer every
+// other path.
+func (s *Server) answerHTTPSOrWeb(w http.ResponseWriter, r *http.Request, name string, allow []netip.Prefix) {
+	if r.URL.Path == DoHPath {
+		s.answerHTTPS(w, r, allow)
+		return
+	}
+	s.mutex.Lock()
+	web := s.web[name]
+	s.mutex.Unlock()
+	if web == nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.ServeHTTP(w, r)
+}
+
 // answerHTTPS answers a query of DNS over HTTPS, RFC 8484: a GET with the message in base64url, as
 // dns, or a POST with it as the body.
-func (s *Server) answerHTTPS(w http.ResponseWriter, r *http.Request) {
+func (s *Server) answerHTTPS(w http.ResponseWriter, r *http.Request, allow []netip.Prefix) {
 	if r.URL.Path != DoHPath {
 		http.NotFound(w, r)
 		return
@@ -193,7 +245,7 @@ func (s *Server) answerHTTPS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no client address", http.StatusBadRequest)
 		return
 	}
-	resp := s.respond(req, remote)
+	resp := s.respond(req, client{remote, allow})
 	if resp == nil {
 		http.Error(w, "not a query", http.StatusBadRequest)
 		return
@@ -244,9 +296,10 @@ func freshness(resp *dns.Msg) uint32 {
 }
 
 // serveQUIC answers DNS over QUIC, RFC 9250, on the sockets: each query on a stream of its own.
-func (s *Server) serveQUIC(conns []net.PacketConn, cert *certfile.Certificate) {
-	for _, c := range conns {
-		l, err := quic.Listen(c, cert.Config(alpnQUIC), &quic.Config{
+func (s *Server) serveQUIC(conns []net.PacketConn, entries []EncryptedListen) {
+	for i, c := range conns {
+		allow := entries[i].Allow
+		l, err := quic.Listen(c, s.certificateOf(entries[i]).Config(alpnQUIC), &quic.Config{
 			MaxIdleTimeout:     30 * time.Second,
 			MaxIncomingStreams: 100,
 		})
@@ -270,14 +323,14 @@ func (s *Server) serveQUIC(conns []net.PacketConn, cert *certfile.Certificate) {
 					}
 					return
 				}
-				go s.serveQUICConn(conn)
+				go s.serveQUICConn(conn, allow)
 			}
 		}()
 	}
 }
 
 // serveQUICConn answers the streams of a connection of DNS over QUIC, until it closes.
-func (s *Server) serveQUICConn(conn *quic.Conn) {
+func (s *Server) serveQUICConn(conn *quic.Conn, allow []netip.Prefix) {
 	s.mutex.Lock()
 	if s.stopping {
 		s.mutex.Unlock()
@@ -299,14 +352,14 @@ func (s *Server) serveQUICConn(conn *quic.Conn) {
 		if err != nil {
 			return
 		}
-		go s.answerQUIC(conn, stream)
+		go s.answerQUIC(conn, stream, allow)
 	}
 }
 
 // answerQUIC answers the query of a stream: the message, after its length in two bytes, with the
 // ID 0. A stream that breaks the protocol closes its connection, as RFC 9250 has it; one that
 // ends before its message is reset, both ways, so that the client sees no empty answer.
-func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream) {
+func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream, allow []netip.Prefix) {
 	defer stream.Close()
 	// A stream that can't have one is one already gone, which the reads then say.
 	_ = stream.SetDeadline(time.Now().Add(encryptedTimeout))
@@ -325,7 +378,7 @@ func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream) {
 		_ = conn.CloseWithError(doqProtocolError, "a message that is no query of DNS over QUIC")
 		return
 	}
-	resp := s.respond(req, conn.RemoteAddr())
+	resp := s.respond(req, client{conn.RemoteAddr(), allow})
 	if resp == nil {
 		_ = conn.CloseWithError(doqProtocolError, "not a query")
 		return

@@ -38,9 +38,10 @@ func TestLiveTwoInstancesOneMachine(t *testing.T) {
 	keyOne := esphome.GenerateKey()
 
 	one := configure(t, machine, router, "one", 8053, fmt.Sprintf(`
-webserver:
-  listen:
-    - "%s:8053"
+webservers:
+  main:
+    listen:
+      - "%s:8053"
 homeassistant:
   name: ipv6ddns-one
   friendly_name: The first
@@ -71,9 +72,10 @@ credentials:
 %s`, machine.IPv4, keyOne, peer.MAC, lan.Prefix(), lan.Prefix(), dnsOne.credential("first", "1s")))
 
 	two := configure(t, machine, router, "two", 8054, fmt.Sprintf(`
-webserver:
-  listen:
-    - 8054
+webservers:
+  main:
+    listen:
+      - 8054
 homeassistant:
   name: ipv6ddns-two
   friendly_name: The second
@@ -243,9 +245,10 @@ credentials:
 	dnsThree := startProvider(t, router, 5383, "token-three", "three.example")
 	third := func(webPort, devicePort int) string {
 		return fmt.Sprintf(`
-webserver:
-  listen:
-    - %d
+webservers:
+  main:
+    listen:
+      - %d
 homeassistant:
   name: ipv6ddns-three
   listen:
@@ -372,9 +375,10 @@ func TestLiveInstancesOfOneDevice(t *testing.T) {
 
 	config := func(name string, webPort, devicePort int, device string) string {
 		return fmt.Sprintf(`
-webserver:
-  listen:
-    - %d
+webservers:
+  main:
+    listen:
+      - %d
 homeassistant:
   listen:
     - %d
@@ -567,9 +571,10 @@ func TestLiveTwoInstancesTwoMachines(t *testing.T) {
 	// other's machine's; and the peer's again at the server they share, under one name.
 	config := func(name, key, lifetime, rediscover, discovery string, own *provider, mate *livetest.Machine, more string) string {
 		return fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 homeassistant:
   name: ipv6ddns-%[2]s
   key: %[3]s
@@ -954,9 +959,10 @@ func TestLiveTwoInstancesLive(t *testing.T) {
 	dnsTwo := startProvider(t, router, 5382, "token-two", "two.example")
 	config := func(webPort int, dns *provider) string {
 		return fmt.Sprintf(`
-webserver:
-  listen:
-    - %d
+webservers:
+  main:
+    listen:
+      - %d
 discovery:
   rediscover: 3s
 tasks:

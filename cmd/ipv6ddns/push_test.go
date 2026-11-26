@@ -22,8 +22,9 @@ func pushWorker(t *testing.T) (*ipv6ddns.Worker, http.Handler) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	os.WriteFile(path, []byte(`
-webserver:
-  listen: 127.0.0.1:8053
+webservers:
+  main:
+    listen: 127.0.0.1:8053
 sources:
   wan:
     type: push
@@ -146,8 +147,9 @@ func TestPushHandlerFailures(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	os.WriteFile(path, []byte(`
-webserver:
-  listen: 127.0.0.1:8053
+webservers:
+  main:
+    listen: 127.0.0.1:8053
 sources:
   wan:
     type: push

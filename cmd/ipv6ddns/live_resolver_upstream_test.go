@@ -214,9 +214,10 @@ func TestLiveResolverEncrypted(t *testing.T) {
 
 	server := srv.IPv4.String()
 	config := fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 resolvers:
   dot:
     listen: "%[1]s:5301"
@@ -345,9 +346,10 @@ func TestLiveResolverCache(t *testing.T) {
 
 	server := srv.IPv4.String()
 	instance := configure(t, srv, lan.Router, "srv", 8053, fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 resolvers:
   lan:
     listen: 198.18.18.0/24
@@ -459,9 +461,10 @@ func TestLiveResolverCollision(t *testing.T) {
 	srv := lan.Machine(t, "srv", 10)
 	config := func(lab, lan string) string {
 		return fmt.Sprintf(`
-webserver:
-  listen:
-    - 8053
+webservers:
+  main:
+    listen:
+      - 8053
 resolvers:
   lab:
     listen: %s

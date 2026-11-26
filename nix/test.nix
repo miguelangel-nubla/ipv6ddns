@@ -10,7 +10,7 @@ pkgs.testers.runNixOSTest {
     services.ipv6ddns = {
       enable = true;
       settings = {
-        webserver.listen = [ "127.0.0.1:8053" ];
+        webservers.main.listen = [ "127.0.0.1:8053" ];
         discovery.ipv4.enabled = true;
       };
     };

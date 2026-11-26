@@ -40,7 +40,7 @@ func TestServeWeb(t *testing.T) {
 			}
 			server := &http.Server{Handler: handler, TLSConfig: c.tls}
 			done := make(chan error, 1)
-			go func() { done <- serveWeb(zap.NewNop().Sugar(), server, l) }()
+			go func() { done <- serveWeb(zap.NewNop().Sugar(), "webservers.main", server, l) }()
 			resp, err := client.Get(c.scheme + "://" + l.Addr().String() + "/")
 			if err != nil {
 				t.Fatal(err)
@@ -64,7 +64,7 @@ func TestServeWeb(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.Close()
-	if err := serveWeb(zap.NewNop().Sugar(), &http.Server{Handler: handler}, l); err == nil {
+	if err := serveWeb(zap.NewNop().Sugar(), "webservers.main", &http.Server{Handler: handler}, l); err == nil {
 		t.Error("a closed listener served")
 	}
 }

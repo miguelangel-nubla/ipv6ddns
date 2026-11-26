@@ -151,9 +151,10 @@ func TestEndToEndUpdates(t *testing.T) {
 	dnsAddress := "127.0.0.1:" + freePort(t)
 	path := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(path, []byte(fmt.Sprintf(`
-webserver:
-  listen:
-    - %s
+webservers:
+  main:
+    listen:
+      - %s
 log_level: info
 credentials:
   home:

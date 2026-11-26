@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -52,8 +53,6 @@ type Worker struct {
 	resolvers []*resolver.Server
 	// The certificates of the configuration, by name's order.
 	certs []*certificate
-	// The certificate of the web server's HTTPS entries: nil without them.
-	webCert *certfile.Certificate
 	// Start was called: a second one would run every source and the matching twice.
 	started atomic.Bool
 	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has.
@@ -197,9 +196,6 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		return nil, err
 	}
 	w.certs = certs
-	if len(cfg.Webserver.HTTPS) > 0 {
-		w.webCert = w.certificate(cfg.Webserver.TLS)
-	}
 
 	// The resolvers, each with the addresses of its zones' endpoints: a zone no task names has its
 	// records still.
@@ -217,7 +213,13 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 			}
 			spec.Zones[i].Addresses = service.Addresses()
 		}
-		if len(spec.Encrypted) > 0 {
+		spec.Encrypted = slices.Clone(spec.Encrypted)
+		for i, e := range spec.Encrypted {
+			if e.CertificateName != "" {
+				spec.Encrypted[i].Certificate = w.certificate(e.CertificateName)
+			}
+		}
+		if spec.CertificateName != "" {
 			spec.Certificate = w.certificate(spec.CertificateName)
 		}
 		keys, err := w.updateKeys(name, cfg.Resolvers[name].Updates)
@@ -351,6 +353,16 @@ func (w *Worker) zoneLaterWarnings() []string {
 // those registered with RegisterPlugin, one for each of the configuration's, as cmd does: with
 // none in the configuration and no family listening, the registered ones don't run; with some in
 // the configuration, none registered and no family listening, it is an error.
+// SetWeb gives a web server's handler to the resolver that opens the HTTPS entries of the
+// listener it shares with it, by the resolver's and the listener's names: before Start.
+func (w *Worker) SetWeb(resolverName, listener string, h http.Handler) {
+	for _, r := range w.resolvers {
+		if r.Name() == resolverName {
+			r.SetWeb(listener, h)
+		}
+	}
+}
+
 func (w *Worker) Start(ctx context.Context) error {
 	if w.started.Swap(true) {
 		return errors.New("worker already started")
@@ -871,8 +883,10 @@ func certificatesPage(prefix string, statuses []CertificateStatus, now time.Time
 	for _, c := range statuses {
 		var users []string
 		for _, u := range c.UsedBy {
-			if name, ok := strings.CutPrefix(u, "resolvers."); ok {
-				u = "resolver " + name
+			for prefix, kind := range map[string]string{"resolvers.": "resolver ", "webservers.": "web server ", "listeners.": "listener "} {
+				if name, ok := strings.CutPrefix(u, prefix); ok {
+					u = kind + name
+				}
 			}
 			users = append(users, u)
 		}

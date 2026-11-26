@@ -37,6 +37,9 @@ type Config struct {
 	Listen []listen.Entry
 	// The text of each listen entry, as written, for errors: or none.
 	ListenLines []string
+	// The allow of each listen entry's sockets, of a listener's: none, Allow. Allow, when given,
+	// replaces it.
+	ListenAllow [][]netip.Prefix
 	// Where it answers over the encrypted transports, each entry with its transport and its text:
 	// DNS over TLS, over HTTPS and over QUIC.
 	Encrypted []EncryptedListen

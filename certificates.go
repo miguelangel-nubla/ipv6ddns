@@ -173,11 +173,12 @@ func (w *Worker) certificateStatuses() []CertificateStatus {
 	return out
 }
 
-// WebserverTLS is the TLS of the web server's HTTPS entries, which speak the protocols given:
-// nil without them.
-func (w *Worker) WebserverTLS(protocols ...string) *tls.Config {
-	if w.webCert == nil {
+// TLS is the TLS of a certificate's, by its name, for a web server's HTTPS entries, which speak
+// the protocols given: nil without it.
+func (w *Worker) TLS(name string, protocols ...string) *tls.Config {
+	cert := w.certificate(name)
+	if cert == nil {
 		return nil
 	}
-	return w.webCert.Config(protocols...)
+	return cert.Config(protocols...)
 }

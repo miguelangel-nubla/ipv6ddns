@@ -716,3 +716,92 @@ func TestServeLargeForwardedAnswer(t *testing.T) {
 		t.Errorf("over UDP: truncated %v, %d bytes", resp.Truncated, resp.Len())
 	}
 }
+
+// An HTTPS entry with a web server: /dns-query is DNS, by GET and by POST, and every other path
+// the web server's that SetWeb gave by the entry's Web; an entry without one answers those 404.
+func TestServeHTTPSShared(t *testing.T) {
+	ca := newTestCA(t)
+	web := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprintf(w, "web: %s", r.URL.Path) })
+	for _, c := range []struct {
+		what, web string
+		want      int
+	}{
+		{"shared", "main", http.StatusOK},
+		{"not shared", "", http.StatusNotFound},
+		{"of a web server not given", "other", http.StatusNotFound},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			cfg := encryptedConfig(t, ca)
+			for i := range cfg.Encrypted {
+				if cfg.Encrypted[i].Transport == TransportHTTPS {
+					cfg.Encrypted[i].Web = c.web
+				}
+			}
+			s := startWith(t, cfg, func(s *Server) { s.SetWeb("main", web) })
+			address := addressOf(t, s, TransportHTTPS)
+			for _, path := range []string{"/", "/status.json"} {
+				resp, err := httpsClient(ca).Get("https://" + address + path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode != c.want || c.want == http.StatusOK && string(body) != "web: "+path {
+					t.Errorf("%s: %d %q, want %d", path, resp.StatusCode, body, c.want)
+				}
+			}
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				if _, answer := queryHTTPS(t, ca, address, method, "printer.home.arpa.", dns.TypeA); len(answer.Answer) != 2 {
+					t.Errorf("DNS over HTTPS, %s: %v", method, answer)
+				}
+			}
+		})
+	}
+}
+
+// Each socket answers the clients of its entry's allow, a listener's: the resolver's own allow,
+// when given, replaces it; without either, the networks listened on. Over every transport.
+func TestServeSocketAllow(t *testing.T) {
+	ca := newTestCA(t)
+	elsewhere := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	here := []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}
+	for _, c := range []struct {
+		what         string
+		entry, own   []netip.Prefix
+		wantAnswered bool
+	}{
+		{"the entry's allow lets the client in", here, nil, true},
+		{"the entry's allow keeps the client out", elsewhere, nil, false},
+		{"the resolver's own replaces the entry's", elsewhere, here, true},
+		{"the resolver's own keeps out whom the entry's lets in", here, elsewhere, false},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			cfg := encryptedConfig(t, ca)
+			cfg.Allow = c.own
+			cfg.ListenAllow = make([][]netip.Prefix, len(cfg.Listen))
+			for i := range cfg.Listen {
+				cfg.ListenAllow[i] = c.entry
+			}
+			for i := range cfg.Encrypted {
+				cfg.Encrypted[i].Allow = c.entry
+			}
+			s := start(t, cfg)
+			check := func(transport string, resp *dns.Msg) {
+				t.Helper()
+				if answered := resp.Rcode == dns.RcodeSuccess && len(resp.Answer) == 2; answered != c.wantAnswered {
+					t.Errorf("%s: %s with %d answers, want answered %t", transport, dns.RcodeToString[resp.Rcode], len(resp.Answer), c.wantAnswered)
+				}
+			}
+			for _, network := range []string{"udp", "tcp"} {
+				check(network, query(t, s, network, "printer.home.arpa.", dns.TypeA, nil))
+			}
+			resp, err := queryTLS(t, ca, addressOf(t, s, TransportTLS), "printer.home.arpa.", dns.TypeA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			check(TransportTLS, resp)
+			_, resp = queryHTTPS(t, ca, addressOf(t, s, TransportHTTPS), http.MethodPost, "printer.home.arpa.", dns.TypeA)
+			check(TransportHTTPS, resp)
+		})
+	}
+}
