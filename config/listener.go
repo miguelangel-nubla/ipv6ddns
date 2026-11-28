@@ -21,7 +21,7 @@ type Listener struct {
 	// one, and only then.
 	TLS string `json:"tls,omitempty"`
 	// The clients its servers answer, unless a server gives its own allow, which replaces it.
-	Allow StringList `json:"allow,omitempty"`
+	Allow AllowList `json:"allow,omitempty"`
 	// The name the clients use for its encrypted entries, which its certificate must be for: the
 	// target that DDR tells them. None: the certificate's first name that is no wildcard.
 	ServerName string `json:"server_name,omitempty"`
@@ -100,13 +100,11 @@ func (c *Config) setUpListeners() error {
 		if err := c.checkServerName(path, l); err != nil {
 			return err
 		}
-		for _, a := range l.Allow {
-			p, err := parseNetwork(a)
-			if err != nil {
-				return fmt.Errorf("%s.allow: %w", path, err)
-			}
-			l.Allowed = append(l.Allowed, p)
+		allowed, err := parseAllow(path, l.Allow)
+		if err != nil {
+			return err
 		}
+		l.Allowed = allowed
 		c.Listeners[name] = l
 	}
 	return nil

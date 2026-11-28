@@ -95,7 +95,7 @@ DNS servers for the clients on a network, by name. Each answers the zones of its
 | Key | Takes | Default | |
 |---|---|---|---|
 | `listeners` | list, or comma separated | - | **Required.** Required. The listeners it answers on, by name: their dns://, tls:// and quic:// entries, and /dns-query of their https:// ones, with each listener's certificate and allow. A listener has one resolver at most. |
-| `allow` | list, or comma separated | - | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, the networks of the addresses it listens on. |
+| `allow` | list, or comma separated | - | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, the networks of the addresses it listens on. Given, it names one at least: an empty one, as of a variable that is empty, is an error. |
 | `upstream` | list, or comma separated | - | **Required.** The servers it asks about names that aren't its own, in order, giving each 2s. Plain DNS, over UDP, and over TCP when the answer doesn't fit: 192.168.1.1, 1.1.1.1:53, [2606:4700:4700::1111] or dns.example.net, port 53 by default. DNS over TLS: tls://1.1.1.1 or tls://dns.example.net, port 853 by default. DNS over HTTPS: https://dns.example.net/dns-query, port 443 by default. An encrypted server's certificate is checked against the system's certificate authorities, for the host given, and its connections are reused. A host name needs bootstrap. When none answers, the client gets SERVFAIL. |
 | `bootstrap` | list, or comma separated | - | Only for upstream servers given by host name, plain or encrypted: the servers that look up their addresses, and nothing else. Addresses, with or without a port, asked in order over plain DNS. The system's resolver isn't used, since it may be this one. The addresses found are kept for their TTL, between a minute and an hour, and for as long as these servers don't answer. |
 | `records` | list of string | - | Records of names outside its zones, one per entry, in zone file syntax, with every name absolute and ending in a dot: www.example.com. CNAME nas.lan.example.com. A record without a TTL gets 1m. |
@@ -113,7 +113,7 @@ Dynamic updates, by RFC 2136: the clients that hold one of keys may change recor
 
 | Key | Takes | |
 |---|---|---|
-| `allow` | list, or comma separated | The networks or addresses the keys may send from, of those that give none, as 192.168.1.0/24. Default: the resolver's allow. |
+| `allow` | list, or comma separated | The networks or addresses the keys may send from, of those that give none, as 192.168.1.0/24. Default: the resolver's allow. Given, it names one at least: an empty one, as of a variable that is empty, is an error. |
 | `keys` | object | **Required.** The TSIG keys, by their names, as the clients give them: nas, as certbot's dns_rfc2136_name. tsig-keygen -a hmac-sha256 nas makes one. |
 
 ### keys
@@ -126,7 +126,7 @@ The TSIG keys, by their names, as the clients give them: nas, as certbot's dns_r
 |---|---|---|---|
 | `secret` | string | - | **Required.** The key's secret, in base64, as tsig-keygen writes it: 16 bytes at least. Keep it in a file, as ${file:tsig_nas}. |
 | `algorithm` | `hmac-sha256`, `hmac-sha384`, `hmac-sha512` | `hmac-sha256` | The algorithm of the key. |
-| `allow` | list, or comma separated | - | The networks or addresses this key may send from, as 198.51.100.0/24. Default: the allow of updates. |
+| `allow` | list, or comma separated | - | The networks or addresses this key may send from, as 198.51.100.0/24. Default: the allow of updates. Given, it names one at least: an empty one, as of a variable that is empty, is an error. |
 | `permissions` | list of object | - | **Required.** What the key may change, each a permission of one kind: challenges, addresses or names. An update goes to the first permission that holds all of it. A name can be changed by one key alone. |
 
 ### permissions: challenges
@@ -227,7 +227,7 @@ The web servers, by a name of your choice: each serves the report, /status.json 
 | Key | Takes | |
 |---|---|---|
 | `listeners` | list, or comma separated | **Required.** Required. The listeners it serves on, by name: their http:// entries, and every path but /dns-query of their https:// ones. One of them at least has such an entry. A listener has one web server at most. |
-| `allow` | list, or comma separated | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, everyone. |
+| `allow` | list, or comma separated | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, everyone. Given, it names one at least: an empty one, as of a variable that is empty, is an error. |
 
 ## Listeners
 
@@ -239,7 +239,7 @@ Where the resolvers and the web servers listen, by a name of your choice: each s
 |---|---|---|
 | `listen` | list, or comma separated | **Required.** Required. Where it listens, each entry with its scheme: dns:// for plain DNS, over UDP and TCP, port 53 by default; tls:// for DNS over TLS and quic:// for DNS over QUIC, port 853; https:// for HTTPS, port 443; http:// for HTTP, port 8053. After the scheme: networks of the machine's addresses, addresses, host names or ports, as dns://192.168.1.0/24, https://192.168.1.2, tls://[fd00::2]:8853 or http://8053. A host name listens on each address it resolves to at start; a network, on each of the machine's addresses in it; a port alone, on every address of the machine, including a public one on a router. DNS entries need a resolver that uses the listener, http:// ones a web server, and https:// ones either: with both, /dns-query is the resolver's, every other path the web server's. Two resolvers can't share an address and port over the same protocol, however each writes it, but for encrypted entries of one scheme of several listeners, each with a resolver and a certificate: a client gets the listener whose server_name is the name it asks in its TLS handshake, or else the first, as written, whose certificate is for it, and one that asks none, or another, the first listener. Of two listeners of one certificate, or of certificates both for a name, the later one needs a server_name. |
 | `tls` | string | The certificate its encrypted entries show, tls://, quic:// and https://, whichever server answers: the name of one of certificates, as home. Required with an encrypted entry, and only then. |
-| `allow` | list, or comma separated | The networks or addresses of the clients its servers answer, as 192.168.1.0/24 or fd00::/64. A server's own allow replaces it. Default: for a resolver, the networks of the addresses it listens on; for a web server, everyone. |
+| `allow` | list, or comma separated | The networks or addresses of the clients its servers answer, as 192.168.1.0/24 or fd00::/64. A server's own allow replaces it. Default: for a resolver, the networks of the addresses it listens on; for a web server, everyone. Given, it names one at least: an empty one, as of a variable that is empty, is an error. |
 | `server_name` | string | The name the clients use for its encrypted entries, as dns.lan.example.com, which its certificate must be for: the name that Discovery of Designated Resolvers tells them, and that a client asks to get this listener on a port it shares, before any listener's certificate: so two listeners of one certificate share a port, each asked by its own server_name. Default: the certificate's first name that is no wildcard. |
 
 ## Certificates

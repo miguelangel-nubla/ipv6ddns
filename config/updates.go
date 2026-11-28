@@ -17,7 +17,7 @@ import (
 type Updates struct {
 	// The networks or addresses the keys may send from, of those that give none. Default: the
 	// resolver's allow.
-	Allow StringList `json:"allow,omitempty"`
+	Allow AllowList `json:"allow,omitempty"`
 	// Required. The TSIG keys, by their names, as the clients give them.
 	Keys map[string]UpdateKey `json:"keys,omitempty"`
 }
@@ -29,7 +29,7 @@ type UpdateKey struct {
 	// hmac-sha256, hmac-sha384 or hmac-sha512. Default: hmac-sha256.
 	Algorithm string `json:"algorithm,omitempty"`
 	// The networks or addresses it may send from. Default: the updates' allow.
-	Allow StringList `json:"allow,omitempty"`
+	Allow AllowList `json:"allow,omitempty"`
 	// Required. What it may change: each one of the kinds.
 	Permissions []Permission `json:"permissions,omitempty"`
 
@@ -124,13 +124,11 @@ func (c *Config) setUpUpdates(path string, r *Resolver, spec *resolver.Config, a
 	if len(u.Keys) == 0 {
 		return fmt.Errorf("%s.keys is missing: give the TSIG keys that may send updates, each with its secret and its permissions", path)
 	}
-	for _, a := range u.Allow {
-		p, err := parseNetwork(a)
-		if err != nil {
-			return fmt.Errorf("%s.allow: %w", path, err)
-		}
-		spec.UpdateAllow = append(spec.UpdateAllow, p)
+	updateAllow, err := parseAllow(path, u.Allow)
+	if err != nil {
+		return err
 	}
+	spec.UpdateAllow = updateAllow
 	// Two keys whose names differ by their case alone, nas and NAS, are one name to TSIG: both
 	// load here, and the resolver refuses the second, "is there twice", when the worker is made,
 	// before anything starts.
@@ -158,12 +156,8 @@ func (c *Config) setUpUpdates(path string, r *Resolver, spec *resolver.Config, a
 		if key.Algorithm, ok = resolver.UpdateAlgorithms[algorithm]; !ok {
 			return fmt.Errorf("%s.algorithm: %s isn't one a key may have: hmac-sha256, hmac-sha384 or hmac-sha512", keyPath, k.Algorithm)
 		}
-		for _, a := range k.Allow {
-			p, err := parseNetwork(a)
-			if err != nil {
-				return fmt.Errorf("%s.allow: %w", keyPath, err)
-			}
-			key.Allow = append(key.Allow, p)
+		if key.Allow, err = parseAllow(keyPath, k.Allow); err != nil {
+			return err
 		}
 		if len(k.Permissions) == 0 {
 			return fmt.Errorf("%s.permissions is missing: give what the key may change: challenges, addresses or names", keyPath)

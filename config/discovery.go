@@ -46,6 +46,20 @@ func (l *StringList) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// AllowList is a StringList of the clients a server answers, as allow is. One given that names
+// nobody, as allow: [] or allow: ${ALLOWED} of a variable that is empty, is an empty list, not
+// nil, so that it is refused rather than taken for none given and its default: see parseAllow.
+type AllowList []string
+
+func (l *AllowList) UnmarshalJSON(b []byte) error {
+	var values StringList
+	if err := values.UnmarshalJSON(b); err != nil {
+		return err
+	}
+	*l = append(AllowList{}, values...)
+	return nil
+}
+
 // Discovery is how hosts are discovered: ipv6disc's own configuration, the same keys its command
 // takes in its file, read by its decoder; and what is ipv6ddns's, the solicitation of the hosts
 // the filters want. A Discovery's zero value discovers nothing: DefaultDiscovery is what a

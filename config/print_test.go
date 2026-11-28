@@ -38,7 +38,7 @@ func TestPrettyPrintServers(t *testing.T) {
 				{Challenges: &ChallengesPermission{Credential: "cf", Names: StringList{"nas.lan"}}},
 			}}}},
 		}},
-		Listeners:     map[string]Listener{"lan": {Listen: StringList{"192.0.2.2"}, TLS: "home", Allow: StringList{"192.0.2.0/24"}}},
+		Listeners:     map[string]Listener{"lan": {Listen: StringList{"192.0.2.2"}, TLS: "home", Allow: AllowList{"192.0.2.0/24"}}},
 		Webservers:    map[string]Webserver{"main": {Listeners: StringList{"lan"}}},
 		Certificates:  map[string]*TLS{"home": {Certificate: "/etc/KEY-PATH.pem", Key: "/etc/KEY-PATH.key", ACME: &ACME{Names: StringList{"dns.lan"}, Credential: "cf", Email: "EMAIL-SECRET@example.com"}}},
 		HomeAssistant: &HomeAssistant{Key: "HA-KEY-SECRET", Name: "ipv6ddns", Port: 6053, Listen: StringList{"192.0.2.0/24"}, Announce: &announce},

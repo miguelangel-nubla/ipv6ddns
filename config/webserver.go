@@ -21,7 +21,7 @@ type Webserver struct {
 	Listeners StringList `json:"listeners,omitempty"`
 	// The clients it answers; any other gets 403. It replaces its listeners' allow. Default: each
 	// listener's, on that listener's entries; without one, everyone.
-	Allow StringList `json:"allow,omitempty"`
+	Allow AllowList `json:"allow,omitempty"`
 
 	// Read: where its errors are, as webservers.main; the sockets it opens itself, and the HTTPS
 	// entries of resolvers it shares, by the listeners' names.
@@ -88,13 +88,9 @@ func (c *Config) setUpWebservers() error {
 		if len(w.Listeners) == 0 {
 			return fmt.Errorf("%s.listeners is missing: give the listeners where it serves, under listeners, as http://8053", w.Path)
 		}
-		var allow []netip.Prefix
-		for _, a := range w.Allow {
-			p, err := parseNetwork(a)
-			if err != nil {
-				return fmt.Errorf("%s.allow: %w", w.Path, err)
-			}
-			allow = append(allow, p)
+		allow, err := parseAllow(w.Path, w.Allow)
+		if err != nil {
+			return err
 		}
 		for i, ln := range w.Listeners {
 			// A listener named twice is one.

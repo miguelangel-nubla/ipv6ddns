@@ -160,7 +160,7 @@ On a router, a port alone includes the router's public address. Give the clients
 The listener's keys besides `listen`:
 
 - **`tls`** is the certificate of its encrypted entries, `tls://`, `quic://` and `https://`, whichever server answers them: the name of one of [`certificates`](#the-certificate-it-shows). It is required with an encrypted entry, and only then.
-- **`allow`** is the clients its servers answer there. A server's own `allow` replaces it, on all its listeners. Without either, a resolver answers the networks of the addresses it listens on, and a web server everyone. The web server's clients outside its `allow` get `403`.
+- **`allow`** is the clients its servers answer there. A server's own `allow` replaces it, on all its listeners. Without either, a resolver answers the networks of the addresses it listens on, and a web server everyone. An `allow` given empty, as `allow: ${ALLOWED}` of a variable that is empty, is an error rather than that default. The web server's clients outside its `allow` get `403`.
 
 The rules:
 
@@ -1054,6 +1054,7 @@ The configuration is checked at the start. A mistake stops the start, and the er
 | A `block` that names no blocklist there is | `resolvers.kids.block.lists: there's no blocklist pr: the blocklists are pro, tif` |
 | A name of `allow` that isn't one | `resolvers.kids.block.allow: "school example" is not a name, as school.example.com, which is answered with every name below it. A name of other letters is given in punycode, as xn--bcher-kva.example` |
 | A blocklist without `url`, or not of `http://` or `https://` | `blocklists.pro.url: "ftp://lists.example/pro.txt" is not a URL of http:// or https://, as https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt` |
+| An `allow` given empty, as `allow: []`, or `allow: ${ALLOWED}` of a variable that is empty | `listeners.lan.allow is empty: give the clients, as 192.168.1.0/24, or leave allow out for the default. A variable that is empty, as in allow: ${ALLOWED}, gives an empty one` |
 | A blocklist's `interval` under an hour | `blocklists.pro.interval: 10m0s is too short: the least is 1h0m0s, as a list's server would refuse more, and lists change daily` |
 | A blocklist's name that can't be a file's | `blocklists: the name "hagezi/pro" is that of its file in state_dir: use letters, digits, - and _ alone, as hagezi_pro` |
 | Two blocklists' names that differ by their case alone | `blocklists: the names Pro and pro differ by their case alone, and each is that of its file in state_dir, which would be one where the file system doesn't tell them apart: give one of them another name` |

@@ -200,7 +200,7 @@
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, the networks of the addresses it listens on."
+                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64. Any other client gets REFUSED. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, the networks of the addresses it listens on. Given, it names one at least: an empty one, as of a variable that is empty, is an error."
                     },
                     "upstream": {
                         "$ref": "#/$defs/stringList",
@@ -234,7 +234,7 @@
                         "properties": {
                             "allow": {
                                 "$ref": "#/$defs/stringList",
-                                "description": "The networks or addresses the keys may send from, of those that give none, as 192.168.1.0/24. Default: the resolver's allow."
+                                "description": "The networks or addresses the keys may send from, of those that give none, as 192.168.1.0/24. Default: the resolver's allow. Given, it names one at least: an empty one, as of a variable that is empty, is an error."
                             },
                             "keys": {
                                 "type": "object",
@@ -261,7 +261,7 @@
                                         },
                                         "allow": {
                                             "$ref": "#/$defs/stringList",
-                                            "description": "The networks or addresses this key may send from, as 198.51.100.0/24. Default: the allow of updates."
+                                            "description": "The networks or addresses this key may send from, as 198.51.100.0/24. Default: the allow of updates. Given, it names one at least: an empty one, as of a variable that is empty, is an error."
                                         },
                                         "permissions": {
                                             "type": "array",
@@ -450,7 +450,7 @@
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The networks or addresses of the clients its servers answer, as 192.168.1.0/24 or fd00::/64. A server's own allow replaces it. Default: for a resolver, the networks of the addresses it listens on; for a web server, everyone."
+                        "description": "The networks or addresses of the clients its servers answer, as 192.168.1.0/24 or fd00::/64. A server's own allow replaces it. Default: for a resolver, the networks of the addresses it listens on; for a web server, everyone. Given, it names one at least: an empty one, as of a variable that is empty, is an error."
                     },
                     "server_name": {
                         "type": "string",
@@ -879,7 +879,7 @@
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
-                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, everyone."
+                        "description": "The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, everyone. Given, it names one at least: an empty one, as of a variable that is empty, is an error."
                     }
                 },
                 "required": [

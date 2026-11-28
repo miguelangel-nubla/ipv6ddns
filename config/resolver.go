@@ -26,7 +26,7 @@ type Resolver struct {
 	Listeners StringList `json:"listeners,omitempty"`
 	// The networks, or addresses, of the clients it answers; any other is refused. Default: the
 	// networks of the machine's addresses it listens on.
-	Allow StringList `json:"allow,omitempty"`
+	Allow AllowList `json:"allow,omitempty"`
 	// Required. The servers it asks what isn't its own, in order: addresses or host names, with a
 	// port or not.
 	Upstream StringList `json:"upstream,omitempty"`
@@ -136,13 +136,11 @@ func (c *Config) setUpResolvers() error {
 			spec.CacheSize = *r.CacheSize
 		}
 		spec.ForwardUnknownPrivateReverse = r.ForwardUnknownPrivateReverseQueries
-		for _, a := range r.Allow {
-			p, err := parseNetwork(a)
-			if err != nil {
-				return fmt.Errorf("%s.allow: %w", path, err)
-			}
-			spec.Allow = append(spec.Allow, p)
+		allow, err := parseAllow(path, r.Allow)
+		if err != nil {
+			return err
 		}
+		spec.Allow = allow
 		if len(r.Upstream) == 0 {
 			return fmt.Errorf("%s.upstream is missing: give one or more servers to ask about the names that aren't the resolver's own", path)
 		}
@@ -367,6 +365,24 @@ func (c *Config) checkPushSources() error {
 }
 
 // parseNetwork reads a network of allow, or an address, which is a network of one.
+// parseAllow reads an allow, of path: nil when it isn't given, for the default. One given that
+// names nobody is refused, as the default it would be taken for lets more clients in than any
+// list: for a web server, everyone.
+func parseAllow(path string, allow AllowList) ([]netip.Prefix, error) {
+	if allow != nil && len(allow) == 0 {
+		return nil, fmt.Errorf("%s.allow is empty: give the clients, as 192.168.1.0/24, or leave allow out for the default. A variable that is empty, as in allow: ${ALLOWED}, gives an empty one", path)
+	}
+	var result []netip.Prefix
+	for _, a := range allow {
+		p, err := parseNetwork(a)
+		if err != nil {
+			return nil, fmt.Errorf("%s.allow: %w", path, err)
+		}
+		result = append(result, p)
+	}
+	return result, nil
+}
+
 func parseNetwork(s string) (netip.Prefix, error) {
 	if p, err := netip.ParsePrefix(s); err == nil {
 		return p.Masked(), nil
