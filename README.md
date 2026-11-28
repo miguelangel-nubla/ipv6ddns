@@ -95,7 +95,7 @@ For a complete setup, pick a [guide](docs/guides/README.md) instead.
 
 ## Install
 
-- **Binaries** for Linux, macOS, FreeBSD and the other BSDs are on the [releases page](https://github.com/miguelangel-nubla/ipv6ddns/releases). Discovery listens to the network, so it needs [a few privileges](docs/installation.md#what-discovery-needs).
+- **Binaries** for Linux, macOS, FreeBSD and the other BSDs, and for Solaris and Windows, where discovery finds less, are on the [releases page](https://github.com/miguelangel-nubla/ipv6ddns/releases). Discovery listens to the network, so it needs [a few privileges](docs/installation.md#what-discovery-needs).
 - **Packages** for Debian and Ubuntu (`.deb`), Fedora and RHEL (`.rpm`), Arch (`.pkg.tar.zst`) and Alpine (`.apk`) are on the same page. They install ipv6ddns as a service, with a starting configuration. See [as a service](docs/installation.md#as-a-service).
 - **NixOS**: the repository is a flake, with a module. See [on NixOS](docs/installation.md#on-nixos).
 - **Homebrew**, on macOS: `brew install miguelangel-nubla/tap/ipv6ddns`.

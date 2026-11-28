@@ -101,6 +101,7 @@ jobs:
           - linux/amd64
           - linux/arm64
           - linux/arm/7
+          - linux/arm/5
           - darwin/arm64
           - windows/amd64
           - freebsd/amd64

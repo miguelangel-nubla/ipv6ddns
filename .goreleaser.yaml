@@ -10,28 +10,22 @@ builds:
     main: ./cmd/ipv6ddns
     env:
       - CGO_ENABLED=0
+    # The systems it runs on. On Solaris and Windows discovery has no neighbor table to read, and
+    # on Windows NDP packets are not received: ipv6disc's discovery page tells what is left.
     goos:
-      # - aix
-      # - android
       - darwin
-      # - dragonfly
       - freebsd
-      # - illumos
-      # - ios
-      - js
       - linux
       - netbsd
       - openbsd
-      # - plan9
       - solaris
-      - windows # weird behaviour NDP packages not received
+      - windows
     goarch:
       - ppc64
       - 386
       - amd64
       - arm
       - arm64
-      - wasm
       - loong64
       - mips
       - mipsle
@@ -40,9 +34,18 @@ builds:
       - ppc64le
       - riscv64
       - s390x
+    # ARMv5 is for ARM without a floating point unit, which a binary of ARMv6 or ARMv7 stops on at
+    # its start: the Broadcom routers of Asuswrt-Merlin and Entware, and older ARM boards.
     goarm:
+      - 5
       - 6
       - 7
+    # MIPS without a floating point unit, as most routers' is: OpenWrt's kernel doesn't emulate one,
+    # and a hardfloat binary stops there on an illegal instruction. Softfloat runs on a MIPS that
+    # has one too, and there is little floating point here to be slower at. It is GOMIPS64 as well,
+    # for mips64 and mips64le.
+    gomips:
+      - softfloat
   # The packages are of the machines Linux is installed on with a package manager: built again,
   # as a package takes every binary of the builds it names.
   #

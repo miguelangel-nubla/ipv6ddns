@@ -3,6 +3,8 @@
 ## Getting it
 
 - **A release**: download the binary for your system from the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest).
+  - **On a router**, pick by its processor: `arm64` for most recent ones, as UniFi gateways and newer OpenWrt devices. Use `armv7` for 32-bit ARM with a floating point unit, and `armv5` for ARM without one, as the Broadcom routers of Asuswrt-Merlin: `armv6` and `armv7` stop there with `Illegal instruction`. Use `mips`, `mipsle` or `mips64` for MIPS; they are built for MIPS without a floating point unit, as OpenWrt's are, and also run on one that has it.
+  - **It is about 25 MB**, so a router with 16 MB of flash needs USB storage or the like to hold it.
 - **A package**, from the [latest release](https://github.com/miguelangel-nubla/ipv6ddns/releases/latest), for your architecture. See [as a service](#as-a-service).
 
   | System | Package | Install it with |
