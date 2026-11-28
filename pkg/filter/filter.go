@@ -130,7 +130,8 @@ var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 //   - temporary: an IPv6 privacy address of the machine ipv6ddns runs on, as its kernel says; a
 //     neighbor's is never known so
 //
-// "!type" is the address not being of the type: "!temporary".
+// "!type" is the address not being of the type: "!temporary". A type that isn't one of these
+// matches no address, and "!" of it every one: the configuration refuses it before.
 func CheckIPType(addr *ipv6disc.Addr, filters []string) bool {
 	if len(filters) == 0 {
 		return true
@@ -222,6 +223,10 @@ func CheckPrefix(ip netip.Addr, prefix netip.Prefix) bool {
 
 // ParseIPMask reads a VALUE/MASK pair of addresses of one family, as ::1/::ffff:ffff:ffff:ffff or
 // 0.0.0.5/0.0.0.255. The mask is an address, not a prefix length.
+//
+// A part's family is the one it is written in: IPv4 with dots alone, IPv6 with colons. So
+// ::ffff:dead:beef and ::ffff:ffff:ffff, the last 48 bits, are IPv6, though their bytes are those
+// of an IPv4-mapped address: they are not unmapped, and come back as written.
 func ParseIPMask(s string) (value, mask netip.Addr, err error) {
 	const hint = "the mask must be an address, as ::ffff:ffff:ffff:ffff or 0.0.0.255, not a prefix length. For a prefix, use ip.prefix, as 2001:db8::/32"
 	v, m, ok := strings.Cut(s, "/")
@@ -234,7 +239,6 @@ func ParseIPMask(s string) (value, mask netip.Addr, err error) {
 	if mask, err = netip.ParseAddr(m); err != nil || mask.Zone() != "" {
 		return netip.Addr{}, netip.Addr{}, fmt.Errorf("the mask %q is not an address: %s", m, hint)
 	}
-	value, mask = value.Unmap(), mask.Unmap()
 	if value.Is4() != mask.Is4() {
 		return netip.Addr{}, netip.Addr{}, errors.New("the value and the mask are of different families")
 	}
@@ -244,6 +248,10 @@ func ParseIPMask(s string) (value, mask netip.Addr, err error) {
 // CheckMask tells whether the address matches every VALUE/MASK pair: within its family, so a pair
 // of the other family matches none of its addresses. A pair that doesn't parse matches none
 // either: the configuration refuses it, and a filter must not take every address for it.
+//
+// The address's family is that of its bytes: an IPv4-mapped one, ::ffff:a.b.c.d, is the IPv4
+// address it holds, as for family and prefix, and only a pair written in IPv4 matches it. A pair's
+// is the one it is written in, as ParseIPMask has it.
 func CheckMask(ip netip.Addr, filters []string) bool {
 	if len(filters) == 0 {
 		return true
@@ -258,7 +266,8 @@ func CheckMask(ip netip.Addr, filters []string) bool {
 		if err != nil || value.Is4() != ip.Is4() {
 			return false
 		}
-		// AsSlice: 4 bytes or 16, the same for the three, so no ::ffff: prefix enters.
+		// AsSlice: 4 bytes or 16, the same for the three: the address is unmapped, and a pair
+		// written in IPv6 is 16 whatever its bytes.
 		ipBytes, valueBytes, maskBytes := ip.AsSlice(), value.AsSlice(), mask.AsSlice()
 		for i := range ipBytes {
 			if (ipBytes[i] & maskBytes[i]) != (valueBytes[i] & maskBytes[i]) {

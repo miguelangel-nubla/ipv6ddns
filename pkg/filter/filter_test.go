@@ -3,6 +3,7 @@ package filter
 import (
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -202,6 +203,19 @@ func TestCheckMask(t *testing.T) {
 		{"IPv4 match", "192.168.1.5", "0.0.0.5/0.0.0.255", true},
 		{"IPv4 mismatch", "192.168.1.6", "0.0.0.5/0.0.0.255", false},
 		{"IPv4-mapped is IPv4", "::ffff:192.168.1.5", "0.0.0.5/0.0.0.255", true},
+		// A pair written in IPv6 is IPv6, whatever its bytes: ::ffff:X:Y are those of an IPv4-mapped
+		// address, and the mask of the last 48 bits is one.
+		{"Last 48 bits", "2001:db8:1:1::1234:dead:beef", "::1234:dead:beef/::ffff:ffff:ffff", true},
+		{"Last 48 bits mismatch", "2001:db8:1:1::1235:dead:beef", "::1234:dead:beef/::ffff:ffff:ffff", false},
+		{"Last 48 bits, above them ignored", "2001:db8:1:7:9:1234:dead:beef", "::1234:dead:beef/::ffff:ffff:ffff", true},
+		{"Last 48 bits ffff:dead:beef", "2001:db8:1:1::ffff:dead:beef", "::ffff:dead:beef/::ffff:ffff:ffff", true},
+		{"Last 48 bits ffff:dead:beef mismatch", "2001:db8:1:1::fffe:dead:beef", "::ffff:dead:beef/::ffff:ffff:ffff", false},
+		{"Interface ID 0:ffff:0:5", "2001:db8:1:1:0:ffff:0:5", "::ffff:0:5/::ffff:ffff:ffff:ffff", true},
+		{"Interface ID 0:ffff:0:5 mismatch", "2001:db8:1:1:0:ffff:0:6", "::ffff:0:5/::ffff:ffff:ffff:ffff", false},
+		{"A pair written in IPv6, with an IPv4 tail, is IPv6", "2001:db8::ffff:c0a8:105", "::ffff:192.168.1.5/::ffff:ffff:ffff", true},
+		{"An IPv6 pair of a mapped address's bytes takes no IPv4 address", "192.168.1.5", "::ffff:c0a8:105/::ffff:ffff:ffff", false},
+		{"Nor an IPv4-mapped one, which is IPv4", "::ffff:192.168.1.5", "::ffff:c0a8:105/::ffff:ffff:ffff", false},
+		{"A value in IPv6 and a mask in IPv4", "192.168.1.5", "::ffff:192.168.1.5/255.255.255.255", false},
 		{"IPv4 against an IPv6 mask", "192.168.1.5", "::5/::ff", false},
 		{"IPv6 against an IPv4 mask", "2001:db8::5", "0.0.0.5/0.0.0.255", false},
 		// What doesn't parse matches nothing, rather than everything.
@@ -221,5 +235,39 @@ func TestCheckMask(t *testing.T) {
 				t.Errorf("CheckMask() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// A pair's family is the one it is written in: the parts come back as written, an IPv6 one of an
+// IPv4-mapped address's bytes too, and two of different families are refused.
+func TestParseIPMask(t *testing.T) {
+	for pair, want := range map[string]string{
+		"::1/::ffff:ffff:ffff:ffff":           "",
+		"0.0.0.5/0.0.0.255":                   "",
+		"::1234:dead:beef/::ffff:ffff:ffff":   "",
+		"::ffff:dead:beef/::ffff:ffff:ffff":   "",
+		"::ffff:0:5/::ffff:ffff:ffff:ffff":    "",
+		"::ffff:192.168.1.5/::ffff:ffff:ffff": "",
+		"::1/0.0.0.255":                       "of different families",
+		"0.0.0.5/::ffff":                      "of different families",
+		"::ffff:192.168.1.5/255.255.255.255":  "of different families",
+		"::1/64":                              "not an address",
+		"::1":                                 "not VALUE/MASK",
+		"fe80::1%eth0/::ffff":                 "not an address",
+	} {
+		value, mask, err := ParseIPMask(pair)
+		if want != "" {
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: %v, want an error of %q", pair, err, want)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v", pair, err)
+			continue
+		}
+		if v, m, _ := strings.Cut(pair, "/"); value != netip.MustParseAddr(v) || mask != netip.MustParseAddr(m) || value.Is4() != !strings.Contains(v, ":") {
+			t.Errorf("%s: read as %s/%s", pair, value, mask)
+		}
 	}
 }

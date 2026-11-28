@@ -102,15 +102,16 @@ See the example [this machine](#6-this-machine-ipv6ddns-runs-on).
 
 **`mask`** is a bitwise match. In the bits that `MASK` sets, the address must equal `VALUE`.
 
-- Each entry is `VALUE/MASK`, and both parts are full addresses of the same family.
+- Each entry is `VALUE/MASK`, and both parts are full addresses of the same family. A part's family is the one it is written in: IPv4 with dots only, as `0.0.0.5`, and IPv6 with colons, as `::5`.
 - `MASK` is an address, not a prefix length. `::1/64` is a configuration error, and so is any entry that isn't two addresses. For a subnet, use `prefix`.
-- A mask compares bits, not text, so how an address is written doesn't matter. `::5/::ffff:ffff:ffff:ffff` takes `2001:db8:1:1::5`. It leaves out `2001:db8:1:1:2:0:0:5`, whose interface ID is `2:0:0:5`.
-- A mask only matches addresses of its own family. With `family` `4` and `6`, an IPv6 mask leaves the IPv4 addresses out, so use one filter per family.
+- A mask compares bits, not text, so an address may be written short or in full. `::5/::ffff:ffff:ffff:ffff` takes `2001:db8:1:1::5`. It leaves out `2001:db8:1:1:2:0:0:5`, whose interface ID is `2:0:0:5`.
+- A mask only matches addresses of its own family. With `family` `4` and `6`, an IPv6 mask leaves the IPv4 addresses out, so use one filter per family. That holds for an IPv6 mask such as `::ffff:ffff:ffff` too, which is also how an IPv4 address inside IPv6 looks: it is an IPv6 mask, since it is written as one.
 
 | Wanted | Mask |
 |---|---|
 | The interface ID `::5`, whatever the prefix | `::5/::ffff:ffff:ffff:ffff` |
 | The last 32 bits `dead:beef` | `::dead:beef/::ffff:ffff` |
+| The last 48 bits `1234:dead:beef` | `::1234:dead:beef/::ffff:ffff:ffff` |
 | The last group `5` | `::5/::ffff` |
 | Subnet `42` and interface ID `::5`, under any prefix the ISP delegates | `0:0:0:42::5/0:0:0:ffff:ffff:ffff:ffff:ffff` |
 | The IPv4 addresses ending in `.5` | `0.0.0.5/0.0.0.255` |
