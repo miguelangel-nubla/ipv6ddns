@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net/netip"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -57,8 +58,8 @@ type Source struct {
 	Entity    string `json:"entity,omitempty"`
 	Attribute string `json:"attribute,omitempty"`
 	// push: the password a router sends with its updates; and the file the addresses it sent last
-	// are kept in, for a restart: relative to the configuration's folder, by default
-	// push-<source>.json.
+	// are kept in, for a restart: relative to the state folder, by default push-<source>.json
+	// there.
 	Password  string `json:"password,omitempty"`
 	StateFile string `json:"state_file,omitempty"`
 }
@@ -68,8 +69,52 @@ const (
 	staticSourceInterval  = time.Hour
 )
 
+// sourceKeys are the keys of each type of source, besides type.
+var sourceKeys = map[string][]string{
+	SourceHTTP:          {"family", "interval", "lifetime", "urls"},
+	SourceDNS:           {"family", "interval", "lifetime"},
+	SourceCommand:       {"interval", "lifetime", "command", "args"},
+	SourceStatic:        {"addresses"},
+	SourceHomeAssistant: {"interval", "lifetime", "entity", "attribute"},
+	SourcePush:          {"lifetime", "password", "state_file"},
+}
+
+// checkKeys tells of a key of the source that is another type's, as the addresses of an http
+// source: it would be ignored without a word, and the source give something else than was meant.
+// The keys that have an error of their own, in withDefaults, are told there.
+func (s Source) checkKeys() error {
+	for _, key := range []struct {
+		name  string
+		given bool
+	}{
+		{"urls", len(s.URLs) > 0},
+		{"command", s.Command != ""},
+		{"args", len(s.Args) > 0},
+		{"addresses", len(s.Addresses) > 0},
+		{"entity", s.Entity != ""},
+		{"attribute", s.Attribute != ""},
+	} {
+		if !key.given || slices.Contains(sourceKeys[s.Type], key.name) {
+			continue
+		}
+		var types []string
+		for _, t := range []string{SourceHTTP, SourceDNS, SourceCommand, SourceStatic, SourceHomeAssistant, SourcePush} {
+			if slices.Contains(sourceKeys[t], key.name) {
+				types = append(types, t)
+			}
+		}
+		return fmt.Errorf("%s is only for %s sources, and this one's type is %s, which doesn't read it: leave it out, or make the type %s", key.name, strings.Join(types, " and "), s.Type, types[0])
+	}
+	return nil
+}
+
 // withDefaults returns the source with its defaults set, or an error for an invalid one.
 func (s Source) withDefaults() (Source, error) {
+	if _, ok := sourceKeys[s.Type]; ok {
+		if err := s.checkKeys(); err != nil {
+			return s, err
+		}
+	}
 	switch s.Type {
 	case SourceHTTP, SourceDNS:
 		if len(s.Family) == 0 {
@@ -79,9 +124,6 @@ func (s Source) withDefaults() (Source, error) {
 			if family != 4 && family != 6 {
 				return s, fmt.Errorf("family %d: use 4 or 6", family)
 			}
-		}
-		if s.Type == SourceDNS && len(s.URLs) > 0 {
-			return s, fmt.Errorf("urls is only for http sources")
 		}
 	case SourceCommand:
 		if s.Command == "" {
@@ -95,6 +137,9 @@ func (s Source) withDefaults() (Source, error) {
 			if _, err := netip.ParseAddr(a); err != nil {
 				return s, fmt.Errorf("invalid address %q: %w", a, err)
 			}
+		}
+		if s.Interval.Duration != 0 || s.Lifetime.Duration != 0 {
+			return s, fmt.Errorf("a static source has no interval nor lifetime: its addresses are always those written. Leave both out")
 		}
 		// It gives the same addresses at every run: they never expire.
 		s.Interval.Duration = staticSourceInterval
@@ -112,6 +157,9 @@ func (s Source) withDefaults() (Source, error) {
 		// It runs when the router sends: its addresses stay until then, unless it has a lifetime.
 		if s.Lifetime.Duration == 0 {
 			s.Lifetime.Duration = PushForever
+		}
+		if s.Lifetime.Duration < time.Second {
+			return s, fmt.Errorf("lifetime %s is too short: the least is 1s. Give more than the time between two updates of the router, as 1h, or leave it out to keep the addresses until the next", s.Lifetime)
 		}
 		s.Interval.Duration = s.Lifetime.Duration
 		return s, nil
@@ -195,8 +243,19 @@ func hideURL(raw string) string {
 	return u.Scheme + "://" + u.Host
 }
 
+// checkPushName checks the name of a push source, which is the hostname a router sends, where a
+// comma separates several and the spaces around each are left out, and in the name of its file,
+// push-<source>.json in the state folder.
+func checkPushName(name string) error {
+	switch {
+	case name == "." || name == "..", strings.ContainsAny(name, `,/\`), strings.TrimSpace(name) != name, name == "":
+		return fmt.Errorf("sources: the name %q of a push source is the hostname its router sends, and in the name of its file: use one without a comma, a slash or a space around it, as wan", name)
+	}
+	return nil
+}
+
 // setUpSources checks the sources, and gives them their defaults; and that the tasks name ones
-// there are.
+// there are. That a router's updates have a web server to come through, checkWebserversServe checks.
 func (c *Config) setUpSources() error {
 	if c.Sources == nil {
 		c.Sources = make(map[string]Source)
@@ -208,10 +267,27 @@ func (c *Config) setUpSources() error {
 		}
 		c.Sources[name] = source
 	}
+	// The file of each push source, by its path without its case, which some file systems don't
+	// tell apart.
+	files := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(c.Sources)) {
-		if c.Sources[name].Type == SourcePush && c.Sources[name].Password != "" && !c.HasWebserver() {
-			return fmt.Errorf("source %s: a router pushes its addresses through a web server, at /nic/update: add one under webservers", name)
+		source := c.Sources[name]
+		if source.Type != SourcePush {
+			continue
 		}
+		if err := checkPushName(name); err != nil {
+			return err
+		}
+		file, what := source.StateFile, fmt.Sprintf("sources.%s.state_file: %s", name, source.StateFile)
+		if file == "" {
+			file = "push-" + name + ".json"
+			what = fmt.Sprintf("sources.%s: its file, %s,", name, file)
+		}
+		file = strings.ToLower(filepath.Clean(inFolder(c.StateFolder, file)))
+		if other, ok := files[file]; ok {
+			return fmt.Errorf("%s is the file of the push source %s too, and each would read the other's addresses at a restart: give one of them a file of its own, as state_file: push-%s-2.json", what, other, name)
+		}
+		files[file] = name
 	}
 	for _, name := range slices.Sorted(maps.Keys(c.Tasks)) {
 		for _, f := range c.Tasks[name].Filters {

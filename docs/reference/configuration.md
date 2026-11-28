@@ -15,7 +15,7 @@ The configuration file is YAML, or JSON. Every string takes `${NAME}`, an enviro
 | `certificates` | object | The certificates the resolvers' encrypted entries and the web server's HTTPS ones show, by name: each server gives one as its tls, and two servers can show one. Each has files of its own, and is shown by at least one server. |
 | `listeners` | object | Where the resolvers and the web servers listen, by a name of your choice: each server names its listeners. A resolver and a web server can share one, on one HTTPS port: the resolver at /dns-query and the web server at every other path. See [listeners](../resolver.md#listeners). |
 | `discovery` | object | How hosts are found: on the local links, by the protocols turned on, and by plugins that read routers' tables. Every key is optional: a key left out has its default. |
-| `sources` | object | Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. |
+| `sources` | object | Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. A key that is for another type of source is an error. The name of a push source is the hostname its router sends, and in the name of its file: without a comma, a slash or a space around it. |
 | `state_dir` | string | The folder where ipv6ddns keeps what it writes: the push sources' addresses, the certificates ACME gets, the dynamic updates' challenges and names, the Home Assistant device's key, and the blocklists' copies. Relative to the configuration's folder, unless absolute; made when missing. Default: the configuration's folder. Give it when the configuration is read-only, as a file of Docker's or Kubernetes' secrets is. See [state](../configuration.md#state). |
 | `log_level` | `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` | How much the log says. Default: info. |
 | `webservers` | object | The web servers, by a name of your choice: each serves the report, /status.json and /metrics, and /nic/update for the push sources, on its listeners. See [the web report](../installation.md#the-web-report). |
@@ -201,14 +201,14 @@ Lists of names that resolvers answer as blocked, by name, of ads, trackers or ma
 
 `sources.<name>`
 
-Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. See [sources](../sources.md).
+Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. A key that is for another type of source is an error. The name of a push source is the hostname its router sends, and in the name of its file: without a comma, a slash or a space around it. See [sources](../sources.md).
 
 | Key | Takes | |
 |---|---|---|
 | `type` | `http`, `dns`, `command`, `static`, `homeassistant`, `push` | **Required.** Where the addresses come from. dns: the public address, as OpenDNS's or Google's resolvers see it. http: echo services over HTTPS, or the urls given. command: the addresses a command prints, one per line. static: the addresses listed. homeassistant: the addresses in a Home Assistant entity's state, which needs the homeassistant block. push: the addresses a router sends, as to a DynDNS service, through the web server at /nic/update. |
 | `family` | list of `4`, `6` | For http and dns: the families to find. Default: 4. |
-| `interval` | duration | How often it runs. Default: 5m. |
-| `lifetime` | duration | How long an address stays after the last run that gave it. Default: 3 intervals. Of a push source: after the last update that sent it; by default, until the next update, however far. |
+| `interval` | duration | How often it runs. Default: 5m. A static and a push source have none. |
+| `lifetime` | duration | How long an address stays after the last run that gave it. Default: 3 intervals. Of a push source: after the last update that sent it; by default, until the next update, however far. At least 1s. A static source has none. |
 | `urls` | list of string | For http: the echo services to ask, in order. |
 | `command` | string | For command: the program to run, from the configuration's folder. |
 | `args` | list of string | For command: its arguments. |
@@ -216,7 +216,7 @@ Sources of addresses that have no MAC, such as the network's public IPv4, by nam
 | `entity` | string | For homeassistant: the entity, as sensor.wan_ip. |
 | `attribute` | string | For homeassistant: an attribute of the entity to read instead of its state. |
 | `password` | string | push: the password the router sends with its updates, as the HTTP basic password or as password in the URL. Required, unless a key of a resolver's updates sends the addresses, with a permission of addresses: without one, the source takes those alone, and refuses every request of the web server. |
-| `state_file` | string | push: the file the addresses sent last are kept in, so that a restart doesn't lose them until the router's next update. Relative to the configuration's folder, unless absolute. Default: push-<source>.json. |
+| `state_file` | string | push: the file the addresses sent last are kept in, so that a restart doesn't lose them until the router's next update. Relative to state_dir, unless absolute. Default: push-<source>.json there. |
 
 ## Web servers
 
@@ -226,7 +226,7 @@ The web servers, by a name of your choice: each serves the report, /status.json 
 
 | Key | Takes | |
 |---|---|---|
-| `listeners` | list, or comma separated | **Required.** Required. The listeners it serves on, by name: their http:// entries, and every path but /dns-query of their https:// ones. A listener has one web server at most. |
+| `listeners` | list, or comma separated | **Required.** Required. The listeners it serves on, by name: their http:// entries, and every path but /dns-query of their https:// ones. One of them at least has such an entry. A listener has one web server at most. |
 | `allow` | list, or comma separated | The networks or addresses of the clients it answers, as 192.168.1.0/24 or fd00::/64; any other gets 403. It replaces its listeners' allow. Default: each listener's, on that listener's entries; without one, everyone. |
 
 ## Listeners
@@ -250,8 +250,8 @@ The certificates the resolvers' encrypted entries and the web server's HTTPS one
 
 | Key | Takes | |
 |---|---|---|
-| `certificate` | string | The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<name>/fullchain.pem. |
-| `key` | string | The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<name>/privkey.pem. |
+| `certificate` | string | The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, relative to state_dir: by default tls/<name>/fullchain.pem there. |
+| `key` | string | The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, relative to state_dir: by default tls/<name>/privkey.pem there. |
 | `acme` | object | A certificate that ipv6ddns gets from an ACME authority, Let's Encrypt by default, by its DNS challenge: it writes the TXT record the authority checks through a credential of the names' public zone, and renews the certificate once two thirds of its lifetime have passed. The names need no address on the internet. It is written to certificate and key, with the account's key, acme-account.key, beside them. Until there is one, the encrypted entries refuse their connections, and the report says why. |
 
 ### acme
@@ -277,7 +277,7 @@ Makes ipv6ddns a device of Home Assistant's ESPHome integration. Home Assistant 
 |---|---|---|
 | `key` | string | **Required**, without `key_provisioning`. The encryption key: base64 of 32 bytes. Home Assistant asks for it when adding the device, and can't replace it later, since ipv6ddns stores nothing. Make one with openssl rand -base64 32. Give this, or key_provisioning: true. |
 | `key_provisioning` | boolean | Whether Home Assistant makes the key and hands it over when adding the device, as it does for ESPHome devices. The key is kept in key_provisioning_state_file. Default: false, and then the block needs a key. |
-| `key_provisioning_state_file` | string | Only with key_provisioning: true. Where the device keeps the key Home Assistant gave, and its identity, by which Home Assistant knows it. A file ipv6ddns can write; a relative path is from the configuration's folder. Default: homeassistant.state. Each instance needs its own: one whose state file is in use by another doesn't start. Deleting it makes the device a new one, with no key. |
+| `key_provisioning_state_file` | string | Only with key_provisioning: true. Where the device keeps the key Home Assistant gave, and its identity, by which Home Assistant knows it. A file ipv6ddns can write; a relative path is from state_dir. Default: homeassistant.state there. Each instance needs its own: one whose state file is in use by another doesn't start. Deleting it makes the device a new one, with no key. |
 | `name` | string | The device's name on the network: lower-case letters, digits and hyphens. Default: ipv6ddns. Each instance on the network needs its own: a second one, whose name is announced already, doesn't announce itself. |
 | `friendly_name` | string | The name Home Assistant shows. Default: the name. |
 | `port` | number | The port Home Assistant connects to, which the device announces. Default: 6053, ESPHome's. |

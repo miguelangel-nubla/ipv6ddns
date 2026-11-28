@@ -82,6 +82,7 @@ func TestBlockErrors(t *testing.T) {
 		{"\n      lists: pro\n      ttl: 48h", proList, "resolvers.lan.block.ttl: 48h0m0s is not a TTL"},
 		{"\n      lists: pro", proList + "\n    interval: 10m", "blocklists.pro.interval: 10m0s is too short: the least is 1h0m0s"},
 		{"\n      lists: pro", proList + "\n  hagezi/pro:\n    url: https://lists.example/pro.txt", `blocklists: the name "hagezi/pro" is that of its file in state_dir`},
+		{"\n      lists: pro", proList + "\n  Pro:\n    url: https://lists.example/pro.txt", "blocklists: the names Pro and pro differ by their case alone, and each is that of its file in state_dir, which would be one where the file system doesn't tell them apart: give one of them another name"},
 	} {
 		_, err := blockConfig(t, c.block, c.blocklists)
 		if err == nil || !strings.Contains(err.Error(), c.want) {

@@ -39,10 +39,11 @@ func shownSettings(raw json.RawMessage) string {
 				continue
 			}
 			shown = append(shown, key+" "+strings.Join(names, ", "))
-		case "zone", "ttl", "resolver", "region", "site", "endpoint", "proxied", "use_tls", "tsig_algorithm":
+		case "zone", "ttl", "resolver", "region", "site", "proxied", "use_tls", "tsig_algorithm":
 			shown = append(shown, key+" "+settingValue(value))
-		case "address", "server":
-			// A URL can hold a user and a token, and an address over SSH its user.
+		case "address", "server", "endpoint":
+			// A URL can hold a user and a token, and an address over SSH its user: an endpoint is
+			// a provider's name for one of its own, as ovh-eu, or a URL.
 			address := settingValue(value)
 			if u, err := url.Parse(address); err == nil && u.Scheme != "" && u.Host != "" {
 				address = u.Scheme + "://" + u.Host
@@ -84,7 +85,7 @@ func list(values []string) string {
 // printServers adds to the page the resolvers, the listeners, the web servers, the certificates
 // and the Home Assistant device, as written; the state folder, the log level, and the warnings of
 // what in the configuration does nothing. hideSensible hides the secrets of the keys, the
-// certificates' files and ACME's email.
+// certificates' files, ACME's email, and of its directory all but the scheme and the host.
 func (c *Config) printServers(result *strings.Builder, prefix string, hideSensible bool) {
 	line := func(indent int, format string, args ...any) {
 		result.WriteString(prefix + strings.Repeat(" ", indent) + fmt.Sprintf(format, args...) + "\n")
@@ -103,6 +104,10 @@ func (c *Config) printServers(result *strings.Builder, prefix string, hideSensib
 			line(8, "%s:", name)
 			line(12, "Listeners: %s", list(r.Listeners))
 			line(12, "Allow: %s", list(r.Allow))
+			// As written, hidden or not: an encrypted server's has no user nor query, which
+			// parseEncrypted refuses, but its path stays, and of a service that names the account
+			// there, as dns.nextdns.io/<id>, the id shows to anyone the web server answers. A
+			// blocklist's URL keeps its path too.
 			line(12, "Upstream: %s", list(r.Upstream))
 			line(12, "Bootstrap: %s", list(r.Bootstrap))
 			if len(r.Forward) > 0 {
@@ -226,7 +231,12 @@ func (c *Config) printServers(result *strings.Builder, prefix string, hideSensib
 				line(16, "Names: %s", list(cert.ACME.Names))
 				line(16, "Credential: %s", cert.ACME.Credential)
 				if cert.ACME.Directory != "" {
-					line(16, "Directory: %s", cert.ACME.Directory)
+					// A URL, which can hold a user and a token.
+					directory := cert.ACME.Directory
+					if hideSensible {
+						directory = hideURL(directory)
+					}
+					line(16, "Directory: %s", directory)
 				}
 				if cert.ACME.Email != "" {
 					line(16, "Email: %s", secret(cert.ACME.Email))

@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"maps"
+	"net/url"
 	"path/filepath"
 	"slices"
 )
@@ -12,16 +13,16 @@ import (
 // server's HTTPS, which give its name. Its files, or ACME, which gets and renews them.
 type TLS struct {
 	// The files of the certificate, in PEM, with its chain, and of its key: relative to the
-	// configuration's folder, unless absolute. With ACME, where it writes them, by default
-	// tls/<name>/fullchain.pem and privkey.pem.
+	// configuration's folder, unless absolute. With ACME, where it writes them, relative to the
+	// state folder: by default tls/<name>/fullchain.pem and privkey.pem there.
 	Certificate string `json:"certificate,omitempty"`
 	Key         string `json:"key,omitempty"`
 	// The certificate from an ACME authority, as Let's Encrypt, by its DNS challenge: kept and
 	// renewed by ipv6ddns.
 	ACME *ACME `json:"acme,omitempty"`
 
-	// The files, read: in the configuration's folder; and, with ACME, the account's key, beside
-	// the certificate.
+	// The files, read: in the configuration's folder, or with ACME in the state folder; and, with
+	// ACME, the account's key, beside the certificate.
 	CertFile, KeyFile, AccountKeyFile string `json:"-"`
 	// What shows it: resolvers.lan, webserver; in that order.
 	UsedBy []string `json:"-"`
@@ -41,7 +42,7 @@ type ACME struct {
 	Directory string `json:"directory,omitempty"`
 }
 
-// The files of an ACME certificate, in the configuration's folder by default.
+// The files of an ACME certificate, in the state folder by default.
 const (
 	acmeFolder      = "tls"
 	acmeCertificate = "fullchain.pem"
@@ -100,6 +101,11 @@ func (c *Config) setUpCertificate(name string, t *TLS) error {
 	case (t.Certificate == "") != (t.Key == ""):
 		return fmt.Errorf("%s: give both certificate and key, where ipv6ddns writes them, or neither, for %s/%s/", path, acmeFolder, name)
 	}
+	if a.Directory != "" {
+		if u, err := url.Parse(a.Directory); err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
+			return fmt.Errorf("%s.acme.directory: %q is not a URL of http:// or https://: give the authority's directory, as https://acme-v02.api.letsencrypt.org/directory, or leave it out for Let's Encrypt's", path, a.Directory)
+		}
+	}
 	certificate, key := t.Certificate, t.Key
 	if certificate == "" {
 		certificate, key = filepath.Join(acmeFolder, name, acmeCertificate), filepath.Join(acmeFolder, name, acmeKey)
@@ -107,6 +113,13 @@ func (c *Config) setUpCertificate(name string, t *TLS) error {
 	// What ACME writes is state: in the state folder.
 	t.CertFile, t.KeyFile = inFolder(c.StateFolder, certificate), inFolder(c.StateFolder, key)
 	t.AccountKeyFile = filepath.Join(filepath.Dir(t.CertFile), acmeAccountKey)
+	// Each is written apart: one file for two would keep the last written alone.
+	switch {
+	case t.CertFile == t.KeyFile:
+		return fmt.Errorf("%s: certificate and key are one file, %s, and ipv6ddns writes each to its own: give two, as certificate: %s and key: %s, or neither, for %s/%s/", path, t.CertFile, acmeCertificate, acmeKey, acmeFolder, name)
+	case t.CertFile == t.AccountKeyFile || t.KeyFile == t.AccountKeyFile:
+		return fmt.Errorf("%s: %s is where ipv6ddns keeps the key of the ACME account, beside the certificate: give the certificate and its key other names, as certificate: %s and key: %s", path, t.AccountKeyFile, acmeCertificate, acmeKey)
+	}
 	return nil
 }
 

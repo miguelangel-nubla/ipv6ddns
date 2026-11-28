@@ -82,3 +82,54 @@ func TestPrettyPrintServers(t *testing.T) {
 		t.Errorf("the warnings' roles: %v", roles)
 	}
 }
+
+// The hidden view, which the web server shows to anyone, has no user, path nor query of a URL:
+// of the ACME directory, and of a credential's endpoint, as of its address. A provider's own
+// name for its endpoint shows.
+func TestHiddenURLs(t *testing.T) {
+	cfg, err := loadConfig(t, `
+tasks: {}
+credentials:
+  public:
+    provider: cloudflare
+    settings:
+      api_token: x
+      zone: example.com
+certificates:
+  dns:
+    acme:
+      names:
+        - dns.lan
+      credential: public
+      directory: "https://user:SECRET-1@acme.example/directory?key=SECRET-2"
+listeners:
+  web:
+    listen:
+      - https://127.0.0.1:8443
+    tls: dns
+webservers:
+  main:
+    listeners:
+      - web
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := cfg.PrettyPrint("", true)
+	if strings.Contains(page, "SECRET") || !strings.Contains(page, "                Directory: https://acme.example\n") {
+		t.Errorf("the ACME directory, hidden:\n%s", page[strings.Index(page, "    Certificates:"):])
+	}
+	if page := cfg.PrettyPrint("", false); !strings.Contains(page, "Directory: https://user:SECRET-1@acme.example/directory?key=SECRET-2\n") {
+		t.Errorf("the ACME directory, shown:\n%s", page[strings.Index(page, "    Certificates:"):])
+	}
+	for settings, want := range map[string]string{
+		`{"endpoint": "https://user:SECRET-3@eu.api.ovh.com/1.0?token=SECRET-4", "zone": "example.com"}`: "endpoint https://eu.api.ovh.com, zone example.com",
+		`{"endpoint": "ovh-eu", "zone": "example.com"}`:                                                  "endpoint ovh-eu, zone example.com",
+		`{"endpoint": "user:SECRET-5@host", "zone": "example.com"}`:                                      "zone example.com, <sensible data hidden>",
+		`{"server": "ns.example.com:53", "zone": "example.com"}`:                                         "server ns.example.com:53, zone example.com",
+	} {
+		if got := shownSettings(json.RawMessage(settings)); got != want {
+			t.Errorf("%s: %q, want %q", settings, got, want)
+		}
+	}
+}

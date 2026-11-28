@@ -112,6 +112,24 @@ func TestHTTP(t *testing.T) {
 	}
 }
 
+// An echo service's answer is read up to 256 bytes, however much it sends: more is no address,
+// and the error has no more of it than that.
+func TestHTTPAnswerIsBounded(t *testing.T) {
+	huge := echoServer(t, "tcp4", "203.0.113.7"+strings.Repeat("7", 1<<20), http.StatusOK)
+	got, err := addrs(t, httpFetcher([]int{4}, []string{huge}, nil))
+	if err == nil || len(got) != 0 {
+		t.Fatalf("an answer of 1 MB: got %v, %v, want an error", got, err)
+	}
+	if len(err.Error()) > 1024 {
+		t.Errorf("the error has %d bytes of the answer", len(err.Error()))
+	}
+	// Up to the bound, the spaces around an address are left out.
+	padded := echoServer(t, "tcp4", "203.0.113.7"+strings.Repeat("\n", 200), http.StatusOK)
+	if got, err := addrs(t, httpFetcher([]int{4}, []string{padded}, nil)); err != nil || !slices.Equal(got, []string{"203.0.113.7"}) {
+		t.Errorf("an answer within the bound: got %v, %v", got, err)
+	}
+}
+
 // dnsServer answers, on network ("udp4" or "udp6"), A, AAAA and TXT queries for name with answer.
 func dnsServer(t *testing.T, network, name string, answer netip.Addr) string {
 	t.Helper()

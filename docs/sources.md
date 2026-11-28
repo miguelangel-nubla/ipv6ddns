@@ -54,6 +54,8 @@ A source's addresses are published as given. Discovery refuses loopback, unspeci
 
 For `dns` and `http`, `family` is `[4]` by default. `[4, 6]` also finds the public IPv6, for a network whose hosts all go out through one address.
 
+Each type takes its own keys alone. A key of another type, such as `addresses` in an `http` source, is an error, so a source never gives something other than what its keys say.
+
 ## Runs and lifetimes
 
 A source runs at start, and then every `interval`. A `homeassistant` source also runs as soon as its entity changes.
@@ -69,7 +71,7 @@ Each run ends in one of these ways:
 | **Fails in part**, such as one `family` of two, or one line of a command's output that isn't an address | The addresses the run gives are added, and the others are kept for their `lifetime`. A name can have both the old address and the new one until the old one expires | An error, each run |
 | **Waits**, `homeassistant` only | The addresses are kept for their `lifetime`, as after a failure, while Home Assistant restarts | A line when the wait starts and when it ends, and a warning if the wait outlasts the lifetime |
 
-The defaults of `interval` and `lifetime` are in the [reference](reference/configuration.md#sources). A static source never expires.
+The defaults of `interval` and `lifetime` are in the [reference](reference/configuration.md#sources). A static source never expires, and takes neither.
 
 A run that gives no address means different things for different sources:
 
@@ -142,11 +144,12 @@ On the router, the hostname is the source's name, `wan`, and the password the so
 | ddclient | `protocol=dyndns2` | `server=192.168.1.2:8053`, `ssl=no`, the hostname `wan` |
 
 - **Each update replaces the addresses of the families it has.** An IPv4 address replaces the IPv4 one, and the IPv6 address stays: routers that send each family apart, as OPNsense, pfSense and OpenWrt do, don't take one away with the other. `myip` takes one address or two, separated by a comma, as ddclient sends them; `myipv6`, the IPv6 one apart, and an empty value is no address.
-- **Without `myip`,** the address the update came from, when it is public, as from a router on the internet. From the LAN, an update without `myip` is refused.
+- **Without `myip`,** the address the update came from, when it is public, as from a router on the internet. From the LAN, an update without `myip` is refused. So is one that comes through a tunnel or a carrier's NAT, whose addresses, `100.64.0.0/10`, nothing on the internet reaches.
 - **The password** is the HTTP basic one, or `password` in the URL, for the routers that write it there. The username is not checked. A refused password waits a second for its answer.
 - **The answer** is dyndns2's: `good` and the addresses, or `nochg` when they didn't change, with HTTP 200; and on an error, `badauth` with 401, `nohost` with 404 for a hostname that is no push source, or `911` with 400 for an update that has no address it can take. Some routers read the status alone, so an error never comes with 200.
-- **The addresses stay until the next update**, however far: routers send when the address changes, and some only every few weeks otherwise. With `lifetime`, they go if no update comes within it.
-- **A restart keeps them.** They are written to `state_file`, by default `push-<source>.json` in the configuration's folder.
+- **The addresses stay until the next update**, however far: routers send when the address changes, and some only every few weeks otherwise. With `lifetime`, each goes if no update sends it again within that time.
+- **A restart keeps them,** each for what is left of its `lifetime`. They are written to `state_file`, by default `push-<source>.json` in the [state folder](configuration.md#state). Each push source has a file of its own: two with one `state_file` are an error.
+- **The source's name** is the hostname the router sends, and part of its file's name. It has no comma, which separates several hostnames, no slash, and no space around it.
 
 ### The prefix of the LAN
 

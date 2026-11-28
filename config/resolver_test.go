@@ -870,6 +870,15 @@ listeners:
 		t.Errorf("the files given: %+v", home)
 	}
 
+	// The directory of another authority, as Let's Encrypt's staging one.
+	if _, err := resolverConfig(t, certificates(`
+    acme:
+      names: dns.lan
+      credential: public
+      directory: https://acme-staging-v02.api.letsencrypt.org/directory`), public, nasTask); err != nil {
+		t.Errorf("the staging directory: %v", err)
+	}
+
 	acmeOf := func(certificate, key string) string {
 		return "\n    certificate: " + certificate + "\n    key: " + key + "\n    acme:\n      names: dns.lan\n      credential: public"
 	}
@@ -899,6 +908,19 @@ listeners:
 		{"a key that isn't the certificate's", certificates(`
     certificate: ` + certFile + `
     key: ` + certFile), "certificates.home: "},
+		{"a directory that is no URL", certificates(`
+    acme:
+      names: dns.lan
+      credential: public
+      directory: not a url`), `certificates.home.acme.directory: "not a url" is not a URL of http:// or https://: give the authority's directory, as https://acme-v02.api.letsencrypt.org/directory, or leave it out for Let's Encrypt's`},
+		{"a directory of another scheme", certificates(`
+    acme:
+      names: dns.lan
+      credential: public
+      directory: ftp://acme.example/directory`), `certificates.home.acme.directory: "ftp://acme.example/directory" is not a URL of http:// or https://`},
+		{"one file for the certificate and its key", certificates(acmeOf("a/home.pem", "a/home.pem")), "certificates.home: certificate and key are one file, "},
+		{"one file, written two ways", certificates(acmeOf("a/home.pem", "./a/../a/home.pem")), "certificates.home: certificate and key are one file, "},
+		{"the key in the file of the account's", certificates(acmeOf("a/cert.pem", "a/acme-account.key")), "certificates.home: "},
 		{"a certificate no server shows", certificates(acmeOf("a/cert.pem", "a/key.pem")) + `
   spare:` + acmeOf("b/cert.pem", "b/key.pem"), "certificates.spare: no server shows it"},
 		{"two certificates of one file", certificates(acmeOf("a/cert.pem", "a/key.pem")) + `

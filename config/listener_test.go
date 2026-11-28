@@ -167,6 +167,8 @@ func TestListenerErrors(t *testing.T) {
 		{"encrypted without tls", "\nlisteners:\n  lan:\n    listen:\n      - https://127.0.0.1\n" + resolverOf("lan"), "listeners.lan.tls is missing"},
 		{"a listener no server uses", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n  other:\n    listen:\n      - dns://127.0.0.1:5353\n" + resolverOf("other"), "listeners.lan: no server uses it"},
 		{"DNS without a resolver", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n\nwebservers:\n  main:\n    listeners:\n      - lan\n", "listeners.lan.listen: dns://127.0.0.1 is DNS, which only a resolver serves"},
+		{"a web server without an entry of its own", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1:5353\n" + resolverOf("lan") + "\nwebservers:\n  main:\n    listeners:\n      - lan\n", "webservers.main.listeners: lan has no http:// nor https:// entry, so the web server would serve nowhere: add one to its listen, as http://8053, or name a listener that has one"},
+		{"a port out of range", "\nlisteners:\n  lan:\n    listen:\n      - http://127.0.0.1:70000\n\nwebservers:\n  main:\n    listeners:\n      - lan\n", "listeners.lan.listen: "},
 		{"HTTP without a web server", "\nlisteners:\n  lan:\n    listen:\n      - http://127.0.0.1\n" + resolverOf("lan"), "listeners.lan.listen: http://127.0.0.1 is HTTP, which only a web server serves"},
 		{"two resolvers on one listener", "\nlisteners:\n  lan:\n    listen:\n      - dns://127.0.0.1\n" + resolverOf("lan") + "  guests:\n    listeners:\n      - lan\n    upstream:\n      - 1.1.1.1\n", "resolvers.lan.listeners: lan is resolvers.guests's already"},
 		{"the web server of before", "\nwebserver:\n  listen:\n    - 8053\n", "webserver is now webservers"},
@@ -197,4 +199,132 @@ func withBlock(blocks, key, entries string) string {
 		return strings.Replace(blocks, "\n"+key+":\n", "\n"+key+":\n"+entries, 1)
 	}
 	return blocks + "\n" + key + ":\n" + entries
+}
+
+// A web server none of whose listeners has an http:// or https:// entry serves nowhere: an error,
+// and no web server for a push source's router; with an HTTPS entry that a resolver opens and
+// shares, it serves there.
+func TestWebserverWithNoEntry(t *testing.T) {
+	blocks := `
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:5353
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 1.1.1.1
+webservers:
+  main:
+    listeners:
+      - lan
+sources:
+  wan:
+    type: push
+    password: secret
+`
+	cfg, err := loadConfig(t, "tasks: {}\ncredentials:\n  home:\n    provider: resolver\n    settings:\n      zone: home.arpa\n"+blocks)
+	if err == nil || !strings.HasPrefix(err.Error(), "webservers.main.listeners: lan has no http:// nor https:// entry") {
+		w := cfg.Webservers["main"]
+		t.Errorf("got %v: webservers.main has %d sockets of its own and %d shared, and the push source wan no /nic/update", err, len(w.Entries), len(w.Shared))
+	}
+	if cfg.HasWebserver() {
+		t.Error("a web server with no socket is one that serves")
+	}
+	shared := strings.Replace(blocks, "      - dns://127.0.0.1:5353\n", "      - dns://127.0.0.1:5353\n      - https://127.0.0.1:8443\n    tls: home\n", 1)
+	cfg, err = loadConfig(t, listenerConfig(t, shared))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := cfg.Webservers["main"]; len(w.Entries) != 0 || len(w.Shared) != 1 || !cfg.HasWebserver() {
+		t.Errorf("on a resolver's HTTPS entry: %d sockets of its own, %d shared, serves %v", len(w.Entries), len(w.Shared), cfg.HasWebserver())
+	}
+}
+
+// Two sockets of the web servers on one address and port can't both listen: a listener named
+// twice, or an entry written twice, is one socket, as a resolver's is, and any other two are an
+// error, as one on a port a resolver listens on over TCP is.
+func TestWebserverSocketsTwice(t *testing.T) {
+	const twoSockets = "two sockets that can't both listen: give one of them another port, or leave one out"
+	for name, c := range map[string]struct {
+		blocks  string
+		sockets int
+		want    string
+	}{
+		"a listener named twice": {"listeners:\n  web:\n    listen:\n      - http://127.0.0.1:8053\nwebservers:\n  main:\n    listeners:\n      - web\n      - web\n", 1, ""},
+		"an entry written twice": {"listeners:\n  web:\n    listen:\n      - http://127.0.0.1:8053\n      - http://127.0.0.1:8053\nwebservers:\n  main:\n    listeners:\n      - web\n", 1, ""},
+		"two ports":              {"listeners:\n  web:\n    listen:\n      - http://127.0.0.1:8053\n      - http://127.0.0.1:8054\nwebservers:\n  main:\n    listeners:\n      - web\n", 2, ""},
+		"two web servers, one port": {"listeners:\n  a:\n    listen:\n      - http://127.0.0.1:8053\n  b:\n    listen:\n      - http://127.0.0.1:8053\nwebservers:\n  one:\n    listeners:\n      - a\n  two:\n    listeners:\n      - b\n", 0,
+			"listeners.b.listen: http://127.0.0.1:8053 is on the address and port of listeners.a's http://127.0.0.1:8053, " + twoSockets},
+		"two web servers, one on every address": {"listeners:\n  a:\n    listen:\n      - http://8053\n  b:\n    listen:\n      - http://127.0.0.1:8053\nwebservers:\n  one:\n    listeners:\n      - a\n  two:\n    listeners:\n      - b\n", 0,
+			"listeners.b.listen: http://127.0.0.1:8053 is on the address and port of listeners.a's http://8053, " + twoSockets},
+		"two listeners of one web server, one port": {"listeners:\n  a:\n    listen:\n      - http://127.0.0.1:8053\n  b:\n    listen:\n      - http://127.0.0.1:8053\nwebservers:\n  main:\n    listeners:\n      - a\n      - b\n", 0,
+			"listeners.b.listen: http://127.0.0.1:8053 is on the address and port of listeners.a's http://127.0.0.1:8053, " + twoSockets},
+		"a resolver's port, over TCP": {"listeners:\n  lan:\n    listen:\n      - dns://127.0.0.1:5353\n      - http://127.0.0.1:5353\nresolvers:\n  lan:\n    listeners:\n      - lan\n    upstream:\n      - 1.1.1.1\nwebservers:\n  main:\n    listeners:\n      - lan\n", 0,
+			"listeners.lan.listen: http://127.0.0.1:5353 is on the address and port of listeners.lan's dns://127.0.0.1:5353, " + twoSockets},
+	} {
+		credentials := "credentials: {}\n"
+		if strings.Contains(c.blocks, "resolvers:") {
+			credentials = "credentials:\n  home:\n    provider: resolver\n    settings:\n      zone: home.arpa\n"
+		}
+		cfg, err := loadConfig(t, "tasks: {}\n"+credentials+c.blocks)
+		if c.want != "" {
+			if err == nil || err.Error() != c.want {
+				t.Errorf("%s: got %v\nwant %s", name, err, c.want)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		sockets := 0
+		for _, w := range cfg.Webservers {
+			sockets += len(w.Entries)
+		}
+		if sockets != c.sockets {
+			t.Errorf("%s: %d sockets, want %d", name, sockets, c.sockets)
+		}
+	}
+}
+
+// A listener a resolver names twice is one: its entries listen once.
+func TestListenerNamedTwiceByAResolver(t *testing.T) {
+	cfg, err := loadConfig(t, listenerConfig(t, sharedListener+`
+resolvers:
+  lan:
+    listeners:
+      - lan
+      - lan
+    upstream:
+      - 1.1.1.1
+webservers:
+  main:
+    listeners:
+      - lan
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	once, err := loadConfig(t, listenerConfig(t, sharedListener+`
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - 1.1.1.1
+webservers:
+  main:
+    listeners:
+      - lan
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	twice, want := cfg.Resolvers["lan"].Spec, once.Resolvers["lan"].Spec
+	if len(twice.Listen) != len(want.Listen) || len(twice.Encrypted) != len(want.Encrypted) || len(want.Listen)+len(want.Encrypted) == 0 {
+		t.Errorf("named twice: %d plain and %d encrypted entries; named once, %d and %d", len(twice.Listen), len(twice.Encrypted), len(want.Listen), len(want.Encrypted))
+	}
 }

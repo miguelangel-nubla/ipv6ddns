@@ -456,7 +456,7 @@ credentials:
 - **`email`** is an address Let's Encrypt may write to about the account. It no longer sends mail about certificates that end. Optional.
 - **`directory`** is the authority, Let's Encrypt by default. Its staging directory, `https://acme-staging-v02.api.letsencrypt.org/directory`, has no limits but signs certificates that no client trusts: use it to try the setup.
 
-The certificate and its key go to the certificate's `certificate` and `key`, by default `tls/<name>/fullchain.pem` and `privkey.pem` in the configuration's folder, as `tls/home/`, with the account's key, `acme-account.key`, beside them. Keep that folder across restarts and updates: a certificate is got again only when it's due.
+The certificate and its key go to the certificate's `certificate` and `key`, by default `tls/<name>/fullchain.pem` and `privkey.pem` in the [state folder](configuration.md#state), as `tls/home/`, with the account's key, `acme-account.key`, beside them. Keep that folder across restarts and updates: a certificate is got again only when it's due.
 
 - **At the first start** there is no certificate yet. The resolver answers plain DNS at once, and refuses the encrypted connections for the minute or so it takes. The report says `home (resolver lan): none yet`.
 - **Renewal** comes once two thirds of the certificate's lifetime have passed, 30 days before the end of one of 90 days, without a restart.
@@ -1056,6 +1056,7 @@ The configuration is checked at the start. A mistake stops the start, and the er
 | A blocklist without `url`, or not of `http://` or `https://` | `blocklists.pro.url: "ftp://lists.example/pro.txt" is not a URL of http:// or https://, as https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt` |
 | A blocklist's `interval` under an hour | `blocklists.pro.interval: 10m0s is too short: the least is 1h0m0s, as a list's server would refuse more, and lists change daily` |
 | A blocklist's name that can't be a file's | `blocklists: the name "hagezi/pro" is that of its file in state_dir: use letters, digits, - and _ alone, as hagezi_pro` |
+| Two blocklists' names that differ by their case alone | `blocklists: the names Pro and pro differ by their case alone, and each is that of its file in state_dir, which would be one where the file system doesn't tell them apart: give one of them another name` |
 
 ### The same address and port, written two ways
 

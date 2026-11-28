@@ -131,6 +131,9 @@ func (c *Config) setUpUpdates(path string, r *Resolver, spec *resolver.Config, a
 		}
 		spec.UpdateAllow = append(spec.UpdateAllow, p)
 	}
+	// Two keys whose names differ by their case alone, nas and NAS, are one name to TSIG: both
+	// load here, and the resolver refuses the second, "is there twice", when the worker is made,
+	// before anything starts.
 	for _, name := range slices.Sorted(maps.Keys(u.Keys)) {
 		k := u.Keys[name]
 		keyPath := path + ".keys." + name

@@ -66,7 +66,7 @@ homeassistant:
 
 **The state file** is what's written to disk. It is `key_provisioning_state_file`:
 
-- By default it's `homeassistant.state`, beside the configuration. A relative path you give is relative to the configuration's folder.
+- By default it's `homeassistant.state`, in the [state folder](configuration.md#state), which is the configuration's folder unless `state_dir` gives another. A relative path you give is relative to that folder.
 - It holds the device's identity, which is made at the first start and which the device's MAC comes from. It also holds the key, once Home Assistant has given it.
 - It's written when the identity or the key changes, and only its owner can read it.
 - Beside it is an empty lock file, `homeassistant.state.lock`. The instance holds the lock while it runs, because each instance needs [a state file of its own](#several-devices).
@@ -114,7 +114,7 @@ So before it announces itself, ipv6ddns looks for a second and a half for a devi
 
 **Its own identity.** The device's MAC, by which Home Assistant knows it for good, comes from the `key`, or from the state file with `key_provisioning: true`. So each instance needs its own `key`, or its own state file.
 
-- The state file is `homeassistant.state` beside the configuration by default. Two configurations in one folder must each name their own with `key_provisioning_state_file`.
+- The state file is `homeassistant.state` beside the configuration by default, or in its [`state_dir`](configuration.md#state). Two configurations in one folder must each name their own with `key_provisioning_state_file`.
 - While it runs, an instance holds its state file, with a lock file beside it, `<state file>.lock`. Another instance with the same file doesn't start, and says which file.
 - This lock doesn't exist on Windows or Solaris.
 

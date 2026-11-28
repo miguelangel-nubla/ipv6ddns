@@ -272,6 +272,7 @@ func TestHomeAssistantConfig(t *testing.T) {
 
 	for name, c := range map[string]struct{ config, want string }{
 		"a listen entry":             {"homeassistant:\n  key_provisioning: true\n  listen:\n    - 'a:b:c'\n", "homeassistant.listen"},
+		"a port out of range":        {"homeassistant:\n  key_provisioning: true\n  listen:\n    - 127.0.0.1:99999\n", "not a valid port"},
 		"two ports, announced":       {"homeassistant:\n  key_provisioning: true\n  listen:\n    - 10.2.3.75\n    - '[fd00::1]:7000'\n", "can announce only one port"},
 		"a listen network with port": {"homeassistant:\n  key_provisioning: true\n  listen:\n    - '10.2.3.0/24:6053'\n", "homeassistant.listen"},
 		"a source without the block": {"sources:\n  wan:\n    type: homeassistant\n    entity: sensor.wan_ip\n", "needs the homeassistant block"},

@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -203,6 +205,30 @@ func TestDurationPattern(t *testing.T) {
 	}
 }
 
+// A number of seconds is one written as a number: in quotes, or read from the environment, it
+// is text, which needs its unit, as the reference says.
+func TestDurationNumberOfSeconds(t *testing.T) {
+	t.Setenv("IPV6DDNS_TEST_INTERVAL", "300")
+	for interval, want := range map[string]string{
+		"300":                        "",
+		"300s":                       "",
+		`"300"`:                      "sources.wan.interval: not a duration: write it as 90s, 1m30s or 1h",
+		"${IPV6DDNS_TEST_INTERVAL}":  "sources.wan.interval: not a duration: write it as 90s, 1m30s or 1h",
+		"${IPV6DDNS_TEST_INTERVAL}s": "",
+	} {
+		cfg, err := loadConfig(t, "tasks: {}\ncredentials: {}\nsources:\n  wan:\n    type: dns\n    interval: "+interval+"\n")
+		switch {
+		case want == "" && (err != nil || cfg.Sources["wan"].Interval.Duration != 5*time.Minute):
+			t.Errorf("%s: %v, %v", interval, cfg.Sources["wan"].Interval, err)
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%s: got %v\nwant %s", interval, err, want)
+		}
+	}
+	if !strings.Contains(string(configSchema), "or a number of seconds, written as a number: in quotes, or read from ${VAR}, it is text, and needs its unit, as 300s.") {
+		t.Error("the schema's duration doesn't say that a number in quotes needs its unit")
+	}
+}
+
 func TestNewConfigChecks(t *testing.T) {
 	dir := t.TempDir()
 	write := func(content string) string {
@@ -389,5 +415,88 @@ func TestConfigFileNames(t *testing.T) {
 		if _, err := NewConfig(path); (err == nil) != yaml {
 			t.Errorf("%s: got %v, read as YAML: want %t", name, err, yaml)
 		}
+	}
+}
+
+// A name that YAML reads as a boolean, without quotes, is an error that says to quote it, and
+// not the name true: a router sends hostname=y, a client signs with the key on. So is one read
+// as another number than written. In quotes, or read as written, it is the name.
+func TestNamesThatYAMLReadsAsSomethingElse(t *testing.T) {
+	push := "    type: push\n    password: secret\n"
+	for name, c := range map[string]struct{ config, want string }{
+		"a source y":            {"sources:\n  y:\n" + push, `sources.y: YAML reads the name y, written without quotes, as the boolean true, and it would be named true: write it in quotes, as "y"`},
+		"a source no":           {"sources:\n  no:\n" + push, `sources.no: YAML reads the name no, written without quotes, as the boolean false, and it would be named false: write it in quotes, as "no"`},
+		"a source Off":          {"sources:\n  Off:\n" + push, `sources.Off: YAML reads the name Off, written without quotes, as the boolean false`},
+		"a source 010":          {"sources:\n  010:\n" + push, `sources.010: YAML reads the name 010, written without quotes, as the number 8, and it would be named 8: write it in quotes, as "010"`},
+		"a source 1.10":         {"sources:\n  1.10:\n" + push, `sources.1.10: YAML reads the name 1.10, written without quotes, as the number 1.1`},
+		"a listener on":         {"listeners:\n  on:\n    listen:\n      - http://127.0.0.1:8054\nwebservers:\n  main:\n    listeners:\n      - on\n", `listeners.on: YAML reads the name on, written without quotes, as the boolean true`},
+		"an endpoint of a task": {"tasks:\n  nas:\n    endpoints:\n      yes:\n        - nas\n", `tasks.nas.endpoints.yes: YAML reads the name yes, written without quotes, as the boolean true`},
+		"a key under a list":    {"tasks:\n  nas:\n    filter:\n      - n: 1\n    endpoints:\n      duck:\n        - nas\n", `tasks.nas.filter.n: YAML reads the name n, written without quotes, as the boolean false`},
+	} {
+		content := c.config
+		if !strings.Contains(content, "listeners:") {
+			content += webServer
+		}
+		if !strings.Contains(content, "tasks:") {
+			content += "tasks: {}\n"
+		}
+		if _, err := loadConfig(t, content+duckCredential); err == nil || !strings.HasPrefix(err.Error(), c.want) {
+			t.Errorf("%s: got %v\nwant %s", name, err, c.want)
+		}
+	}
+
+	cfg, err := loadConfig(t, "tasks: {}\n"+duckCredential+`
+listeners:
+  10:
+    listen:
+      - http://127.0.0.1:8053
+  "on":
+    listen:
+      - http://127.0.0.1:8054
+  2:
+    listen:
+      - http://127.0.0.1:8055
+webservers:
+  true:
+    listeners:
+      - 10
+      - "on"
+      - 2
+sources:
+  "y":
+    type: push
+    password: secret
+  'no':
+    type: push
+    password: secret
+  !!str yes:
+    type: push
+    password: secret
+  7:
+    type: push
+    password: secret
+  2001:
+    type: dns
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(maps.Keys(cfg.Sources)); !slices.Equal(got, []string{"2001", "7", "no", "y", "yes"}) {
+		t.Errorf("the sources are %q", got)
+	}
+	if _, ok := cfg.Webservers["true"]; !ok {
+		t.Errorf("the web server true, written so, is not: %v", cfg.Webservers)
+	}
+	// The order of the listeners, as written, with the names the reading has.
+	if !slices.Equal(cfg.ListenerOrder, []string{"10", "on", "2"}) {
+		t.Errorf("the listeners, in order: %q", cfg.ListenerOrder)
+	}
+	// JSON has no such reading: its names are text.
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"tasks": {}, "credentials": {}, "sources": {"y": {"type": "dns"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := NewConfig(path); err != nil || cfg.Sources["y"].Type != SourceDNS {
+		t.Errorf("JSON's y: %v, %v", cfg.Sources, err)
 	}
 }

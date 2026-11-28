@@ -15,10 +15,14 @@ import (
 	"github.com/miguelangel-nubla/ipv6disc"
 )
 
-// pushState is what a push source keeps in its file: the addresses the router sent last, and when.
+// pushState is what a push source keeps in its file: the addresses the router sent, and when it
+// sent last.
 type pushState struct {
 	Addresses []string  `json:"addresses"`
 	At        time.Time `json:"at"`
+	// When each address was sent last, which may be before At: a router sends each family apart.
+	// A file of before it was kept has none, and At is every address's.
+	AddressesAt map[string]time.Time `json:"addresses_at,omitempty"`
 	// The prefix of the LAN, and when it was sent, which may be before At.
 	Prefix   string     `json:"prefix,omitempty"`
 	PrefixAt *time.Time `json:"prefix_at,omitempty"`
@@ -101,6 +105,16 @@ func (s *Source) push(addrs []netip.Addr, prefix netip.Prefix, families map[int]
 		s.addrs.Seen(ipv6disc.NewAddr(nil, ip, s.name, s.config.Lifetime.Duration, nil), s.name)
 	}
 	after := slices.Sorted(slices.Values(s.Addresses().Strings()))
+	// When each was sent, for the file: of those the source still has alone.
+	sentAt := make(map[string]time.Time, len(after))
+	for _, a := range after {
+		at, ok := s.sentAt[a]
+		if ip, err := netip.ParseAddr(a); !ok || err == nil && sent[ip] {
+			at = now
+		}
+		sentAt[a] = at
+	}
+	s.sentAt = sentAt
 
 	s.mutex.Lock()
 	s.lastRun, s.lastSuccess, s.lastError = now, now, nil
@@ -139,10 +153,13 @@ func familyOf(ip netip.Addr) int {
 	return 6
 }
 
-// save writes the addresses, and the prefix, to the source's file, through a file beside it,
-// renamed.
+// save writes the addresses, each with when it was sent, and the prefix, to the source's file,
+// through a file beside it, renamed. The push's mutex is held.
 func (s *Source) save(addrs []string, at time.Time) error {
-	state := pushState{Addresses: addrs, At: at.UTC()}
+	state := pushState{Addresses: addrs, At: at.UTC(), AddressesAt: make(map[string]time.Time, len(addrs))}
+	for _, a := range addrs {
+		state.AddressesAt[a] = s.sentAt[a].UTC()
+	}
 	s.mutex.Lock()
 	if p, ok := s.prefixLocked(at); ok {
 		prefixAt := s.prefixAt.UTC()
@@ -166,8 +183,9 @@ func (s *Source) save(addrs []string, at time.Time) error {
 	return nil
 }
 
-// load takes the addresses of the source's file, as the router sent them before a restart, for
-// what is left of their lifetime. A file there is none of is no error: the router hasn't sent yet.
+// load takes the addresses of the source's file, as the router sent them before a restart, each
+// for what is left of its lifetime from when it was sent: a restart renews none. A file there is
+// none of is no error: the router hasn't sent yet.
 func (s *Source) load() error {
 	data, err := os.ReadFile(s.pushFile)
 	if errors.Is(err, os.ErrNotExist) {
@@ -194,16 +212,26 @@ func (s *Source) load() error {
 		s.prefix, s.prefixAt = prefix, prefixAt
 		s.mutex.Unlock()
 	}
-	left := s.config.Lifetime.Duration - time.Since(state.At)
-	if left <= 0 {
-		return nil
-	}
+	s.sentAt = map[string]time.Time{}
 	for _, a := range state.Addresses {
 		ip, err := netip.ParseAddr(a)
 		if err != nil {
 			return fmt.Errorf("source %s: %s has %q, not an address", s.name, s.pushFile, a)
 		}
+		at, ok := state.AddressesAt[a]
+		if !ok {
+			at = state.At
+		}
+		left := s.config.Lifetime.Duration - time.Since(at)
+		if left <= 0 {
+			continue
+		}
+		ip = ip.Unmap().WithZone("")
 		s.addrs.Seen(ipv6disc.NewAddr(nil, ip, s.name, left, nil), s.name)
+		s.sentAt[ip.String()] = at
+	}
+	if time.Since(state.At) >= s.config.Lifetime.Duration {
+		return nil
 	}
 	s.mutex.Lock()
 	s.lastRun, s.lastSuccess = state.At, state.At

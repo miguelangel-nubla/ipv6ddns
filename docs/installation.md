@@ -251,7 +251,7 @@ credentials:
 
 The settings of `acme` are in [a certificate from Let's Encrypt](resolver.md#a-certificate-from-lets-encrypt).
 
-- With `acme`, the certificate and its key are written to `tls/home/` in the configuration's folder, unless the certificate's `certificate` and `key` say elsewhere. Until the first one is got, the HTTPS entries refuse their connections, and the report says why.
+- With `acme`, the certificate and its key are written to `tls/home/` in the [state folder](configuration.md#state), unless the certificate's `certificate` and `key` say elsewhere. Until the first one is got, the HTTPS entries refuse their connections, and the report says why.
 - A certificate written over its files, by ipv6ddns or anything else, is shown to the next client without a restart.
 - Browsers check the certificate is for the name in the address: open `https://status.lan.example.com`, with a [record](resolver.md#records) or a task that gives the name the server's address, not the address itself.
 - The report's `Certificates:` section has it, with the servers that show it, its names and when it ends, amber within two weeks and red once ended, and, of `acme`, an `ACME:` line with its `names` as written and its `credential`; `/status.json` has it in `certificates`, with `listeners`, the listeners that show it, and of `acme`, `acme_names` and `credential`.
@@ -291,7 +291,7 @@ Two instances on one machine must differ in anything both would claim:
 |---|---|---|
 | The web servers' [listeners](#the-web-report) | Its own port, or address | The one started second doesn't start: `address already in use`, with the address |
 | [`homeassistant`](home-assistant-integration.md#several-devices) `port`, or `listen` | Its own port, when both have the block. The default is 6053 | The same error |
-| `homeassistant.key_provisioning_state_file`, with `key_provisioning: true` | Its own file. The default is `homeassistant.state` beside the configuration, so two configurations in one folder must each name theirs. Not needed with a `key` | The one started second doesn't start, and says which file |
+| `homeassistant.key_provisioning_state_file`, with `key_provisioning: true` | Its own file. The default is `homeassistant.state` beside the configuration, or in its [`state_dir`](configuration.md#state), so two configurations in one folder must each name theirs. Not needed with a `key` | The one started second doesn't start, and says which file |
 | `homeassistant.name` | Its own name. The default is `ipv6ddns` | The one started second runs, but isn't announced to Home Assistant, and logs why |
 | `--live` | Its own terminal | |
 

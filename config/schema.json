@@ -759,7 +759,7 @@
         },
         "sources": {
             "type": "object",
-            "description": "Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources.",
+            "description": "Sources of addresses that have no MAC, such as the network's public IPv4, by name. Tasks list them under sources. A key that is for another type of source is an error. The name of a push source is the hostname its router sends, and in the name of its file: without a comma, a slash or a space around it.",
             "additionalProperties": {
                 "type": "object",
                 "properties": {
@@ -788,11 +788,11 @@
                     },
                     "interval": {
                         "$ref": "#/$defs/duration",
-                        "description": "How often it runs. Default: 5m."
+                        "description": "How often it runs. Default: 5m. A static and a push source have none."
                     },
                     "lifetime": {
                         "$ref": "#/$defs/duration",
-                        "description": "How long an address stays after the last run that gave it. Default: 3 intervals. Of a push source: after the last update that sent it; by default, until the next update, however far."
+                        "description": "How long an address stays after the last run that gave it. Default: 3 intervals. Of a push source: after the last update that sent it; by default, until the next update, however far. At least 1s. A static source has none."
                     },
                     "urls": {
                         "type": "array",
@@ -838,7 +838,7 @@
                     "state_file": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "push: the file the addresses sent last are kept in, so that a restart doesn't lose them until the router's next update. Relative to the configuration's folder, unless absolute. Default: push-<source>.json."
+                        "description": "push: the file the addresses sent last are kept in, so that a restart doesn't lose them until the router's next update. Relative to state_dir, unless absolute. Default: push-<source>.json there."
                     }
                 },
                 "required": [
@@ -875,7 +875,7 @@
                 "properties": {
                     "listeners": {
                         "$ref": "#/$defs/stringList",
-                        "description": "Required. The listeners it serves on, by name: their http:// entries, and every path but /dns-query of their https:// ones. A listener has one web server at most."
+                        "description": "Required. The listeners it serves on, by name: their http:// entries, and every path but /dns-query of their https:// ones. One of them at least has such an entry. A listener has one web server at most."
                     },
                     "allow": {
                         "$ref": "#/$defs/stringList",
@@ -907,7 +907,7 @@
                 "key_provisioning_state_file": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Only with key_provisioning: true. Where the device keeps the key Home Assistant gave, and its identity, by which Home Assistant knows it. A file ipv6ddns can write; a relative path is from the configuration's folder. Default: homeassistant.state. Each instance needs its own: one whose state file is in use by another doesn't start. Deleting it makes the device a new one, with no key."
+                    "description": "Only with key_provisioning: true. Where the device keeps the key Home Assistant gave, and its identity, by which Home Assistant knows it. A file ipv6ddns can write; a relative path is from state_dir. Default: homeassistant.state there. Each instance needs its own: one whose state file is in use by another doesn't start. Deleting it makes the device a new one, with no key."
                 },
                 "name": {
                     "type": "string",
@@ -970,7 +970,7 @@
     "additionalProperties": false,
     "$defs": {
         "duration": {
-            "description": "A duration, as 90s, 1m30s or 1h, or a number of seconds.",
+            "description": "A duration, as 90s, 1m30s or 1h, or a number of seconds, written as a number: in quotes, or read from ${VAR}, it is text, and needs its unit, as 300s.",
             "oneOf": [
                 {
                     "$ref": "#/$defs/durationString"
@@ -1092,12 +1092,12 @@
                 "certificate": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, by default tls/<name>/fullchain.pem."
+                    "description": "The file of the certificate, in PEM, with its chain: fullchain.pem, as Let's Encrypt names it. Clients check it is for the name they were given, so most need one a public authority signed, for a name of a domain you own, as dns.lan.example.com. It is read again when it changes, so a renewed certificate is shown without a restart. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the certificate, relative to state_dir: by default tls/<name>/fullchain.pem there."
                 },
                 "key": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, by default tls/<name>/privkey.pem."
+                    "description": "The file of the certificate's private key, in PEM: privkey.pem, as Let's Encrypt names it. Relative to the configuration's folder, unless absolute. Required without acme; with it, where ipv6ddns writes the key, relative to state_dir: by default tls/<name>/privkey.pem there."
                 },
                 "acme": {
                     "type": "object",

@@ -49,6 +49,8 @@ type Source struct {
 	prefixAt time.Time
 	// One push at a time: each takes the state of the one before.
 	pushMutex sync.Mutex
+	// When each address was sent last, by its text, for the file: a push's alone, under pushMutex.
+	sentAt map[string]time.Time
 }
 
 // HomeAssistantStates are the states of Home Assistant's entities that homeassistant sources read:
@@ -238,6 +240,7 @@ type Status struct {
 // Status returns the state of the source. hideSensible hides the error, which can tell a command's
 // arguments.
 func (s *Source) Status(hideSensible bool) Status {
+	// Addresses, below, takes no mutex of the source: the collection has its own.
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	status := Status{

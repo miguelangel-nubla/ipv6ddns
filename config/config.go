@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	disc "github.com/miguelangel-nubla/ipv6disc/pkg/config"
 	"github.com/miguelangel-nubla/ipv6disc/pkg/pretty"
 	"github.com/xeipuuv/gojsonschema"
+	yamlv2 "go.yaml.in/yaml/v2"
 	"sigs.k8s.io/yaml"
 )
 
@@ -346,6 +348,9 @@ func NewConfig(filename string) (config Config, err error) {
 	// Before JSON, whose objects have no order.
 	listenerOrder := listenerOrder(byteValue, isYAML)
 	if isYAML {
+		if err := checkYAMLKeys(byteValue); err != nil {
+			return config, err
+		}
 		// Strict: a key given twice, as a task's name after a copy, is an error, rather than the
 		// last one alone being kept.
 		byteValue, err = yaml.YAMLToJSONStrict(byteValue)
@@ -455,9 +460,89 @@ func NewConfig(filename string) (config Config, err error) {
 	if err := config.checkListenersServed(); err != nil {
 		return config, err
 	}
+	if err := config.checkWebserversServe(); err != nil {
+		return config, err
+	}
 	if err := config.checkCertificatesUsed(); err != nil {
 		return config, err
 	}
 
 	return config, nil
+}
+
+// yamlKey is a key of a mapping of YAML: its text as written, and what YAML reads it as, a string
+// unless it is written without quotes and is a boolean, a number or nothing to YAML.
+type yamlKey struct {
+	text string
+	read any
+}
+
+func (k *yamlKey) UnmarshalYAML(unmarshal func(any) error) error {
+	// Into a string, a scalar is its text as written. A key that is no scalar is the reading's
+	// own error.
+	if unmarshal(&k.text) != nil {
+		return nil
+	}
+	return unmarshal(&k.read)
+}
+
+// yamlNode is a value of YAML, for its keys alone: those of a mapping, or the items of a list.
+type yamlNode struct {
+	keys  map[yamlKey]yamlNode
+	items []yamlNode
+}
+
+func (n *yamlNode) UnmarshalYAML(unmarshal func(any) error) error {
+	if unmarshal(&n.keys) != nil {
+		n.keys = nil
+		if unmarshal(&n.items) != nil {
+			n.items = nil
+		}
+	}
+	return nil
+}
+
+// checkYAMLKeys tells of a key that YAML reads as something other than the text written: y, n,
+// yes, no, on and off without quotes are booleans, and 010 is the number 8. The reading as JSON
+// would have the source y as the source true, without a word, which the hostname a router sends,
+// y, isn't; and the same of a task, a credential, a listener or a key. One read as written, as 10
+// or true, is that name. Of a file that doesn't read, nothing: the reading tells.
+func checkYAMLKeys(raw []byte) error {
+	var doc yamlNode
+	if yamlv2.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	return doc.checkKeys("")
+}
+
+// checkKeys is checkYAMLKeys of the node at path, and of those under it, in the order of their text.
+func (n yamlNode) checkKeys(path string) error {
+	for _, key := range slices.SortedFunc(maps.Keys(n.keys), func(a, b yamlKey) int { return strings.Compare(a.text, b.text) }) {
+		at := strings.TrimPrefix(path+"."+key.text, ".")
+		kind, read := "", ""
+		switch v := key.read.(type) {
+		case bool:
+			kind, read = "boolean", strconv.FormatBool(v)
+		case int, int64, uint64:
+			kind, read = "number", fmt.Sprint(v)
+		case float64:
+			// As the reading as JSON writes it.
+			kind, read = "number", strconv.FormatFloat(v, 'g', -1, 32)
+			if special, ok := map[string]string{"+Inf": ".inf", "-Inf": "-.inf", "NaN": ".nan"}[read]; ok {
+				read = special
+			}
+		}
+		if kind != "" && read != key.text {
+			return fmt.Errorf("%s: YAML reads the name %s, written without quotes, as the %s %s, and it would be named %s: write it in quotes, as %q", at, key.text, kind, read, read, key.text)
+		}
+		if err := n.keys[key].checkKeys(at); err != nil {
+			return err
+		}
+	}
+	for _, item := range n.items {
+		if err := item.checkKeys(path); err != nil {
+			return err
+		}
+	}
+	return nil
 }

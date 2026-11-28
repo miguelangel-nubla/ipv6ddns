@@ -1,6 +1,7 @@
 package source
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"os"
@@ -114,7 +115,122 @@ func TestPushKeptAcrossARestart(t *testing.T) {
 	}
 }
 
-// The file is state_file, relative to the configuration's folder, unless absolute.
+// The file has when each address was sent last, and a restart keeps each for what is left of its
+// own lifetime: a family the router did not send again is not renewed by the other's update.
+func TestPushRestartDoesNotRenewTheOtherFamily(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "push-wan.json")
+	s := pushSource(t, dir, time.Hour)
+	if _, err := s.Push(pushed("203.0.113.9"), netip.Prefix{}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	// IPv6 alone, as a router that sends each family apart: the IPv4 one keeps its time.
+	if _, err := s.Push(pushed("2001:db8::9"), netip.Prefix{}); err != nil {
+		t.Fatal(err)
+	}
+	read := func() pushState {
+		t.Helper()
+		var state pushState
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &state); err != nil {
+			t.Fatal(err)
+		}
+		return state
+	}
+	state := read()
+	v4, v6 := state.AddressesAt["203.0.113.9"], state.AddressesAt["2001:db8::9"]
+	if v4.IsZero() || !v4.Before(v6) || !v6.Equal(state.At) {
+		t.Fatalf("the file has 203.0.113.9 at %s and 2001:db8::9 at %s, the last update at %s: want each its own", v4, v6, state.At)
+	}
+	// A restart, and another update of IPv6 alone: the time the file had is kept.
+	again := pushSource(t, dir, time.Hour)
+	if _, err := again.Push(pushed("2001:db8::10"), netip.Prefix{}); err != nil {
+		t.Fatal(err)
+	}
+	if state := read(); !state.AddressesAt["203.0.113.9"].Equal(v4) || len(state.AddressesAt) != 2 {
+		t.Errorf("after a restart and an update of the other family: %v, want 203.0.113.9 at %s still", state.AddressesAt, v4)
+	}
+	// Sent again, it has the time of that update.
+	if _, err := again.Push(pushed("203.0.113.9"), netip.Prefix{}); err != nil {
+		t.Fatal(err)
+	}
+	if state := read(); !state.AddressesAt["203.0.113.9"].Equal(state.At) || !state.AddressesAt["203.0.113.9"].After(v4) {
+		t.Errorf("sent again: %v, the update at %s", state.AddressesAt, state.At)
+	}
+
+	// IPv4 sent two hours ago, IPv6 half an hour ago, and a lifetime of one: after a restart the
+	// IPv6 address alone, for the half hour it has left.
+	now := time.Now().UTC()
+	stamp := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339Nano) }
+	os.WriteFile(file, []byte(`{"addresses":["2001:db8::9","203.0.113.9"],"at":"`+stamp(30*time.Minute)+`","addresses_at":{"203.0.113.9":"`+stamp(2*time.Hour)+`","2001:db8::9":"`+stamp(30*time.Minute)+`"}}`), 0o600)
+	restarted := pushSource(t, dir, time.Hour)
+	if got := restarted.Addresses().Strings(); len(got) != 1 || got[0] != "2001:db8::9" {
+		t.Errorf("after a restart: %v, want the IPv6 address alone: the IPv4 one was sent 2h ago, and the lifetime is 1h", got)
+	}
+}
+
+// A file of a version before each address had its time has one for all: it loads, and every
+// address is taken as sent then.
+func TestPushFileWithOneTime(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "push-wan.json")
+	at := time.Now().UTC().Add(-30 * time.Minute)
+	os.WriteFile(file, []byte(`{"addresses":["2001:db8::9","203.0.113.9"],"at":"`+at.Format(time.RFC3339Nano)+`","prefix":"2001:db8:1:2::/64"}`), 0o600)
+	s := pushSource(t, dir, time.Hour)
+	if got := slices.Sorted(slices.Values(s.Addresses().Strings())); !slices.Equal(got, []string{"2001:db8::9", "203.0.113.9"}) {
+		t.Fatalf("an old file, within its lifetime: %v", got)
+	}
+	if p, ok := s.Prefix(); !ok || p.String() != "2001:db8:1:2::/64" {
+		t.Errorf("its prefix: %s, %v", p, ok)
+	}
+	// The next update writes each with its time: the one not sent again, the old file's.
+	if _, err := s.Push(pushed("2001:db8::10"), netip.Prefix{}); err != nil {
+		t.Fatal(err)
+	}
+	var state pushState
+	data, _ := os.ReadFile(file)
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	if !state.AddressesAt["203.0.113.9"].Equal(at) || !state.AddressesAt["2001:db8::10"].Equal(state.At) {
+		t.Errorf("written after: %v, want 203.0.113.9 at %s", state.AddressesAt, at)
+	}
+	// Past its lifetime, none.
+	if got := pushSource(t, dir, 10*time.Minute).Addresses().Strings(); len(got) != 1 || got[0] != "2001:db8::10" {
+		t.Errorf("with a lifetime of 10m: %v, want the one just sent alone", got)
+	}
+}
+
+// Two sources never have one file: the configuration refuses it, as each would read the other's
+// addresses at a restart. Each with its own keeps its own.
+func TestPushSourcesEachItsFile(t *testing.T) {
+	dir := t.TempDir()
+	source := func(name string) *Source {
+		cfg := config.Source{Type: config.SourcePush, Password: name}
+		cfg.Lifetime.Duration = config.PushForever
+		s, err := New(name, cfg, dir, dir, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	a, _ := source("a"), source("b")
+	if _, err := a.Push(pushed("203.0.113.9"), netip.Prefix{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := source("b").Addresses().Strings(); len(got) != 0 {
+		t.Errorf("after a restart, b, which was sent nothing, has %v", got)
+	}
+	if got := source("a").Addresses().Strings(); len(got) != 1 {
+		t.Errorf("after a restart, a has %v", got)
+	}
+}
+
+// The file is state_file, relative to the state folder, unless absolute.
 func TestPushFile(t *testing.T) {
 	for _, tc := range []struct{ stateFile, want string }{
 		{"", "/etc/ipv6ddns/push-wan.json"},

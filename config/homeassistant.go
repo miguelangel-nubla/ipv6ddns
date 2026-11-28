@@ -24,7 +24,7 @@ type HomeAssistant struct {
 	// KeyProvisioningStateFile. Default: false.
 	KeyProvisioning bool `json:"key_provisioning,omitempty"`
 	// With KeyProvisioning, where the device keeps its identity, and the key Home Assistant gave:
-	// a file ipv6ddns can write. Default: homeassistant.state, beside the configuration.
+	// a file ipv6ddns can write, relative to the state folder. Default: homeassistant.state there.
 	KeyProvisioningStateFile string `json:"key_provisioning_state_file,omitempty"`
 	// The device's name in the network, and the one Home Assistant shows. Defaults: ipv6ddns.
 	Name         string `json:"name,omitempty"`

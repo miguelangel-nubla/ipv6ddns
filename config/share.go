@@ -17,7 +17,9 @@ import (
 )
 
 // listenerOrder are the names of the listeners, in the order raw, of YAML or JSON, writes them:
-// none, of a file that doesn't read, whose error the rest of the reading tells.
+// none, of a file that doesn't read, whose error the rest of the reading tells. A name YAML reads
+// as a number is the one the reading as JSON has; one it would read as another name, as on, a
+// boolean, checkYAMLKeys refuses.
 func listenerOrder(raw []byte, isYAML bool) []string {
 	var names []string
 	if isYAML {
@@ -170,7 +172,8 @@ func (c *Config) checkListenersShared() error {
 		for i, e := range c.Listeners[name].Entries {
 			if e.Scheme == SchemeDNS || e.Scheme == SchemeHTTP {
 				// Plain DNS, which has no name a client asks, and HTTP, which is no resolver's:
-				// the resolvers' and the web servers' own checks tell of two on one address.
+				// of two on one address, resolver.CheckListen tells for the resolvers, when the
+				// worker is made, and checkWebSockets for the web servers.
 				continue
 			}
 			// One that doesn't read now, as a network no address of the machine is in yet, is

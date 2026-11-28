@@ -89,7 +89,7 @@ They are in the configuration's folder, unless `state_dir` gives another, relati
 state_dir: /var/lib/ipv6ddns
 ```
 
-A relative `state_file` or `certificate` of ACME is then relative to `state_dir` too. The files of a certificate you give, without ACME, are yours, and stay relative to the configuration's folder.
+A relative `state_file`, `key_provisioning_state_file` or `certificate` of ACME is then relative to `state_dir` too. The files of a certificate you give, without ACME, are yours, and stay relative to the configuration's folder.
 
 ## Secrets
 
@@ -121,7 +121,8 @@ The configuration is checked against its [schema](../config/schema.json) as it l
 - an unknown key, such as a typo;
 - a value of the wrong type;
 - a missing required key;
-- a plugin with the keys of another plugin type.
+- a plugin with the keys of another plugin type;
+- a source with a key of another type of source, such as `addresses` in an `http` one.
 
 Some parts get further checks:
 
@@ -130,3 +131,11 @@ Some parts get further checks:
 - **The filters** are checked too. A `mac.address` that isn't a MAC, or a `mask` entry that isn't `VALUE/MASK`, is an error that names the task.
 
 In YAML, a key written twice in one block is an error too, instead of the last one silently winning. Typical cases are two tasks with the same name after a copy and paste, or two `credentials:` blocks. A key repeated after a merge key (`<<:`) that already brought it in is also an error.
+
+YAML reads some names as something else when they have no quotes: `y`, `n`, `yes`, `no`, `on` and `off` are booleans, and `010` is the number 8. A source written `y:` would be named `true`. Such a name is an error that says to quote it:
+
+```text
+sources.y: YAML reads the name y, written without quotes, as the boolean true, and it would be named true: write it in quotes, as "y"
+```
+
+A name YAML reads as written, such as `10` or `true`, needs no quotes.

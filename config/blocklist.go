@@ -72,11 +72,17 @@ func (c *Config) setUpBlocklists() error {
 			}
 		}
 	}
+	files := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(c.Blocklists)) {
 		path := "blocklists." + name
 		if !blocklistName.MatchString(name) {
 			return fmt.Errorf("blocklists: the name %q is that of its file in state_dir: use letters, digits, - and _ alone, as hagezi_pro", name)
 		}
+		// The file's name, without its case, which some file systems don't tell apart.
+		if other, ok := files[strings.ToLower(name)]; ok {
+			return fmt.Errorf("blocklists: the names %s and %s differ by their case alone, and each is that of its file in state_dir, which would be one where the file system doesn't tell them apart: give one of them another name", other, name)
+		}
+		files[strings.ToLower(name)] = name
 		l := c.Blocklists[name]
 		u, err := url.Parse(l.URL)
 		switch {
