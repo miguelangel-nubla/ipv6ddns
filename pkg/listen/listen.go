@@ -24,7 +24,8 @@ import (
 
 // Entry is where to listen, of a list.
 type Entry struct {
-	// An address, a host name, or none, for all addresses.
+	// An address, a host name, or none, for all addresses. An address is in one spelling, as
+	// spelled has it, so the repeated are told.
 	Host string
 	// Or a network of the machine's addresses, when valid.
 	Network netip.Prefix
@@ -42,7 +43,8 @@ func (e Entry) String() string {
 // Rules tells the entries a list takes, for errors.
 const Rules = "use a port, an address, a network as 10.2.3.0/24, or a host name, each with or without :port"
 
-// Parse reads entries, giving those without a port defaultPort; it drops the repeated.
+// Parse reads entries, giving those without a port defaultPort; it drops the repeated, however
+// each is written: [::1]:8053 and [0:0:0:0:0:0:0:1]:8053 are one.
 func Parse(entries []string, defaultPort string) ([]Entry, error) {
 	var result []Entry
 	for _, s := range entries {
@@ -77,16 +79,30 @@ func parseEntry(entry, defaultPort string) (Entry, error) {
 	if strings.HasPrefix(entry, "[") && strings.HasSuffix(entry, "]") {
 		unbracketed = entry[1 : len(entry)-1]
 	}
-	if ip, err := netip.ParseAddr(unbracketed); err == nil {
-		return checked(Entry{Host: ip.String(), Port: defaultPort}, entry)
+	if _, err := netip.ParseAddr(unbracketed); err == nil {
+		return checked(Entry{Host: spelled(unbracketed), Port: defaultPort}, entry)
 	}
 	if host, port, err := net.SplitHostPort(entry); err == nil {
-		return checked(Entry{Host: host, Port: port}, entry)
+		return checked(Entry{Host: spelled(host), Port: port}, entry)
 	}
 	if strings.ContainsAny(entry, ":[]") {
 		return Entry{}, fmt.Errorf("%q: %s", entry, Rules)
 	}
 	return checked(Entry{Host: entry, Port: defaultPort}, entry)
+}
+
+// spelled is host in its one spelling, when it is an address: 0:0::1 and ::1, or 2001:DB8::1 and
+// 2001:db8::1, are one address, which listens once. An IPv4-mapped one, ::ffff:192.0.2.1, is the
+// IPv4 address it holds, as network has it: the two are one socket. A host name is as it was.
+func spelled(host string) string {
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return host
+	}
+	if ip.Is4In6() && ip.Zone() == "" {
+		ip = ip.Unmap()
+	}
+	return ip.String()
 }
 
 func checked(e Entry, entry string) (Entry, error) {
@@ -113,7 +129,9 @@ func checked(e Entry, entry string) (Entry, error) {
 func Addresses(entries []Entry) ([]string, error) {
 	var result []string
 	add := func(host, port string) {
-		if a := net.JoinHostPort(host, port); !slices.Contains(result, a) {
+		// Spelled once more: a host name's addresses are as the system's resolver writes them, and
+		// an entry may be made without Parse.
+		if a := net.JoinHostPort(spelled(host), port); !slices.Contains(result, a) {
 			result = append(result, a)
 		}
 	}

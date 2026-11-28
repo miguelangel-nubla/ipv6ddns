@@ -33,6 +33,17 @@ func TestParse(t *testing.T) {
 		{"8053,08053,:08053", ":8053"},
 		{"192.0.2.1:08053,192.0.2.1:8053", "192.0.2.1:8053"},
 		{"0.0.0.0:8053,[::]:8053", "0.0.0.0:8053 [::]:8053"},
+		// One spelling of an address too, with a port or without.
+		{"[0:0:0:0:0:0:0:1]:8053", "[::1]:8053"},
+		{"[2001:DB8::1]:8053", "[2001:db8::1]:8053"},
+		{"2001:0db8:0::0001", "[2001:db8::1]:80"},
+		{"[FE80::1%eth0]:8053", "[fe80::1%eth0]:8053"},
+		// An IPv4-mapped address is the IPv4 one it holds, which is the socket it opens.
+		{"::ffff:192.0.2.1", "192.0.2.1:80"},
+		{"[::ffff:192.0.2.1]:8053", "192.0.2.1:8053"},
+		{"[::ffff:c000:201]:8053", "192.0.2.1:8053"},
+		// A host name is as written: its case is the resolver's to tell.
+		{"MyHost:8053", "MyHost:8053"},
 		// Only its syntax is read here: what isn't an address is a host name, resolved at start.
 		{"1.2.3", "1.2.3:80"},
 	} {
@@ -48,6 +59,63 @@ func TestParse(t *testing.T) {
 		if strings.Join(got, " ") != tt.want {
 			t.Errorf("%q: %q, want %q", tt.list, got, tt.want)
 		}
+	}
+}
+
+// One address in two spellings is one entry, and one address to listen on: not two, of which the
+// second finds the first's socket.
+func TestSpellings(t *testing.T) {
+	for _, list := range [][]string{
+		{"[::1]:8053", "[0:0:0:0:0:0:0:1]:8053"},
+		{"::1", "[0:0::1]:80"},
+		{"[2001:db8::1]:8053", "[2001:DB8::1]:8053"},
+		{"127.0.0.1", "[::ffff:127.0.0.1]:80"},
+		{"127.0.0.1:8053", "[::ffff:7f00:1]:8053", "[0:0:0:0:0:ffff:127.0.0.1]:08053"},
+	} {
+		entries, err := Parse(list, "80")
+		if err != nil {
+			t.Errorf("%q: %v", list, err)
+			continue
+		}
+		if len(entries) != 1 {
+			t.Errorf("%q: the entries %v, one address twice", list, entries)
+		}
+		addresses, err := Addresses(entries)
+		if err != nil {
+			t.Errorf("%q: %v", list, err)
+			continue
+		}
+		if len(addresses) != 1 {
+			t.Errorf("%q: listens on %q, one address twice", list, addresses)
+		}
+	}
+	// Entries made without Parse, as each of a listener's is given alone, are told too.
+	a, _ := Addresses([]Entry{{Host: "0:0::1", Port: "8053"}})
+	b, _ := Addresses([]Entry{{Host: "::1", Port: "8053"}})
+	if len(a) != 1 || len(b) != 1 || a[0] != b[0] {
+		t.Errorf("one address in two spellings, an entry each: %q and %q", a, b)
+	}
+	// Two addresses stay two.
+	if entries, _ := Parse([]string{"[::1]:8053", "127.0.0.1:8053", "[::]:8053", "0.0.0.0:8053"}, "80"); len(entries) != 4 {
+		t.Errorf("four addresses: %v", entries)
+	}
+}
+
+// And it listens: once.
+func TestListenSpellings(t *testing.T) {
+	entries, err := Parse([]string{"127.0.0.1:18653", "[::ffff:127.0.0.1]:18653", "[::ffff:7f00:1]:18653"}, "80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listeners, err := Listen(entries)
+	if err != nil {
+		t.Fatalf("one address in three spellings doesn't listen: %v", err)
+	}
+	for _, l := range listeners {
+		l.Close()
+	}
+	if len(listeners) != 1 {
+		t.Errorf("%d listeners, want 1", len(listeners))
 	}
 }
 
@@ -78,6 +146,9 @@ func FuzzParse(f *testing.F) {
 			if !e.Network.IsValid() {
 				if _, _, err := net.SplitHostPort(net.JoinHostPort(e.Host, e.Port)); err != nil {
 					t.Errorf("%q gives %v: %v", list, e, err)
+				} // An address is in its one spelling.
+				if ip, err := netip.ParseAddr(e.Host); err == nil && (ip.String() != e.Host || ip.Is4In6() && ip.Zone() == "") {
+					t.Errorf("%q gives %v, an address in another spelling than %s", list, e, ip)
 				}
 			}
 		}
