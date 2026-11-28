@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// Duration is a time.Duration the configuration gives. Any that reads is taken, a negative one
+// too: each key checks the range it takes, as blocklists.<name>.interval, an hour at least.
 type Duration struct {
 	time.Duration
 }

@@ -125,3 +125,69 @@ func TestMatches(t *testing.T) {
 		}
 	}
 }
+
+// A renewed certificate is shown without a restart; and while its files are half written, as
+// between the key and the certificate, which acme writes one after the other, or truncated, the
+// one before stays, the failure is logged once, and it is read again at each look until it reads.
+func TestReload(t *testing.T) {
+	old := CheckInterval
+	CheckInterval = 0
+	defer func() { CheckInterval = old }()
+	dir := t.TempDir()
+	certFile, keyFile := write(t, dir, &x509.Certificate{DNSNames: []string{"a.example"}})
+	// Each change at a time of its own, whatever the file system keeps of them.
+	changed := time.Now()
+	touch := func(file string) {
+		t.Helper()
+		changed = changed.Add(time.Second)
+		if err := os.Chtimes(file, changed, changed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var errs int
+	c, err := Load(certFile, keyFile, false, func(string, ...any) { errs++ })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Covers("a.example") {
+		t.Fatal("not for a.example")
+	}
+
+	newCert, newKey := write(t, t.TempDir(), &x509.Certificate{DNSNames: []string{"b.example"}})
+	if err := os.Rename(newKey, keyFile); err != nil { // the key first, as acme writes
+		t.Fatal(err)
+	}
+	touch(keyFile)
+	if !c.Covers("a.example") || c.Status().Error == "" {
+		t.Errorf("half a renewal: for a.example %v, error %q", c.Covers("a.example"), c.Status().Error)
+	}
+	if err := os.Rename(newCert, certFile); err != nil {
+		t.Fatal(err)
+	}
+	touch(certFile)
+	if !c.Covers("b.example") || c.Status().Error != "" {
+		t.Errorf("the renewal isn't shown: %+v", c.Status())
+	}
+
+	whole, err := os.ReadFile(certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certFile, whole[:len(whole)/2], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	touch(certFile)
+	if !c.Covers("b.example") || c.Status().Error == "" {
+		t.Errorf("a truncated file: %+v", c.Status())
+	}
+	if err := os.WriteFile(certFile, whole, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	touch(certFile)
+	if !c.Covers("b.example") || c.Status().Error != "" {
+		t.Errorf("whole again: %+v", c.Status())
+	}
+	if errs != 2 {
+		t.Errorf("%d errors logged, want 2: one of each failure, however many looks", errs)
+	}
+}

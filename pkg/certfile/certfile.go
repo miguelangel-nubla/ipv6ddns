@@ -77,6 +77,9 @@ func modTimes(certFile, keyFile string) (certMod, keyMod time.Time, err error) {
 // Get is the certificate to show a client, as tls.Config.GetCertificate: read again first, if
 // its files changed.
 func (c *Certificate) Get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	// Held while the files are read: once per CheckInterval at most, and the handshakes of then
+	// wait for two small files. A read that fails records no times, so it is tried at the next
+	// look, and the pair of before stays: as between the key and the certificate of a renewal.
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	if time.Since(c.checked) >= CheckInterval {
