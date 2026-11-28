@@ -1,11 +1,14 @@
 package listen
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -245,54 +248,105 @@ func TestListenFamilies(t *testing.T) {
 }
 
 // listenFamilies checks which of two addresses of the machine's, an IPv4 one and an IPv6 one,
-// each list of entries is reached at.
+// each list of entries is reached at. Each case has a port of its own, and is tried again on
+// another when the port turns out to be someone else's: macOS lets a process listen on
+// 127.0.0.1 at a port another listens on at [::], and gives it the connections, which Linux
+// doesn't.
 func listenFamilies(t *testing.T, ipv4, ipv6 string) {
-	port := freePort(t)
 	for _, c := range []struct {
 		entries    []string
 		listeners  int
 		ipv4, ipv6 bool
 		all        bool
 	}{
-		{[]string{"0.0.0.0:" + port}, 1, true, false, true},
-		{[]string{"[::]:" + port}, 1, false, true, true},
-		{[]string{"0.0.0.0:" + port, "[::]:" + port}, 2, true, true, true},
-		{[]string{"[::]:" + port, "0.0.0.0:" + port}, 2, true, true, true},
+		{[]string{"0.0.0.0:PORT"}, 1, true, false, true},
+		{[]string{"[::]:PORT"}, 1, false, true, true},
+		{[]string{"0.0.0.0:PORT", "[::]:PORT"}, 2, true, true, true},
+		{[]string{"[::]:PORT", "0.0.0.0:PORT"}, 2, true, true, true},
 		// A port alone is both, with one socket, where the system has those: Linux, unless its
 		// net.ipv6.bindv6only was set.
-		{[]string{port}, 1, true, true, true},
-		{[]string{ipv4 + ":" + port}, 1, true, false, false},
-		{[]string{"[" + ipv6 + "]:" + port}, 1, false, true, false},
-		{[]string{ipv4 + ":" + port, "[" + ipv6 + "]:" + port}, 2, true, true, false},
+		{[]string{"PORT"}, 1, true, true, true},
+		{[]string{ipv4 + ":PORT"}, 1, true, false, false},
+		{[]string{"[" + ipv6 + "]:PORT"}, 1, false, true, false},
+		{[]string{ipv4 + ":PORT", "[" + ipv6 + "]:PORT"}, 2, true, true, false},
 	} {
-		entries, err := Parse(c.entries, "80")
-		if err != nil {
-			t.Fatal(err)
-		}
-		listeners, err := Listen(entries)
-		if err != nil {
-			t.Errorf("%v: %v", c.entries, err)
-			continue
-		}
-		if len(listeners) != c.listeners {
-			t.Errorf("%v: %d listeners, want %d", c.entries, len(listeners), c.listeners)
-		}
-		if _, all, err := Interfaces(listeners); err != nil || all != c.all {
-			t.Errorf("%v: all addresses %v, %v, want %v", c.entries, all, err, c.all)
-		}
-		for address, want := range map[string]bool{ipv4: c.ipv4, ipv6: c.ipv6} {
-			conn, err := net.DialTimeout("tcp", net.JoinHostPort(address, port), 5*time.Second)
-			if err == nil {
-				conn.Close()
+		var errs []string
+		for range 5 {
+			port := freePort(t)
+			var given []string
+			for _, e := range c.entries {
+				given = append(given, strings.ReplaceAll(e, "PORT", port))
 			}
-			if got := err == nil; got != want {
-				t.Errorf("%v: reached at %s: %v, want %v (%v)", c.entries, address, got, want, err)
+			var taken bool
+			if errs, taken = listenFamiliesCase(t, given, port, ipv4, ipv6, c.listeners, c.ipv4, c.ipv6, c.all); !taken {
+				break
 			}
 		}
+		for _, e := range errs {
+			t.Error(e)
+		}
+	}
+}
+
+// listenFamiliesCase is one case of listenFamilies: its errors, or that the port was someone
+// else's, to try again.
+func listenFamiliesCase(t *testing.T, given []string, port, ipv4, ipv6 string, wantListeners int, want4, want6, wantAll bool) (errs []string, taken bool) {
+	t.Helper()
+	entries, err := Parse(given, "80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listeners, err := Listen(entries)
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return nil, true
+	}
+	if err != nil {
+		return []string{fmt.Sprintf("%v: %v", given, err)}, false
+	}
+	defer func() {
 		for _, l := range listeners {
 			l.Close()
 		}
+	}()
+	if len(listeners) != wantListeners {
+		errs = append(errs, fmt.Sprintf("%v: %d listeners, want %d", given, len(listeners), wantListeners))
 	}
+	if _, all, err := Interfaces(listeners); err != nil || all != wantAll {
+		errs = append(errs, fmt.Sprintf("%v: all addresses %v, %v, want %v", given, all, err, wantAll))
+	}
+	for address, want := range map[string]bool{ipv4: want4, ipv6: want6} {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(address, port), 5*time.Second)
+		got := err == nil
+		if got {
+			conn.Close()
+			// Reached where it shouldn't be: of one of these, or of someone else's.
+			if !want && !acceptedByOne(listeners) {
+				return nil, true
+			}
+		}
+		if got != want {
+			errs = append(errs, fmt.Sprintf("%v: reached at %s: %v, want %v (%v)", given, address, got, want, err))
+		}
+	}
+	return errs, false
+}
+
+// acceptedByOne tells whether one of the listeners has a connection to accept, soon.
+func acceptedByOne(listeners []net.Listener) bool {
+	for _, l := range listeners {
+		tl, ok := l.(*net.TCPListener)
+		if !ok {
+			return true
+		}
+		_ = tl.SetDeadline(time.Now().Add(200 * time.Millisecond))
+		conn, err := tl.Accept()
+		_ = tl.SetDeadline(time.Time{})
+		if err == nil {
+			conn.Close()
+			return true
+		}
+	}
+	return false
 }
 
 // An address that can't be listened on closes those opened before it.

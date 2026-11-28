@@ -547,18 +547,35 @@ func TestUpstreamExtendedCode(t *testing.T) {
 // networks of both: a client of 127.0.0.1 is answered. On [::], it would be IPv6's alone, though
 // both are bound to [::].
 func TestPortAloneDefaultAllow(t *testing.T) {
+	// A name of this test's alone: macOS lets another listen on 127.0.0.1 at the port this one
+	// listens on at [::], and gives it the queries, which Linux doesn't. Its answer, not this
+	// one's, is tried again on another port.
 	cfg, _ := testConfig(t)
 	cfg.Listen = []listen.Entry{{Host: "", Port: "0"}}
-	s := start(t, cfg)
-	_, port, _ := net.SplitHostPort(s.Addresses()[0])
-	m := new(dns.Msg)
-	m.SetQuestion("printer.home.arpa.", dns.TypeA)
-	resp, err := dns.Exchange(m, net.JoinHostPort("127.0.0.1", port))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.Rcode != dns.RcodeSuccess {
-		t.Errorf("a client of 127.0.0.1, of a resolver on a port alone: %s", dns.RcodeToString[resp.Rcode])
+	cfg.Records = append(cfg.Records, mustRecords(t, "", "port-alone.example.com. A 192.0.2.77")...)
+	for try := 0; ; try++ {
+		s := start(t, cfg)
+		_, port, _ := net.SplitHostPort(s.Addresses()[0])
+		m := new(dns.Msg)
+		m.SetQuestion("port-alone.example.com.", dns.TypeA)
+		resp, err := dns.Exchange(m, net.JoinHostPort("127.0.0.1", port))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ours := resp.Rcode == dns.RcodeRefused
+		if len(resp.Answer) == 1 {
+			if a, ok := resp.Answer[0].(*dns.A); ok && a.A.String() == "192.0.2.77" {
+				ours = true
+			}
+		}
+		if !ours && try < 5 {
+			s.Shutdown(context.Background())
+			continue
+		}
+		if resp.Rcode != dns.RcodeSuccess || !ours {
+			t.Errorf("a client of 127.0.0.1, of a resolver on a port alone: %s %v", dns.RcodeToString[resp.Rcode], resp.Answer)
+		}
+		break
 	}
 
 	bound := &net.UDPAddr{IP: net.IPv6unspecified, Port: 53}
