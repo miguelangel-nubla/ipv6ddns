@@ -162,13 +162,13 @@ tasks: {}
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("no certificate after 2 minutes: %v; the status: %+v", err, w.certificateStatuses())
+			t.Fatalf("no certificate after 2 minutes: %v; the status: %+v", err, w.certificateStatuses(false))
 		}
 		time.Sleep(time.Second)
 	}
 	// One certificate, of one manager, for both servers.
 	web := "web." + zone
-	statuses := w.certificateStatuses()
+	statuses := w.certificateStatuses(false)
 	if len(statuses) != 1 {
 		t.Fatalf("the certificates: %+v", statuses)
 	}

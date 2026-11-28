@@ -36,7 +36,7 @@ func (w *Worker) updateKeys(resolverName string, u *config.Updates) ([]resolver.
 		key.Grants = nil
 		for i, p := range k.Permissions {
 			path := fmt.Sprintf("resolvers.%s.updates.keys.%s.permissions[%d].%s", resolverName, name, i, p.Kind())
-			g, err := w.grant(path, name, p)
+			g, err := w.grant(path, resolverName, name, p)
 			if err != nil {
 				return nil, err
 			}
@@ -47,8 +47,24 @@ func (w *Worker) updateKeys(resolverName string, u *config.Updates) ([]resolver.
 	return keys, nil
 }
 
-// grant is the grant of a permission: where what the key sends goes.
-func (w *Worker) grant(path, key string, p config.Permission) (resolver.Grant, error) {
+// stateName is a name of the configuration as a part of a file's name: its letters, digits, dots,
+// hyphens and underscores as they are, and every other byte as %XX. So no name is a path, and the
+// parts of a file's name, with a comma between, are told apart whatever they are.
+func stateName(name string) string {
+	var b strings.Builder
+	for i := range len(name) {
+		switch c := name[i]; {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '-', c == '_':
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+// grant is the grant of a permission of a resolver's key: where what the key sends goes.
+func (w *Worker) grant(path, resolverName, key string, p config.Permission) (resolver.Grant, error) {
 	switch {
 	case p.Challenges != nil:
 		endpoint, err := w.endpoint(p.Challenges.Credential)
@@ -59,8 +75,13 @@ func (w *Worker) grant(path, key string, p config.Permission) (resolver.Grant, e
 		if !ok {
 			return nil, fmt.Errorf("%s.credential: the provider of %s, %s, can't write the TXT records of the DNS challenge: give a credential of %s", path, p.Challenges.Credential, w.config.Credentials[p.Challenges.Credential].Provider, ddns.TXTProviders())
 		}
-		g := newChallengeGrant(writer, p.Challenges.Names, filepath.Join(w.config.StateFolder, "challenges-"+key+"-"+p.Challenges.Credential+".json"),
+		// A file of each permission, by its resolver, its key and its credential: two resolvers may
+		// each have a key of one name, and each grant writes its own records alone.
+		file := "challenges-" + stateName(resolverName) + "," + stateName(key) + "," + stateName(p.Challenges.Credential) + ".json"
+		g := newChallengeGrant(writer, p.Challenges.Names, filepath.Join(w.config.StateFolder, file),
 			func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) })
+		// As it was named before, without the resolver: read once, after an upgrade.
+		g.before = filepath.Join(w.config.StateFolder, "challenges-"+key+"-"+p.Challenges.Credential+".json")
 		if err := g.load(); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
@@ -82,15 +103,26 @@ func (w *Worker) grant(path, key string, p config.Permission) (resolver.Grant, e
 	}
 	n := p.Names
 	zone := resolver.Name("", n.Zone)
+	file := filepath.Join(w.config.StateFolder, "names-"+strings.TrimSuffix(zone, ".")+".json")
+	// A zone is one key's, which the configuration checks, so a file is one key's. A key that
+	// names the zone in two permissions has one grant for both: two would each write the file with
+	// its own names alone.
+	if g, ok := w.namesGrants[file]; ok {
+		return g, nil
+	}
 	g := &namesGrant{
 		state: w.discWorker.State, zone: zone, source: "updates." + key,
-		file:    filepath.Join(w.config.StateFolder, "names-"+strings.TrimSuffix(zone, ".")+".json"),
+		file:    file,
 		warnf:   func(f string, args ...any) { w.logger.Warnf(path+": "+f, args...) },
 		records: make(map[string][]dns.RR),
 	}
 	if err := g.load(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	if w.namesGrants == nil {
+		w.namesGrants = make(map[string]*namesGrant)
+	}
+	w.namesGrants[file] = g
 	w.grantsToStart = append(w.grantsToStart, g)
 	return g, nil
 }
@@ -324,6 +356,9 @@ func (g *addressesGrant) Apply(changes map[string][]dns.RR) error {
 // when its client doesn't remove it: an ACME authority checks it within minutes.
 var challengeExpiry = time.Hour
 
+// challengeRetry is how long until a removal of those that failed is tried again.
+var challengeRetry = time.Minute
+
 // challengeGrant is a permission of challenges: the TXT records of _acme-challenge of each of
 // its names, written through a credential's provider. What it wrote is kept in its file, so that
 // a client's removal after a restart, or the expiry, still removes it.
@@ -331,9 +366,13 @@ type challengeGrant struct {
 	writer ddns.TXTWriter
 	names  []string
 	file   string
+	// The file under its name of before, if it had another: read when there is no file yet.
+	before string
 	warnf  func(string, ...any)
 
 	mutex sync.Mutex
+	// What was read was of the file of before: start writes the file, and removes that one.
+	moved bool
 	// The zone and the challenges' names, absolute and in lower case, once the provider told them.
 	zone       string
 	challenges []string
@@ -451,7 +490,8 @@ func (g *challengeGrant) set(name string, rrs []dns.RR, at time.Time) {
 }
 
 // expire removes the records of a name its client left, an hour after they last changed: unless
-// they changed since, of a newer generation, or the worker stopped.
+// they changed since, of a newer generation, or the worker stopped. A removal that fails is tried
+// again, until it is done, the records change or the worker stops: nothing else would remove them.
 func (g *challengeGrant) expire(name string, generation uint64) {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
@@ -459,7 +499,8 @@ func (g *challengeGrant) expire(name string, generation uint64) {
 		return
 	}
 	if err := g.writer.SetTXT(strings.TrimSuffix(name, "."), nil); err != nil {
-		g.warnf("removing the TXT records of %s, which its client left: %s", strings.TrimSuffix(name, "."), err)
+		g.warnf("removing the TXT records of %s, which its client left: %s: it is tried again in %s", strings.TrimSuffix(name, "."), err, challengeRetry)
+		g.expiry[name] = time.AfterFunc(challengeRetry, func() { g.expire(name, generation) })
 		return
 	}
 	g.set(name, nil, time.Now())
@@ -469,6 +510,17 @@ func (g *challengeGrant) expire(name string, generation uint64) {
 // start arms the timers of the records of its file, and stops every timer once ctx is done.
 func (g *challengeGrant) start(ctx context.Context, running *sync.WaitGroup) {
 	g.mutex.Lock()
+	// Once every grant has read its file: two that had one file, before, each read it.
+	if g.moved {
+		g.moved = false
+		if err := g.write(); err != nil {
+			g.warnf("keeping the challenges: %s", err)
+		} else if err := os.Remove(g.before); err != nil {
+			g.warnf("removing the challenges' file of before, %s: %s", g.before, err)
+		}
+	}
+	// set gives each name its own records again, of the file: no name is added to the map, or
+	// taken out of it, while it is ranged over.
 	for name, rrs := range g.records {
 		g.set(name, rrs, g.changed[name])
 	}
@@ -499,25 +551,37 @@ type challengeState struct {
 // save writes the records to the file, telling of an error: what the provider has is the
 // update's, whatever the file.
 func (g *challengeGrant) save() {
-	st := challengesState{Names: make(map[string]challengeState)}
-	for name, rrs := range g.records {
-		st.Names[name] = challengeState{Values: txtValues(rrs), Changed: g.changed[name].UTC()}
-	}
-	if err := writeJSON(g.file, st); err != nil {
+	if err := g.write(); err != nil {
 		g.warnf("keeping the challenges: %s", err)
 	}
 }
 
-// load reads the file, if there is one.
+func (g *challengeGrant) write() error {
+	st := challengesState{Names: make(map[string]challengeState)}
+	for name, rrs := range g.records {
+		st.Names[name] = challengeState{Values: txtValues(rrs), Changed: g.changed[name].UTC()}
+	}
+	return writeJSON(g.file, st)
+}
+
+// load reads the file, if there is one: else the one of before, if there is one, which start
+// replaces.
 func (g *challengeGrant) load() error {
 	var st challengesState
-	if ok, err := readJSON(g.file, &st); err != nil || !ok {
+	file := g.file
+	ok, err := readJSON(file, &st)
+	if err == nil && !ok && g.before != "" {
+		file = g.before
+		ok, err = readJSON(file, &st)
+		g.moved = ok
+	}
+	if err != nil || !ok {
 		return err
 	}
 	for name, c := range st.Names {
 		name = strings.ToLower(dns.Fqdn(name))
 		if !strings.HasPrefix(name, "_acme-challenge.") {
-			return fmt.Errorf("reading the challenges, %s: %s is no challenge's name", g.file, name)
+			return fmt.Errorf("reading the challenges, %s: %s is no challenge's name", file, name)
 		}
 		var rrs []dns.RR
 		for _, v := range c.Values {
@@ -528,7 +592,9 @@ func (g *challengeGrant) load() error {
 	return nil
 }
 
-// writeJSON writes v to file, through a file beside it, renamed.
+// writeJSON writes v to file, through a file beside it, renamed. The one beside it has one name,
+// as each file has one writer at a time: a grant writes its own, with its mutex held. Nothing is
+// synced, by choice: after a power cut a file may be empty, and the start then says so, and which.
 func writeJSON(file string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

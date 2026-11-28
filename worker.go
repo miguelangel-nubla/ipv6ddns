@@ -37,9 +37,11 @@ type Worker struct {
 	grantsToStart []interface {
 		start(context.Context, *sync.WaitGroup)
 	}
-	logger  *zap.SugaredLogger
-	config  config.Config
-	targets []*target
+	// The grants of names, by their file: each file has one.
+	namesGrants map[string]*namesGrant
+	logger      *zap.SugaredLogger
+	config      config.Config
+	targets     []*target
 	// The sources of addresses without a MAC, by name. Their addresses are theirs, not the
 	// discovery state's: that one takes none without a MAC, and they need no watching, since the
 	// matching leaves out the ones past their lifetime.
@@ -63,16 +65,21 @@ type Worker struct {
 	webMutex   sync.Mutex
 	// Start was called: a second one would run every source and the matching twice.
 	started atomic.Bool
-	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has.
+	// Of the context of Start: the resolvers stop once it is done, in the time Shutdown has. No
+	// lock: Start writes it and Shutdown reads it, and the two are called one after the other, by
+	// the same caller. Nil, of a worker never started, is nothing to wait for.
 	stopped <-chan struct{}
 
 	// The tasks' host names that are templates, each with its task and endpoint.
 	templates []*templateTarget
 	// The names the templates make now, and made, until they have nothing left to remove.
-	dynamic      map[dynamicKey]*Hostname
+	dynamic      map[dynamicKey]*dynamicName
 	dynamicMutex sync.Mutex
-	// The names of the templates that a name written as it is has, told once each.
-	taken map[dynamicKey]bool
+	// The names of the templates that turned out to be another's, stopped: see rename. One may
+	// have an update running still, which Shutdown waits for.
+	merged []*Hostname
+	// What the templates' names were left out of, told once each, by its words.
+	told map[string]bool
 }
 
 // templateTarget is a host name of a task that is a template, at an endpoint: a name for each host
@@ -88,6 +95,13 @@ type templateTarget struct {
 type dynamicKey struct {
 	endpoint *Endpoint
 	name     string
+}
+
+// dynamicName is a name of a template: its Hostname, and the spelling it was made by, which tells
+// the name of its records again at every matching.
+type dynamicName struct {
+	*Hostname
+	hostnameKey string
 }
 
 // target is a host name at an endpoint, with the tasks that give it addresses. A name in more than
@@ -121,8 +135,8 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 		config:     cfg,
 		sources:    make(map[string]*source.Source),
 		rematch:    make(chan struct{}, 1),
-		dynamic:    make(map[dynamicKey]*Hostname),
-		taken:      make(map[dynamicKey]bool),
+		dynamic:    make(map[dynamicKey]*dynamicName),
+		told:       make(map[string]bool),
 	}
 
 	// Home Assistant's states for its sources; nil, not a nil *homeAssistant, without it.
@@ -142,6 +156,7 @@ func NewWorker(logger *zap.SugaredLogger, cfg config.Config) (*Worker, error) {
 			return nil, err
 		}
 		w.sources[name] = s
+		// With the homeassistant block: without it, source.New refused the source, above.
 		if sourceConfig.Type == config.SourceHomeAssistant {
 			w.homeAssistant.subscribe(sourceConfig.Entity, sourceConfig.Attribute, s.Trigger)
 		}
@@ -300,6 +315,10 @@ func (w *Worker) endpoint(endpointKey string) (*Endpoint, error) {
 // hostname returns the host name of an endpoint, making it the first time. Another spelling of a
 // name the endpoint has is that name, under its first spelling: two would each update the same
 // records with its own addresses, and remove the other's.
+//
+// The endpoint's names are looked up and then added under two holds of its mutex, with nothing
+// lost between: only NewWorker and then the matching, one goroutine, add names. The mutex is for
+// the status, which reads them meanwhile.
 func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey string) *Hostname {
 	name := recordName(endpoint, hostnameKey)
 	endpoint.mutex.RLock()
@@ -308,7 +327,12 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 	if ok {
 		return hostname
 	}
+	return w.newHostname(endpointKey, endpoint, hostnameKey, name)
+}
 
+// newHostname makes the host name of an endpoint that hostnameKey spells, whose records' name is
+// name, and which the endpoint doesn't have.
+func (w *Worker) newHostname(endpointKey string, endpoint *Endpoint, hostnameKey, name string) *Hostname {
 	credential := w.config.Credentials[endpointKey]
 	updateAction := func(addrCollection *ipv6disc.AddrCollection) error {
 		w.logger.Debugf("endpoint %s starting update of: %s", endpointKey, hostnameKey)
@@ -327,7 +351,7 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 
 		return err
 	}
-	hostname = NewHostname(updateAction, credential.Debounce.Duration, credential.Retry.Duration)
+	hostname := NewHostname(updateAction, credential.Debounce.Duration, credential.Retry.Duration)
 	hostname.endpointMutex = &endpoint.updateMutex
 	endpoint.mutex.Lock()
 	endpoint.hostnames[hostnameKey] = hostname
@@ -338,7 +362,8 @@ func (w *Worker) hostname(endpointKey string, endpoint *Endpoint, hostnameKey st
 
 // recordName is the name of the records that a host name of the endpoint is: its domain, in lower
 // case, as DNS tells no case apart. A provider that learns its zone later, as Route 53, has the
-// name as written until then: there "nas" and "nas.example.com" stay two.
+// name as written until then: there "nas" and "nas.example.com" are two, and the name of a
+// spelling changes once, when the zone is learned. What is kept by it is told it again: see rename.
 func recordName(endpoint *Endpoint, hostnameKey string) string {
 	return strings.ToLower(strings.Trim(endpoint.Domain(hostnameKey), "."))
 }
@@ -419,7 +444,9 @@ func (w *Worker) Start(ctx context.Context) error {
 		w.running.Go(func() { l.Run(ctx) })
 	}
 	w.stopped = ctx.Done()
-	// A start that fails past them leaves none listening.
+	// A start that fails past them leaves none listening. The certificates' managers and the
+	// blocklists, started above, go on until ctx is done: the caller of a start that failed is to
+	// cancel it, as cmd does by ending.
 	closeResolvers := func() {
 		for _, r := range w.resolvers {
 			_ = r.Shutdown(context.Background())
@@ -525,10 +552,15 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 		for _, t := range w.targets {
 			t.hostname.Wait()
 		}
-		// The names of the templates, once the matching, which makes them, has stopped.
+		// The names of the templates, once the matching, which makes them, has stopped. The mutex
+		// is held while their updates end: an update takes its name's and its endpoint's, never
+		// this one, and what else takes it, the button of Home Assistant, only waits meanwhile.
 		w.dynamicMutex.Lock()
 		for _, h := range w.dynamic {
 			h.Stop()
+			h.Wait()
+		}
+		for _, h := range w.merged {
 			h.Wait()
 		}
 		w.dynamicMutex.Unlock()
@@ -551,7 +583,9 @@ func (w *Worker) RegisterPlugin(p ipv6disc.Plugin) {
 	w.discWorker.RegisterPlugin(p)
 }
 
-// updateNow updates every name now, as Home Assistant's button asks.
+// updateNow updates every name now, as Home Assistant's button asks: each sends its addresses
+// again, changed or not. A name that never had an address sends nothing, which leaves its records
+// as they are, as a start with nothing found yet does.
 func (w *Worker) updateNow() {
 	for _, t := range w.targets {
 		t.hostname.ScheduleUpdate(0)
@@ -601,10 +635,26 @@ func (w *Worker) prefixes() config.Prefixes {
 // hosts are called now: a name for each host a template's task matches, or one for all those of
 // a name. A name no host has any more is left without addresses, which removes its records, and
 // is then forgotten. A name that is written as it is, at the endpoint, is that one's: the
-// template's is left out, and said once.
+// template's is left out, and said once. The zone itself is no host's name: a template that would
+// make it is left out too.
 func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr, prefixes config.Prefixes) {
 	if len(w.templates) == 0 {
 		return
+	}
+	// The name of the records of each spelling, read once for the whole round: a provider that
+	// learns its zone during it would else give two names for one spelling, and so two Hostnames.
+	type spelling struct {
+		endpoint    *Endpoint
+		hostnameKey string
+	}
+	read := make(map[spelling]string)
+	nameOf := func(endpoint *Endpoint, hostnameKey string) string {
+		name, ok := read[spelling{endpoint, hostnameKey}]
+		if !ok {
+			name = recordName(endpoint, hostnameKey)
+			read[spelling{endpoint, hostnameKey}] = name
+		}
+		return name
 	}
 	type named struct {
 		target      *templateTarget
@@ -613,7 +663,7 @@ func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr, prefixes config.Pr
 	}
 	wanted := make(map[dynamicKey]*named)
 	add := func(t *templateTarget, hostnameKey string, addrs []*ipv6disc.Addr) {
-		key := dynamicKey{t.endpoint, recordName(t.endpoint, hostnameKey)}
+		key := dynamicKey{t.endpoint, nameOf(t.endpoint, hostnameKey)}
 		n, ok := wanted[key]
 		if !ok {
 			n = &named{target: t, hostnameKey: hostnameKey, addrs: ipv6disc.NewAddrCollection()}
@@ -645,6 +695,10 @@ func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr, prefixes config.Pr
 				called[name.Name] = append(called[name.Name], mac)
 			}
 		}
+		// In the map's order, which is any: the names are apart from each other, and a place
+		// among those of one name goes by the MACs' order, above. When two templates make the
+		// same name, the addresses of both are its addresses whichever came first; only the
+		// spelling and the task that the log tells it by are the first's.
 		for name, of := range called {
 			for i, mac := range of {
 				add(t, t.template.Expand(name, i+1, hosts[mac][0].Hw), hosts[mac])
@@ -654,41 +708,122 @@ func (w *Worker) expandTemplates(discovered []*ipv6disc.Addr, prefixes config.Pr
 
 	w.dynamicMutex.Lock()
 	defer w.dynamicMutex.Unlock()
+	w.rename(nameOf)
+	once := func(format string, args ...any) {
+		if text := fmt.Sprintf(format, args...); !w.told[text] {
+			w.told[text] = true
+			w.logger.Warn(text)
+		}
+	}
 	for key, n := range wanted {
-		hostname, ok := w.dynamic[key]
+		// Where a name written in full is itself, as one of the zone's own labels is, a host called
+		// as the zone would have its addresses in the zone's own records. One made before its
+		// provider told the zone is emptied below, as a name no host has.
+		if key.name == nameOf(key.endpoint, "") {
+			once("endpoint %s: the template %q of task %s gives a host the name %s, which is the zone itself: the host is left out of it, and the zone's own records stay as they are. Only a name written in a task as it is, not a template's, can be the zone", n.target.endpointKey, n.target.template.Text, n.target.task.Name, key.name)
+			delete(wanted, key)
+			continue
+		}
+		d, ok := w.dynamic[key]
 		if !ok {
 			key.endpoint.mutex.RLock()
 			_, written := key.endpoint.names[key.name]
 			key.endpoint.mutex.RUnlock()
 			if written {
-				if !w.taken[key] {
-					w.taken[key] = true
-					w.logger.Warnf("endpoint %s: %s is written in the configuration, so it keeps its own addresses: hosts with that name, from the template %q of task %s, are left out of it", n.target.endpointKey, key.name, n.target.template.Text, n.target.task.Name)
-				}
+				once("endpoint %s: %s is written in the configuration, so it keeps its own addresses: hosts with that name, from the template %q of task %s, are left out of it", n.target.endpointKey, key.name, n.target.template.Text, n.target.task.Name)
 				continue
 			}
-			hostname = w.hostname(n.target.endpointKey, key.endpoint, n.hostnameKey)
-			w.dynamic[key] = hostname
+			d = &dynamicName{w.newHostname(n.target.endpointKey, key.endpoint, n.hostnameKey, key.name), n.hostnameKey}
+			w.dynamic[key] = d
 		}
-		hostname.SetAddrCollection(n.addrs)
+		d.SetAddrCollection(n.addrs)
 	}
-	for key, hostname := range w.dynamic {
+	for key, d := range w.dynamic {
 		if _, ok := wanted[key]; ok {
 			continue
 		}
-		hostname.SetAddrCollection(ipv6disc.NewAddrCollection())
-		if hostname.idle() {
-			hostname.Stop()
+		d.SetAddrCollection(ipv6disc.NewAddrCollection())
+		if d.idle() {
+			d.Stop()
 			key.endpoint.mutex.Lock()
-			delete(key.endpoint.names, key.name)
-			for spelling, h := range key.endpoint.hostnames {
-				if h == hostname {
-					delete(key.endpoint.hostnames, spelling)
-				}
+			if key.endpoint.names[key.name] == d.Hostname {
+				delete(key.endpoint.names, key.name)
 			}
+			delete(key.endpoint.hostnames, d.hostnameKey)
 			key.endpoint.mutex.Unlock()
 			delete(w.dynamic, key)
 		}
+	}
+}
+
+// rename keeps the names of the templates' endpoints by the names of their records as they are
+// now, with dynamicMutex held: nameOf reads them. At most providers they never change, and this
+// changes nothing. At one that learns its zone at the first update, as Route 53, "printer" is
+// "printer.example.com" from then on. Looked up by the new name, a template's name would not be
+// found: a second Hostname would be made for it, and the first, emptied, would remove the records
+// the second writes; and a name written would not be found either, and a template would write its
+// own addresses over it.
+//
+// So each Hostname stays, under its new name: of the designs that hold, this one changes least,
+// as the rest of the worker goes by the names of the records as before. Keeping the names by
+// their spelling instead would make "nas" and "nas.example.com" two names at every provider, and
+// asking the zone at the start would keep a worker with no network from starting.
+//
+// Two names that turn out to be one, as "nas" of a template and "nas.example.com", become one:
+// the one written, or else the one that had the name, or the first by name. The other is stopped,
+// with nothing sent, since an update of no addresses would remove the records of the one that
+// stays; and the one that stays sends its addresses again, over what the other may have written.
+func (w *Worker) rename(nameOf func(*Endpoint, string) string) {
+	dynamic := make(map[*Hostname]bool, len(w.dynamic))
+	for _, d := range w.dynamic {
+		dynamic[d.Hostname] = true
+	}
+	// The names written, of each endpoint: the first spelling of each, by the spellings' order.
+	names := make(map[*Endpoint]map[string]*Hostname)
+	for _, t := range w.templates {
+		if names[t.endpoint] != nil {
+			continue
+		}
+		names[t.endpoint] = make(map[string]*Hostname)
+		keys, hostnames := t.endpoint.list()
+		for _, hostnameKey := range keys {
+			name := nameOf(t.endpoint, hostnameKey)
+			if _, ok := names[t.endpoint][name]; !ok && !dynamic[hostnames[hostnameKey]] {
+				names[t.endpoint][name] = hostnames[hostnameKey]
+			}
+		}
+	}
+	// Then the templates': those whose name is the same, and then the others, by name.
+	var same, changed []dynamicKey
+	for key, d := range w.dynamic {
+		if nameOf(key.endpoint, d.hostnameKey) == key.name {
+			same = append(same, key)
+		} else {
+			changed = append(changed, key)
+		}
+	}
+	slices.SortFunc(changed, func(a, b dynamicKey) int { return strings.Compare(a.name, b.name) })
+	renamed := make(map[dynamicKey]*dynamicName, len(w.dynamic))
+	for _, key := range append(same, changed...) {
+		d := w.dynamic[key]
+		name := nameOf(key.endpoint, d.hostnameKey)
+		if kept, ok := names[key.endpoint][name]; ok {
+			d.Stop()
+			w.merged = append(w.merged, d.Hostname)
+			key.endpoint.mutex.Lock()
+			delete(key.endpoint.hostnames, d.hostnameKey)
+			key.endpoint.mutex.Unlock()
+			kept.ScheduleUpdate(0)
+			continue
+		}
+		names[key.endpoint][name] = d.Hostname
+		renamed[dynamicKey{key.endpoint, name}] = d
+	}
+	w.dynamic = renamed
+	for endpoint, of := range names {
+		endpoint.mutex.Lock()
+		endpoint.names = of
+		endpoint.mutex.Unlock()
 	}
 }
 
@@ -723,10 +858,10 @@ func (w *Worker) Page(prefix string, hideSensible bool) pretty.Page {
 	var page pretty.Page
 	for _, section := range []pretty.Page{
 		w.State.page(prefix, hideSensible, w.writtenRecords()),
-		w.resolversPage(prefix),
+		w.resolversPage(prefix, hideSensible),
 		w.blocklistsPage(prefix, hideSensible),
 		w.listenersPage(prefix),
-		w.certificatesPage(prefix),
+		w.certificatesPage(prefix, hideSensible),
 		w.sourcesPage(prefix, hideSensible),
 		append(w.discWorker.State.Page(prefix), w.discWorker.StatsPage(prefix)...),
 		processPage(prefix, processStatus()),
@@ -769,12 +904,25 @@ func (w *Worker) writtenRecords() map[string][]string {
 
 // resolversPage tells, of each resolver, where it listens, whom it answers, and what it
 // answered: nothing without resolvers.
-func (w *Worker) resolversPage(prefix string) pretty.Page {
+func (w *Worker) resolversPage(prefix string, hideSensible bool) pretty.Page {
+	return resolversPage(prefix, w.resolverStatuses(hideSensible))
+}
+
+// resolverStatuses are the resolvers' statuses, by name's order. hideSensible hides why the last
+// update of a key failed: it is the error of a credential's provider, which can tell secrets.
+// What an update did, or why it was refused, are the resolver's own words, and stay.
+func (w *Worker) resolverStatuses(hideSensible bool) []resolver.Status {
 	statuses := make([]resolver.Status, 0, len(w.resolvers))
 	for _, r := range w.resolvers {
-		statuses = append(statuses, r.Status())
+		s := r.Status()
+		for i, k := range s.Keys {
+			if hideSensible && k.LastResult == resolver.UpdateFailed && k.LastMessage != "" {
+				s.Keys[i].LastMessage = "<sensible data hidden>"
+			}
+		}
+		statuses = append(statuses, s)
 	}
-	return resolversPage(prefix, statuses)
+	return statuses
 }
 
 // upstreamSpans are servers asked upstream, each with the addresses found of a host name and its
@@ -1028,8 +1176,8 @@ func (w *Worker) Logger() *zap.SugaredLogger { return w.logger }
 
 // certificatesPage tells, of each certificate, what shows it, the names it is for, and until
 // when: nothing without certificates.
-func (w *Worker) certificatesPage(prefix string) pretty.Page {
-	return certificatesPage(prefix, w.certificateStatuses(), time.Now())
+func (w *Worker) certificatesPage(prefix string, hideSensible bool) pretty.Page {
+	return certificatesPage(prefix, w.certificateStatuses(hideSensible), time.Now())
 }
 
 // certificatesPage is the page of the certificates of those statuses.

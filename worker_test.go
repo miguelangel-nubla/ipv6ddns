@@ -481,6 +481,177 @@ func TestHostnameStoppedUpdatesNoMore(t *testing.T) {
 	}
 }
 
+// The changes that come while an update runs are one update after it, of the addresses of the
+// end: each has its timer, which fired, and only the first to run finds something to send.
+func TestHostnameChangesWhileAnUpdateRunsAreOneUpdate(t *testing.T) {
+	var mutex sync.Mutex
+	var updates [][]string
+	started, release := make(chan struct{}, 10), make(chan struct{})
+	h := NewHostname(func(c *ipv6disc.AddrCollection) error {
+		started <- struct{}{}
+		<-release
+		mutex.Lock()
+		defer mutex.Unlock()
+		updates = append(updates, c.Strings())
+		return nil
+	}, 0, time.Hour)
+	defer h.Stop()
+	mac := "00:00:00:00:00:01"
+	h.SetAddrCollection(collection(addr(mac, "2001:db8::1")))
+	<-started
+	// Three changes while the first update runs, each past the debounce time of the one before.
+	for _, ip := range []string{"2001:db8::2", "2001:db8::3", "2001:db8::4"} {
+		h.SetAddrCollection(collection(addr(mac, ip)))
+		time.Sleep(20 * time.Millisecond)
+	}
+	close(release)
+	// The one of the end, and then whatever else would come.
+	<-started
+	time.Sleep(200 * time.Millisecond)
+	h.Wait()
+	mutex.Lock()
+	defer mutex.Unlock()
+	if want := [][]string{{"2001:db8::1"}, {"2001:db8::4"}}; !slices.EqualFunc(updates, want, equal) {
+		t.Errorf("got updates %v, want the one that ran and one of the addresses of the end: %v", updates, want)
+	}
+}
+
+// A change that comes while an update that fails runs waits for the retry, though its timer
+// fired during it: the endpoint is not tried again at once.
+func TestHostnameChangeDuringAFailureWaitsForTheRetry(t *testing.T) {
+	started, release := make(chan []string, 10), make(chan error)
+	h := NewHostname(func(c *ipv6disc.AddrCollection) error {
+		started <- c.Strings()
+		return <-release
+	}, 0, time.Second)
+	defer h.Stop()
+	mac := "00:00:00:00:00:01"
+	h.SetAddrCollection(collection(addr(mac, "2001:db8::1")))
+	<-started
+	h.SetAddrCollection(collection(addr(mac, "2001:db8::2")))
+	time.Sleep(50 * time.Millisecond) // its timer fired, and it waits for the update running
+	release <- errors.New("down")
+	failed := time.Now()
+	select {
+	case got := <-started:
+		if waited := time.Since(failed); waited < 900*time.Millisecond {
+			t.Errorf("updated %v after the failure: the retry interval is 1s", waited)
+		}
+		if !equal(got, []string{"2001:db8::2"}) {
+			t.Errorf("the retry sent %v, want the address of then", got)
+		}
+		release <- nil
+	case <-time.After(5 * time.Second):
+		t.Fatal("no retry")
+	}
+}
+
+// A name whose removal fired and waits for the endpoint, behind another name's update, is not
+// idle, whatever the times say: its records are still at the provider, and a template's name
+// forgotten then would leave them there for good.
+func TestHostnameNotIdleWithARemovalWaiting(t *testing.T) {
+	started, release := make(chan []string, 10), make(chan struct{})
+	first := true
+	h := NewHostname(func(c *ipv6disc.AddrCollection) error {
+		started <- c.Strings()
+		if first {
+			first = false
+			<-release
+		}
+		return nil
+	}, 0, time.Hour)
+	var endpoint, busy sync.Mutex
+	h.endpointMutex = &endpoint
+
+	h.SetAddrCollection(collection(addr("00:00:00:00:00:01", "2001:db8::1")))
+	if got := <-started; len(got) != 1 {
+		t.Fatalf("the first update: %v", got)
+	}
+	// The endpoint, as the next update of the name finds it: another name's update has it. The
+	// update running read the field already, and the next one's timer is made after this.
+	busy.Lock()
+	h.endpointMutex = &busy
+	// The host leaves while the update runs: the removal is scheduled, fires, and waits.
+	h.SetAddrCollection(collection())
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(time.Millisecond) {
+		if s := h.status(); s.updates == 1 && !s.updateRunning {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first update didn't end")
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	// What expandTemplates asks, to forget the name and stop it.
+	if h.idle() {
+		t.Errorf("the name is idle, with the records of its last update still at the provider and their removal waiting for the endpoint")
+		h.Stop()
+	}
+	busy.Unlock()
+	select {
+	case got := <-started:
+		if len(got) != 0 {
+			t.Errorf("the removal sent %v", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the records were never removed")
+	}
+	h.Wait()
+	if !h.idle() {
+		t.Errorf("the name is not idle once its records are removed: %+v", h.status())
+	}
+}
+
+// An update somebody asks for is sent though nothing changed, and of a name that lost its
+// addresses it removes the records again; of one that never had an address there is none, which
+// would remove records the name knows nothing of.
+func TestHostnameScheduleUpdateOnlyOnceItHadAddresses(t *testing.T) {
+	updates := make(chan []string, 10)
+	h := NewHostname(func(c *ipv6disc.AddrCollection) error {
+		updates <- c.Strings()
+		return nil
+	}, 0, time.Hour)
+	defer h.Stop()
+
+	h.SetAddrCollection(collection())
+	h.ScheduleUpdate(0)
+	if !h.status().nextUpdateTime.IsZero() {
+		t.Error("an update scheduled before any address")
+	}
+	// Nothing was written, so there is nothing to remove: a template's name is forgotten as it is.
+	if !h.idle() {
+		t.Error("a name that never had an address is not idle")
+	}
+	select {
+	case got := <-updates:
+		t.Fatalf("updated with %v before any address: an update with none removes the records", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	next := func(what string, want []string) {
+		t.Helper()
+		select {
+		case got := <-updates:
+			if !equal(got, want) {
+				t.Errorf("%s: got an update with %v, want %v", what, got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s: no update", what)
+		}
+		h.Wait()
+	}
+	h.SetAddrCollection(collection(addr("00:00:00:00:00:01", "2001:db8::1")))
+	next("the first address", []string{"2001:db8::1"})
+	h.ScheduleUpdate(0)
+	next("asked, with nothing changed", []string{"2001:db8::1"})
+	h.SetAddrCollection(collection())
+	next("the address gone", nil)
+	h.ScheduleUpdate(0)
+	next("asked, with no address left", nil)
+}
+
 // A retry interval of nothing would try a failing endpoint without a pause.
 func TestHostnameRetryHasAFloor(t *testing.T) {
 	var calls atomic.Int32

@@ -180,11 +180,20 @@ func (c *certificate) status() CertificateStatus {
 	return out
 }
 
-// certificateStatuses are the certificates' statuses, by name's order.
-func (w *Worker) certificateStatuses() []CertificateStatus {
+// certificateStatuses are the certificates' statuses, by name's order. hideSensible hides why
+// getting one failed, which is the error of its credential's provider or of the ACME authority,
+// and why its files don't read again: errors can tell secrets.
+func (w *Worker) certificateStatuses(hideSensible bool) []CertificateStatus {
 	out := make([]CertificateStatus, 0, len(w.certs))
 	for _, c := range w.certs {
-		out = append(out, c.status())
+		s := c.status()
+		if hideSensible && s.Renewal != "" {
+			s.Renewal = "<sensible data hidden>"
+		}
+		if hideSensible && s.Error != "" {
+			s.Error = "<sensible data hidden>"
+		}
+		out = append(out, s)
 	}
 	return out
 }

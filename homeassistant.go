@@ -333,7 +333,8 @@ func addressesState(addresses []string) string {
 }
 
 // follow sets the entities to the worker's state, now and every homeAssistantSync, until ctx is
-// done.
+// done. It takes the whole status each time, for the little of it that it reads: that costs a
+// little, and is simple. An entity is sent only when its state changed.
 func (h *homeAssistant) follow(ctx context.Context, status func() Status) {
 	ticker := time.NewTicker(homeAssistantSync)
 	defer ticker.Stop()

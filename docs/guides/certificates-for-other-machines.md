@@ -138,7 +138,7 @@ The web report lists the key under the resolver, with its counts and its last up
 
 - **A key per machine.** One machine's key writes only its own names, so a machine taken over can't get certificates for others.
 - **60 updates a minute, of each key.** Each update is a write at the provider: a client that tries again and again is refused past them, and doesn't use up the provider's limits of the account. A certificate of 30 names, each added and removed, is within them.
-- **Its records are removed** when the client removes them, as clients do once Let's Encrypt has checked. One the client left is removed an hour later. What ipv6ddns wrote is kept in `challenges-<key>-<credential>.json` beside the configuration, so a removal after a restart, or the hour, still removes it.
+- **Its records are removed** when the client removes them, as clients do once Let's Encrypt has checked. One the client left is removed an hour later. What ipv6ddns wrote is kept in a file of its own, [`challenges-<resolver>,<key>,<credential>.json`](../configuration.md#state), so a removal after a restart, or the hour, still removes it.
 - **ipv6ddns's own certificates** are its own: a name of `certificates` can't be a key's too.
 - **Several names, or zones.** A key can have several `challenges` permissions, each of its credential, for names of several zones.
 

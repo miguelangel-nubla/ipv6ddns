@@ -160,7 +160,7 @@ If two networks share one wire, such as two macvlan networks on one bridge, an a
 | *name* last update | When the name's records were last updated |
 | *name* update | A problem, when the name's last update failed |
 | Discovered hosts | How many hosts discovery knows |
-| Update now | A button that updates every name now, for example after a change |
+| Update now | A button that sends every name's addresses to its provider again, now, whether or not they changed. A name that has had no address since ipv6ddns started is left as it is |
 
 A Home Assistant state holds 255 characters, about six full IPv6 addresses. When a name has more addresses than fit, the state has the first ones, and then a count of the rest, such as `+3 more`.
 
@@ -406,7 +406,7 @@ credentials:
 The device's entities can drive automations. This example has two:
 
 - A notification when a name's update keeps failing.
-- An update of every name when the router comes back, instead of waiting for the next change that discovery sees.
+- An update of every name when the router comes back, instead of waiting for the next change that discovery sees. After a power cut ipv6ddns has just started too, and may not have found the hosts yet. The button leaves a name with no address found yet as it is, so pressing it then removes nothing.
 
 The entity ids come from the [names' domains](#the-entities), `home.example.com` here. Home Assistant lists them under *Settings → Devices & services → ESPHome → ipv6ddns*.
 

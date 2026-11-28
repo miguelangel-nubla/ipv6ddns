@@ -140,20 +140,21 @@ func discoveredRecords(addr *ipv6disc.Addr) []DiscoveredRecord {
 }
 
 // Status returns the state of the host names and of the discovery. hideSensible hides the errors,
-// which can tell secrets.
+// which can tell secrets: those of the names' updates, the sources, the plugins, the blocklists,
+// the certificates, and the updates of the resolvers' keys that failed. The errors left are of the
+// machine's own sockets: a resolver's that doesn't serve, and the announcement of Home Assistant's
+// device.
 func (w *Worker) Status(hideSensible bool) Status {
 	status := Status{Hostnames: []HostnameStatus{}, Discovered: []DiscoveredHost{}, Protocols: []string{}, Sources: []source.Status{}, Resolvers: []resolver.Status{}}
 	status.Process = processStatus()
 	status.Warnings = append([]string{}, w.config.Warnings...)
 
-	for _, r := range w.resolvers {
-		status.Resolvers = append(status.Resolvers, r.Status())
-	}
+	status.Resolvers = w.resolverStatuses(hideSensible)
 	if len(w.blocklists) > 0 {
 		status.Blocklists = w.blocklistStatuses(hideSensible)
 	}
 	if len(w.certs) > 0 {
-		status.Certificates = w.certificateStatuses()
+		status.Certificates = w.certificateStatuses(hideSensible)
 	}
 	if len(w.config.Listeners) > 0 {
 		status.Listeners = w.listenerStatuses()
@@ -276,8 +277,21 @@ func (s Status) WriteMetrics(out io.Writer) error {
 	metric := func(name, kind, help string) {
 		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s %s\n", name, help, name, kind)
 	}
+	// A name is told by its domain. Two of an endpoint with one domain are told by their spelling
+	// instead: at a provider that learns its zone later, as Route 53, nas and nas.example.com are
+	// two names until then, which the start warns of, and one domain after. Two series of the
+	// same labels would have the whole scrape refused.
+	type domain struct{ provider, endpoint, domain string }
+	sharing := make(map[domain]int)
+	for _, h := range s.Hostnames {
+		sharing[domain{h.Provider, h.Endpoint, h.Domain}]++
+	}
 	labels := func(h HostnameStatus, extra ...string) string {
-		pairs := []string{"provider", h.Provider, "endpoint", h.Endpoint, "hostname", h.Domain}
+		name := h.Domain
+		if sharing[domain{h.Provider, h.Endpoint, h.Domain}] > 1 {
+			name = h.Hostname
+		}
+		pairs := []string{"provider", h.Provider, "endpoint", h.Endpoint, "hostname", name}
 		pairs = append(pairs, extra...)
 		var l []string
 		for i := 0; i < len(pairs); i += 2 {

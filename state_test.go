@@ -112,7 +112,7 @@ discovery:
 			}
 		}
 	}
-	for _, file := range []string{"push-vps.json", "challenges-nas-public.json", "names-lan.example.com.json"} {
+	for _, file := range []string{"push-vps.json", "challenges-lan,nas,public.json", "names-lan.example.com.json"} {
 		if _, err := os.Stat(filepath.Join(stateDir, file)); err != nil {
 			t.Errorf("%s: %v", file, err)
 		}

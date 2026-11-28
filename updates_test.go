@@ -252,7 +252,7 @@ func TestUpdatesChallenges(t *testing.T) {
 
 	// The status, the report and the metrics tell of the key.
 	st := w.Status(true)
-	keys := st.Resolvers[0].Keys
+	keys := w.Status(false).Resolvers[0].Keys
 	if len(keys) != 1 || keys[0].Updates["applied"] != 5 || keys[0].Updates["refused"] != 2 || keys[0].Updates["failed"] != 1 ||
 		!strings.Contains(keys[0].LastMessage, "the API is down") {
 		t.Errorf("the key's status: %+v", keys)
@@ -828,5 +828,342 @@ func TestNamesGrantHolds(t *testing.T) {
 	}
 	if err := g.load(); err == nil || !strings.Contains(err.Error(), "is no record of printer.lan.example.com") {
 		t.Errorf("a record of another name: %v", err)
+	}
+}
+
+// twoResolversWorker is a worker of two resolvers, a and b, each with a key nas that may write the
+// challenges of a name of its own, one and two, through the same credential, of id: its state in
+// dir.
+func twoResolversWorker(t *testing.T, dir, id string) *Worker {
+	t.Helper()
+	return workerOf(t, fmt.Sprintf(`
+state_dir: %s
+credentials:
+  public:
+    provider: txtrec
+    settings:
+      id: %s
+listeners:
+  a:
+    listen:
+      - dns://127.0.0.1:%s
+  b:
+    listen:
+      - dns://127.0.0.1:%s
+resolvers:
+  a:
+    listeners:
+      - a
+    upstream: 127.0.0.1:1
+    updates:
+      keys:
+        nas:
+          secret: %s
+          permissions:
+            - challenges:
+                credential: public
+                names:
+                  - one
+  b:
+    listeners:
+      - b
+    upstream: 127.0.0.1:1
+    updates:
+      keys:
+        nas:
+          secret: %s
+          permissions:
+            - challenges:
+                credential: public
+                names:
+                  - two
+tasks: {}
+discovery:
+  ipv6:
+    enabled: false
+`, dir, id, freeDNSPort(t), freeDNSPort(t), updatesTestSecret, updatesTestSecret))
+}
+
+// challengeGrants are the worker's grants of challenges, in the resolvers' order.
+func challengeGrants(t *testing.T, w *Worker, want int) []*challengeGrant {
+	t.Helper()
+	var grants []*challengeGrant
+	for _, g := range w.grantsToStart {
+		if c, ok := g.(*challengeGrant); ok {
+			grants = append(grants, c)
+		}
+	}
+	if len(grants) != want {
+		t.Fatalf("%d grants of challenges, want %d", len(grants), want)
+	}
+	return grants
+}
+
+// Two resolvers with a key of one name, each with challenges of the same credential: each keeps
+// what it wrote in a file of its own, and has it, and nothing else, after a restart.
+func TestChallengeFilesOfTwoResolvers(t *testing.T) {
+	dir := t.TempDir()
+	grants := challengeGrants(t, twoResolversWorker(t, dir, "twofiles"), 2)
+	if got, want := filepath.Base(grants[0].file), "challenges-a,nas,public.json"; got != want {
+		t.Errorf("the first's file is %s, want %s", got, want)
+	}
+	if got, want := filepath.Base(grants[1].file), "challenges-b,nas,public.json"; got != want {
+		t.Errorf("the second's file is %s, want %s", got, want)
+	}
+	one, two := "_acme-challenge.one.rec.test.", "_acme-challenge.two.rec.test."
+	if err := grants[0].Apply(map[string][]dns.RR{one: {txtRR(t, one, "1")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := grants[1].Apply(map[string][]dns.RR{two: {txtRR(t, two, "2")}}); err != nil {
+		t.Fatal(err)
+	}
+	// A restart: each reads its file.
+	again := challengeGrants(t, twoResolversWorker(t, dir, "twofiles"), 2)
+	if got := txtValues(again[0].Records(one)); !slices.Equal(got, []string{"1"}) {
+		t.Errorf("after a restart the first grant has %q of its name, want the value it wrote, to remove it or expire it", got)
+	}
+	if got := txtValues(again[0].Records(two)); len(got) != 0 {
+		t.Errorf("after a restart the first grant has the other's value, %q", got)
+	}
+	if got := txtValues(again[1].Records(two)); !slices.Equal(got, []string{"2"}) {
+		t.Errorf("after a restart the second grant has %q of its name, want the value it wrote", got)
+	}
+}
+
+// The parts of a state file's name are told apart, whatever they are, and none is a path.
+func TestStateName(t *testing.T) {
+	for name, want := range map[string]string{
+		"nas":         "nas",
+		"nas.lan":     "nas.lan",
+		"a-b_c":       "a-b_c",
+		"a,b":         "a%2Cb",
+		"../secret":   "..%2Fsecret",
+		"a b":         "a%20b",
+		"50%":         "50%25",
+		"café":        "caf%C3%A9",
+		`back\slash`:  "back%5Cslash",
+		"with:a:colo": "with%3Aa%3Acolo",
+	} {
+		if got := stateName(name); got != want {
+			t.Errorf("%q: %s, want %s", name, got, want)
+		}
+	}
+}
+
+// After an upgrade, the file is still under its name of before, without the resolver: it is read,
+// so no challenge is lost, and replaced by the one of now once the worker starts.
+func TestChallengeFileOfBefore(t *testing.T) {
+	dir := t.TempDir()
+	before := filepath.Join(dir, "challenges-nas-public.json")
+	changed := time.Now().UTC().Format(time.RFC3339)
+	if err := os.WriteFile(before, []byte(`{"names":{"_acme-challenge.one.rec.test.":{"values":["left"],"changed":"`+changed+`"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := twoResolversWorker(t, dir, "before")
+	grants := challengeGrants(t, w, 2)
+	one := "_acme-challenge.one.rec.test."
+	// Both had that file, which had no resolver in its name: each reads it.
+	for i, g := range grants {
+		if got := txtValues(g.Records(one)); !slices.Equal(got, []string{"left"}) {
+			t.Errorf("grant %d has %q of the file of before, want its value", i, got)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var running sync.WaitGroup
+	for _, g := range grants {
+		g.start(ctx, &running)
+	}
+	cancel()
+	running.Wait()
+	if _, err := os.Stat(before); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the file of before is still there once started: %v", err)
+	}
+	// The next start reads those of now.
+	for i, g := range challengeGrants(t, twoResolversWorker(t, dir, "before"), 2) {
+		if got := txtValues(g.Records(one)); !slices.Equal(got, []string{"left"}) {
+			t.Errorf("at the next start, grant %d has %q, want the value still", i, got)
+		}
+		if g.moved {
+			t.Errorf("at the next start, grant %d read the file of before again", i)
+		}
+	}
+
+	// A file of now is the one read, whatever is under the name of before.
+	if err := os.WriteFile(before, []byte(`{"names":{"_acme-challenge.one.rec.test.":{"values":["older"],"changed":"`+changed+`"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i, g := range challengeGrants(t, twoResolversWorker(t, dir, "before"), 2) {
+		if got := txtValues(g.Records(one)); !slices.Equal(got, []string{"left"}) {
+			t.Errorf("with both files, grant %d has %q, want the value of the file of now", i, got)
+		}
+	}
+}
+
+// A key that names a zone in two permissions of names has one grant of it, and so one writer of
+// the zone's file: two would each write it with its own names alone.
+func TestNamesOfAZoneTwiceAreOneGrant(t *testing.T) {
+	w := workerOf(t, fmt.Sprintf(`
+state_dir: %s
+credentials:
+  public:
+    provider: txtrec
+    settings:
+      id: nameszone
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream: 127.0.0.1:1
+    updates:
+      keys:
+        kea:
+          secret: %s
+          permissions:
+            - names:
+                zone: lan.example.com
+            - names:
+                zone: LAN.example.com.
+tasks: {}
+discovery:
+  ipv6:
+    enabled: false
+`, t.TempDir(), freeDNSPort(t), updatesTestSecret))
+	var grants []*namesGrant
+	for _, g := range w.grantsToStart {
+		if n, ok := g.(*namesGrant); ok {
+			grants = append(grants, n)
+		}
+	}
+	if len(grants) != 1 {
+		t.Errorf("%d grants of the names of one zone, with one file, want one", len(grants))
+	}
+}
+
+// failingRemovals is a txtRecorder whose first removals fail, as a provider down for a moment.
+type failingRemovals struct {
+	*txtRecorder
+	mutex    sync.Mutex
+	failures int
+}
+
+func (f *failingRemovals) SetTXT(name string, values []string) error {
+	f.mutex.Lock()
+	if len(values) == 0 && f.failures > 0 {
+		f.failures--
+		f.mutex.Unlock()
+		return errors.New("the provider is down for a moment")
+	}
+	f.mutex.Unlock()
+	return f.txtRecorder.SetTXT(name, values)
+}
+
+// A removal of what a client left that fails is tried again, until it is done: nothing else
+// would remove the records. And no more once the worker stopped.
+func TestChallengeExpiryThatFailsIsTriedAgain(t *testing.T) {
+	expiry, retry := challengeExpiry, challengeRetry
+	challengeExpiry, challengeRetry = 50*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { challengeExpiry, challengeRetry = expiry, retry })
+	rec := &failingRemovals{txtRecorder: &txtRecorder{txt: map[string][]string{}}, failures: 2}
+	var mutex sync.Mutex
+	var warned []string
+	g := newChallengeGrant(rec, []string{"nas"}, filepath.Join(t.TempDir(), "c.json"), func(f string, args ...any) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		warned = append(warned, fmt.Sprintf(f, args...))
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	var running sync.WaitGroup
+	g.start(ctx, &running)
+	name := "_acme-challenge.nas.rec.test."
+	if err := g.Apply(map[string][]dns.RR{name: {txtRR(t, name, "left")}}); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if calls := rec.callsSoFar(); len(calls) == 2 {
+			if calls[1] != `_acme-challenge.nas.rec.test []` {
+				t.Fatalf("the calls: %q", calls)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the value its client left is still at the provider, after a removal that failed: %q", rec.callsSoFar())
+		}
+	}
+	if got := g.Records(name); len(got) != 0 {
+		t.Errorf("the grant has %v still", got)
+	}
+	mutex.Lock()
+	if want := "removing the TXT records of _acme-challenge.nas.rec.test, which its client left: the provider is down for a moment: it is tried again in 20ms"; len(warned) != 2 || warned[0] != want {
+		t.Errorf("warned %q, want twice %q", warned, want)
+	}
+	mutex.Unlock()
+
+	// One that keeps failing stops with the worker.
+	rec.mutex.Lock()
+	rec.failures = 1 << 30
+	rec.mutex.Unlock()
+	if err := g.Apply(map[string][]dns.RR{name: {txtRR(t, name, "again")}}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	running.Wait()
+	rec.mutex.Lock()
+	left := rec.failures
+	rec.mutex.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	rec.mutex.Lock()
+	defer rec.mutex.Unlock()
+	if rec.failures != left {
+		t.Errorf("%d removals tried once the worker stopped", left-rec.failures)
+	}
+}
+
+// With the sensible data hidden, why a key's update failed is hidden: it is the error of the
+// credential's provider. The report with everything has it.
+func TestUpdatesKeyErrorHidden(t *testing.T) {
+	port := freeDNSPort(t)
+	w := challengesWorker(t, port, "keyerror")
+	rec := txtRecorders["keyerror"]
+	rec.mutex.Lock()
+	rec.fail = errors.New("denied for token SECRET-7f3a")
+	rec.mutex.Unlock()
+	resp := signed(t, net.JoinHostPort("127.0.0.1", port), challengeUpdate(t, func(m *dns.Msg, txt func(string, string) dns.RR) {
+		m.Insert([]dns.RR{txt("_acme-challenge.nas.lan.rec.test.", "v")})
+	}))
+	if resp.Rcode != dns.RcodeServerFailure {
+		t.Fatalf("the answer: %s, want the failure", dns.RcodeToString[resp.Rcode])
+	}
+	body, _ := json.Marshal(w.Status(true))
+	if strings.Contains(string(body), "SECRET-7f3a") {
+		t.Errorf("the provider's error is in the status with the sensible data hidden: %s", body)
+	}
+	if k := w.Status(true).Resolvers[0].Keys[0]; k.LastResult != "failed" || k.LastMessage != "<sensible data hidden>" {
+		t.Errorf("the key's status with the sensible data hidden: %+v", k)
+	}
+	page := w.Page("", true).String()
+	if strings.Contains(page, "SECRET-7f3a") || !strings.Contains(page, ", failed: <sensible data hidden>") {
+		t.Errorf("the page with the sensible data hidden:\n%s", page)
+	}
+	if body, _ := json.Marshal(w.Status(false)); !strings.Contains(string(body), "SECRET-7f3a") {
+		t.Errorf("the status with everything has no error: %s", body)
+	}
+	if page := w.Page("", false).String(); !strings.Contains(page, "SECRET-7f3a") {
+		t.Errorf("the page with everything has no error:\n%s", page)
+	}
+
+	// What an update did, and why one was refused, are the resolver's words: they stay.
+	rec.mutex.Lock()
+	rec.fail = nil
+	rec.mutex.Unlock()
+	signed(t, net.JoinHostPort("127.0.0.1", port), challengeUpdate(t, func(m *dns.Msg, txt func(string, string) dns.RR) {
+		m.Insert([]dns.RR{txt("_acme-challenge.nas.lan.rec.test.", "v")})
+	}))
+	if page := w.Page("", true).String(); !strings.Contains(page, ", applied: challenges: _acme-challenge.nas.lan.rec.test") {
+		t.Errorf("the page with the sensible data hidden, after an update applied:\n%s", page)
 	}
 }

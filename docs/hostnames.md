@@ -68,6 +68,10 @@ A name that isn't in the configuration has no such protection. Say you created a
 
 For a name that matters, write it in a task, with a filter by MAC, and leave templates for everything else.
 
+Route 53 is a special case, because ipv6ddns learns its zone at the first update. Until then it can't tell that a host's `nas` is the `nas.example.com` you wrote. Write the name without its zone there, as `nas`, and it is protected from the start.
+
+A template never makes the zone's own name. Say the zone is `lan`, and a device calls itself `lan`. With `"{hostname}"` it gets no name, because that name would be the zone itself, and the zone's own records stay as they are. The log says so once.
+
 Names are cleaned before use. Each becomes one DNS label of lower-case letters, digits and hyphens. A cleaned name is never `*` and never contains a dot.
 
 ## When a host leaves

@@ -327,6 +327,121 @@ func TestShutdownWaitsForTheUpdateRunning(t *testing.T) {
 	}
 }
 
+// A worker never started stops at once: there is nothing to wait for, and its names, those of
+// the templates too, were never updated.
+func TestShutdownWithoutStart(t *testing.T) {
+	w := workerOf(t, `
+credentials:
+  fake:
+    provider: fake
+    settings:
+      id: neverstarted
+tasks:
+  nas:
+    filter:
+      - mac:
+          address: "00:00:00:00:00:0a"
+    endpoints:
+      fake:
+        - nas
+        - "{mac}.hosts"
+`)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := w.Shutdown(ctx); err != nil {
+		t.Errorf("shutdown of a worker never started: %s", err)
+	}
+}
+
+// "Update now", of Home Assistant's button, before anything is found: no name is updated, as an
+// update with no address removes its records. It is what an automation that presses it when the
+// router is back does, after a power cut: ipv6ddns has just started too. Once a name has its
+// address, the button sends it again.
+func TestUpdateNowBeforeAnyAddress(t *testing.T) {
+	w := workerOf(t, `
+credentials:
+  fake:
+    provider: fake
+    debounce: 1ms
+    settings:
+      id: updatenow
+tasks:
+  nas:
+    filter:
+      - mac:
+          address: "00:00:00:00:00:0a"
+    endpoints:
+      fake:
+        - nas
+`)
+	t.Cleanup(func() {
+		for _, target := range w.targets {
+			target.hostname.Stop()
+		}
+		w.discWorker.State.Close()
+	})
+	fake := fakeServices["updatenow"]
+	// Just started: nothing discovered yet.
+	w.lookForChanges()
+	w.updateNow()
+	time.Sleep(200 * time.Millisecond)
+	if updates := fake.updatesOf("nas"); len(updates) != 0 {
+		t.Fatalf("nothing was found yet, and the name was updated: %v: an update with no address removes its records", updates)
+	}
+
+	register(t, w, macA, "2001:db8::a", time.Hour)
+	w.lookForChanges()
+	fake.waitFor(t, "nas", "2001:db8::a")
+	w.targets[0].hostname.Wait()
+	w.updateNow()
+	for deadline := time.Now().Add(3 * time.Second); len(fake.updatesOf("nas")) < 2; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the button sent nothing of a name with its address: %v", fake.updatesOf("nas"))
+		}
+	}
+	if updates := fake.updatesOf("nas"); !slices.Equal(updates[1], []string{"2001:db8::a"}) {
+		t.Errorf("the button sent %v, want the address again", updates[1])
+	}
+}
+
+// Two names of an endpoint with one domain, as nas and nas.example.com are at Route 53 once it
+// learned its zone, are two series in the metrics, by their spelling: none is there twice, which
+// would have the whole scrape refused. The others are told by their domain.
+func TestMetricsOfTwoNamesOfOneDomain(t *testing.T) {
+	status := Status{Hostnames: []HostnameStatus{
+		{Provider: "route53", Endpoint: "aws", Hostname: "nas", Domain: "nas.example.com", Addresses: []string{"2001:db8::a"}},
+		{Provider: "route53", Endpoint: "aws", Hostname: "nas.example.com", Domain: "nas.example.com"},
+		{Provider: "route53", Endpoint: "aws", Hostname: "web", Domain: "web.example.com"},
+		// Another endpoint's, of the same domain: its labels are its own.
+		{Provider: "route53", Endpoint: "other", Hostname: "nas", Domain: "nas.example.com"},
+	}}
+	var metrics strings.Builder
+	if err := status.WriteMetrics(&metrics); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for line := range strings.SplitSeq(metrics.String(), "\n") {
+		series, _, _ := strings.Cut(line, " ")
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+		if seen[series] {
+			t.Errorf("the series %s is there twice", series)
+		}
+		seen[series] = true
+	}
+	for _, want := range []string{
+		`ipv6ddns_hostname_addresses{provider="route53",endpoint="aws",hostname="nas"} 1`,
+		`ipv6ddns_hostname_addresses{provider="route53",endpoint="aws",hostname="nas.example.com"} 0`,
+		`ipv6ddns_hostname_addresses{provider="route53",endpoint="aws",hostname="web.example.com"} 0`,
+		`ipv6ddns_hostname_addresses{provider="route53",endpoint="other",hostname="nas.example.com"} 0`,
+	} {
+		if !strings.Contains(metrics.String(), want+"\n") {
+			t.Errorf("the metrics lack %s:\n%s", want, metrics.String())
+		}
+	}
+}
+
 func TestStatusAndMetrics(t *testing.T) {
 	cfg := config.Config{
 		Discovery:   config.DefaultDiscovery(),

@@ -239,7 +239,7 @@ func TestCertificateACMEFailing(t *testing.T) {
 			}()
 			var st CertificateStatus
 			for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-				st = w.certificateStatuses()[0]
+				st = w.certificateStatuses(false)[0]
 				if strings.Contains(st.Renewal, c.want) {
 					break
 				}
@@ -257,5 +257,79 @@ func TestCertificateACMEFailing(t *testing.T) {
 				t.Errorf("the report:\n%s", page)
 			}
 		})
+	}
+}
+
+// secretTXT is a provider whose error tells a secret, as a provider's may: its token.
+type secretTXT struct{}
+
+func (secretTXT) Update(string, *ipv6disc.AddrCollection) error { return nil }
+func (secretTXT) Domain(hostname string) string                 { return hostname + ".txt.test" }
+func (secretTXT) SetTXT(string, []string) error                 { return nil }
+func (secretTXT) FullName(string) (string, error) {
+	return "", errors.New("denied for token SECRET-7f3a")
+}
+
+func init() {
+	ddns.RegisterProvider("secrettxt", func(json.RawMessage) (ddns.Service, error) { return secretTXT{}, nil })
+	ddns.RegisterTXT("secrettxt")
+}
+
+// With the sensible data hidden, why getting a certificate failed is hidden, in the status and on
+// the page: it is the error of the credential's provider, or the authority's. The report with
+// everything has it.
+func TestCertificateErrorHidden(t *testing.T) {
+	saved := namesRetry
+	namesRetry = 10 * time.Millisecond
+	t.Cleanup(func() { namesRetry = saved })
+	cfg := certificateConfig(t, `
+    acme:
+      names: dns
+      credential: public
+      directory: http://127.0.0.1:1/directory`, `
+  public:
+    provider: secrettxt
+    settings: {}`)
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := w.Start(ctx); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	defer func() {
+		cancel()
+		if err := w.Shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	}()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if strings.Contains(w.certificateStatuses(false)[0].Renewal, "SECRET-7f3a") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no error of the names")
+		}
+	}
+	body, _ := json.Marshal(w.Status(true))
+	if strings.Contains(string(body), "SECRET-7f3a") {
+		t.Errorf("the provider's error is in the status with the sensible data hidden, as /status.json serves it: %s", body)
+	}
+	if st := w.Status(true).Certificates[0]; st.Renewal != "<sensible data hidden>" {
+		t.Errorf("the status with the sensible data hidden says of the renewal %q", st.Renewal)
+	}
+	page := w.Page("", true).String()
+	if strings.Contains(page, "SECRET-7f3a") || !strings.Contains(page, "none yet (getting it failed: <sensible data hidden>)") {
+		t.Errorf("the page with the sensible data hidden, as the web server serves it:\n%s", page)
+	}
+	if page := w.Page("", false).String(); !strings.Contains(page, "(getting it failed: dns: denied for token SECRET-7f3a)") {
+		t.Errorf("the page with everything:\n%s", page)
+	}
+	// The metric tells the failure all the same.
+	var metrics strings.Builder
+	if err := w.Status(true).WriteMetrics(&metrics); err != nil || !strings.Contains(metrics.String(), `ipv6ddns_certificate_last_renewal_failed{certificate="home"} 1`) {
+		t.Errorf("the metrics: %v\n%s", err, metrics.String())
 	}
 }
