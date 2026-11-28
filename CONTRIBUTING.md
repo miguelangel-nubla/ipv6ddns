@@ -20,6 +20,10 @@ CI runs both. It also runs:
 
 To work on [ipv6disc](https://github.com/miguelangel-nubla/ipv6disc) at the same time, keep a `go.work` with both modules outside the repository, and point to it with `GOWORK=../go.work`.
 
+### Before looking into something that seems wrong
+
+[REVIEW.md](REVIEW.md) has what a review of the whole project looked into: what it found fine, with the test or the comment that says why, what it left open, and what it fixed. Search it first. When you look into something and find it fine, add it there, and record why at the code: a test where one is cheap, a comment otherwise.
+
 ### Tests that need Home Assistant's library
 
 Some tests of the Home Assistant device connect to it with Home Assistant's own library, [aioesphomeapi](https://github.com/esphome/aioesphomeapi). They skip when the library isn't available. To run them, set:
