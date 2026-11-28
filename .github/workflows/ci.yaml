@@ -131,7 +131,8 @@ jobs:
   # Every platform of the release, as goreleaser builds them, and its configuration: weekly, and
   # when asked, as they take a quarter of an hour.
   build-all:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Not when the nix job asks for a run of the hash it committed, as the others when asked.
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.actor != 'github-actions[bot]')
     runs-on: ubuntu-latest
     steps:
       -

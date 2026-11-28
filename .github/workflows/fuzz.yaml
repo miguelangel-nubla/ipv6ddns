@@ -80,7 +80,13 @@ jobs:
           restore-keys: fuzz-${{ matrix.id }}-
       -
         name: Fuzz
-        run: go test "${{ matrix.package }}" -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime "${{ inputs.fuzztime || '5m' }}"
+        # Through the environment, never written into the script: what is typed when the
+        # workflow is run by hand would otherwise be run as its text.
+        env:
+          PACKAGE: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+          FUZZTIME: ${{ inputs.fuzztime || '5m' }}
+        run: go test "$PACKAGE" -run '^$' -fuzz "^$TARGET\$" -fuzztime "$FUZZTIME"
       -
         name: Collect the failing input
         if: failure()
