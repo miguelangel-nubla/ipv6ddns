@@ -31,7 +31,7 @@ type ddrEntry struct {
 
 // ddrEntries are the encrypted entries of the sockets listened on, in the order of the
 // configuration: listened, the address of each socket; entryOf, the index of its entry.
-func ddrEntries(entries []EncryptedListen, listened []net.Addr, entryOf []int) []ddrEntry {
+func ddrEntries(entries []EncryptedListen, listened []listenedAddr, entryOf []int) []ddrEntry {
 	var result []ddrEntry
 	for i, e := range entries {
 		var of []ddrEntry
@@ -39,7 +39,7 @@ func ddrEntries(entries []EncryptedListen, listened []net.Addr, entryOf []int) [
 			if entryOf[j] != i {
 				continue
 			}
-			ap, err := netip.ParseAddrPort(a.String())
+			ap, err := netip.ParseAddrPort(a.Addr.String())
 			if err != nil {
 				continue
 			}
@@ -50,11 +50,11 @@ func ddrEntries(entries []EncryptedListen, listened []net.Addr, entryOf []int) [
 			}
 			ip := ap.Addr().Unmap().WithZone("")
 			switch {
-			// All of a family's: the one the client asked, at answer time. Of [::], both, as Go
-			// listens there.
+			// All of a family's: the one the client asked, at answer time. Of a port alone, both;
+			// of [::], IPv6 alone, as it is listened on.
 			case ip.IsUnspecified():
-				of[k].v4 = true
-				of[k].v6 = of[k].v6 || ip.Is6()
+				of[k].v4 = of[k].v4 || a.v4
+				of[k].v6 = of[k].v6 || a.v6
 			case hintable(ip) && !slices.Contains(of[k].hints, ip):
 				of[k].hints = append(of[k].hints, ip)
 			}
@@ -105,6 +105,13 @@ func hintsOf(e ddrEntry, addr, local net.Addr) []netip.Addr {
 	return hints
 }
 
+// ddrEntries are the entries Discovery of Designated Resolvers tells of, as Start left them.
+func (s *Server) ddrEntries() []ddrEntry {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.ddr
+}
+
 // isDDR tells whether name is in the zone of Discovery of Designated Resolvers.
 func isDDR(name string) bool {
 	name = strings.ToLower(name)
@@ -143,7 +150,7 @@ func (s *Server) designated(remote net.Addr) []dns.RR {
 		addr, local = c.Addr, c.local
 	}
 	var records []dns.RR
-	for _, e := range s.ddr {
+	for _, e := range s.ddrEntries() {
 		if !s.allowed(client{Addr: addr, allow: e.Allow}) {
 			continue
 		}

@@ -12,40 +12,52 @@ import (
 // reverseAddr is the address a name of in-addr.arpa or ip6.arpa is the reverse of: false for any
 // other name, and for one of a network, with fewer labels than an address has.
 func reverseAddr(name string) (netip.Addr, bool) {
+	p, ok := reversePrefix(name)
+	if !ok || p.Bits() != p.Addr().BitLen() {
+		return netip.Addr{}, false
+	}
+	return p.Addr(), true
+}
+
+// reversePrefix is the network a name of in-addr.arpa or ip6.arpa is the reverse of, of an octet
+// of IPv4 a label, or four bits of IPv6: 192.168.1.0/24 of 1.168.192.in-addr.arpa., and an
+// address, as a network of it alone, of a name with all its labels. False for any other name.
+func reversePrefix(name string) (netip.Prefix, bool) {
 	name = strings.ToLower(dns.Fqdn(name))
 	switch {
 	case strings.HasSuffix(name, ".in-addr.arpa."):
 		labels := strings.Split(strings.TrimSuffix(name, ".in-addr.arpa."), ".")
-		if len(labels) != 4 {
-			return netip.Addr{}, false
+		if len(labels) > 4 {
+			return netip.Prefix{}, false
 		}
 		var b [4]byte
 		for i, l := range labels {
 			n, err := strconv.ParseUint(l, 10, 8)
 			if err != nil || strconv.FormatUint(n, 10) != l {
-				return netip.Addr{}, false
+				return netip.Prefix{}, false
 			}
-			b[3-i] = byte(n)
+			// The last octet first.
+			b[len(labels)-1-i] = byte(n)
 		}
-		return netip.AddrFrom4(b), true
+		return netip.PrefixFrom(netip.AddrFrom4(b), 8*len(labels)), true
 	case strings.HasSuffix(name, ".ip6.arpa."):
 		labels := strings.Split(strings.TrimSuffix(name, ".ip6.arpa."), ".")
-		if len(labels) != 32 {
-			return netip.Addr{}, false
+		if len(labels) > 32 {
+			return netip.Prefix{}, false
 		}
 		var b [16]byte
 		for i, l := range labels {
 			n, err := strconv.ParseUint(l, 16, 8)
 			if err != nil || len(l) != 1 {
-				return netip.Addr{}, false
+				return netip.Prefix{}, false
 			}
 			// The last nibble first.
-			at := 31 - i
+			at := len(labels) - 1 - i
 			b[at/2] |= byte(n) << (4 * (1 - at%2))
 		}
-		return netip.AddrFrom16(b), true
+		return netip.PrefixFrom(netip.AddrFrom16(b), 4*len(labels)), true
 	}
-	return netip.Addr{}, false
+	return netip.Prefix{}, false
 }
 
 // reverseName is a name that an A or AAAA record gives an address, with the record's TTL.
@@ -100,12 +112,9 @@ func (t *table) reverse(asked string) []dns.RR {
 	for _, n := range t.zones {
 		ttl := uint32(n.zone.TTL.Seconds())
 		// The tasks' names, and those their templates made, which are there while they have
-		// addresses: not one that a record has, whose answer is the record's.
+		// addresses.
 		for _, name := range n.zone.Addresses.Names() {
-			if _, task := n.tasks[name]; !task && len(n.records[name]) > 0 {
-				continue
-			}
-			if !isWildcard(name) && t.namesOf(name) == n && slices.Contains(n.zone.Addresses.Get(name), addr) {
+			if t.reverses(n, name) && slices.Contains(n.zone.Addresses.Get(name), addr) {
 				found = append(found, reverseName{name, ttl})
 			}
 		}
@@ -125,4 +134,48 @@ func (t *table) reverse(asked string) []dns.RR {
 		records = append(records, &dns.PTR{Hdr: dns.RR_Header{Name: asked, Rrtype: dns.TypePTR, Class: dns.ClassINET, Ttl: ttl}, Ptr: name})
 	}
 	return records
+}
+
+// reverseAt tells whether asked, a name of in-addr.arpa or ip6.arpa that the resolver has no
+// records of, is there all the same: the reverse of an address it has a name of, or a name above
+// one, or above a record written, in its own or in a zone below. Such a name has no data, and is
+// not one that isn't: no such name would deny, to a client that reads it so (RFC 8020), the names
+// under it that the resolver answers.
+func (t *table) reverseAt(asked string) bool {
+	name := strings.ToLower(dns.Fqdn(asked))
+	if t.namesOf(name).exists[name] {
+		return true
+	}
+	for _, n := range t.zones {
+		if dns.IsSubDomain(name, n.apex) && len(n.exists) > 0 {
+			return true
+		}
+	}
+	p, ok := reversePrefix(name)
+	if !ok {
+		return false
+	}
+	for addr := range t.reverseOf {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	for _, n := range t.zones {
+		for _, name := range n.zone.Addresses.Names() {
+			if t.reverses(n, name) && slices.ContainsFunc(n.zone.Addresses.Get(name), p.Contains) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// reverses tells whether name, one with addresses of the zone n, is answered to the reverse of
+// them: a task's, or one its template made; not one that a record has, whose answer is the
+// record's, nor a wildcard, nor one that a deeper zone hides.
+func (t *table) reverses(n *names, name string) bool {
+	if _, task := n.tasks[name]; !task && len(n.records[name]) > 0 {
+		return false
+	}
+	return !isWildcard(name) && t.namesOf(name) == n
 }

@@ -255,7 +255,7 @@ func (n *names) has(name string) bool {
 }
 
 // owner is the name whose data answers name: itself, or the wildcard of the closest name above
-// it that exists; "" for none.
+// it that exists; "" for none. A name given addresses, of a zone's, exists while it has them.
 func (n *names) owner(name string) string {
 	if n.has(name) {
 		return name
@@ -271,11 +271,17 @@ func (n *names) owner(name string) string {
 		if n.has(wildcard) {
 			return wildcard
 		}
-		if n.exists[p] {
+		if n.exists[p] || n.given(p) {
 			return ""
 		}
 	}
 	return ""
+}
+
+// given tells whether name, of a zone's, has addresses given now: of a task's template, as lookup
+// answers it, or of a task.
+func (n *names) given(name string) bool {
+	return n.zone != nil && len(n.zone.Addresses.Get(name)) > 0
 }
 
 // table is the names of a resolver. Built once: its maps don't change after.
@@ -325,7 +331,7 @@ func (t *table) lookup(asked string, qtype uint16) lookup {
 	// A name the zone was given addresses for that it didn't know of: a task's template made it,
 	// for a host called so. It answers while it has addresses, before a wildcard above it, and
 	// after the names written, the tasks' and the records', which stay theirs.
-	given := n.zone != nil && !n.has(name) && !isWildcard(name) && len(n.zone.Addresses.Get(name)) > 0
+	given := !n.has(name) && !isWildcard(name) && n.given(name)
 	owner := name
 	if !given {
 		owner = n.owner(name)
@@ -408,6 +414,7 @@ func build(cfg Config) (*table, error) {
 			n.tasks[name] = task
 			n.add(name)
 		}
+		// The records' names are in lower case, as ParseRecord makes them, and lookup asks.
 		for i, rr := range z.Records {
 			name, text := rr.Header().Name, quoted(z.Lines, i, rr)
 			if !dns.IsSubDomain(z.Name, name) {

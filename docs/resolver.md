@@ -756,8 +756,9 @@ The resolver goes through these steps in order, and the first one that applies g
 
 - The upstream servers are asked in order, and each is given 2 seconds.
 - Over plain DNS, the query is asked again over TCP when the UDP answer doesn't fit.
-- The client's EDNS, with its size and its DO bit, goes upstream with the query.
-- The first answer, whatever its code, is relayed as it is, with the client's id.
+- EDNS is the resolver's own on each side, and never passed through. When the client's query has EDNS, the query sent upstream has the resolver's: its size, 1232 bytes, the client's DO bit, and padding when the server is encrypted. Nothing else of the client's goes upstream: no cookie and no client subnet.
+- The first answer, whatever its code, is relayed, with the client's id. When the client's query has EDNS, the answer has the resolver's, as a local answer has. Of what the upstream server sent with its own, only an Extended DNS Error ([RFC 8914](https://www.rfc-editor.org/rfc/rfc8914)) is carried over.
+- An answer with an extended code, such as `BADVERS` or `BADCOOKIE`, is about the resolver's own query and not the client's. That server counts as failed, and the next one is asked.
 - If no server answers, the client gets `SERVFAIL`.
 
 ### CNAMEs
@@ -771,6 +772,8 @@ A query of type CNAME gets the CNAME alone.
 ### Answers too big for UDP
 
 A client's UDP size is 512 bytes, or what its EDNS says. An answer bigger than that has `TC` set, and the client asks again over TCP.
+
+A query with an EDNS version other than 0 gets `BADVERS`, as [RFC 6891](https://www.rfc-editor.org/rfc/rfc6891) asks.
 
 ## Reverse names
 
@@ -791,6 +794,8 @@ About the answer:
 ### Private networks
 
 When the resolver has no name for an address in a private network, it answers the reverse query itself with "no such name", `NXDOMAIN`, as [RFC 6303](https://www.rfc-editor.org/rfc/rfc6303) asks. The question then doesn't leave the network for servers that know nothing about it, and the client gets its answer at once.
+
+A name above an address that has a name gets "no data" instead, as `1.168.192.in-addr.arpa` does when `192.168.1.20` has a name. `NXDOMAIN` there would tell the client that nothing exists below it.
 
 These are the networks that belong to no one on the internet:
 
@@ -890,12 +895,12 @@ How long an answer is kept:
 
 What a client gets from the cache:
 
-- The answer has the client's id, the name as the client spelled it, and the client's EDNS.
+- The answer has the client's id, the name as the client spelled it, and the resolver's EDNS when the client's query has EDNS, as any answer has.
 - Its TTLs are reduced by the seconds the answer was kept, so clients don't keep it longer than the upstream server said.
 - An answer is dropped when its time is up, so a TTL served is always at least 1.
 - An answer too big for the client's UDP size is truncated, like any answer.
 
-The same name and type asked with the DO or CD bit is a different answer, and is kept separately. When the cache is full, the answer that was asked for longest ago is dropped to make room.
+The same name and type asked with the DO or CD bit, or without the RD bit, is a different answer, and is kept separately. When the cache is full, the answer that was asked for longest ago is dropped to make room.
 
 Local names are never cached. A task's name, a record or a reverse name comes from memory, and follows discovery at once. For a local CNAME to an outside name, the CNAME is always current, and its target's answer comes from the cache like any forwarded answer.
 

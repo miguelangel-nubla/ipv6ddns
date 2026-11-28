@@ -231,7 +231,8 @@ func start(t *testing.T, cfg Config) *Server {
 	return startWith(t, cfg, nil)
 }
 
-// startWith is start, of a server that prepare changes before it listens: its clock, its roots.
+// startWith is start, of a server that prepare changes before it listens: its clock, its roots,
+// which the clients of its encrypted upstream servers are then made again with.
 func startWith(t *testing.T, cfg Config, prepare func(*Server)) *Server {
 	t.Helper()
 	var s *Server
@@ -246,6 +247,7 @@ func startWith(t *testing.T, cfg Config, prepare func(*Server)) *Server {
 		if prepare != nil {
 			prepare(s)
 		}
+		s.openUpstreams()
 		if err = s.Start(); err == nil {
 			break
 		}
@@ -385,8 +387,9 @@ func TestAnswers(t *testing.T) {
 	}
 }
 
-// The client's EDNS goes upstream as it is: its size and its DO bit; and a local answer has EDNS
-// when the query has, with the DO bit, and its records unsigned.
+// A query with EDNS goes upstream with the resolver's own, of its size, and the client's DO bit;
+// and an answer has EDNS when the query has, the resolver's too, with the DO bit: a forwarded one
+// as a local one, whose records are unsigned.
 func TestEDNS(t *testing.T) {
 	up := newUpstream(t)
 	cfg, _ := testConfig(t, up.address)
@@ -394,10 +397,10 @@ func TestEDNS(t *testing.T) {
 
 	resp := query(t, s, "udp", "example.org.", dns.TypeA, func(m *dns.Msg) { m.SetEdns0(3000, true) })
 	last := up.lastQuery()
-	if opt := last.IsEdns0(); opt == nil || opt.UDPSize() != 3000 || !opt.Do() {
+	if opt := last.IsEdns0(); opt == nil || opt.UDPSize() != ednsSize || !opt.Do() {
 		t.Errorf("upstream got %v", last)
 	}
-	if opt := resp.IsEdns0(); opt == nil || !opt.Do() {
+	if opt := resp.IsEdns0(); opt == nil || !opt.Do() || opt.UDPSize() != ednsSize {
 		t.Errorf("the relayed answer: %v", resp)
 	}
 	resp = query(t, s, "udp", "example.org.", dns.TypeA, nil)
@@ -412,6 +415,167 @@ func TestEDNS(t *testing.T) {
 	resp = query(t, s, "udp", "printer.home.arpa.", dns.TypeA, nil)
 	if resp.IsEdns0() != nil {
 		t.Errorf("local, without EDNS: %v", resp)
+	}
+}
+
+// EDNS is of each hop: what a client sends with its query, as a cookie or its subnet, stays at
+// the resolver, and what the upstream server sends with its answer stays there too, but an
+// Extended DNS Error, which is about the answer. So a forwarded answer, the same one from the
+// cache and a local one come with the same EDNS, the resolver's.
+func TestEDNSHopByHop(t *testing.T) {
+	up := newUpstream(t)
+	up.answerWith(func(req *dns.Msg) *dns.Msg {
+		resp := new(dns.Msg)
+		resp.SetReply(req)
+		q := req.Question[0]
+		if q.Name == "broken.example.org." {
+			resp.Rcode = dns.RcodeServerFailure
+		} else {
+			resp.Answer = append(resp.Answer, rr(t, q.Name+" 300 A 192.0.2.1"))
+		}
+		opt := req.IsEdns0()
+		if opt == nil {
+			return resp
+		}
+		resp.SetEdns0(4096, false)
+		// A server cookie for the client's, as a server that has cookies answers one.
+		for _, o := range opt.Option {
+			if c, ok := o.(*dns.EDNS0_COOKIE); ok {
+				resp.IsEdns0().Option = append(resp.IsEdns0().Option, &dns.EDNS0_COOKIE{Code: dns.EDNS0COOKIE, Cookie: c.Cookie + "0011223344556677"})
+			}
+		}
+		resp.IsEdns0().Option = append(resp.IsEdns0().Option, &dns.EDNS0_NSID{Code: dns.EDNS0NSID, Nsid: "abcd"})
+		if resp.Rcode == dns.RcodeServerFailure {
+			resp.IsEdns0().Option = append(resp.IsEdns0().Option, &dns.EDNS0_EDE{InfoCode: dns.ExtendedErrorCodeDNSBogus, ExtraText: "bogus"})
+		}
+		return resp
+	})
+	cfg, _ := testConfig(t, up.address)
+	s, _ := startCached(t, cfg, 100)
+	with := func(m *dns.Msg) {
+		m.SetEdns0(4000, false)
+		m.IsEdns0().Option = append(m.IsEdns0().Option,
+			&dns.EDNS0_COOKIE{Code: dns.EDNS0COOKIE, Cookie: "0123456789abcdef"},
+			&dns.EDNS0_SUBNET{Code: dns.EDNS0SUBNET, Family: 1, SourceNetmask: 24, Address: net.ParseIP("198.51.100.0").To4()},
+			&dns.EDNS0_NSID{Code: dns.EDNS0NSID})
+	}
+	// The EDNS of an answer, as text: its size and each option's code.
+	edns := func(resp *dns.Msg) string {
+		opt := resp.IsEdns0()
+		if opt == nil {
+			return "none"
+		}
+		text := fmt.Sprint(opt.UDPSize())
+		for _, o := range opt.Option {
+			text += fmt.Sprintf(" option %d", o.Option())
+		}
+		return text
+	}
+
+	forwarded := query(t, s, "udp", "www.example.org.", dns.TypeA, with)
+	if opt := up.lastQuery().IsEdns0(); opt == nil || opt.UDPSize() != ednsSize || len(opt.Option) != 0 {
+		t.Errorf("the upstream server got the client's EDNS: %v", up.lastQuery())
+	}
+	cached := query(t, s, "udp", "www.example.org.", dns.TypeA, with)
+	local := query(t, s, "udp", "printer.home.arpa.", dns.TypeA, with)
+	if n := up.queries.Load(); n != 1 {
+		t.Fatalf("%d queries forwarded, want 1, the second from the cache", n)
+	}
+	want := fmt.Sprint(ednsSize)
+	if edns(forwarded) != want || edns(cached) != want || edns(local) != want {
+		t.Errorf("EDNS: forwarded %q, cached %q, local %q, want %q of each", edns(forwarded), edns(cached), edns(local), want)
+	}
+
+	// The error of the upstream server's, which says why: carried over, to a client with EDNS.
+	failed := query(t, s, "udp", "broken.example.org.", dns.TypeA, with)
+	if got, want := edns(failed), fmt.Sprintf("%d option %d", ednsSize, dns.EDNS0EDE); failed.Rcode != dns.RcodeServerFailure || got != want {
+		t.Errorf("an answer with an Extended DNS Error: %s, EDNS %q, want SERVFAIL, %q", dns.RcodeToString[failed.Rcode], got, want)
+	}
+	if failed := query(t, s, "udp", "broken.example.org.", dns.TypeA, nil); failed.Rcode != dns.RcodeServerFailure || failed.IsEdns0() != nil {
+		t.Errorf("the same, to a client without EDNS: %v", failed)
+	}
+}
+
+// A version of EDNS other than 0 is answered BADVERS, with the resolver's, 0, and nothing else.
+func TestEDNSVersion(t *testing.T) {
+	up := newUpstream(t)
+	cfg, _ := testConfig(t, up.address)
+	s := start(t, cfg)
+	for _, name := range []string{"printer.home.arpa.", "example.org."} {
+		resp := query(t, s, "udp", name, dns.TypeA, func(m *dns.Msg) {
+			m.SetEdns0(1232, false)
+			m.IsEdns0().SetVersion(1)
+		})
+		if opt := resp.IsEdns0(); resp.Rcode != dns.RcodeBadVers || len(resp.Answer) != 0 || opt == nil || opt.Version() != 0 {
+			t.Errorf("%s, EDNS version 1: %s with %d answers, want BADVERS, of version 0: %v", name, dns.RcodeToString[resp.Rcode], len(resp.Answer), resp)
+		}
+	}
+	if n := up.queries.Load(); n != 0 {
+		t.Errorf("%d queries forwarded", n)
+	}
+}
+
+// An upstream server that answers with an extended code, as BADCOOKIE, which is about the
+// resolver's own query and not the client's, has failed: the next is asked, and of none, the
+// client, with EDNS or without, which could not be told such a code, gets SERVFAIL.
+func TestUpstreamExtendedCode(t *testing.T) {
+	bad, good := newUpstream(t), newUpstream(t)
+	bad.answerWith(func(req *dns.Msg) *dns.Msg {
+		resp := new(dns.Msg)
+		resp.SetRcode(req, dns.RcodeBadCookie)
+		resp.SetEdns0(1232, false)
+		return resp
+	})
+	for _, edns := range []func(*dns.Msg){nil, func(m *dns.Msg) { m.SetEdns0(1232, false) }} {
+		cfg, _ := testConfig(t, bad.address)
+		s := start(t, cfg)
+		if resp := query(t, s, "udp", "example.org.", dns.TypeA, edns); resp.Rcode != dns.RcodeServerFailure {
+			t.Errorf("EDNS %t: %s, want SERVFAIL", edns != nil, dns.RcodeToString[resp.Rcode])
+		}
+		if st := s.Status(); st.UpstreamFailures[bad.address] != 1 || st.Queries[ServFail] != 1 {
+			t.Errorf("EDNS %t: failures %v, queries %v", edns != nil, st.UpstreamFailures, st.Queries)
+		}
+		cfg, _ = testConfig(t, bad.address, good.address)
+		s = start(t, cfg)
+		if resp := query(t, s, "udp", "example.org.", dns.TypeA, edns); resp.Rcode != dns.RcodeSuccess || len(resp.Answer) != 1 {
+			t.Errorf("EDNS %t, with a second server: %v", edns != nil, resp)
+		}
+	}
+}
+
+// A resolver on a port alone listens over IPv4 and IPv6, and its default allow has the machine's
+// networks of both: a client of 127.0.0.1 is answered. On [::], it would be IPv6's alone, though
+// both are bound to [::].
+func TestPortAloneDefaultAllow(t *testing.T) {
+	cfg, _ := testConfig(t)
+	cfg.Listen = []listen.Entry{{Host: "", Port: "0"}}
+	s := start(t, cfg)
+	_, port, _ := net.SplitHostPort(s.Addresses()[0])
+	m := new(dns.Msg)
+	m.SetQuestion("printer.home.arpa.", dns.TypeA)
+	resp, err := dns.Exchange(m, net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Rcode != dns.RcodeSuccess {
+		t.Errorf("a client of 127.0.0.1, of a resolver on a port alone: %s", dns.RcodeToString[resp.Rcode])
+	}
+
+	bound := &net.UDPAddr{IP: net.IPv6unspecified, Port: 53}
+	for _, c := range []struct {
+		address string
+		v4, v6  bool
+	}{{":53", true, true}, {"[::]:53", false, true}, {"0.0.0.0:53", true, false}} {
+		got, err := listenedNetworks([]listenedAddr{listenedAt(bound, c.address)})
+		if err != nil {
+			// A machine without an address of the family.
+			continue
+		}
+		v4 := slices.ContainsFunc(got, func(p netip.Prefix) bool { return p.Addr().Is4() })
+		v6 := slices.ContainsFunc(got, func(p netip.Prefix) bool { return p.Addr().Is6() })
+		if v4 != c.v4 || v6 && !c.v6 {
+			t.Errorf("the networks of %s: %v, want of IPv4 %t, of IPv6 %t", c.address, got, c.v4, c.v6)
+		}
 	}
 }
 

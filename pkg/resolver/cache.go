@@ -21,16 +21,17 @@ const (
 )
 
 // cacheKey is what tells two queries apart, for the cache: the name, in lower case, the type and
-// class, and the DO and CD bits, which change what the answer holds.
+// class, and the RD, DO and CD bits, which go upstream and change what the answer holds: one
+// asked without RD is what the server had at hand, as a CNAME without its target's addresses.
 type cacheKey struct {
 	name          string
 	qtype, qclass uint16
-	do, cd        bool
+	rd, do, cd    bool
 }
 
 func keyOf(m *dns.Msg) cacheKey {
 	q := m.Question[0]
-	k := cacheKey{name: strings.ToLower(q.Name), qtype: q.Qtype, qclass: q.Qclass, cd: m.CheckingDisabled}
+	k := cacheKey{name: strings.ToLower(q.Name), qtype: q.Qtype, qclass: q.Qclass, rd: m.RecursionDesired, cd: m.CheckingDisabled}
 	if opt := m.IsEdns0(); opt != nil {
 		k.do = opt.Do()
 	}
@@ -102,7 +103,8 @@ func cacheTTL(resp *dns.Msg) time.Duration {
 	return 0
 }
 
-// put keeps resp, the answer to query, when it can be kept.
+// put keeps resp, the answer to query, when it can be kept: as the server gave it, unvalidated,
+// and only ever the answer to the question it was asked for.
 func (c *cache) put(query, resp *dns.Msg) {
 	if c == nil || len(query.Question) != 1 {
 		return

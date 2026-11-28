@@ -135,7 +135,8 @@ func tlsConfig(routes []route, protocols ...string) *tls.Config {
 	if len(routes) == 1 {
 		return routes[0].certificate().Config(protocols...)
 	}
-	// One of each, made once: the keys of its session tickets are kept.
+	// One of each certificate, made once: the keys of its session tickets are kept, and are its
+	// own, so a session of one certificate's listeners is never resumed at another's.
 	configs := make(map[*certfile.Certificate]*tls.Config)
 	for _, r := range routes {
 		if c := r.certificate(); configs[c] == nil {
@@ -164,8 +165,8 @@ type sharedSocket []route
 
 func (h sharedSocket) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	r := choose(h, serverNameOf(w))
-	if r.s.isStopping() {
-		// Its resolver is shut down: the client asks again, elsewhere.
+	if !r.s.answering() {
+		// Its resolver is shut down, or not started yet: the client asks again, elsewhere.
 		_ = w.Close()
 		return
 	}
@@ -182,8 +183,8 @@ func (h sharedSocket) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 // answerHTTPSOf answers a request of DNS over HTTPS to the entry e, or the web server's that
 // shares it.
 func (s *Server) answerHTTPSOf(w http.ResponseWriter, r *http.Request, e EncryptedListen) {
-	if s.isStopping() {
-		http.Error(w, "the resolver is shut down", http.StatusServiceUnavailable)
+	if !s.answering() {
+		http.Error(w, "the resolver isn't answering", http.StatusServiceUnavailable)
 		return
 	}
 	if e.Web != "" {
@@ -193,15 +194,18 @@ func (s *Server) answerHTTPSOf(w http.ResponseWriter, r *http.Request, e Encrypt
 	s.answerHTTPS(w, r, e.Allow)
 }
 
-// isStopping tells whether the server is shut down, or shutting down.
-func (s *Server) isStopping() bool {
+// answering tells whether the server answers the clients a socket hands it: once its Start has
+// all it answers with, and until it is shut down, or shutting down. A socket that listeners share
+// is open from its first listener's server's start, before the others', and stays open past a
+// Start of theirs that failed.
+func (s *Server) answering() bool {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.stopping
+	return s.started && !s.stopping
 }
 
-// sharedAddr is the address of a socket another server opens, as it listens there: every address,
-// of a port alone, is [::]'s, as Go listens there.
+// sharedAddr is the address of a socket another server opens, as it is bound there: every address,
+// of a port alone, is [::]'s, as Go binds it. Its families are the entry's, as listenedAt tells.
 func sharedAddr(transport, address string) net.Addr {
 	host, port, _ := net.SplitHostPort(address)
 	if host == "" {

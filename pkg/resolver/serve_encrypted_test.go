@@ -422,11 +422,13 @@ func TestEncryptedStartWithoutCertificate(t *testing.T) {
 	}
 }
 
-// After Shutdown, nothing answers over the encrypted transports.
+// After Shutdown, nothing answers over the encrypted transports, and their sockets are closed:
+// the UDP one of DNS over QUIC too, which another can then listen on.
 func TestEncryptedShutdown(t *testing.T) {
 	ca := newTestCA(t)
 	s := start(t, encryptedConfig(t, ca))
-	conn := dialQUIC(t, ca, addressOf(t, s, TransportQUIC))
+	quicAddress := addressOf(t, s, TransportQUIC)
+	conn := dialQUIC(t, ca, quicAddress)
 	tlsAddress, httpsAddress := addressOf(t, s, TransportTLS), addressOf(t, s, TransportHTTPS)
 	if err := s.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
@@ -441,6 +443,33 @@ func TestEncryptedShutdown(t *testing.T) {
 	case <-conn.Context().Done():
 	case <-time.After(3 * time.Second):
 		t.Error("the connection of DNS over QUIC stays open")
+	}
+	pc, err := net.ListenPacket("udp4", quicAddress)
+	if err != nil {
+		t.Fatalf("the UDP socket of DNS over QUIC is still open: %v", err)
+	}
+	pc.Close()
+}
+
+// An answer past 65535 bytes, the most its two bytes of length can say, is truncated over DNS over
+// QUIC, as over TCP and DNS over TLS: not sent with a length that isn't its own.
+func TestServeQUICAnswerTooLarge(t *testing.T) {
+	ca := newTestCA(t)
+	cfg := encryptedConfig(t, ca)
+	for i := range 330 {
+		cfg.Records = append(cfg.Records, mustRecords(t, "", fmt.Sprintf(`huge.example.com. TXT "%03d %s"`, i, strings.Repeat("x", 200)))...)
+	}
+	s := start(t, cfg)
+	conn := dialQUIC(t, ca, addressOf(t, s, TransportQUIC))
+	resp, err := queryQUIC(conn, "huge.example.com.", dns.TypeTXT, 0)
+	if err != nil {
+		t.Fatalf("DNS over QUIC: %v", err)
+	}
+	if !resp.Truncated || len(resp.Answer) == 0 || len(resp.Answer) >= 330 {
+		t.Errorf("DNS over QUIC: truncated %t, %d records of 330", resp.Truncated, len(resp.Answer))
+	}
+	if resp, err := queryTLS(t, ca, addressOf(t, s, TransportTLS), "huge.example.com.", dns.TypeTXT); err != nil || !resp.Truncated {
+		t.Errorf("DNS over TLS: %v, %v", resp, err)
 	}
 }
 

@@ -100,7 +100,7 @@ type encryptedListeners struct {
 	tlsOf, httpsOf, quicOf [][]route
 	// host:port with its scheme, as the status says it, and the addresses themselves.
 	listening []string
-	listened  []net.Addr
+	listened  []listenedAddr
 	// The sockets of each listener's entries, by its name, as listening tells them.
 	byListener map[string][]string
 }
@@ -130,7 +130,7 @@ func (l *encryptedListeners) open(s *Server, e EncryptedListen) error {
 				l.listening = append(l.listening, text)
 			}
 			of(text)
-			l.listened = append(l.listened, addr)
+			l.listened = append(l.listened, listenedAt(addr, a))
 			continue
 		}
 		routes := s.routesOf(e, k)
@@ -144,7 +144,7 @@ func (l *encryptedListeners) open(s *Server, e EncryptedListen) error {
 			l.quicOf = append(l.quicOf, routes)
 			l.listening = append(l.listening, e.Transport+"://"+c.LocalAddr().String())
 			of(e.Transport + "://" + c.LocalAddr().String())
-			l.listened = append(l.listened, c.LocalAddr())
+			l.listened = append(l.listened, listenedAt(c.LocalAddr(), a))
 			continue
 		}
 		tl, err := net.Listen(tcp, a)
@@ -160,7 +160,7 @@ func (l *encryptedListeners) open(s *Server, e EncryptedListen) error {
 		}
 		l.listening = append(l.listening, e.Transport+"://"+tl.Addr().String())
 		of(e.Transport + "://" + tl.Addr().String())
-		l.listened = append(l.listened, tl.Addr())
+		l.listened = append(l.listened, listenedAt(tl.Addr(), a))
 	}
 	return nil
 }
@@ -341,6 +341,7 @@ func freshness(resp *dns.Msg) uint32 {
 func (s *Server) serveQUIC(conns []net.PacketConn, routes [][]route) {
 	for i, c := range conns {
 		of := routes[i]
+		// No 0-RTT, which quic-go leaves off unless asked: a query replayed is answered twice.
 		l, err := quic.Listen(c, tlsConfig(of, alpnQUIC), &quic.Config{
 			MaxIdleTimeout:     30 * time.Second,
 			MaxIncomingStreams: 100,
@@ -352,6 +353,7 @@ func (s *Server) serveQUIC(conns []net.PacketConn, routes [][]route) {
 		}
 		s.mutex.Lock()
 		s.quic = append(s.quic, l)
+		s.quicSockets = append(s.quicSockets, c)
 		s.mutex.Unlock()
 		go func() {
 			for {
@@ -375,7 +377,8 @@ func (s *Server) serveQUIC(conns []net.PacketConn, routes [][]route) {
 // serveQUICConn answers the streams of a connection of DNS over QUIC, until it closes.
 func (s *Server) serveQUICConn(conn *quic.Conn, allow []netip.Prefix) {
 	s.mutex.Lock()
-	if s.stopping {
+	// Shut down, or, of a socket another server opened, not started yet: the client asks again.
+	if s.stopping || !s.started {
 		s.mutex.Unlock()
 		_ = conn.CloseWithError(doqNoError, "")
 		return
@@ -426,6 +429,8 @@ func (s *Server) answerQUIC(conn *quic.Conn, stream *quic.Stream, allow []netip.
 		_ = conn.CloseWithError(doqProtocolError, "not a query")
 		return
 	}
+	// The length is of two bytes, as over TCP: an answer past it is truncated, as there.
+	resp.Truncate(dns.MaxMsgSize)
 	packed, err := resp.Pack()
 	if err != nil {
 		stream.CancelWrite(quic.StreamErrorCode(doqProtocolError))
@@ -444,10 +449,11 @@ func resetQUIC(stream *quic.Stream) {
 }
 
 // shutdownEncrypted stops answering over HTTPS and QUIC: the answers being made over HTTPS are
-// waited for, until ctx is done, and the connections of QUIC are closed.
+// waited for, until ctx is done, and the connections of QUIC are closed, and then its UDP
+// sockets, which a listener of QUIC given its socket leaves open when it closes.
 func (s *Server) shutdownEncrypted(ctx context.Context) {
 	s.mutex.Lock()
-	https, listeners := s.https, s.quic
+	https, listeners, sockets := s.https, s.quic, s.quicSockets
 	conns := make([]*quic.Conn, 0, len(s.quicConns))
 	for c := range s.quicConns {
 		conns = append(conns, c)
@@ -464,5 +470,8 @@ func (s *Server) shutdownEncrypted(ctx context.Context) {
 	}
 	for _, c := range conns {
 		_ = c.CloseWithError(doqNoError, "")
+	}
+	for _, c := range sockets {
+		c.Close()
 	}
 }

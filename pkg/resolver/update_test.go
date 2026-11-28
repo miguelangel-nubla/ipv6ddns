@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -158,6 +159,8 @@ func TestUpdateSignatures(t *testing.T) {
 		{"a key it doesn't know", "other", dns.HmacSHA256, testSecret, time.Now(), dns.RcodeBadKey},
 		{"another algorithm", "nas", dns.HmacSHA512, testSecret, time.Now(), dns.RcodeBadKey},
 		{"a wrong secret", "nas", dns.HmacSHA256, other, time.Now(), dns.RcodeBadSig},
+		// The signature is checked first: a wrong one is never answered signed.
+		{"a wrong secret, an hour ago", "nas", dns.HmacSHA256, other, time.Now().Add(-time.Hour), dns.RcodeBadSig},
 		{"an hour ago", "nas", dns.HmacSHA256, testSecret, time.Now().Add(-time.Hour), dns.RcodeBadTime},
 		{"in an hour", "nas", dns.HmacSHA256, testSecret, time.Now().Add(time.Hour), dns.RcodeBadTime},
 	} {
@@ -165,7 +168,8 @@ func TestUpdateSignatures(t *testing.T) {
 		if resp.Rcode != dns.RcodeNotAuth || tsigError(resp) != c.want {
 			t.Errorf("%s: %s, TSIG error %d, want NOTAUTH, %d", c.what, dns.RcodeToString[resp.Rcode], tsigError(resp), c.want)
 		}
-		// BADTIME is signed, with the server's time, as RFC 8945 has it; the others, unsigned.
+		// BADTIME is signed, with the server's time as its other data, as RFC 8945 has it; the
+		// others, unsigned.
 		sig := resp.IsTsig()
 		switch {
 		case sig == nil:
@@ -190,6 +194,84 @@ func TestUpdateSignatures(t *testing.T) {
 	}
 	if n := g.applies(); n != 1 {
 		t.Errorf("applied %d times, want once: the second add changed nothing", n)
+	}
+}
+
+// A message whose time is off is answered BADTIME as RFC 8945, 5.2.3, has it: signed with the
+// client's own time and fudge, which the client, by its clock, takes, and the server's time as
+// the other data.
+func TestUpdateBadTime(t *testing.T) {
+	g := newFakeGrant("home.arpa.", nil, dns.TypeTXT)
+	s := start(t, updateConfig(t, g))
+	for _, off := range []time.Duration{-time.Hour, time.Hour} {
+		m := updateOf("home.arpa.")
+		m.Insert([]dns.RR{rr(t, `x.home.arpa. 60 TXT "a"`)})
+		signed := time.Now().Add(off)
+		m.SetTsig("nas.", dns.HmacSHA256, 123, signed.Unix())
+		// Sent by hand: the client of miekg/dns takes no NOTAUTH's signature, whatever it is.
+		wire, requestMAC, err := dns.TsigGenerate(m, testSecret, "", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := net.Dial("udp", s.Addresses()[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		if _, err := conn.Write(wire); err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, dns.MaxMsgSize)
+		n, err := conn.Read(buf)
+		if err != nil {
+			t.Fatalf("%s off: no response: %v", off, err)
+		}
+		resp := new(dns.Msg)
+		if err := resp.Unpack(buf[:n]); err != nil {
+			t.Fatal(err)
+		}
+		sig := resp.IsTsig()
+		if sig == nil || sig.Error != dns.RcodeBadTime || resp.Rcode != dns.RcodeNotAuth {
+			t.Fatalf("%s off: not BADTIME: %v", off, resp)
+		}
+		if sig.TimeSigned != uint64(signed.Unix()) {
+			t.Errorf("%s off: time signed %d, want the client's, %d", off, sig.TimeSigned, signed.Unix())
+		}
+		if sig.Fudge != 123 {
+			t.Errorf("%s off: fudge %d, want the client's, 123", off, sig.Fudge)
+		}
+		var server int64
+		if _, err := fmt.Sscanf(sig.OtherData, "%012x", &server); err != nil || sig.OtherLen != 6 || time.Until(time.Unix(server, 0)).Abs() > time.Minute {
+			t.Errorf("%s off: other data %q, want the server's time", off, sig.OtherData)
+		}
+		// The signature, made again as the client that signed the request checks it: over the
+		// request's, the response and its times.
+		if _, mac, err := dns.TsigGenerate(resp.Copy(), testSecret, requestMAC, false); err != nil || !strings.EqualFold(mac, sig.MAC) {
+			t.Errorf("%s off: the signature %s, want %s: %v", off, sig.MAC, mac, err)
+		}
+	}
+	if n := g.applies(); n != 0 {
+		t.Errorf("applied %d times", n)
+	}
+}
+
+// A signature is taken whole alone: one cut short, to half its size, is a wrong one.
+func TestSignatureWhole(t *testing.T) {
+	s := start(t, updateConfig(t, newFakeGrant("home.arpa.", nil, dns.TypeTXT)))
+	message := []byte("a message")
+	sig := &dns.TSIG{Hdr: dns.RR_Header{Name: "NAS."}, Algorithm: dns.HmacSHA256}
+	mac, err := s.keys.Generate(message, sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig.MAC = hex.EncodeToString(mac)
+	if err := s.keys.Verify(message, sig); err != nil {
+		t.Errorf("whole: %v", err)
+	}
+	sig.MAC = hex.EncodeToString(mac[:len(mac)/2])
+	if err := s.keys.Verify(message, sig); !errors.Is(err, dns.ErrSig) {
+		t.Errorf("cut short: %v, want a wrong signature", err)
 	}
 }
 

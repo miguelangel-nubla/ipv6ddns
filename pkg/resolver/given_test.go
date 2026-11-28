@@ -99,3 +99,33 @@ func TestGivenNames(t *testing.T) {
 		t.Errorf("the reverse of the host that left: %v", got)
 	}
 }
+
+// A name given addresses is there while it has them: the wildcard above it answers no name below
+// it, as below a name with a record, and does again once the addresses are gone.
+func TestGivenNameStopsWildcard(t *testing.T) {
+	up := newUpstream(t)
+	cfg, addresses := testConfig(t, up.address)
+	s := start(t, cfg)
+	wildcard := func(name string) bool {
+		t.Helper()
+		resp := query(t, s, "udp", name, dns.TypeA, nil)
+		return slices.Equal(answers(resp), []string{name + " A 192.168.1.40"})
+	}
+	if !wildcard("below.given.wild.home.arpa.") {
+		t.Fatal("below a name with nothing: not the wildcard's")
+	}
+	if wildcard("below.exact.wild.home.arpa.") {
+		t.Fatal("below a record's name: the wildcard's")
+	}
+	addresses.Set("given.wild.home.arpa.", []netip.Addr{netip.MustParseAddr("192.168.1.62")})
+	if wildcard("below.given.wild.home.arpa.") || wildcard("far.below.given.wild.home.arpa.") {
+		t.Error("below a name given addresses: the wildcard's")
+	}
+	if !wildcard("beside.wild.home.arpa.") {
+		t.Error("beside the name given: not the wildcard's")
+	}
+	addresses.Set("given.wild.home.arpa.", nil)
+	if !wildcard("below.given.wild.home.arpa.") {
+		t.Error("below a name whose addresses are gone: not the wildcard's")
+	}
+}

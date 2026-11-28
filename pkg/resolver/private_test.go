@@ -3,6 +3,7 @@ package resolver
 import (
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/miekg/dns"
 )
@@ -80,8 +81,13 @@ func TestPrivateReverse(t *testing.T) {
 	}
 	// The loopback's zone is of its one address: its name is the apex, which has no PTR.
 	local(reverseName4(t, "::1"), dns.TypePTR, dns.RcodeSuccess, "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa.")
-	// A name of the zone that isn't an address's, deeper or shallower.
-	local("1.168.192.in-addr.arpa.", dns.TypePTR, dns.RcodeNameError, "168.192.in-addr.arpa.")
+	// A name of the zone that isn't an address's: one with no name under it, and one deeper than
+	// an address, are no such name; one above an address with a name has no data.
+	local("2.168.192.in-addr.arpa.", dns.TypePTR, dns.RcodeNameError, "168.192.in-addr.arpa.")
+	local("x.10.1.168.192.in-addr.arpa.", dns.TypePTR, dns.RcodeNameError, "168.192.in-addr.arpa.")
+	if resp := local("1.168.192.in-addr.arpa.", dns.TypePTR, dns.RcodeSuccess, "168.192.in-addr.arpa."); len(resp.Answer) != 0 {
+		t.Errorf("above the named address: %v", resp.Answer)
+	}
 
 	// The address of a name of the resolver's: its name; of another type, no data.
 	if resp := local(reverseName4(t, "192.168.1.10"), dns.TypePTR, dns.RcodeSuccess, ""); len(resp.Answer) != 1 || resp.Answer[0].(*dns.PTR).Ptr != "nas.home.arpa." {
@@ -123,6 +129,59 @@ func TestPrivateReverse(t *testing.T) {
 	resp := query(t, forwarding, "udp", reverseName4(t, "192.168.1.10"), dns.TypePTR, nil)
 	if up.queries.Load() != before || !resp.Authoritative || len(resp.Answer) != 1 || resp.Answer[0].(*dns.PTR).Ptr != "nas.home.arpa." {
 		t.Errorf("the named address, forwarding: %v, asked upstream %t", resp.Answer, up.queries.Load() != before)
+	}
+}
+
+// A name of a private reverse zone above one the resolver answers is there, with no data: no such
+// name would deny the names under it, as RFC 8020 reads it. Above the address of a task's name, of
+// a record's, of a PTR record written, and of a zone's of the reverse itself.
+func TestPrivateEmptyNonTerminal(t *testing.T) {
+	up := newUpstream(t)
+	cfg, addresses := testConfig(t, up.address)
+	cfg.Records = append(cfg.Records, mustRecords(t, "", "7.3.2.10.in-addr.arpa. PTR host.example.com.")...)
+	cfg.Zones = append(cfg.Zones, Zone{Credential: "reverse", Name: "5.10.in-addr.arpa.", TTL: time.Minute,
+		Records: mustRecords(t, "5.10.in-addr.arpa", "1.2 PTR host.example.com.")})
+	s := start(t, cfg)
+	addresses.Set("nas.home.arpa.", []netip.Addr{netip.MustParseAddr("172.16.5.10"), netip.MustParseAddr("fd00:1::10")})
+
+	for _, name := range []string{"7.3.2.10.in-addr.arpa.", "1.2.5.10.in-addr.arpa.", reverseName4(t, "172.16.5.10"), reverseName4(t, "fd00:1::10"), reverseName4(t, "192.168.1.20")} {
+		if resp := query(t, s, "udp", name, dns.TypePTR, nil); len(resp.Answer) != 1 {
+			t.Fatalf("%s: %v", name, resp)
+		}
+	}
+	for name, rcode := range map[string]int{
+		// Above the task's name's addresses, which were given after the start.
+		"5.16.172.in-addr.arpa.":    dns.RcodeSuccess,
+		"6.16.172.in-addr.arpa.":    dns.RcodeNameError,
+		"1.0.0.0.0.0.d.f.ip6.arpa.": dns.RcodeSuccess,
+		"0.0.0.d.f.ip6.arpa.":       dns.RcodeSuccess,
+		"2.0.0.0.0.0.d.f.ip6.arpa.": dns.RcodeNameError,
+		"x.0.0.0.0.0.d.f.ip6.arpa.": dns.RcodeNameError,
+		"10.0.0.0.0.d.f.ip6.arpa.":  dns.RcodeNameError,
+		"1.168.192.in-addr.arpa.":   dns.RcodeSuccess, // printer.home.arpa's record
+		"0.0.10.in-addr.arpa.":      dns.RcodeSuccess, // printer.lab.home.arpa's
+		"0.10.in-addr.arpa.":        dns.RcodeSuccess,
+		"1.10.in-addr.arpa.":        dns.RcodeNameError,
+		"01.168.192.in-addr.arpa.":  dns.RcodeNameError,
+		// Above the PTR record written, of the resolver's own.
+		"3.2.10.in-addr.arpa.": dns.RcodeSuccess,
+		"2.10.in-addr.arpa.":   dns.RcodeSuccess,
+		"4.2.10.in-addr.arpa.": dns.RcodeNameError,
+		// The zone of the reverse: its own name, a name above its record, and one beside it.
+		"5.10.in-addr.arpa.":   dns.RcodeSuccess,
+		"2.5.10.in-addr.arpa.": dns.RcodeSuccess,
+		"3.5.10.in-addr.arpa.": dns.RcodeNameError,
+	} {
+		for _, qtype := range []uint16{dns.TypePTR, dns.TypeNS} {
+			resp := query(t, s, "udp", name, qtype, nil)
+			if _, ok := firstRR(resp.Ns).(*dns.SOA); resp.Rcode != rcode || len(resp.Answer) != 0 || !ok || !resp.Authoritative {
+				t.Errorf("%s %s: %s, %d answers, authority %v; want %s with no data, of the resolver's own", name, dns.TypeToString[qtype],
+					dns.RcodeToString[resp.Rcode], len(resp.Answer), resp.Ns, dns.RcodeToString[rcode])
+			}
+		}
+	}
+	if n := up.queries.Load(); n != 0 {
+		t.Errorf("%d queries forwarded", n)
 	}
 }
 

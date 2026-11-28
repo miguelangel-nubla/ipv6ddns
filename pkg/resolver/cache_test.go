@@ -391,3 +391,36 @@ func TestCacheConcurrent(t *testing.T) {
 		t.Errorf("status: %+v", st)
 	}
 }
+
+// A query without RD is another question: the upstream server answers it with what it has at
+// hand, as a CNAME without its target's addresses, which is no answer to a client that asks
+// with RD, as they all do.
+func TestCacheRecursionDesired(t *testing.T) {
+	up := newUpstream(t)
+	up.answerWith(func(req *dns.Msg) *dns.Msg {
+		resp := new(dns.Msg)
+		resp.SetReply(req)
+		q := req.Question[0]
+		resp.Answer = append(resp.Answer, &dns.CNAME{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 300}, Target: "target.example.net."})
+		if req.RecursionDesired {
+			resp.Answer = append(resp.Answer, &dns.A{Hdr: dns.RR_Header{Name: "target.example.net.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300}, A: net.ParseIP("192.0.2.7")})
+		}
+		return resp
+	})
+	cfg, _ := testConfig(t, up.address)
+	s, _ := startCached(t, cfg, 100)
+
+	without := func(m *dns.Msg) { m.RecursionDesired = false }
+	if resp := query(t, s, "udp", "www.example.org.", dns.TypeA, without); len(resp.Answer) != 1 {
+		t.Fatalf("a query without RD: %v", answers(resp))
+	}
+	if resp := query(t, s, "udp", "www.example.org.", dns.TypeA, nil); len(resp.Answer) != 2 {
+		t.Errorf("a query with RD, after one without: %v, want the CNAME and its address", answers(resp))
+	}
+	// Each kept, as its own.
+	query(t, s, "udp", "www.example.org.", dns.TypeA, without)
+	query(t, s, "udp", "www.example.org.", dns.TypeA, nil)
+	if n := up.queries.Load(); n != 2 {
+		t.Errorf("%d queries forwarded, want 2: one of each, kept", n)
+	}
+}

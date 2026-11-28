@@ -18,11 +18,16 @@ import (
 // each family and gets a record of each transport, for the certificate's name, with the address
 // it asked as a hint, and no hint a client can't use: an unspecified or link-local one.
 func TestLiveResolverDDR(t *testing.T) {
+	const everyone = `
+    allow:
+      - 0.0.0.0/0
+      - ::/0`
 	for _, c := range []struct {
 		name   string
+		allow  string
 		listen func(m *livetest.Machine) string
 	}{
-		{"its addresses", func(m *livetest.Machine) string {
+		{"its addresses", everyone, func(m *livetest.Machine) string {
 			return fmt.Sprintf(`
       - dns://%[1]s
       - dns://[%[2]s]
@@ -33,7 +38,17 @@ func TestLiveResolverDDR(t *testing.T) {
       - "quic://%[1]s"
       - "quic://[%[2]s]"`, m.IPv4, m.IPv6)
 		}},
-		{"ports alone", func(*livetest.Machine) string {
+		{"ports alone", everyone, func(*livetest.Machine) string {
+			return `
+      - dns://53
+      - tls://853
+      - https://443
+      - quic://853`
+		}},
+		// Without allow, a port alone answers every network of the machine, of both families: its
+		// socket is one of IPv6 that takes IPv4 too, and was once read as of IPv6 alone, so that
+		// the client's query over IPv4 was refused.
+		{"ports alone, without allow", "", func(*livetest.Machine) string {
 			return `
       - dns://53
       - tls://853
@@ -53,10 +68,7 @@ listeners:
       - http://8053
   lan:
     listen:%s
-    tls: home
-    allow:
-      - 0.0.0.0/0
-      - ::/0
+    tls: home%s
 webservers:
   main:
     listeners:
@@ -84,7 +96,7 @@ tasks:
     endpoints:
       home:
         - nobody
-`, c.listen(srv), certFile, keyFile)
+`, c.listen(srv), c.allow, certFile, keyFile)
 			configure(t, srv, lan.Router, "srv", 8053, config).start().serving()
 
 			for _, asked := range []string{srv.IPv4.String(), srv.IPv6.String()} {

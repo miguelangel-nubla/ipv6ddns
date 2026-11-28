@@ -37,7 +37,10 @@ type UpdateKey struct {
 }
 
 // Grant is what a key may change: the records of some names of a zone, of some types, and where
-// they go when they change. Its methods are called one at a time, by the server.
+// they go when they change. Records and Apply are called one at a time, by the server, an
+// update's whole between its first and its last. Kind, Scope and Types are called at any time,
+// of each message signed and of the status, together with those and with each other: they must
+// be safe for that.
 type Grant interface {
 	// Kind is the permission it is of, for the status and the log: challenges.
 	Kind() string
@@ -92,6 +95,9 @@ const (
 )
 
 // tsigFudge is the clock skew a signature is good for, and the one the responses say: RFC 8945's.
+// A message signed is good for all of it, more than once: the times signed aren't kept, as RFC
+// 8945 has a server that may, so an update caught on the wire can be sent again within it. It
+// would make again a change its key was given to make.
 const tsigFudge = 300
 
 // The results of updates, as the status and the metrics count them.
@@ -197,6 +203,7 @@ func (k keyring) Verify(msg []byte, t *dns.TSIG) error {
 	if err != nil {
 		return err
 	}
+	// Whole: a signature cut short, which RFC 8945 lets a server take, is a wrong one.
 	got, err := hex.DecodeString(t.MAC)
 	if err != nil || !hmac.Equal(want, got) {
 		return dns.ErrSig
@@ -310,6 +317,8 @@ func lowerName(name string) string { return strings.ToLower(dns.Fqdn(name)) }
 func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG, remote net.Addr) {
 	key := s.keys[strings.ToLower(t.Hdr.Name)]
 	var tsigError uint16
+	// The signature is checked before the time, by miekg/dns: a time refused is of a message the
+	// key did sign, and its response can be signed with it.
 	switch err := w.TsigStatus(); {
 	case key == nil, dns.CanonicalName(t.Algorithm) != key.Algorithm:
 		tsigError = dns.RcodeBadKey
@@ -333,12 +342,13 @@ func (s *Server) serveSigned(w dns.ResponseWriter, req *dns.Msg, t *dns.TSIG, re
 		resp := new(dns.Msg)
 		resp.SetRcode(req, dns.RcodeNotAuth)
 		if tsigError == dns.RcodeBadTime {
-			// Signed, with the server's time, as RFC 8945 has it: the key is right, and the client
-			// tells the clocks apart from a secret refused.
-			now := s.now().Unix()
-			resp.SetTsig(t.Hdr.Name, t.Algorithm, tsigFudge, now)
+			// Signed, as RFC 8945, 5.2.3, has it: with the client's time and fudge, so that the
+			// client, by its own clock, takes the signature, and the server's time as other data,
+			// which tells it how far apart the clocks are. The key is right, and the client tells
+			// the clocks apart from a secret refused.
+			resp.SetTsig(t.Hdr.Name, t.Algorithm, t.Fudge, int64(t.TimeSigned))
 			sig := resp.IsTsig()
-			sig.Error, sig.OtherLen, sig.OtherData = dns.RcodeBadTime, 6, fmt.Sprintf("%012x", now)
+			sig.Error, sig.OtherLen, sig.OtherData = dns.RcodeBadTime, 6, fmt.Sprintf("%012x", s.now().Unix())
 			_ = w.WriteMsg(resp)
 			return
 		}
@@ -619,6 +629,8 @@ func (s *Server) update(req *dns.Msg, key *keyState) *dns.Msg {
 		name := lowerName(h.Name)
 		have := records(name)
 		switch {
+		// A record there already stays as it is, its TTL too: what is written has its own. And
+		// no rule of CNAMEs, RFC 2136, 3.4.2.2: no grant holds them.
 		case h.Class == dns.ClassINET:
 			if !slices.ContainsFunc(have, func(r dns.RR) bool { return dns.IsDuplicate(r, rr) }) {
 				add := dns.Copy(rr)

@@ -54,7 +54,7 @@ type upstreamServer struct {
 
 	// Of DNS over TLS: the connections open, kept for the next query.
 	dot *dotPool
-	// Of DNS over HTTPS: its client, made at Start.
+	// Of DNS over HTTPS: its client.
 	doh *http.Client
 }
 
@@ -103,8 +103,9 @@ func (srv *upstreamServer) tlsConfig(roots *x509.CertPool) *tls.Config {
 	return &tls.Config{ServerName: strings.TrimSuffix(srv.host, "."), RootCAs: roots, MinVersion: tls.VersionTLS12}
 }
 
-// open makes the clients of an encrypted server: of DNS over HTTPS, one, over HTTP/2, which
-// connects to the addresses targets gives, and never asks the system's resolver.
+// open makes the clients of an encrypted server, when the server is made: of DNS over HTTPS, one,
+// over HTTP/2, which connects to the addresses targets gives, and never asks the system's
+// resolver.
 func (srv *upstreamServer) open(s *Server) {
 	switch srv.transport {
 	case dnsOverTLS:
@@ -218,27 +219,34 @@ func (p *dotPool) closeAll() {
 }
 
 // askTLS sends m to target over a connection of DNS over TLS, one kept open or a new one, and reads
-// its answer. A connection kept that fails, as one the server closed meanwhile, is tried again on
-// a new one.
+// its answer. A connection kept that fails, as one the server closed meanwhile, or one gone
+// silent, as past a firewall that forgot it, is tried again on a new one, with a time of its own:
+// the kept one may have used all of the first.
 func (s *Server) askTLS(ctx context.Context, srv *upstreamServer, m *dns.Msg, target string) (*dns.Msg, error) {
-	deadline := time.Now().Add(s.timeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
+	deadline := func() time.Time {
+		deadline := time.Now().Add(s.timeout)
+		if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+			deadline = d
+		}
+		return deadline
 	}
 	if c := srv.dot.take(target); c != nil {
-		if resp, err := exchangeOn(ctx, c, m, deadline); err == nil {
+		if resp, err := exchangeOn(ctx, c, m, deadline()); err == nil {
 			srv.dot.put(target, c)
 			return resp, nil
 		}
 		c.Close()
 	}
-	dialer := &tls.Dialer{NetDialer: &net.Dialer{Deadline: deadline}, Config: srv.dot.config}
+	until := deadline()
+	// The dialer's deadline is the handshake's too, of tls.Dialer: a server that takes the
+	// connection and says nothing is given up with it.
+	dialer := &tls.Dialer{NetDialer: &net.Dialer{Deadline: until}, Config: srv.dot.config}
 	raw, err := dialer.DialContext(ctx, "tcp", target)
 	if err != nil {
 		return nil, err
 	}
 	c := &dotConn{Conn: &dns.Conn{Conn: raw}}
-	resp, err := exchangeOn(ctx, c, m, deadline)
+	resp, err := exchangeOn(ctx, c, m, until)
 	if err != nil {
 		c.Close()
 		return nil, err
@@ -277,7 +285,9 @@ func exchangeOn(ctx context.Context, c *dotConn, m *dns.Msg, deadline time.Time)
 
 // isAnswerTo tells whether resp is the answer to m: a response, with its id, and its question. A
 // query isn't one, as m itself come back, from a server that echoes, or from the resolver's own
-// socket.
+// socket. The question's class isn't compared, nor its spelling: over UDP the socket is
+// connected, so the system takes the server's packets alone, at a port and with an id that are
+// both random.
 func isAnswerTo(resp, m *dns.Msg) bool {
 	return resp.Response && resp.Id == m.Id && len(resp.Question) == len(m.Question) && (len(m.Question) == 0 || strings.EqualFold(resp.Question[0].Name, m.Question[0].Name) && resp.Question[0].Qtype == m.Question[0].Qtype)
 }
@@ -314,6 +324,9 @@ func (s *Server) askHTTPS(ctx context.Context, srv *upstreamServer, m *dns.Msg) 
 	if err != nil {
 		return nil, err
 	}
+	if len(data) > dns.MaxMsgSize {
+		return nil, errors.New("an answer larger than a DNS message")
+	}
 	answer := new(dns.Msg)
 	if err := answer.Unpack(data); err != nil {
 		return nil, err
@@ -346,28 +359,4 @@ func padded(m *dns.Msg) *dns.Msg {
 	padding := (paddingBlock - (length+4)%paddingBlock) % paddingBlock
 	opt.Option = append(opt.Option, &dns.EDNS0_PADDING{Padding: make([]byte, padding)})
 	return m
-}
-
-// unpadded is resp, the answer over an encrypted transport to query, as the client is to have
-// it: without the padding, and without EDNS when query had none, which padded added.
-func unpadded(resp, query *dns.Msg) *dns.Msg {
-	for i := 0; i < len(resp.Extra); i++ {
-		opt, ok := resp.Extra[i].(*dns.OPT)
-		if !ok {
-			continue
-		}
-		if query.IsEdns0() == nil {
-			resp.Extra = append(resp.Extra[:i], resp.Extra[i+1:]...)
-			i--
-			continue
-		}
-		var options []dns.EDNS0
-		for _, o := range opt.Option {
-			if o.Option() != dns.EDNS0PADDING {
-				options = append(options, o)
-			}
-		}
-		opt.Option = options
-	}
-	return resp
 }

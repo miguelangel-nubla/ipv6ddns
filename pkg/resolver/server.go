@@ -105,13 +105,18 @@ type Server struct {
 	https     []*http.Server
 	quic      []*quic.Listener
 	quicConns map[*quic.Conn]struct{}
-	listening []string
+	// The UDP sockets of DNS over QUIC, which its listeners don't close with themselves.
+	quicSockets []net.PacketConn
+	listening   []string
 	// The sockets of each listener's entries, by its name.
 	listenerSockets map[string][]string
 	allow           []netip.Prefix
 	serving         bool
-	stopping        bool
-	err             error
+	// Once Start has everything it answers with: before, and after a Start that failed, a socket
+	// another server opens for it hands it no client.
+	started  bool
+	stopping bool
+	err      error
 }
 
 // New makes the server of cfg, whose zones have their Addresses. errorf logs a server that stops
@@ -143,6 +148,7 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 	if err := s.newForwards(); err != nil {
 		return nil, err
 	}
+	s.openUpstreams()
 	if !cfg.ForwardUnknownPrivateReverse {
 		s.private = privateZones()
 	}
@@ -152,6 +158,20 @@ func New(cfg Config, errorf func(string, ...any)) (*Server, error) {
 	}
 	s.keys = keyring(keys)
 	return s, nil
+}
+
+// openUpstreams makes the clients of the encrypted upstream servers, with the server's timeout and
+// roots as they are now: in New, so that no query finds a server without its client, whichever
+// socket it came by.
+func (s *Server) openUpstreams() {
+	for _, srv := range s.upstreams {
+		srv.open(s)
+	}
+	for _, z := range s.forwards {
+		for _, srv := range z.upstreams {
+			srv.open(s)
+		}
+	}
 }
 
 // The bounds of how long the addresses of an upstream server given by host name are kept: what
@@ -287,14 +307,6 @@ func (s *Server) Start() error {
 			return fmt.Errorf("%s: no certificate for %s", s.config.Path, e.Line)
 		}
 	}
-	for _, srv := range s.upstreams {
-		srv.open(s)
-	}
-	for _, z := range s.forwards {
-		for _, srv := range z.upstreams {
-			srv.open(s)
-		}
-	}
 	var (
 		conns     []net.PacketConn
 		listeners []net.Listener
@@ -312,7 +324,7 @@ func (s *Server) Start() error {
 	var listening []string
 	sockets := map[string][]string{}
 	// The addresses of the sockets without an allow of their own, whose networks are the default.
-	var listened []net.Addr
+	var listened []listenedAddr
 	var connAllow [][]netip.Prefix
 	for i, a := range addresses {
 		udp, tcp := networks(a)
@@ -336,7 +348,7 @@ func (s *Server) Start() error {
 		}
 		connAllow = append(connAllow, addressAllow[i])
 		if addressAllow[i] == nil {
-			listened = append(listened, c.LocalAddr())
+			listened = append(listened, listenedAddr{c.LocalAddr(), udp != "udp6", udp != "udp4"})
 		}
 	}
 	var entryOf []int
@@ -396,7 +408,11 @@ func (s *Server) Start() error {
 	s.servers, s.listening, s.allow, s.serving = servers, listening, allow, true
 	s.listenerSockets = sockets
 	s.ddr = ddrEntries(s.config.Encrypted, enc.listened, entryOf)
+	// All it answers with is there: its own sockets serve from here on, and those of others that
+	// are its listeners' too.
+	s.started = true
 	s.mutex.Unlock()
+	// Every socket is bound already, so each server tells it started, and the wait ends.
 	started.Add(len(servers))
 	for _, srv := range servers {
 		go func() {
@@ -424,9 +440,10 @@ func (s *Server) stopped(err error) {
 	s.errorf("resolver %s: %s", s.config.Name, err)
 }
 
-// Shutdown stops answering, and closes the addresses: it waits for the answers being made, until
-// ctx is done, the program's time to stop, when the queries still asked upstream are given up.
-// The connections kept to the upstream servers are closed.
+// Shutdown stops answering, and closes the addresses, the UDP sockets of DNS over QUIC too: it
+// waits for the answers being made, until ctx is done, the program's time to stop, when the
+// queries still asked upstream are given up. The connections kept to the upstream servers are
+// closed.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mutex.Lock()
 	s.stopping, s.serving = true, false
@@ -479,10 +496,25 @@ func networks(address string) (udp, tcp string) {
 	}
 }
 
+// listenedAddr is an address listened on, with the families it is listened over: both, of a port
+// alone; one, of an address, as 0.0.0.0 and [::] are each their family's alone. The address a
+// socket is bound to doesn't tell them: a port alone is bound to [::], as [::] is.
+type listenedAddr struct {
+	net.Addr
+	v4, v6 bool
+}
+
+// listenedAt is addr, the address of a socket listened on at address, host:port as an entry gives
+// it, with its families.
+func listenedAt(addr net.Addr, address string) listenedAddr {
+	udp, _ := networks(address)
+	return listenedAddr{addr, udp != "udp6", udp != "udp4"}
+}
+
 // listenedNetworks are the networks of the machine's addresses that the addresses listened on
-// are in, UDP or TCP: each one's, or every network of its family, for an address that is all of
-// them.
-func listenedNetworks(listened []net.Addr) ([]netip.Prefix, error) {
+// are in, UDP or TCP: each one's, or every network of the families listened over, for an address
+// that is all of them.
+func listenedNetworks(listened []listenedAddr) ([]netip.Prefix, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
@@ -505,23 +537,22 @@ func listenedNetworks(listened []net.Addr) ([]netip.Prefix, error) {
 	}
 	for _, a := range listened {
 		var ip netip.Addr
-		switch a := a.(type) {
+		switch addr := a.Addr.(type) {
 		case *net.UDPAddr:
-			ip, _ = netip.AddrFromSlice(a.IP)
+			ip, _ = netip.AddrFromSlice(addr.IP)
 		case *net.TCPAddr:
-			ip, _ = netip.AddrFromSlice(a.IP)
+			ip, _ = netip.AddrFromSlice(addr.IP)
 		default:
 			continue
 		}
 		ip = ip.Unmap()
-		network, _ := networks(a.String())
 		for _, p := range machine {
 			switch {
 			case !ip.IsUnspecified():
 				if p.Contains(ip) {
 					add(p)
 				}
-			case network == "udp", network == "udp4" && p.Addr().Is4(), network == "udp6" && p.Addr().Is6():
+			case a.v4 && p.Addr().Is4(), a.v6 && p.Addr().Is6():
 				add(p)
 			}
 		}
@@ -631,6 +662,11 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 	if !s.allowed(remote) {
 		return reply(req, dns.RcodeRefused), Refused
 	}
+	// A version of EDNS it doesn't speak, which is any but 0: BADVERS, with its own, as RFC 6891
+	// has it.
+	if opt := req.IsEdns0(); opt != nil && opt.Version() != 0 {
+		return reply(req, dns.RcodeBadVers), ""
+	}
 	// An update unsigned, or signed over DNS over HTTPS or over QUIC, where signatures aren't
 	// checked: refused, of a resolver that takes updates. A query signed there is refused too.
 	if len(s.keys) > 0 && (req.Opcode == dns.OpcodeUpdate || req.IsTsig() != nil) {
@@ -644,7 +680,7 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 	}
 	q := req.Question[0]
 	// Of a resolver with encrypted entries, which it tells of there: never forwarded.
-	if q.Qclass == dns.ClassINET && len(s.ddr) > 0 && isDDR(q.Name) {
+	if q.Qclass == dns.ClassINET && isDDR(q.Name) && len(s.ddrEntries()) > 0 {
 		return s.answerDDR(req, remote)
 	}
 	var first lookup
@@ -662,11 +698,12 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 	}
 	// A name of a private network's reverse zone that it has nothing of: no such name, said here,
 	// not asked of servers that know nothing of it either. One whose address has a name of the
-	// resolver's, asked another type, has no data. One of a domain forwarded is asked of its servers,
-	// which know it.
+	// resolver's, asked another type, has no data; nor has one above such a name, or above a
+	// record written, which no such name would deny with it. One of a domain forwarded is asked of
+	// its servers, which know it.
 	if first.kind == notLocal && q.Qclass == dns.ClassINET && s.forwardOf(q.Name) == nil {
 		if zone := s.privateZone(q.Name); zone != "" {
-			return answerPrivate(req, zone, len(s.table.reverse(q.Name)) > 0)
+			return answerPrivate(req, zone, s.table.reverseAt(q.Name))
 		}
 	}
 	// A name of a blocklist, of those it would forward: never one of its own.
@@ -736,8 +773,8 @@ func (s *Server) answer(req *dns.Msg, remote net.Addr) (*dns.Msg, string) {
 	return resp, kind
 }
 
-// reply is the response to req with rcode, and nothing in it yet: with EDNS when req has it, and
-// its DO bit.
+// reply is the response to req with rcode, and nothing in it yet: with EDNS when req has it, the
+// resolver's own, of version 0, with req's DO bit and no option.
 func reply(req *dns.Msg, rcode int) *dns.Msg {
 	resp := new(dns.Msg)
 	resp.SetRcode(req, rcode)
@@ -767,19 +804,61 @@ func (s *Server) forward(req *dns.Msg) (*dns.Msg, string, error) {
 		return nil, "", err
 	}
 	s.cache.put(req, resp)
-	resp.Id = req.Id
-	return resp, Forwarded, nil
+	return relayed(resp, req), Forwarded, nil
 }
 
-// exchange asks upstreams q, in order, each failure counted in failures, and returns the first answer, of whatever code,
-// with an id of its own. Plain DNS is asked over UDP, and again over TCP when the answer doesn't
-// fit; DNS over TLS on a connection kept open; over HTTPS by its client. Each address of a server
-// given by host name is tried; then the next server.
+// upstreamQuery is the query asked upstream for q, a client's: its question, and its RD, AD and
+// CD bits. EDNS is of each hop, RFC 6891: when q has it, the query has the resolver's own, with
+// its size and q's DO bit, and none of the client's options, as a cookie or a client subnet,
+// which are not for the upstream servers.
+func upstreamQuery(q *dns.Msg) *dns.Msg {
+	m := new(dns.Msg)
+	m.Opcode = q.Opcode
+	m.RecursionDesired, m.AuthenticatedData, m.CheckingDisabled = q.RecursionDesired, q.AuthenticatedData, q.CheckingDisabled
+	m.Question = slices.Clone(q.Question)
+	if opt := q.IsEdns0(); opt != nil {
+		m.SetEdns0(ednsSize, opt.Do())
+	}
+	return m
+}
+
+// relayed is resp, an upstream server's answer, as the client that sent req is to have it: with
+// req's id, and the resolver's own EDNS in place of the server's, when req has it, as a local
+// answer has. Of the server's options, an Extended DNS Error, RFC 8914, alone is carried over,
+// which says why the answer is what it is.
+func relayed(resp, req *dns.Msg) *dns.Msg {
+	var carried []dns.EDNS0
+	resp.Extra = slices.DeleteFunc(resp.Extra, func(rr dns.RR) bool {
+		opt, ok := rr.(*dns.OPT)
+		if ok {
+			for _, o := range opt.Option {
+				if o.Option() == dns.EDNS0EDE {
+					carried = append(carried, o)
+				}
+			}
+		}
+		return ok
+	})
+	resp.Id = req.Id
+	if opt := req.IsEdns0(); opt != nil {
+		resp.SetEdns0(ednsSize, opt.Do())
+		resp.IsEdns0().Option = carried
+	}
+	return resp
+}
+
+// exchange asks upstreams q, in order, each failure counted in failures, and returns the first
+// answer, of whatever code, with an id of its own, and the server's EDNS. An extended code, as
+// BADVERS or BADCOOKIE, is no answer: it is about the resolver's own query, and its server has
+// failed. Plain DNS is asked over UDP, and again over TCP when the answer doesn't fit; DNS over
+// TLS on a connection kept open; over HTTPS by its client. Each address of a server given by host
+// name is tried; then the next server.
 func (s *Server) exchange(ctx context.Context, q *dns.Msg, upstreams []*upstreamServer, failures map[string]*atomic.Uint64) (*dns.Msg, error) {
 	// Of none, errors.Join would be nil: no answer, and no error either.
 	if len(upstreams) == 0 {
 		return nil, errors.New("no upstream server")
 	}
+	q = upstreamQuery(q)
 	errs := make([]error, 0, len(upstreams))
 	for _, srv := range upstreams {
 		if ctx.Err() != nil {
@@ -791,7 +870,10 @@ func (s *Server) exchange(ctx context.Context, q *dns.Msg, upstreams []*upstream
 			m.Id = dns.Id()
 			resp, err := s.askHTTPS(ctx, srv, m)
 			if err == nil {
-				return unpadded(resp, q), nil
+				err = extendedCode(resp)
+			}
+			if err == nil {
+				return resp, nil
 			}
 			failed = append(failed, err)
 		} else {
@@ -807,9 +889,7 @@ func (s *Server) exchange(ctx context.Context, q *dns.Msg, upstreams []*upstream
 				if srv.transport == dnsOverTLS {
 					m := padded(q)
 					m.Id = dns.Id()
-					if resp, err = s.askTLS(ctx, srv, m, target); err == nil {
-						resp = unpadded(resp, q)
-					}
+					resp, err = s.askTLS(ctx, srv, m, target)
 				} else {
 					m := q.Copy()
 					m.Id = dns.Id()
@@ -817,6 +897,9 @@ func (s *Server) exchange(ctx context.Context, q *dns.Msg, upstreams []*upstream
 					if err == nil && resp.Truncated {
 						resp, err = s.ask(ctx, m, "tcp", target)
 					}
+				}
+				if err == nil {
+					err = extendedCode(resp)
 				}
 				if err == nil {
 					return resp, nil
@@ -828,6 +911,16 @@ func (s *Server) exchange(ctx context.Context, q *dns.Msg, upstreams []*upstream
 		errs = append(errs, fmt.Errorf("%s: %w", srv.label, errors.Join(failed...)))
 	}
 	return nil, errors.Join(errs...)
+}
+
+// extendedCode is the error of an answer with an extended code, one past the 4 bits of a message
+// without EDNS: of EDNS itself, of a cookie or of a signature, which the client sent none of
+// upstream, and couldn't be told of without EDNS.
+func extendedCode(resp *dns.Msg) error {
+	if resp.Rcode > 0xF {
+		return fmt.Errorf("answered %s, of the query's own EDNS", dns.RcodeToString[resp.Rcode])
+	}
+	return nil
 }
 
 // ask sends m to upstream over network, and reads its answer: over UDP whatever its size, as a
@@ -936,6 +1029,7 @@ type ListenerAllowStatus struct {
 	Allow    []string `json:"allow"`
 }
 
+// Status holds the server's mutex throughout: nothing it calls takes it again.
 func (s *Server) Status() Status {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()

@@ -415,6 +415,13 @@ func TestServeSharedSigned(t *testing.T) {
 	if err := Share([]*Server{lan, kids}); err != nil {
 		t.Fatal(err)
 	}
+	// Started: a resolver that isn't is handed no client at all.
+	for _, s := range []*Server{lan, kids} {
+		if err := s.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { s.Shutdown(context.Background()) })
+	}
 	h := sharedSocket(lan.shared[sharedKey(TransportTLS, "127.0.0.1:"+port)])
 	if len(h) != 2 {
 		t.Fatalf("got %d routes, want 2", len(h))
@@ -441,5 +448,68 @@ func TestServeSharedSigned(t *testing.T) {
 				t.Error("the refusal isn't counted")
 			}
 		})
+	}
+}
+
+// A socket that listeners share is open from the start of its first listener's resolver: a client
+// of another's is not answered by it before its own start is done, nor after one that failed, and
+// is from then on. Under the race detector, its start and the clients of the socket don't meet.
+func TestServeSharedBeforeStart(t *testing.T) {
+	ca := newTestCA(t)
+	port, httpsPort := freePort(t), freePort(t)
+	lan := sharedServer(t, ca, "lan", 0, port, httpsPort, "", []string{"dns.lan.test"}, nil)
+	kids := sharedServer(t, ca, "kids", 1, port, httpsPort, "kids.dns.local.test", []string{"dns.local.test", "*.dns.local.test"}, nil)
+	if err := Share([]*Server{lan, kids}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lan.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { lan.Shutdown(context.Background()); kids.Shutdown(context.Background()) })
+	at := map[string]string{TransportTLS: "127.0.0.1:" + port, TransportHTTPS: "127.0.0.1:" + httpsPort, TransportQUIC: "127.0.0.1:" + port}
+	unanswered := func(when string) {
+		t.Helper()
+		for transport, address := range at {
+			if got := whoOver(t, ca, transport, address, "kids.dns.local.test"); got == "kids" || got == "lan" {
+				t.Errorf("%s, %s: answered by %s", transport, when, got)
+			}
+			if got := whoOver(t, ca, transport, address, "dns.lan.test"); got != "lan" {
+				t.Errorf("%s, of lan, %s: %s", transport, when, got)
+			}
+		}
+	}
+	unanswered("before the start of kids")
+
+	// A start that fails: its plain DNS's port is another's.
+	taken, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := kids.config.Listen
+	kids.config.Listen = []listen.Entry{{Host: "127.0.0.1", Port: portOf(t, taken.LocalAddr().String())}}
+	if err := kids.Start(); err == nil {
+		t.Fatal("kids started on a port taken")
+	}
+	taken.Close()
+	unanswered("after a start of kids that failed")
+
+	// Asked all the while it starts.
+	kids.config.Listen = own
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 30 {
+			whoOver(t, ca, TransportTLS, at[TransportTLS], "kids.dns.local.test")
+		}
+	}()
+	time.Sleep(20 * time.Millisecond)
+	if err := kids.Start(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	for transport, address := range at {
+		if got := whoOver(t, ca, transport, address, "kids.dns.local.test"); got != "kids" {
+			t.Errorf("%s, after the start of kids: %s", transport, got)
+		}
 	}
 }

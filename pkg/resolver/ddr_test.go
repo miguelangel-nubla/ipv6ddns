@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,7 +159,14 @@ func TestDDRRenewal(t *testing.T) {
 
 func TestDDREntriesOfSockets(t *testing.T) {
 	e := []EncryptedListen{{Transport: TransportTLS}, {Transport: TransportQUIC}}
-	addr := func(s string) net.Addr { return net.TCPAddrFromAddrPort(netip.MustParseAddrPort(s)) }
+	// Each as its entry's address has it: a port alone is bound to [::], as [::] is.
+	addr := func(s string) listenedAddr {
+		bound := s
+		if strings.HasPrefix(s, ":") {
+			bound = "[::]" + s
+		}
+		return listenedAt(net.TCPAddrFromAddrPort(netip.MustParseAddrPort(bound)), s)
+	}
 	ips := func(s ...string) []netip.Addr {
 		var r []netip.Addr
 		for _, a := range s {
@@ -174,12 +182,14 @@ func TestDDREntriesOfSockets(t *testing.T) {
 	}{
 		{"two ports of one entry, and an address of each family", []string{"192.0.2.1:853", "[2001:db8::1]:853", "0.0.0.0:853", "192.0.2.1:8853"}, []int{0, 0, 1, 1},
 			[]ddrEntry{{port: 853, hints: ips("192.0.2.1", "2001:db8::1")}, {port: 853, v4: true}, {port: 8853, hints: ips("192.0.2.1")}}},
-		{"all of both families", []string{"[::]:853"}, []int{0}, []ddrEntry{{port: 853, v4: true, v6: true}}},
+		{"a port alone: all of both families", []string{":853"}, []int{0}, []ddrEntry{{port: 853, v4: true, v6: true}}},
+		{"[::]: all of IPv6 alone", []string{"[::]:853"}, []int{0}, []ddrEntry{{port: 853, v6: true}}},
+		{"0.0.0.0 and [::], apart", []string{"0.0.0.0:853", "[::]:853"}, []int{0, 0}, []ddrEntry{{port: 853, v4: true, v6: true}}},
 		{"link-local, of two interfaces", []string{"[fe80::1%lo0]:853", "[fe80::1%en0]:853", "[2001:db8::1]:853"}, []int{0, 0, 0},
 			[]ddrEntry{{port: 853, hints: ips("2001:db8::1")}}},
 		{"IPv4-mapped", []string{"[::ffff:192.0.2.1]:853", "192.0.2.1:853"}, []int{0, 0}, []ddrEntry{{port: 853, hints: ips("192.0.2.1")}}},
 	} {
-		var listened []net.Addr
+		var listened []listenedAddr
 		for _, a := range tc.listened {
 			listened = append(listened, addr(a))
 		}

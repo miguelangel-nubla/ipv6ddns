@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -434,5 +435,140 @@ func TestParseServer(t *testing.T) {
 		if err != nil || srv.transport != c.transport || srv.host != c.host || srv.port != c.port || srv.url != c.url || srv.label != c.in {
 			t.Errorf("%s: %+v %v", c.in, srv, err)
 		}
+	}
+}
+
+// A connection kept that has gone silent, as one a firewall forgot, takes the time of its try,
+// and the query is asked again on a new one, with a time of its own: it is answered.
+func TestDoTSilentKeptConnection(t *testing.T) {
+	ca := newTestCA(t)
+	cert := ca.leaf(t, nil, net.ParseIP("127.0.0.1"))
+	inner, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { inner.Close() })
+	l := tls.NewListener(inner, &tls.Config{Certificates: []tls.Certificate{cert}})
+	var conns atomic.Int64
+	go func() {
+		for {
+			raw, err := l.Accept()
+			if err != nil {
+				return
+			}
+			first := conns.Add(1) == 1
+			go func() {
+				defer raw.Close()
+				c := &dns.Conn{Conn: raw}
+				for n := 0; ; n++ {
+					req, err := c.ReadMsg()
+					if err != nil {
+						return
+					}
+					// The first connection answers one query, and is silent after.
+					if first && n > 0 {
+						continue
+					}
+					c.WriteMsg(encryptedAnswer(req))
+				}
+			}()
+		}
+	}()
+	upstream := "tls://" + inner.Addr().String()
+	cfg, _ := testConfig(t, upstream)
+	s := startWithRoots(t, cfg, ca)
+	if resp := query(t, s, "udp", "a.example.org.", dns.TypeA, nil); len(resp.Answer) != 1 {
+		t.Fatalf("the first: %v", resp)
+	}
+	if resp := query(t, s, "udp", "b.example.org.", dns.TypeA, nil); resp.Rcode != dns.RcodeSuccess || len(resp.Answer) != 1 {
+		t.Errorf("past a kept connection gone silent: %s, after %d connections", dns.RcodeToString[resp.Rcode], conns.Load())
+	}
+	if st := s.Status(); st.UpstreamFailures[upstream] != 0 {
+		t.Errorf("failures: %v", st.UpstreamFailures)
+	}
+}
+
+// A server that takes the connection and never answers the TLS handshake is given up within the
+// server's time: the dial's deadline is the handshake's too.
+func TestDoTSilentHandshake(t *testing.T) {
+	ca := newTestCA(t)
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { c.Close() })
+		}
+	}()
+	cfg, _ := testConfig(t, "tls://"+l.Addr().String())
+	s := startWithRoots(t, cfg, ca)
+	began := time.Now()
+	if resp := query(t, s, "udp", "a.example.org.", dns.TypeA, nil); resp.Rcode != dns.RcodeServerFailure {
+		t.Errorf("of a server silent in the handshake: %s", dns.RcodeToString[resp.Rcode])
+	}
+	if took := time.Since(began); took > 4*s.timeout {
+		t.Errorf("given up after %s, of a time of %s", took, s.timeout)
+	}
+}
+
+// The clients of the encrypted upstream servers are there from New: a query that reaches a
+// resolver not started, as by a socket another opened, finds them, and fails as any other.
+func TestEncryptedUpstreamBeforeStart(t *testing.T) {
+	for _, upstream := range []string{"tls://127.0.0.1:1", "https://127.0.0.1:1/dns-query"} {
+		cfg, _ := testConfig(t, upstream)
+		s, err := New(cfg, t.Errorf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.timeout = 100 * time.Millisecond
+		m := new(dns.Msg)
+		m.SetQuestion("example.org.", dns.TypeA)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%s: a query before Start: panic: %v", upstream, r)
+				}
+			}()
+			resp := s.respond(m, client{Addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5353}, allow: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}})
+			if resp == nil || resp.Rcode != dns.RcodeServerFailure {
+				t.Errorf("%s: %v, want SERVFAIL", upstream, resp)
+			}
+		}()
+	}
+}
+
+// An answer of DNS over HTTPS larger than a DNS message is none: it isn't read cut short.
+func TestDoHAnswerTooLarge(t *testing.T) {
+	ca := newTestCA(t)
+	doh := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		req := new(dns.Msg)
+		if req.Unpack(body) != nil {
+			http.Error(w, "bad message", http.StatusBadRequest)
+			return
+		}
+		// A whole answer, and more after it, past the size.
+		packed, _ := encryptedAnswer(req).Pack()
+		w.Header().Set("Content-Type", "application/dns-message")
+		w.Write(append(packed, make([]byte, dns.MaxMsgSize)...))
+	}))
+	doh.EnableHTTP2 = true
+	doh.TLS = &tls.Config{Certificates: []tls.Certificate{ca.leaf(t, nil, net.ParseIP("127.0.0.1"))}}
+	doh.StartTLS()
+	t.Cleanup(doh.Close)
+	upstream := "https://" + doh.Listener.Addr().String() + "/dns-query"
+	cfg, _ := testConfig(t, upstream)
+	s := startWithRoots(t, cfg, ca)
+	if resp := query(t, s, "udp", "a.example.org.", dns.TypeA, nil); resp.Rcode != dns.RcodeServerFailure {
+		t.Errorf("an answer past %d bytes: %s, %v", dns.MaxMsgSize, dns.RcodeToString[resp.Rcode], answers(resp))
+	}
+	if st := s.Status(); st.UpstreamFailures[upstream] != 1 {
+		t.Errorf("failures: %v", st.UpstreamFailures)
 	}
 }

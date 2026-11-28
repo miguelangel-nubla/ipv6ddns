@@ -74,7 +74,9 @@ func (s *Server) privateZone(name string) string {
 }
 
 // answerPrivate is the answer of a name of the private zone zone that the resolver has nothing of:
-// as RFC 6303 has it, the zone's apex has its SOA and NS records, and no other name is.
+// as RFC 6303 has it, the zone's apex has its SOA and NS records, and no other name is. But one
+// that is there, named: the reverse of an address the resolver has a name of, asked another type,
+// or a name above one it answers, which has no data.
 func answerPrivate(req *dns.Msg, zone string, named bool) (*dns.Msg, string) {
 	q := req.Question[0]
 	rcode, kind := dns.RcodeNameError, Local
