@@ -201,7 +201,7 @@ func Configuration() (string, error) {
 	defs := root.Defs
 	var b strings.Builder
 	b.WriteString("# Configuration reference\n\n" + generated)
-	b.WriteString("The configuration file is YAML, or JSON. Every string takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds. A key the schema doesn't have is an error. The schema is [`config/schema.json`](../../config/schema.json).\n\n")
+	b.WriteString("The configuration file is YAML, or JSON. Every string takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds written as a number: in quotes, or from `${NAME}`, it is text, and needs its unit, as `300s`. A key the schema doesn't have is an error. The schema is [`config/schema.json`](../../config/schema.json).\n\n")
 
 	b.WriteString("## Top level\n\n")
 	table(&b, root, order(raw, "properties"), defs)

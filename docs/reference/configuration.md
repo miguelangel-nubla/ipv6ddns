@@ -2,7 +2,7 @@
 
 <!-- Generated from the schemas by `go test ./internal/docgen -update`: edit them, not this page. -->
 
-The configuration file is YAML, or JSON. Every string takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds. A key the schema doesn't have is an error. The schema is [`config/schema.json`](../../config/schema.json).
+The configuration file is YAML, or JSON. Every string takes `${NAME}`, an environment variable, and `${file:PATH}`, a file's content: see [secrets](../configuration.md#secrets). A duration is `90s`, `1m30s`, `1h`, or a number of seconds written as a number: in quotes, or from `${NAME}`, it is text, and needs its unit, as `300s`. A key the schema doesn't have is an error. The schema is [`config/schema.json`](../../config/schema.json).
 
 ## Top level
 
