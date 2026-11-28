@@ -17,6 +17,9 @@
 #
 # The build takes minutes, for every system of a release. PACKAGES_BUILT=1 tests those dist/ has.
 set -eu
+# An interruption ends it by its EXIT traps, which dash does not run of a signal by itself: a
+# privileged container would stay.
+trap 'exit 1' INT TERM
 cd "$(dirname "$0")/.."
 
 if [ -z "${PACKAGES_BUILT:-}" ]; then

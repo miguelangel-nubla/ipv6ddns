@@ -35,6 +35,8 @@ sudo=
 [ "$(id -u)" = 0 ] || sudo=sudo
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+# dash runs no EXIT trap of a signal by itself.
+trap 'exit 1' INT TERM
 
 # wait_for <what> <seconds> <command...>: until the command succeeds.
 wait_for() {

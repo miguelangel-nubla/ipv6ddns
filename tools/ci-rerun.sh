@@ -13,9 +13,14 @@ repo=$1 run=$2
 
 # The jobs of the run's last attempt that did not pass, each with whether GitHub says it had no
 # runner for it.
-verdicts=$(gh api "repos/$repo/actions/runs/$run/jobs?per_page=100" \
-	--jq '.jobs[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "skipped") | "\(.id) \(.name)"' |
+#
+# The jobs are asked for apart from the loop over them: in a pipe, a request that failed would
+# read as no job at all, and so as every job passed.
+jobs=$(gh api "repos/$repo/actions/runs/$run/jobs?per_page=100" \
+	--jq '.jobs[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "skipped") | "\(.id) \(.name)"')
+verdicts=$(printf '%s\n' "$jobs" |
 	while read -r id name; do
+		[ -n "$id" ] || continue
 		if gh api "repos/$repo/check-runs/$id/annotations" --jq '.[].message' | grep -q "was not acquired by Runner"; then
 			echo "no-runner $name"
 		else

@@ -28,10 +28,11 @@ nix() {
 
 if [ "${1:-}" = --update ]; then
 	# With no hash it can have, the build of the modules tells the one they have.
+	# The file as it was is kept until the hash is known, and put back without one.
 	sed -i.bak -E 's|^  vendorHash = .*;$|  vendorHash = lib.fakeHash;|' nix/package.nix
-	rm -f nix/package.nix.bak
 	hash=$(nix build --no-link .#default 2>&1 | sed -n 's/^ *got: *\(sha256-[A-Za-z0-9+/=]*\)$/\1/p' | tail -1)
 	[ -n "$hash" ] || {
+		mv nix/package.nix.bak nix/package.nix
 		echo "nix-test: the build told no hash of the modules" >&2
 		exit 1
 	}

@@ -94,12 +94,29 @@ EOF
 		fi
 	fi
 	start
-	until ssh_vm true 2>/dev/null; do sleep 5; done
+	# Ten minutes for it to boot: a machine that never does is told, not waited for.
+	booted=no
+	for _ in $(seq 120); do
+		if ssh_vm true 2>/dev/null; then
+			booted=yes
+			break
+		fi
+		sleep 5
+	done
+	[ "$booted" = yes ] || {
+		echo "unifi-os-vm: the machine did not answer over SSH in ten minutes" >&2
+		exit 1
+	}
 	ssh_vm 'cloud-init status --wait >/dev/null'
 	scp -q -i key -P 2223 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$tools/unifi-os-server.sh" debian@127.0.0.1:
 	# The variables of the console as the host reaches it, through the forwarded port.
-	[ -f env ] && sed 's/127\.0\.0\.1:18444/127.0.0.1:11443/g' env | ssh_vm 'cat > unifi-os.env'
-	ssh_vm 'sh unifi-os-server.sh unifi-os.env && cat unifi-os.env' | sed 's/127\.0\.0\.1:11443/127.0.0.1:18444/g' >env.new
+	# An empty one is none: sent, it would take the admin's password from the machine's.
+	[ -s env ] && sed 's/127\.0\.0\.1:18444/127.0.0.1:11443/g' env | ssh_vm 'cat > unifi-os.env'
+	# Not through a pipe, whose status is its last command's: a setup that failed would leave
+	# an empty file here in place of the variables, as if it had passed.
+	ssh_vm 'sh unifi-os-server.sh unifi-os.env && cat unifi-os.env' >env.vm
+	sed 's/127\.0\.0\.1:11443/127.0.0.1:18444/g' env.vm >env.new
+	rm -f env.vm
 	mv env.new env
 	echo "unifi-os-vm: the variables are in $dir/env" >&2
 	;;
