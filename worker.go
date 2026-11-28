@@ -910,11 +910,15 @@ func (w *Worker) resolversPage(prefix string, hideSensible bool) pretty.Page {
 
 // resolverStatuses are the resolvers' statuses, by name's order. hideSensible hides why the last
 // update of a key failed: it is the error of a credential's provider, which can tell secrets.
-// What an update did, or why it was refused, are the resolver's own words, and stay.
+// What an update did, or why it was refused, are the resolver's own words, and stay. It hides the
+// paths of the upstream servers of DNS over HTTPS too, which can name an account, as NextDNS's.
 func (w *Worker) resolverStatuses(hideSensible bool) []resolver.Status {
 	statuses := make([]resolver.Status, 0, len(w.resolvers))
 	for _, r := range w.resolvers {
 		s := r.Status()
+		if hideSensible {
+			s = s.WithPathsHidden("<sensible data hidden>")
+		}
 		for i, k := range s.Keys {
 			if hideSensible && k.LastResult == resolver.UpdateFailed && k.LastMessage != "" {
 				s.Keys[i].LastMessage = "<sensible data hidden>"

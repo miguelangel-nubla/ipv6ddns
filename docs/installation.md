@@ -269,6 +269,7 @@ The report hides:
 - the plugins' settings;
 - the commands' arguments;
 - the `urls` of http sources, except their host;
+- the paths of the resolvers' DNS over HTTPS upstream servers, other than `/dns-query`, as the account id of `https://dns.nextdns.io/<id>`, in the report, `/status.json` and `/metrics`. Two servers of one host are told apart by a number, as `https://dns.nextdns.io/<sensible data hidden> 2`;
 - the error messages of updates and sources.
 
 The web server has these paths:

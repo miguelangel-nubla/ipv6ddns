@@ -360,3 +360,80 @@ func padded(m *dns.Msg) *dns.Msg {
 	opt.Option = append(opt.Option, &dns.EDNS0_PADDING{Padding: make([]byte, padding)})
 	return m
 }
+
+// PathHidden is an upstream server's text with its path hidden, as hidden says: of DNS over
+// HTTPS, when the path is other than /dns-query, which is everyone's. A service that names the
+// account there, as https://dns.nextdns.io/<id>, would tell it to anyone the report is shown to.
+// Others, and a text that doesn't parse, are as they are.
+func PathHidden(upstream, hidden string) string {
+	u, err := url.Parse(upstream)
+	if err != nil || u.Scheme != "https" || u.Path == "" || u.Path == "/" || u.Path == "/dns-query" {
+		return upstream
+	}
+	return u.Scheme + "://" + u.Host + "/" + hidden
+}
+
+// PathsHidden is PathHidden of each upstream server, by its text. Two that differ by their paths
+// alone, as two accounts of one service, stay apart, numbered from the second: a metric's series
+// is once.
+func PathsHidden(upstreams []string, hidden string) map[string]string {
+	shown := map[string]string{}
+	seen := map[string]int{}
+	for _, u := range upstreams {
+		if _, ok := shown[u]; ok {
+			continue
+		}
+		s := PathHidden(u, hidden)
+		if seen[s]++; seen[s] > 1 {
+			s = fmt.Sprintf("%s %d", s, seen[s])
+		}
+		shown[u] = s
+	}
+	return shown
+}
+
+// WithPathsHidden is the status with the paths of its upstream servers hidden, as PathsHidden: in
+// their list, their failures and the addresses found of them, and so of each domain forwarded.
+func (s Status) WithPathsHidden(hidden string) Status {
+	s.Upstreams, s.UpstreamFailures, s.UpstreamAddresses = upstreamsHidden(s.Upstreams, s.UpstreamFailures, s.UpstreamAddresses, hidden)
+	forwards := make([]ForwardStatus, len(s.Forwards))
+	for i, f := range s.Forwards {
+		f.Upstreams, f.UpstreamFailures, f.UpstreamAddresses = upstreamsHidden(f.Upstreams, f.UpstreamFailures, f.UpstreamAddresses, hidden)
+		forwards[i] = f
+	}
+	if s.Forwards != nil {
+		s.Forwards = forwards
+	}
+	return s
+}
+
+// upstreamsHidden are a list of upstream servers, their failures and their addresses found, by
+// their texts with the paths hidden. New maps and list: a status's are its own, but not shared.
+func upstreamsHidden(upstreams []string, failures map[string]uint64, found map[string][]string, hidden string) ([]string, map[string]uint64, map[string][]string) {
+	shown := PathsHidden(upstreams, hidden)
+	of := func(u string) string {
+		if s, ok := shown[u]; ok {
+			return s
+		}
+		return PathHidden(u, hidden)
+	}
+	list := make([]string, len(upstreams))
+	for i, u := range upstreams {
+		list[i] = of(u)
+	}
+	var newFailures map[string]uint64
+	if failures != nil {
+		newFailures = make(map[string]uint64, len(failures))
+		for u, n := range failures {
+			newFailures[of(u)] += n
+		}
+	}
+	var newFound map[string][]string
+	if found != nil {
+		newFound = make(map[string][]string, len(found))
+		for u, a := range found {
+			newFound[of(u)] = a
+		}
+	}
+	return list, newFailures, newFound
+}

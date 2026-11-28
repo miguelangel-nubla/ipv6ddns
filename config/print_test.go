@@ -133,3 +133,44 @@ webservers:
 		}
 	}
 }
+
+// The path of a DNS over HTTPS server, which can name an account, as NextDNS's, is hidden with
+// the sensible data, of the upstream servers and of a domain forwarded: /dns-query is everyone's.
+func TestHiddenUpstreamPaths(t *testing.T) {
+	cfg, err := loadConfig(t, `
+tasks: {}
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:8053
+resolvers:
+  home:
+    listeners:
+      - lan
+    upstream:
+      - https://dns.nextdns.io/SECRET-1
+      - https://dns.nextdns.io/SECRET-2
+      - https://cloudflare-dns.com/dns-query
+    bootstrap:
+      - 9.9.9.9
+    forward:
+      - domain: corp.example
+        upstream:
+          - https://dns.corp.example/SECRET-3
+`+duckCredential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := cfg.PrettyPrint("", true)
+	for _, want := range []string{
+		"Upstream: https://dns.nextdns.io/<sensible data hidden>, https://dns.nextdns.io/<sensible data hidden> 2, https://cloudflare-dns.com/dns-query\n",
+		"corp.example: https://dns.corp.example/<sensible data hidden>\n",
+	} {
+		if strings.Contains(page, "SECRET") || !strings.Contains(page, want) {
+			t.Errorf("hidden, no %q:\n%s", want, page[strings.Index(page, "    Resolvers:"):])
+		}
+	}
+	if page := cfg.PrettyPrint("", false); !strings.Contains(page, "Upstream: https://dns.nextdns.io/SECRET-1, https://dns.nextdns.io/SECRET-2, https://cloudflare-dns.com/dns-query\n") {
+		t.Errorf("shown:\n%s", page[strings.Index(page, "    Resolvers:"):])
+	}
+}

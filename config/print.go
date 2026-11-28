@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/blocklist"
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 )
 
 // shownSettings are the settings of a credential that tell no secret, in a line: its zone, TTL,
@@ -87,6 +88,18 @@ func list(values []string) string {
 // what in the configuration does nothing. hideSensible hides the secrets of the keys, the
 // certificates' files, ACME's email, and of its directory all but the scheme and the host.
 func (c *Config) printServers(result *strings.Builder, prefix string, hideSensible bool) {
+	// The upstream servers, as written, or with the paths of DNS over HTTPS hidden.
+	upstreams := func(servers []string) []string {
+		if !hideSensible {
+			return servers
+		}
+		shown := resolver.PathsHidden(servers, hidden)
+		out := make([]string, len(servers))
+		for i, s := range servers {
+			out[i] = shown[s]
+		}
+		return out
+	}
 	line := func(indent int, format string, args ...any) {
 		result.WriteString(prefix + strings.Repeat(" ", indent) + fmt.Sprintf(format, args...) + "\n")
 	}
@@ -104,16 +117,14 @@ func (c *Config) printServers(result *strings.Builder, prefix string, hideSensib
 			line(8, "%s:", name)
 			line(12, "Listeners: %s", list(r.Listeners))
 			line(12, "Allow: %s", list(r.Allow))
-			// As written, hidden or not: an encrypted server's has no user nor query, which
-			// parseEncrypted refuses, but its path stays, and of a service that names the account
-			// there, as dns.nextdns.io/<id>, the id shows to anyone the web server answers. A
-			// blocklist's URL keeps its path too.
-			line(12, "Upstream: %s", list(r.Upstream))
+			// An encrypted server's has no user nor query, which parseEncrypted refuses; its path,
+			// which a service can name the account by, as dns.nextdns.io/<id>, is hidden too.
+			line(12, "Upstream: %s", list(upstreams(r.Upstream)))
 			line(12, "Bootstrap: %s", list(r.Bootstrap))
 			if len(r.Forward) > 0 {
 				line(12, "Forward:")
 				for _, f := range r.Forward {
-					line(16, "%s: %s", f.Domain, list(f.Upstream))
+					line(16, "%s: %s", f.Domain, list(upstreams(f.Upstream)))
 				}
 			}
 			if len(r.Records) > 0 {

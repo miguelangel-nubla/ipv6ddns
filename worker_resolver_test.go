@@ -2,6 +2,7 @@ package ipv6ddns
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -544,5 +545,71 @@ func TestResolversPageShared(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("without %q:\n%s", want, page)
 		}
+	}
+}
+
+// The path of a DNS over HTTPS upstream server can name an account, as NextDNS's: the status the
+// web server serves, its metrics and its report, of the upstream servers and of a domain
+// forwarded, have it hidden, and the console's report has it whole.
+func TestWorkerResolverUpstreamPathsHidden(t *testing.T) {
+	text := fmt.Sprintf(`
+listeners:
+  lan:
+    listen:
+      - dns://127.0.0.1:%s
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream:
+      - https://127.0.0.1:1/SECRET-1
+      - https://127.0.0.1:1/SECRET-2
+    forward:
+      - domain: corp.example
+        upstream:
+          - https://127.0.0.2:1/SECRET-3
+credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: home.arpa
+tasks: {}
+discovery:
+  ipv6:
+    enabled: false
+`, freeDNSPort(t))
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewWorker(zap.NewNop().Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	status := w.Status(true)
+	body, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metrics strings.Builder
+	status.WriteMetrics(&metrics)
+	for what, text := range map[string]string{"/status.json": string(body), "the metrics": metrics.String(), "the report": w.PrettyPrint("", true)} {
+		if strings.Contains(text, "SECRET") {
+			t.Errorf("%s has a path:\n%s", what, text)
+		}
+	}
+	if got := status.Resolvers[0].Upstreams; !slices.Equal(got, []string{"https://127.0.0.1:1/<sensible data hidden>", "https://127.0.0.1:1/<sensible data hidden> 2"}) {
+		t.Errorf("upstreams: %v", got)
+	}
+	if !strings.Contains(metrics.String(), `ipv6ddns_resolver_forward_failures_total{resolver="lan",domain="corp.example",upstream="https://127.0.0.2:1/<sensible data hidden>"} 0`) {
+		t.Errorf("metrics:\n%s", metrics.String())
+	}
+	if report := w.PrettyPrint("", false); !strings.Contains(report, "https://127.0.0.1:1/SECRET-1") || !strings.Contains(report, "https://127.0.0.2:1/SECRET-3") {
+		t.Errorf("the console's report hasn't the paths:\n%s", report)
 	}
 }
