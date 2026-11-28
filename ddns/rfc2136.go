@@ -188,7 +188,8 @@ func (r *RFC2136) beside(name string) string {
 		return ""
 	}
 	label := make([]byte, 8)
-	rand.Read(label)
+	// It returns no error: since Go 1.24 a failure of the system's source ends the program.
+	_, _ = rand.Read(label)
 	return "ipv6ddns-" + hex.EncodeToString(label) + "." + parent
 }
 
