@@ -22,9 +22,15 @@ func TestExpandString(t *testing.T) {
 		"${file:" + absolute + "}": "absolute-file",
 		"$${NOT_EXPANDED}":         "${NOT_EXPANDED}",
 		"a $ alone, and $NAME":     "a $ alone, and $NAME",
-		// Each $${ loses one $, wherever it is: no variable right after a literal $.
+		// Right before a {, each pair of $ is one, and an odd one left starts a variable: so a
+		// literal $ can come right before one. Elsewhere a $ is as written.
 		"$${A} and $${B}":                         "${A} and ${B}",
-		"$$${IPV6DDNS_TEST_PASSWORD}":             "$${IPV6DDNS_TEST_PASSWORD}",
+		"$$${IPV6DDNS_TEST_PASSWORD}":             "$p,a$s",
+		"$$$${IPV6DDNS_TEST_PASSWORD}":            "$${IPV6DDNS_TEST_PASSWORD}",
+		"$$$$${IPV6DDNS_TEST_PASSWORD}":           "$$p,a$s",
+		"pa$$word ${IPV6DDNS_TEST_PASSWORD}":      "pa$$word p,a$s",
+		"pa$$word$${IPV6DDNS_TEST_PASSWORD}":      "pa$$word${IPV6DDNS_TEST_PASSWORD}",
+		"a$$$":                                    "a$$$",
 		"$ ${IPV6DDNS_TEST_PASSWORD}":             "$ p,a$s",
 		"$${file:token}${file:token}":             "${file:token}from-file",
 		"a } before, ${file:token}":               "a } before, from-file",

@@ -100,6 +100,7 @@ Any string value in the configuration can contain:
 | `${NAME}` | The environment variable `NAME` |
 | `${file:PATH}` | The content of a file, without its final newline. This is how Docker and Kubernetes provide secrets. A relative path is relative to the configuration file |
 | `$${` | A literal `${` |
+| `$$${NAME}` | A `$`, and then the variable `NAME`. Right before a `{`, each pair of `$` is one `$`. A `$` anywhere else is as written: `pa$$word` stays `pa$$word` |
 
 ```yaml
 credentials:

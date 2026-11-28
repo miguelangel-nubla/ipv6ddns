@@ -12,7 +12,11 @@ import (
 
 // expandSecrets replaces, in every string of the JSON configuration, ${NAME} with the environment
 // variable NAME, and ${file:PATH} with the content of the file, without its final newlines. A
-// relative PATH is from baseDir. $${ is a literal ${. So secrets can stay out of the file.
+// relative PATH is from baseDir. So secrets can stay out of the file.
+//
+// Right before a {, each pair of $ is one literal $, and an odd one left starts a ${: $${ is a
+// literal ${, and $$${NAME} a $ before the variable, as a backslash escapes a backslash. A $
+// anywhere else is as written, as the two of pa$$word, which the escape doesn't take.
 func expandSecrets(configData []byte, baseDir string) ([]byte, error) {
 	var config any
 	if err := json.Unmarshal(configData, &config); err != nil {
@@ -64,10 +68,17 @@ func expandString(s string, baseDir string) (string, error) {
 			result.WriteString(s)
 			return result.String(), nil
 		}
-		// $${ is a literal ${: the first $ is dropped.
-		if i > 0 && s[i-1] == '$' {
-			result.WriteString(s[:i-1])
-			result.WriteString("${")
+		// The $ before this one, of the same run: each pair is one $.
+		start := i
+		for start > 0 && s[start-1] == '$' {
+			start--
+		}
+		result.WriteString(s[:start])
+		dollars := i - start + 1
+		result.WriteString(strings.Repeat("$", dollars/2))
+		if dollars%2 == 0 {
+			// A literal {, after them.
+			result.WriteByte('{')
 			s = s[i+2:]
 			continue
 		}
@@ -75,7 +86,6 @@ func expandString(s string, baseDir string) (string, error) {
 		if end < 0 {
 			return "", fmt.Errorf("an unclosed ${: write $${ for a literal one")
 		}
-		result.WriteString(s[:i])
 		value, err := resolve(s[i+2:i+end], baseDir)
 		if err != nil {
 			return "", err
