@@ -53,7 +53,7 @@ func NewUniFi(settings json.RawMessage) (Service, error) {
 	}
 	client, err := unifi.New(unifi.Config{
 		Address: service.Address, APIKey: service.APIKey, Username: service.Username, Password: service.Password, Site: service.Site,
-	}, verifiedOrPinnedTLSConfig(urlHost(service.Address), service.TLSFingerprint), httpTimeout)
+	}, serverTLSConfig(urlHost(service.Address), service.TLSFingerprint), httpTimeout)
 	if err != nil {
 		return nil, err
 	}

@@ -114,16 +114,16 @@ func TestTLSConfigs(t *testing.T) {
 		config *tls.Config
 		ok     bool
 	}{
-		{"untrusted, no fingerprint", verifiedOrPinnedTLSConfig("127.0.0.1", ""), false},
-		{"untrusted, its fingerprint", verifiedOrPinnedTLSConfig("127.0.0.1", fingerprint), true},
-		{"untrusted, its fingerprint with colons in upper case", verifiedOrPinnedTLSConfig("127.0.0.1", colons(strings.ToUpper(fingerprint))), true},
-		{"untrusted, another fingerprint", verifiedOrPinnedTLSConfig("127.0.0.1", other), false},
-		{"trusted, for its address", trusting(verifiedOrPinnedTLSConfig("127.0.0.1", ""), server), true},
-		// The fingerprint is for the certificate that can't be verified otherwise: one that can
-		// is accepted whatever it is, as it would be without it. MikroTik's alone pins.
-		{"trusted, another fingerprint", trusting(verifiedOrPinnedTLSConfig("127.0.0.1", other), server), true},
-		{"pinned", pinnedTLSConfig(fingerprint), true},
-		{"pinned to another", pinnedTLSConfig(other), false},
+		{"untrusted, no fingerprint", serverTLSConfig("127.0.0.1", ""), false},
+		{"untrusted, its fingerprint", serverTLSConfig("127.0.0.1", fingerprint), true},
+		{"untrusted, its fingerprint with colons in upper case", serverTLSConfig("127.0.0.1", colons(strings.ToUpper(fingerprint))), true},
+		{"untrusted, another fingerprint", serverTLSConfig("127.0.0.1", other), false},
+		{"trusted, for its address", trusting(serverTLSConfig("127.0.0.1", ""), server), true},
+		// A fingerprint pins: a certificate the system trusts, with another fingerprint, is
+		// refused too, as someone who pinned the device would expect.
+		{"trusted, its fingerprint", trusting(serverTLSConfig("127.0.0.1", fingerprint), server), true},
+		{"trusted, another fingerprint", trusting(serverTLSConfig("127.0.0.1", other), server), false},
+		{"pinned, for another name", serverTLSConfig("nas.example.com", fingerprint), true},
 	} {
 		response, err := newHTTPClient(tt.config).Get(server.URL)
 		if err == nil {
@@ -300,7 +300,7 @@ func TestVerifiedTLSConfigWithoutServerName(t *testing.T) {
 	defer server.Close()
 	cs := tls.ConnectionState{PeerCertificates: []*x509.Certificate{server.Certificate()}}
 	for host, ok := range map[string]bool{"127.0.0.1": true, "other.test": false, "": false} {
-		err := trusting(verifiedOrPinnedTLSConfig(host, ""), server).VerifyConnection(cs)
+		err := trusting(verifiedTLSConfig(host), server).VerifyConnection(cs)
 		if (err == nil) != ok {
 			t.Errorf("host %q: got %v, want success %v", host, err, ok)
 		}

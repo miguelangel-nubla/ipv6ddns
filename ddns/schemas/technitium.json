@@ -12,7 +12,7 @@
         "tls_fingerprint": {
             "type": "string",
             "pattern": "^([a-fA-F0-9]{2}(:?[a-fA-F0-9]{2}){31})?$",
-            "description": "The SHA-256 fingerprint of the server's certificate, as 64 hex digits, colons allowed, for when it can't be verified otherwise. Without it, the certificate must be valid."
+            "description": "The SHA-256 fingerprint of the server's certificate, as 64 hex digits, colons allowed. With it, only that certificate is accepted, valid or not, as one signed by the server itself: a certificate that changes, as at a renewal, needs its new fingerprint. Without it, the certificate must be valid."
         },
         "token": {
             "type": "string",

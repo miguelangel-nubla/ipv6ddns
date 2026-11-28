@@ -51,12 +51,8 @@ func (m *Mikrotik) connect(ctx context.Context) (*routeros.Client, error) {
 		address := withDefaultPort(m.Address, "8729")
 		// A fingerprint pins the certificate. Without one the system must trust it, and the
 		// error tells its fingerprint.
-		tlsConfig := pinnedTLSConfig(m.TLSFingerprint)
-		if m.TLSFingerprint == "" {
-			host, _, _ := net.SplitHostPort(address)
-			tlsConfig = verifiedOrPinnedTLSConfig(host, "")
-		}
-		conn, err = (&tls.Dialer{Config: tlsConfig}).DialContext(ctx, "tcp", address)
+		host, _, _ := net.SplitHostPort(address)
+		conn, err = (&tls.Dialer{Config: serverTLSConfig(host, m.TLSFingerprint)}).DialContext(ctx, "tcp", address)
 	} else {
 		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", withDefaultPort(m.Address, "8728"))
 	}

@@ -33,13 +33,21 @@ func leafFingerprint(cs tls.ConnectionState) (string, error) {
 // systemRoots replaces the system's certificates in tests: nil is the system's.
 var systemRoots *x509.CertPool
 
-// verifiedOrPinnedTLSConfig accepts a server certificate the system trusts for host, or else one
-// whose fingerprint is the given one, when there is one: self-signed certificates are common on
-// routers. A failure tells the fingerprint, to configure.
-func verifiedOrPinnedTLSConfig(host, fingerprint string) *tls.Config {
-	fingerprint = strings.ToLower(strings.ReplaceAll(fingerprint, ":", ""))
+// serverTLSConfig is the TLS of a device or a server of a provider at host: with a fingerprint, the
+// certificate that has it alone, valid or not, as self-signed certificates are common on routers;
+// without one, a certificate the system trusts for host.
+func serverTLSConfig(host, fingerprint string) *tls.Config {
+	if fingerprint != "" {
+		return pinnedTLSConfig(fingerprint)
+	}
+	return verifiedTLSConfig(host)
+}
+
+// verifiedTLSConfig accepts a server certificate the system trusts for host. A failure tells the
+// certificate's fingerprint, to configure.
+func verifiedTLSConfig(host string) *tls.Config {
 	return &tls.Config{
-		// VerifyConnection does the verification, the system's then the fingerprint.
+		// VerifyConnection does the verification, to tell the fingerprint of a failure.
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			fp, err := leafFingerprint(cs)
@@ -64,19 +72,16 @@ func verifiedOrPinnedTLSConfig(host, fingerprint string) *tls.Config {
 			for _, cert := range cs.PeerCertificates[1:] {
 				opts.Intermediates.AddCert(cert)
 			}
-			_, err = cs.PeerCertificates[0].Verify(opts)
-			if err == nil || (fingerprint != "" && fp == fingerprint) {
+			if _, err = cs.PeerCertificates[0].Verify(opts); err == nil {
 				return nil
-			}
-			if fingerprint != "" {
-				return fmt.Errorf("certificate verification failed: %w, and its fingerprint %s is not the expected %s", err, fp, fingerprint)
 			}
 			return fmt.Errorf("certificate verification failed: %w (fingerprint: %s)", err, fp)
 		},
 	}
 }
 
-// pinnedTLSConfig accepts only the server certificate with the given fingerprint.
+// pinnedTLSConfig accepts only the server certificate with the given fingerprint, whoever signed
+// it and whatever names it has: one the system trusts with another fingerprint is refused too.
 func pinnedTLSConfig(fingerprint string) *tls.Config {
 	fingerprint = strings.ToLower(strings.ReplaceAll(fingerprint, ":", ""))
 	return &tls.Config{

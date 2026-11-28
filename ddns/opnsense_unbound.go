@@ -45,7 +45,7 @@ func NewOpnsenseUnbound(settings json.RawMessage) (Service, error) {
 }
 
 func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(u.Address), u.TLSFingerprint))
+	client := newHTTPClient(serverTLSConfig(urlHost(u.Address), u.TLSFingerprint))
 
 	// 1. Fetch existing Host Overrides
 	existingOverrides, err := u.getOverrides(client)

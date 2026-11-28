@@ -49,7 +49,7 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 	// two updates at once, the second would change or delete the override of another name.
 	defer lockDevice("pfsense", u.Address)()
 
-	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(u.Address), u.TLSFingerprint))
+	client := newHTTPClient(serverTLSConfig(urlHost(u.Address), u.TLSFingerprint))
 
 	// Note: pfSense does not support wildcard DNS entries (e.g., *.example.com)
 	// Validate that the hostname does not contain wildcards

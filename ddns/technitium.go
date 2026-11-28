@@ -53,7 +53,7 @@ type technitiumRDataIP struct {
 }
 
 func (t *Technitium) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(t.Address), t.TLSFingerprint))
+	client := newHTTPClient(serverTLSConfig(urlHost(t.Address), t.TLSFingerprint))
 
 	fqdn := FQDN(hostname, t.Zone)
 

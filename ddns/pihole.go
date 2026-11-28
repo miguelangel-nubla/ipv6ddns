@@ -50,7 +50,7 @@ func (p *PiHole) Update(hostname string, addrCollection *ipv6disc.AddrCollection
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(p.Address), p.TLSFingerprint))
+	client := newHTTPClient(serverTLSConfig(urlHost(p.Address), p.TLSFingerprint))
 	fqdn := p.Domain(hostname)
 
 	var listed struct {

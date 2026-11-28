@@ -46,7 +46,7 @@ type adGuardRewrite struct {
 }
 
 func (a *AdGuardHome) Update(hostname string, addrCollection *ipv6disc.AddrCollection) error {
-	client := newHTTPClient(verifiedOrPinnedTLSConfig(urlHost(a.Address), a.TLSFingerprint))
+	client := newHTTPClient(serverTLSConfig(urlHost(a.Address), a.TLSFingerprint))
 	fqdn := a.Domain(hostname)
 
 	var rewrites []adGuardRewrite
