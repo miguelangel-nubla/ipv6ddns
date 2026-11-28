@@ -18,13 +18,14 @@ import (
 	"maps"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
+
+	"github.com/miguelangel-nubla/ipv6ddns/internal/atomicfile"
 )
 
 // LetsEncrypt is the directory of Let's Encrypt, the default authority.
@@ -341,28 +342,9 @@ func write(certFile, keyFile string, chain [][]byte, key crypto.Signer) error {
 	return nil
 }
 
-// writeAtomic writes data to path through a file beside it, renamed: its folder made if missing.
+// writeAtomic writes data to path whole and synced, as atomicfile does: its folder made if missing.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return atomicfile.Write(path, data, mode)
 }
 
 // loadOrMakeKey reads the account's key, or makes it and writes it, the first time.

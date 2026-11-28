@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6ddns/internal/atomicfile"
 	"github.com/miguelangel-nubla/ipv6disc"
 )
 
@@ -170,14 +171,8 @@ func (s *Source) save(addrs []string, at time.Time) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.pushFile), 0o700); err != nil {
-		return fmt.Errorf("source %s: keeping the addresses: %w", s.name, err)
-	}
-	tmp := s.pushFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("source %s: keeping the addresses: %w", s.name, err)
-	}
-	if err := os.Rename(tmp, s.pushFile); err != nil {
+	// Synced: a power cut leaves the file before or this one, and the start reads either.
+	if err := atomicfile.Write(s.pushFile, data, 0o600); err != nil {
 		return fmt.Errorf("source %s: keeping the addresses: %w", s.name, err)
 	}
 	return nil

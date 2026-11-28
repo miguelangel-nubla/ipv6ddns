@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/miguelangel-nubla/ipv6ddns/config"
+	"github.com/miguelangel-nubla/ipv6ddns/internal/atomicfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/esphome"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/listen"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
@@ -177,23 +178,9 @@ func (s *deviceState) save(path string) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(content); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	// Synced: the key Home Assistant gave, lost to a power cut, would leave the device unknown
+	// to it, to be added again.
+	return atomicfile.Write(path, content, 0o600)
 }
 
 func stateKey(entity, attribute string) string { return entity + "\x00" + attribute }

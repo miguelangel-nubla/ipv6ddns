@@ -18,6 +18,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/miguelangel-nubla/ipv6ddns/config"
 	"github.com/miguelangel-nubla/ipv6ddns/ddns"
+	"github.com/miguelangel-nubla/ipv6ddns/internal/atomicfile"
 	"github.com/miguelangel-nubla/ipv6ddns/pkg/resolver"
 	"github.com/miguelangel-nubla/ipv6ddns/source"
 	"github.com/miguelangel-nubla/ipv6disc"
@@ -592,22 +593,14 @@ func (g *challengeGrant) load() error {
 	return nil
 }
 
-// writeJSON writes v to file, through a file beside it, renamed. The one beside it has one name,
-// as each file has one writer at a time: a grant writes its own, with its mutex held. Nothing is
-// synced, by choice: after a power cut a file may be empty, and the start then says so, and which.
+// writeJSON writes v to file, whole and synced, as atomicfile does: a power cut leaves the file
+// before or this one.
 func writeJSON(file string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-		return err
-	}
-	tmp := file + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, file)
+	return atomicfile.Write(file, data, 0o600)
 }
 
 // readJSON reads file into v, and tells whether there was one.
