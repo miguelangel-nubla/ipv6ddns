@@ -181,17 +181,25 @@ func TestLiveCertificate(t *testing.T) {
 		}
 	}
 
-	// Checked again: kept, the same.
+	// Checked again: kept, the same. So too with a RenewBefore of more than its lifetime, which
+	// made one just got due at once, and another ordered at every look.
 	before, _ := os.Stat(cfg.CertFile)
 	account, _ := os.ReadFile(cfg.AccountKeyFile)
-	acme.New(cfg).Check(ctx)
-	if after, _ := os.Stat(cfg.CertFile); !after.ModTime().Equal(before.ModTime()) {
-		t.Error("a certificate that is fine was got again")
+	for _, renewBefore := range []time.Duration{0, 365 * 24 * time.Hour} {
+		cfg.RenewBefore = renewBefore
+		acme.New(cfg).Check(ctx)
+		if after, _ := os.Stat(cfg.CertFile); !after.ModTime().Equal(before.ModTime()) {
+			t.Errorf("RenewBefore %s: a certificate that is fine was got again", renewBefore)
+		}
 	}
+	cfg.RenewBefore = 0
 
-	// Due for renewal: another, with the same account.
-	cfg.RenewBefore = 365 * 24 * time.Hour
+	// Two thirds of its lifetime later, it is due: another, with the same account. No RenewBefore
+	// makes one just got due: one of its whole lifetime or more is taken as two thirds.
+	lifetime := chain[0].NotAfter.Sub(chain[0].NotBefore)
+	later := chain[0].NotBefore.Add(lifetime / 3 * 2).Add(time.Minute)
 	renewed := acme.New(cfg)
+	renewed.SetNow(func() time.Time { return later })
 	renewed.Check(ctx)
 	if st := renewed.Status(); st.LastError != "" {
 		t.Fatalf("the renewal: %s", st.LastError)
