@@ -34,7 +34,8 @@ func writeCert(t *testing.T, dir string, names []string, notBefore, notAfter tim
 
 // A certificate is due when there is none, its key is missing or another's, it isn't for every
 // name, or two
-// thirds of its lifetime have passed; or RenewBefore its end, when given.
+// thirds of its lifetime have passed; or RenewBefore its end, when given, and less than its
+// lifetime.
 func TestDue(t *testing.T) {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	day := 24 * time.Hour
@@ -52,6 +53,13 @@ func TestDue(t *testing.T) {
 		{"RenewBefore", []string{"dns.example.com"}, now, now.Add(90 * day), 7 * day, now.Add(83 * day), false, false},
 		{"another name", []string{"other.example.com"}, now, now.Add(90 * day), 0, now, false, false},
 		{"a wildcard of the name", []string{"*.example.com"}, now, now.Add(90 * day), 0, now.Add(60 * day), false, false},
+		// RenewBefore of the lifetime or more would have a certificate just got due at once, and
+		// another ordered at every look: two thirds, as without it.
+		{"RenewBefore, a day less than the lifetime", []string{"dns.example.com"}, now, now.Add(6 * day), 5 * day, now.Add(1 * day), false, false},
+		{"RenewBefore, the lifetime", []string{"dns.example.com"}, now, now.Add(6 * day), 6 * day, now.Add(4 * day), false, false},
+		{"RenewBefore, more than the lifetime", []string{"dns.example.com"}, now, now.Add(6 * day), 30 * day, now.Add(4 * day), false, false},
+		// A lifetime twice which a Duration doesn't hold.
+		{"200 years", []string{"dns.example.com"}, now, now.Add(73000 * day), 0, now.Add(73000 * day / 3 * 2), false, false},
 		{"no key", []string{"dns.example.com"}, now, now.Add(90 * day), 0, now, true, false},
 		{"the key of another", []string{"dns.example.com"}, now, now.Add(90 * day), 0, now, false, true},
 	} {
@@ -78,6 +86,55 @@ func TestDue(t *testing.T) {
 	m.now = func() time.Time { return now }
 	if got, reason := m.due(); !got.Equal(now) || reason != "there is none yet" {
 		t.Errorf("without a file: %s, %s", got, reason)
+	}
+}
+
+// A certificate just got is never due at once, whatever RenewBefore: Check would order another at
+// every look, a minute apart.
+func TestDueAfterObtain(t *testing.T) {
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	for _, renewBefore := range []time.Duration{0, time.Hour, 6 * day, 30 * day, 1 << 62} {
+		certFile, keyFile := writeCert(t, t.TempDir(), []string{"dns.example.com"}, now, now.Add(6*day))
+		m := New(Config{Names: []string{"dns.example.com"}, CertFile: certFile, KeyFile: keyFile, RenewBefore: renewBefore})
+		m.now = func() time.Time { return now }
+		if got, _ := m.due(); !got.After(now) {
+			t.Errorf("RenewBefore %s: a certificate of 6 days, just got, is due on %s", renewBefore, got.Format(time.DateOnly))
+		}
+	}
+}
+
+// The names of Names are matched to the certificate's as a client would match them: a wildcard is
+// the certificate's own wildcard, in any case, and not the name above it.
+func TestDueNames(t *testing.T) {
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	fine := now.Add(60 * 24 * time.Hour)
+	for _, tc := range []struct {
+		name          string
+		cert, names   []string
+		want          time.Time
+		wantReasonFor string
+	}{
+		{"a name and its wildcard", []string{"*.example.com", "example.com"}, []string{"*.example.com", "example.com"}, fine, ""},
+		{"a wildcard, in another case", []string{"*.example.com"}, []string{"*.Example.com"}, fine, ""},
+		{"a name, in another case", []string{"dns.example.com"}, []string{"DNS.example.com"}, fine, ""},
+		{"a name of the wildcard", []string{"*.example.com"}, []string{"dns.example.com"}, fine, ""},
+		{"a wildcard alone isn't the name above", []string{"*.example.com"}, []string{"example.com"}, now, "example.com"},
+		{"a name isn't its wildcard", []string{"a.example.com"}, []string{"*.example.com"}, now, "*.example.com"},
+		{"one of two missing", []string{"*.example.com"}, []string{"*.example.com", "example.com"}, now, "example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			certFile, keyFile := writeCert(t, t.TempDir(), tc.cert, now, now.Add(90*24*time.Hour))
+			m := New(Config{Names: tc.names, CertFile: certFile, KeyFile: keyFile})
+			m.now = func() time.Time { return now }
+			got, reason := m.due()
+			if !got.Equal(tc.want) {
+				t.Errorf("the certificate for %q, wanted for %q: due %s (%s), want %s", tc.cert, tc.names, got, reason, tc.want)
+			}
+			if tc.wantReasonFor != "" && reason != "the one there isn't for "+tc.wantReasonFor {
+				t.Errorf("the reason: %q, want that it isn't for %s", reason, tc.wantReasonFor)
+			}
+		})
 	}
 }
 

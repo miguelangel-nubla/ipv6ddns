@@ -52,7 +52,8 @@ type Config struct {
 	Challenge TXT
 	// How long before its end a certificate is renewed: by default, once two thirds of its
 	// lifetime have passed, as Let's Encrypt advises, which is 30 days before the end of one of 90
-	// days, and 2 before the end of one of 6.
+	// days, and 2 before the end of one of 6. So is it when this is the certificate's whole
+	// lifetime or more, which would renew it without end.
 	RenewBefore time.Duration
 	// How long after its records are written the authority is told to check them, for the
 	// provider's servers that have them yet to give them to the others: 15 seconds by default.
@@ -154,6 +155,10 @@ func (m *Manager) Check(ctx context.Context) time.Duration {
 
 // due is when the certificate in the files is to be renewed, and why: now, for none, or one that
 // isn't for every name, or isn't of its key.
+//
+// A name is matched as a client would: a wildcard of Names, *.example.com, is the certificate's
+// own *.example.com, in any case, so a wildcard certificate isn't ordered again at every look;
+// and it isn't example.com, which a certificate for both must name too.
 func (m *Manager) due() (time.Time, string) {
 	data, err := os.ReadFile(m.config.CertFile)
 	if err != nil {
@@ -178,8 +183,14 @@ func (m *Manager) due() (time.Time, string) {
 			return m.now(), "the one there isn't for " + name
 		}
 	}
-	renew := cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore) * 2 / 3)
-	if m.config.RenewBefore > 0 {
+	// A third first: twice a lifetime of over 146 years, of a certificate put there by hand, is
+	// more than a Duration holds.
+	lifetime := cert.NotAfter.Sub(cert.NotBefore)
+	renew := cert.NotBefore.Add(lifetime / 3 * 2)
+	// RenewBefore of the certificate's whole lifetime or more, as 30 days of one of 6, would have
+	// one just got due already, and another ordered every minute, until the authority's limit:
+	// two thirds then, as without it.
+	if m.config.RenewBefore > 0 && m.config.RenewBefore < lifetime {
 		renew = cert.NotAfter.Add(-m.config.RenewBefore)
 	}
 	return renew, "it ends on " + cert.NotAfter.UTC().Format(time.DateOnly)
@@ -232,6 +243,7 @@ func (m *Manager) obtain(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// A name and its wildcard are challenged at one record, of two values: written together.
 		name := "_acme-challenge." + strings.TrimPrefix(authz.Identifier.Value, "*.")
 		records[name] = append(records[name], value)
 		challenges = append(challenges, chal)
@@ -241,6 +253,8 @@ func (m *Manager) obtain(ctx context.Context) error {
 	if len(names) == 0 {
 		m.config.Logf("the authority knows the names already: no challenge to write")
 	}
+	// Before any record is written, so that every end removes them: a failure, the time over, a
+	// stop.
 	defer func() {
 		for _, name := range names {
 			if err := m.config.Challenge.SetTXT(name, nil); err != nil {
@@ -309,6 +323,9 @@ func write(certFile, keyFile string, chain [][]byte, key crypto.Signer) error {
 	for _, der := range chain {
 		certPEM = append(certPEM, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
 	}
+	// Each file whole, but not the two at once: who reads between them finds a key that isn't the
+	// certificate's, keeps the pair it had, as certfile does, and reads again; and a start after a
+	// stop right there finds the same, and gets another, as due has it.
 	for _, f := range []struct {
 		path string
 		data []byte
