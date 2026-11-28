@@ -23,7 +23,9 @@ type OpnsenseUnbound struct {
 
 	// A change was sent and Unbound is not known to have been reconfigured with it: the next
 	// update reconfigures, whatever it finds, as the overrides read show it made. Read and set
-	// during an update, one at a time.
+	// during an update, one at a time. Kept in memory alone: OPNsense's API tells of no change
+	// left to apply, as uci does OpenWrt's, so ipv6ddns stopped between a change and its
+	// reconfigure leaves it for the next change to apply.
 	pending bool
 }
 
@@ -34,6 +36,9 @@ func init() {
 func NewOpnsenseUnbound(settings json.RawMessage) (Service, error) {
 	var service OpnsenseUnbound
 	if err := decodeSettings(settings, "opnsense_unbound", &service); err != nil {
+		return nil, err
+	}
+	if err := fingerprintNeedsTLS(service.Address, service.TLSFingerprint); err != nil {
 		return nil, err
 	}
 	return &service, nil
@@ -62,7 +67,8 @@ func (u *OpnsenseUnbound) Update(hostname string, addrCollection *ipv6disc.AddrC
 	// one, so none is added.
 	disabledIPs := make(map[string]bool)
 	for _, row := range existingOverrides {
-		if row.Hostname != hostPart || row.Domain != domainPart {
+		// Whatever the case, as DNS: a name written with capitals is found as the firewall has it.
+		if !strings.EqualFold(row.Hostname, hostPart) || !strings.EqualFold(row.Domain, domainPart) {
 			continue
 		}
 		// The type is the first word: AAAA, or up to OPNsense 25.1 its description,
@@ -167,6 +173,8 @@ type opnsenseResponse struct {
 	Status string `json:"status"`
 }
 
+// getOverrides lists every host override. searchHostOverride is asked without rowCount, which
+// is understood to give all of them and not a page: not checked on a firewall with many.
 func (u *OpnsenseUnbound) getOverrides(client *http.Client) ([]unboundOverrideRow, error) {
 	url := fmt.Sprintf("%s/api/unbound/settings/searchHostOverride", strings.TrimRight(u.Address, "/"))
 	req, err := http.NewRequest("GET", url, nil)
@@ -182,12 +190,12 @@ func (u *OpnsenseUnbound) getOverrides(client *http.Client) ([]unboundOverrideRo
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		body := readAnswer(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var searchResp unboundSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, listingLimit)).Decode(&searchResp); err != nil {
 		return nil, err
 	}
 
@@ -238,18 +246,18 @@ func (u *OpnsenseUnbound) saveOverride(client *http.Client, action, hostname, do
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body := readAnswer(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp opnsenseResponse
 	if err := json.Unmarshal(body, &apiResp); err == nil {
 		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
-			return fmt.Errorf("%s failed: %s", action, string(body))
+			return fmt.Errorf("%s failed: %s", action, brief(body))
 		}
 	} else {
-		return fmt.Errorf("%s failed to parse response: %s", action, string(body))
+		return fmt.Errorf("%s failed to parse response: %s", action, brief(body))
 	}
 
 	return nil
@@ -271,18 +279,18 @@ func (u *OpnsenseUnbound) deleteOverride(client *http.Client, uuid string) error
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body := readAnswer(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp opnsenseResponse
 	if err := json.Unmarshal(body, &apiResp); err == nil {
 		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
-			return fmt.Errorf("delHostOverride failed: %s", string(body))
+			return fmt.Errorf("delHostOverride failed: %s", brief(body))
 		}
 	} else {
-		return fmt.Errorf("delHostOverride failed to parse response: %s", string(body))
+		return fmt.Errorf("delHostOverride failed to parse response: %s", brief(body))
 	}
 
 	return nil
@@ -304,18 +312,18 @@ func (u *OpnsenseUnbound) reconfigure(client *http.Client) error {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body := readAnswer(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("reconfigure failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("reconfigure failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp opnsenseResponse
 	if err := json.Unmarshal(body, &apiResp); err == nil {
 		if apiResp.Result != "saved" && apiResp.Result != "deleted" && apiResp.Status != "ok" {
-			return fmt.Errorf("reconfigure failed: %s", string(body))
+			return fmt.Errorf("reconfigure failed: %s", brief(body))
 		}
 	} else {
-		return fmt.Errorf("reconfigure failed to parse response: %s", string(body))
+		return fmt.Errorf("reconfigure failed to parse response: %s", brief(body))
 	}
 
 	return nil

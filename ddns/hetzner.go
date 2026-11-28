@@ -110,6 +110,7 @@ func (h *Hetzner) call(ctx context.Context, method, path string, body, out any) 
 		}
 		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
+		// Refused, and so not applied: asked again, a request that makes a record makes one.
 		if resp.StatusCode == http.StatusTooManyRequests {
 			select {
 			case <-ctx.Done():
@@ -226,7 +227,8 @@ func (h *Hetzner) subname(hostname string) (string, string, error) {
 	return fqdn, sub, nil
 }
 
-// rrset is the set of the name and type, nil for none.
+// rrset is the set of the name and type, nil for none. The zone is its id, a number Hetzner gave:
+// it goes in the path as it is, and the name escaped.
 func (h *Hetzner) rrset(ctx context.Context, zone, sub, rrType string) (*hetznerRRset, error) {
 	var answer struct {
 		RRsets []hetznerRRset `json:"rrsets"`

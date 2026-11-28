@@ -15,8 +15,8 @@
         },
         "tls_fingerprint": {
             "type": "string",
-            "pattern": "^([a-fA-F0-9]{64})?$",
-            "description": "The SHA-256 fingerprint of the router's certificate, in hex. With it, only that certificate is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true."
+            "pattern": "^([a-fA-F0-9]{2}(:?[a-fA-F0-9]{2}){31})?$",
+            "description": "The SHA-256 fingerprint of the router's certificate, as 64 hex digits, colons allowed. With it, only that certificate is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true."
         },
         "username": {
             "type": "string",

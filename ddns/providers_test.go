@@ -775,3 +775,34 @@ func TestCloudflareUpdate(t *testing.T) {
 		}
 	}
 }
+
+// A name is found whatever its case, as DNS has it: the override a firewall keeps as NAS.LAN is
+// the one of nas.lan, neither added again beside it, nor refused as one that exists.
+func TestUnboundOverridesInAnotherCase(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/unbound/settings/searchHostOverride":
+			writeJSON(w, map[string]any{"rows": []map[string]string{
+				{"uuid": "1", "enabled": "1", "hostname": "NAS", "domain": "LAN", "rr": "AAAA", "server": wantedIP, "ttl": "600"},
+			}})
+		case "GET /api/v2/services/dns_resolver/host_overrides":
+			writeJSON(w, map[string]any{"status": "ok", "code": 200, "data": []map[string]any{
+				{"id": 0, "host": "NAS", "domain": "LAN", "ip": []string{wantedIP}},
+			}})
+		default:
+			t.Errorf("unexpected %s %s: the override is there, as wanted", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	opnsense := &OpnsenseUnbound{Address: server.URL, Key: "key", Secret: "secret", Zone: "lan"}
+	opnsense.TTL.Duration = 10 * time.Minute
+	if err := opnsense.Update("nas", collectionWith(wantedIP)); err != nil {
+		t.Errorf("opnsense: %v", err)
+	}
+	pfsense := &PfsenseRestapiUnbound{Address: server.URL, Key: "key", Zone: "lan"}
+	if err := pfsense.Update("nas", collectionWith(wantedIP)); err != nil {
+		t.Errorf("pfsense: %v", err)
+	}
+}

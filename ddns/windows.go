@@ -220,10 +220,15 @@ func windowsRecordName(hostname, zone string) string {
 	return "@"
 }
 
-// psQuote makes s a PowerShell string literal.
+// psQuote makes s a PowerShell string literal: in single quotes, with each quote of s doubled.
+// PowerShell ends such a string at a typographic quote as at the plain one, so those are doubled
+// too, as its own CodeGeneration.EscapeSingleQuotedStringContent does.
 func psQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	return "'" + psQuotes.Replace(s) + "'"
 }
+
+// psQuotes doubles the characters PowerShell takes for a single quote.
+var psQuotes = strings.NewReplacer("'", "''", "\u2018", "\u2018\u2018", "\u2019", "\u2019\u2019", "\u201a", "\u201a\u201a", "\u201b", "\u201b\u201b")
 
 // timeSpan formats d as a PowerShell TimeSpan, [d.]hh:mm:ss: the hours of one can't reach 24.
 func timeSpan(d time.Duration) string {

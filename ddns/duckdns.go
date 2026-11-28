@@ -102,14 +102,14 @@ func (d *DuckDNS) request(hostname string, params url.Values) (duckDNSRecords, e
 		return duckDNSRecords{}, fmt.Errorf("received non-200 status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, answerLimit))
 	if err != nil {
 		return duckDNSRecords{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
 	if lines[0] != "OK" {
-		return duckDNSRecords{}, fmt.Errorf("update refused: %s", strings.TrimSpace(string(body)))
+		return duckDNSRecords{}, fmt.Errorf("update refused: %s", brief(body))
 	}
 	var records duckDNSRecords
 	if len(lines) > 1 {

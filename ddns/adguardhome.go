@@ -31,6 +31,9 @@ func NewAdGuardHome(settings json.RawMessage) (Service, error) {
 	if err := decodeSettings(settings, "adguardhome", &service); err != nil {
 		return nil, err
 	}
+	if err := fingerprintNeedsTLS(service.Address, service.TLSFingerprint); err != nil {
+		return nil, err
+	}
 	return &service, nil
 }
 

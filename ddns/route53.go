@@ -187,6 +187,10 @@ func (r *Route53) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		},
 	}
 
+	// Known, and left so: the update returns once Route 53 took the change, PENDING, and not
+	// once its servers have it, which they do within a minute or so. A change it took is one it
+	// serves, and the wait would hold the updates of the credential's other names, one at a time
+	// as they are. SetTXT waits, as the ACME authority asks for the record as soon as it returns.
 	_, err = client.ChangeResourceRecordSets(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to change record sets: %w", err)

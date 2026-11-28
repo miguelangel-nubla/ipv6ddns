@@ -9,7 +9,9 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/miguelangel-nubla/ipv6ddns/pkg/duration"
 	"github.com/miguelangel-nubla/ipv6disc"
 	"github.com/xeipuuv/gojsonschema"
 )
@@ -35,7 +37,8 @@ type TXTWriter interface {
 	Service
 	// SetTXT makes the TXT records of name, a name of the zone as Update takes it, the values:
 	// none removes them. Its other records stay. As Update, it returns once the server answers
-	// with them.
+	// with them. The values are those of the DNS challenge: short, of letters, digits, - and _.
+	// One over 255 bytes, or with a quote, not every provider would write as it is.
 	SetTXT(name string, values []string) error
 	// FullName is the name of the zone that name is, without the final dot, as Domain, but
 	// asking the provider for the zone's name if it must: Route 53 learns it from AWS.
@@ -110,7 +113,9 @@ func Providers() []string {
 	return slices.Sorted(maps.Keys(providers))
 }
 
-// decodeSettings checks settings against the provider's JSON schema, and reads them into v.
+// decodeSettings checks settings against the provider's JSON schema, and reads them into v. A ttl
+// is whole seconds, as a record's is: the providers drop what is less, so that one below a second
+// would be no ttl at all, and the provider's default or, at Cloudflare, a 0 it refuses.
 func decodeSettings(settings json.RawMessage, provider string, v any) error {
 	schema, err := SettingsSchema(provider)
 	if err != nil {
@@ -129,6 +134,12 @@ func decodeSettings(settings json.RawMessage, provider string, v any) error {
 	}
 	if err := json.Unmarshal(settings, v); err != nil {
 		return fmt.Errorf("invalid settings: %w", err)
+	}
+	var with struct {
+		TTL duration.Duration `json:"ttl"`
+	}
+	if err := json.Unmarshal(settings, &with); err == nil && with.TTL.Duration%time.Second != 0 {
+		return fmt.Errorf("invalid settings: ttl: %s is not whole seconds: write it as 30s, 5m or 1h", with.TTL.Duration)
 	}
 	return nil
 }

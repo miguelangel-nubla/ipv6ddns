@@ -141,7 +141,8 @@ func (m *Mikrotik) Update(hostname string, addrCollection *ipv6disc.AddrCollecti
 
 	fqdn := FQDN(hostname, m.Zone)
 
-	// Fetch existing records for this hostname
+	// Fetch existing records for this hostname. The name is part of a word of the API, which is
+	// sent with its length: whatever the name has, it ends no word and starts no other.
 	reply, err := client.RunContext(ctx, "/ip/dns/static/print", "?name="+fqdn)
 	if err != nil {
 		return fmt.Errorf("failed to fetch DNS records: %w", err)

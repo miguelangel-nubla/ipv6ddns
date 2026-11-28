@@ -30,6 +30,10 @@ type ovhFake struct {
 	refreshes int
 	// Told to, its next request is refused as too many.
 	throttle bool
+	// Its refreshes fail, as its other requests don't.
+	failRefresh bool
+	// It lists the records of every name, whatever the name asked.
+	wholeZone bool
 }
 
 func startOVHFake(t *testing.T, fake *fakeDNS) (*ovhFake, *httptest.Server) {
@@ -91,12 +95,19 @@ func (o *ovhFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	id := strings.TrimPrefix(rest, "/record/")
 	switch {
+	case r.Method == http.MethodPost && rest == "/refresh" && o.failRefresh:
+		fail(http.StatusInternalServerError, "Internal server error")
+		return
 	case r.Method == http.MethodPost && rest == "/refresh":
 		o.refreshes++
 	case r.Method == http.MethodGet && rest == "/record":
 		q := r.URL.Query()
 		ids := []int64{}
-		for _, rec := range o.fake.of(full(q.Get("subDomain"))) {
+		listed := o.fake.of(full(q.Get("subDomain")))
+		if o.wholeZone {
+			listed = o.fake.records
+		}
+		for _, rec := range listed {
 			if rec.rrType == q.Get("fieldType") {
 				n, _ := strconv.ParseInt(rec.id, 10, 64)
 				ids = append(ids, n)
@@ -247,5 +258,58 @@ func TestOVHSetTXT(t *testing.T) {
 	}
 	if err := service.SetTXT(name, nil); err != nil || api.refreshes != 3 {
 		t.Errorf("the same again: %v, %d refreshes", err, api.refreshes)
+	}
+}
+
+// A refresh that failed is one the next update owes: it finds the records as wanted, and nothing
+// to change, and they are written and not served until the zone is refreshed.
+func TestOVHRefreshesAfterFailedRefresh(t *testing.T) {
+	for name, update := range map[string]func(*OVH) error{
+		"addresses": func(o *OVH) error { return o.Update("nas", desired()) },
+		"TXT":       func(o *OVH) error { return o.SetTXT("_acme-challenge.nas.example.com", []string{"token"}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := newFakeDNS(t, "nas.example.com", "other.example.com")
+			api, server := startOVHFake(t, fake)
+			service := ovhService(t, server, 0)
+
+			api.failRefresh = true
+			if err := update(service); err == nil || !strings.Contains(err.Error(), "refreshing the zone") {
+				t.Fatalf("the update whose refresh failed: %v", err)
+			}
+			api.failRefresh = false
+			writes := fake.writes
+			if err := update(service); err != nil {
+				t.Fatal(err)
+			}
+			if fake.writes != writes || api.refreshes != 1 {
+				t.Errorf("the update after one whose refresh failed: %d writes and %d refreshes, want none and one", fake.writes-writes, api.refreshes)
+			}
+			if err := update(service); err != nil || api.refreshes != 1 {
+				t.Errorf("the one after it, with nothing left to serve: %v, %d refreshes", err, api.refreshes)
+			}
+		})
+	}
+}
+
+// A listing with the records of other names, as of an API that took the zone's empty name for
+// every name, is not the name's: they are neither counted as its own nor deleted.
+func TestOVHRecordsOfOtherNames(t *testing.T) {
+	fake := newFakeDNS(t, "nas.example.com", "other.example.com")
+	api, server := startOVHFake(t, fake)
+	fake.add("other.example.com", "TXT", "keep", 300)
+	api.wholeZone = true
+	service := ovhService(t, server, 0)
+	if err := service.Update("example.com", collectionWith(newIPv4)); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetTXT("example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.addresses("example.com"); len(got) != 1 || got[0].ip != newIPv4 {
+		t.Errorf("the zone: %v", got)
+	}
+	if nas, other := fake.of("nas.example.com"), fake.of("other.example.com"); len(nas) != 2 || len(other) != 2 {
+		t.Errorf("the other names: nas has %v, and other %v, want the 2 of each", nas, other)
 	}
 }

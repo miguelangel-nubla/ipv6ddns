@@ -33,7 +33,7 @@ AdGuard Home, through its API: the names are DNS rewrites, one for each address.
 | Key | Takes | |
 |---|---|---|
 | `address` | string | **Required.** The address of its web interface, as http://192.168.1.2:3000. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, as 64 hex digits, colons allowed, for when it can't be verified otherwise. Without it, the certificate must be valid. |
 | `username` | string | The user of the web interface. Leave it out where AdGuard Home has no users. |
 | `password` | string | Its password. |
 | `zone` | string | **Required.** The domain the names are under, as lan.example.com. AdGuard Home has no zones: it is only what a name written alone, as nas, is completed with. |
@@ -128,7 +128,7 @@ MikroTik RouterOS static DNS, /ip/dns/static, through its API. RouterOS matches 
 |---|---|---|
 | `address` | string | **Required.** The router, with a port unless it's the default: 8728, or 8729 with TLS. |
 | `use_tls` | boolean | Whether to use the API over TLS, the api-ssl service. Without it, the password crosses the network unencrypted. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, in hex. With it, only that certificate is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the router's certificate, as 64 hex digits, colons allowed. With it, only that certificate is accepted, valid or not. Without it, the certificate must be valid. It needs use_tls: true. |
 | `username` | string | **Required.** A user with the read, write and api policies. |
 | `password` | string | **Required.** Its password. |
 | `zone` | string | **Required.** The zone of the names, as lan. |
@@ -155,7 +155,7 @@ OPNsense's Unbound host overrides, through its API.
 | Key | Takes | |
 |---|---|---|
 | `address` | string | **Required.** Its address, as https://opnsense.lan. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, as 64 hex digits, colons allowed, for when it can't be verified otherwise. Without it, the certificate must be valid. |
 | `key` | string | **Required.** An API key. |
 | `secret` | string | **Required.** Its secret. |
 | `zone` | string | **Required.** The zone of the names. |
@@ -183,7 +183,7 @@ pfSense's Unbound host overrides, through the REST API package.
 | Key | Takes | |
 |---|---|---|
 | `address` | string | **Required.** Its address, as https://pfsense.lan. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, as 64 hex digits, colons allowed, for when it can't be verified otherwise. Without it, the certificate must be valid. |
 | `key` | string | **Required.** An API key. |
 | `zone` | string | **Required.** The zone of the names. |
 | `ttl` | string | Not used: pfSense's host overrides have no TTL of their own. Accepted so that configurations that set it still load. |
@@ -195,7 +195,7 @@ Pi-hole, version 6 and later, through its API: the names are its local DNS recor
 | Key | Takes | |
 |---|---|---|
 | `address` | string | **Required.** The address of its web interface, as http://192.168.1.2. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, as 64 hex digits, colons allowed, for when it can't be verified otherwise. Without it, the certificate must be valid. |
 | `password` | string | The password of the web interface, or an application password, which two-factor authentication requires. Leave it out where Pi-hole has no password. |
 | `zone` | string | **Required.** The domain the names are under, as lan.example.com. Pi-hole has no zones: it is only what a name written alone, as nas, is completed with. |
 
@@ -260,7 +260,7 @@ Technitium DNS Server, through its HTTP API.
 | Key | Takes | |
 |---|---|---|
 | `address` | string | **Required.** Its address, as http://127.0.0.1:5380. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, in hex, for when it can't be verified otherwise. Without it, the certificate must be valid. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the server's certificate, as 64 hex digits, colons allowed, for when it can't be verified otherwise. Without it, the certificate must be valid. |
 | `token` | string | **Required.** An API token. |
 | `zone` | string | **Required.** The zone. |
 | `ttl` | string | **Required.** The records' TTL, as 5m or 1h. |
@@ -272,7 +272,7 @@ A UniFi gateway's local DNS records, its DNS Records, through the UniFi Network 
 | Key | Takes | |
 |---|---|---|
 | `address` | string | **Required.** The address of the console, as https://192.168.1.1, or of the self-hosted Network Application, as https://192.168.1.2:8443. |
-| `tls_fingerprint` | string | The SHA-256 fingerprint of the console's certificate, in hex, for when it can't be verified otherwise: a console's own certificate is signed by itself. Without it, the certificate must be valid. |
+| `tls_fingerprint` | string | The SHA-256 fingerprint of the console's certificate, as 64 hex digits, colons allowed, for when it can't be verified otherwise: a console's own certificate is signed by itself. Without it, the certificate must be valid. |
 | `api_key` | string | An API key of UniFi OS: in the console, Settings, Control Plane, Integrations, Create API Key. Its user must be allowed to change the network's settings. A self-hosted Network Application has no API keys: give username and password instead. |
 | `username` | string | A local user that may change the network's settings, instead of api_key. Without two-factor authentication: ipv6ddns can't answer it. |
 | `password` | string | Its password. |

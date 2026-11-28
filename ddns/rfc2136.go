@@ -1,6 +1,8 @@
 package ddns
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,7 +68,20 @@ func (r *RFC2136) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	ttl := uint32(r.TTL.Seconds())
 	desired := desiredRecords(addrCollection)
 
-	current, err := r.records(server, name)
+	// The name's own records: with none wanted, those of a wildcard above it are not its own.
+	own := func() (map[string]rfc2136Record, error) {
+		records, err := r.records(server, name)
+		if err != nil || len(desired) > 0 || len(records) == 0 {
+			return records, err
+		}
+		if beside := r.beside(name); beside != "" {
+			if wildcard, err := r.records(server, beside); err == nil && maps.Equal(records, wildcard) {
+				return nil, nil
+			}
+		}
+		return records, nil
+	}
+	current, err := own()
 	if err != nil {
 		return fmt.Errorf("failed to read the records of %s: %w", name, err)
 	}
@@ -105,7 +120,7 @@ func (r *RFC2136) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 	// The update returns once the server answers with the records.
 	deadline := time.Now().Add(rfc2136Served)
 	for {
-		current, err = r.records(server, name)
+		current, err = own()
 		if err == nil && rfc2136Same(current, desired, ttl) {
 			return nil
 		}
@@ -158,12 +173,32 @@ func (r *RFC2136) records(server, name string) (map[string]rfc2136Record, error)
 	return records, nil
 }
 
+// beside is a name that no host has, beside name: one label of chance in place of its first. A
+// server answers a name without records of its own with those of the wildcard above it, RFC 4592,
+// under the name asked: a name left without records would seem to keep the wildcard's, and its
+// update to fail, time after time. The wildcard answers the name beside it the same, so what both
+// have is the wildcard's and not the name's. "" for the zone itself, which no wildcard answers,
+// and for a wildcard, whose records are its own though the name beside it has them too.
+func (r *RFC2136) beside(name string) string {
+	if strings.EqualFold(name, dns.Fqdn(r.Zone)) {
+		return ""
+	}
+	first, parent, ok := strings.Cut(name, ".")
+	if !ok || first == "*" {
+		return ""
+	}
+	label := make([]byte, 8)
+	rand.Read(label)
+	return "ipv6ddns-" + hex.EncodeToString(label) + "." + parent
+}
+
 // exchange sends the message over TCP, signed with the key when there is one, within the timeout
 // of a request.
 func (r *RFC2136) exchange(m *dns.Msg, server string) (*dns.Msg, error) {
 	client := &dns.Client{Net: "tcp", Timeout: httpTimeout}
 	if r.TSIGKey != "" {
-		key := dns.Fqdn(r.TSIGKey)
+		// In lower case, as the server names it in its answer, which is looked up by it.
+		key := dns.CanonicalName(r.TSIGKey)
 		algorithm := rfc2136Algorithms[r.TSIGAlgorithm]
 		if algorithm == "" {
 			algorithm = dns.HmacSHA256
@@ -246,6 +281,12 @@ func (r *RFC2136) SetTXT(hostname string, values []string) error {
 		got, err := r.txt(server, name)
 		if err == nil && slices.Equal(got, want) {
 			return nil
+		}
+		// With none wanted, those of a wildcard above the name are not its own: see beside.
+		if beside := r.beside(name); err == nil && len(want) == 0 && beside != "" {
+			if wildcard, werr := r.txt(server, beside); werr == nil && slices.Equal(got, wildcard) {
+				return nil
+			}
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("the TXT records of %s were updated, but after %s the server answers with %v: is it the primary of %s?", name, rfc2136Served, got, r.Zone)

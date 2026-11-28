@@ -117,7 +117,8 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		commands = append(commands, fmt.Sprintf("uci delete dhcp.%s", id))
 	}
 	for _, ip := range ipsToAdd {
-		// A named section, the same for the same name and address.
+		// A named section, the same for the same name and address: 32 bits of their hash, which
+		// two of the records of a router would share only among tens of thousands of them.
 		hash := sha256.Sum256([]byte(fqdn + ip))
 		id := "ipv6ddns_" + hex.EncodeToString(hash[:])[:8]
 		commands = append(commands,
@@ -139,6 +140,8 @@ func (o *OpenWrt) Update(hostname string, addrCollection *ipv6disc.AddrCollectio
 		}
 	}
 
+	// The commit is of every change staged for dhcp, those someone left with uci on the router
+	// too: uci has one staging area for all, and no commit of some.
 	commands = append(commands, "uci commit dhcp", "/etc/init.d/dnsmasq reload")
 	o.pending = true
 	if _, err := runner.Run(strings.Join(commands, " && ")); err != nil {

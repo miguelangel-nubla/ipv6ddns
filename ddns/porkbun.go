@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -124,6 +125,7 @@ func (p *Porkbun) call(ctx context.Context, path string, fields map[string]strin
 		}
 		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
+		// Refused, and so not applied: asked again, a request that makes a record makes one.
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
 			select {
 			case <-ctx.Done():
@@ -173,7 +175,9 @@ func (p *Porkbun) subname(hostname string) (string, string, error) {
 	return fqdn, strings.ToLower(RelativeName(fqdn, p.Zone)), nil
 }
 
-// records are the records of the name of a type.
+// records are the records of the name of a type. One of another name is not taken as its own,
+// should the listing give it: an API that took the path without a subdomain, of the zone itself,
+// for every name would have the zone's update delete the addresses of them all.
 func (p *Porkbun) records(ctx context.Context, sub, rrType string) ([]porkbunRecord, error) {
 	path := "/dns/retrieveByNameType/" + url.PathEscape(p.Zone) + "/" + rrType
 	if sub != "" {
@@ -185,7 +189,13 @@ func (p *Porkbun) records(ctx context.Context, sub, rrType string) ([]porkbunRec
 	if err := p.call(ctx, path, nil, &answer); err != nil {
 		return nil, err
 	}
-	return answer.Records, nil
+	name := p.Zone
+	if sub != "" {
+		name = sub + "." + p.Zone
+	}
+	return slices.DeleteFunc(answer.Records, func(r porkbunRecord) bool {
+		return !strings.EqualFold(strings.TrimSuffix(r.Name, "."), name)
+	}), nil
 }
 
 // set makes the records of the name of rrType the values, of ttl, apart, as Porkbun keeps them.

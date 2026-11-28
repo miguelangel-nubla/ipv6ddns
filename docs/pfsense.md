@@ -23,7 +23,7 @@ credentials:
 
 The keys are in the [providers reference](reference/providers.md#pfsense_restapi_unbound). [Every machine on the network by name](guides/network-wide-names.md#your-routers-dns-instead) is the whole setup.
 
-- **The certificate.** pfSense's web interface has a certificate signed by itself, unless you gave it another. Give its `tls_fingerprint`, which the certificate is then checked by, alone:
+- **The certificate.** pfSense's web interface has a certificate signed by itself, unless you gave it another. Give its `tls_fingerprint`, with an `https://` address: the certificate with that fingerprint is then accepted. One that the system's certificate authorities verify is accepted too, whatever its fingerprint, as it is without `tls_fingerprint`:
 
   ```
   openssl s_client -connect 192.168.1.1:443 </dev/null 2>/dev/null | openssl x509 -outform der | openssl dgst -sha256

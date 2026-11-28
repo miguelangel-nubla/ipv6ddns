@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -94,6 +95,19 @@ func pinnedTLSConfig(fingerprint string) *tls.Config {
 	}
 }
 
+// fingerprintNeedsTLS refuses a tls_fingerprint beside an address that is not https://. It would
+// connect without TLS, and send the password or the key in the clear with nothing checked, to
+// someone who believes the device pinned.
+func fingerprintNeedsTLS(address, fingerprint string) error {
+	if fingerprint == "" {
+		return nil
+	}
+	if u, err := url.Parse(address); err == nil && u.Scheme == "https" {
+		return nil
+	}
+	return errors.New("invalid settings: tls_fingerprint needs an address that starts with https://: without TLS there is no certificate to check")
+}
+
 // urlHost is the host of a URL, for certificate verification.
 func urlHost(address string) string {
 	u, err := url.Parse(address)
@@ -101,6 +115,30 @@ func urlHost(address string) string {
 		return ""
 	}
 	return u.Hostname()
+}
+
+// The most read of an answer: of one request, and of a listing of every record of a device. More
+// is none of the API's, and is not read: an answer without end would fill the memory.
+const (
+	answerLimit  = 1 << 20
+	listingLimit = 16 << 20
+)
+
+// readAnswer reads the answer of a request, up to answerLimit.
+func readAnswer(body io.Reader) []byte {
+	data, _ := io.ReadAll(io.LimitReader(body, answerLimit))
+	return data
+}
+
+// brief is the start of an answer, for an error: the page of a proxy, or of a wrong address, is
+// not for the log whole.
+func brief(answer []byte) string {
+	const most = 500
+	said := strings.TrimSpace(string(answer))
+	if len(said) > most {
+		return strings.ToValidUTF8(said[:most], "") + "..."
+	}
+	return said
 }
 
 // withoutURL drops the URL from an HTTP client error: the providers that take their token in the

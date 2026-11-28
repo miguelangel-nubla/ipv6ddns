@@ -4,7 +4,11 @@ import (
 	"strings"
 )
 
-// FQDN returns a fully qualified domain name given a hostname and a zone.
+// FQDN returns a fully qualified domain name given a hostname and a zone. A hostname that is the
+// zone, or ends with it, is taken as written in full: FQDN("example.com", "example.com") is the
+// zone itself, and so is FQDN("lan", "lan"), not lan.lan. That is for the names a configuration
+// writes. A name made from a template, of what a device calls itself, is the worker's to keep
+// from being the zone: here the two can't be told apart.
 func FQDN(hostname, zone string) string {
 	hostname = strings.Trim(hostname, ".")
 	zone = strings.Trim(zone, ".")

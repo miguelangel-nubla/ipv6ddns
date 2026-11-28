@@ -106,6 +106,7 @@ func (d *DeSEC) call(ctx context.Context, method, path string, body, out any) er
 		}
 		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
+		// Refused, and so not applied: asked again, a request that makes a record makes one.
 		if resp.StatusCode == http.StatusTooManyRequests {
 			wait := time.Second
 			if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {

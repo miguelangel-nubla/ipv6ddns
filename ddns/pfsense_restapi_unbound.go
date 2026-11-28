@@ -22,7 +22,9 @@ type PfsenseRestapiUnbound struct {
 
 	// A change was sent and Unbound is not known to have applied it: the next update applies,
 	// whatever it finds, as the overrides read show it made. Read and set during an update, one
-	// at a time.
+	// at a time. Kept in memory alone: the API tells of no change left to apply, as uci does
+	// OpenWrt's, so ipv6ddns stopped between a change and its apply leaves it for the next change
+	// to apply.
 	pending bool
 }
 
@@ -33,6 +35,9 @@ func init() {
 func NewPfsenseRestapiUnbound(settings json.RawMessage) (Service, error) {
 	var service PfsenseRestapiUnbound
 	if err := decodeSettings(settings, "pfsense_restapi_unbound", &service); err != nil {
+		return nil, err
+	}
+	if err := fingerprintNeedsTLS(service.Address, service.TLSFingerprint); err != nil {
 		return nil, err
 	}
 	return &service, nil
@@ -64,11 +69,11 @@ func (u *PfsenseRestapiUnbound) Update(hostname string, addrCollection *ipv6disc
 
 	hostPart, domainPart := SplitFQDN(fqdn)
 
-	// Look for an existing override matching host and domain.
+	// Look for an existing override matching host and domain, whatever the case, as DNS.
 	// pfSense enforces uniqueness for this combination.
 	var existingRecord *pfsenseRestapiOverrideRow
 	for i := range existingOverrides {
-		if existingOverrides[i].Host == hostPart && existingOverrides[i].Domain == domainPart {
+		if strings.EqualFold(existingOverrides[i].Host, hostPart) && strings.EqualFold(existingOverrides[i].Domain, domainPart) {
 			existingRecord = &existingOverrides[i]
 			break
 		}
@@ -160,6 +165,8 @@ type pfsenseRestapiResponse struct {
 	Data    json.RawMessage `json:"data"`
 }
 
+// getOverrides lists every host override. The plural endpoint is asked without a limit, which
+// is understood to give all of them and not a page: not checked on a firewall with many.
 func (u *PfsenseRestapiUnbound) getOverrides(client *http.Client) ([]pfsenseRestapiOverrideRow, error) {
 	url := fmt.Sprintf("%s/api/v2/services/dns_resolver/host_overrides", strings.TrimRight(u.Address, "/"))
 	req, err := http.NewRequest("GET", url, nil)
@@ -175,12 +182,12 @@ func (u *PfsenseRestapiUnbound) getOverrides(client *http.Client) ([]pfsenseRest
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		body := readAnswer(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp pfsenseRestapiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, listingLimit)).Decode(&apiResp); err != nil {
 		return nil, err
 	}
 
@@ -224,21 +231,21 @@ func (u *PfsenseRestapiUnbound) addOverride(client *http.Client, host, domain st
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body := readAnswer(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp pfsenseRestapiResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return fmt.Errorf("failed to parse API response: %s", string(body))
+		return fmt.Errorf("failed to parse API response: %s", brief(body))
 	}
 
 	if apiResp.Status != "ok" && apiResp.Status != "success" {
 		if apiResp.Message != "" {
-			return fmt.Errorf("API error: %s (Full response: %s)", apiResp.Message, string(body))
+			return fmt.Errorf("API error: %s (Full response: %s)", apiResp.Message, brief(body))
 		}
-		return fmt.Errorf("API error: %s", string(body))
+		return fmt.Errorf("API error: %s", brief(body))
 	}
 
 	return nil
@@ -273,14 +280,14 @@ func (u *PfsenseRestapiUnbound) updateOverride(client *http.Client, id, host, do
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body := readAnswer(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp pfsenseRestapiResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return fmt.Errorf("failed to parse API response: %s", string(body))
+		return fmt.Errorf("failed to parse API response: %s", brief(body))
 	}
 
 	if apiResp.Status != "success" && apiResp.Code != 200 {
@@ -305,14 +312,14 @@ func (u *PfsenseRestapiUnbound) deleteOverride(client *http.Client, id string) e
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body := readAnswer(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp pfsenseRestapiResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return fmt.Errorf("failed to parse API response: %s", string(body))
+		return fmt.Errorf("failed to parse API response: %s", brief(body))
 	}
 
 	if apiResp.Status != "ok" && apiResp.Status != "success" {
@@ -338,14 +345,14 @@ func (u *PfsenseRestapiUnbound) applyChanges(client *http.Client) error {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body := readAnswer(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, brief(body))
 	}
 
 	var apiResp pfsenseRestapiResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return fmt.Errorf("failed to parse API response: %s", string(body))
+		return fmt.Errorf("failed to parse API response: %s", brief(body))
 	}
 
 	if apiResp.Status != "ok" && apiResp.Status != "success" {

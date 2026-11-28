@@ -119,6 +119,9 @@ func TestTLSConfigs(t *testing.T) {
 		{"untrusted, its fingerprint with colons in upper case", verifiedOrPinnedTLSConfig("127.0.0.1", colons(strings.ToUpper(fingerprint))), true},
 		{"untrusted, another fingerprint", verifiedOrPinnedTLSConfig("127.0.0.1", other), false},
 		{"trusted, for its address", trusting(verifiedOrPinnedTLSConfig("127.0.0.1", ""), server), true},
+		// The fingerprint is for the certificate that can't be verified otherwise: one that can
+		// is accepted whatever it is, as it would be without it. MikroTik's alone pins.
+		{"trusted, another fingerprint", trusting(verifiedOrPinnedTLSConfig("127.0.0.1", other), server), true},
 		{"pinned", pinnedTLSConfig(fingerprint), true},
 		{"pinned to another", pinnedTLSConfig(other), false},
 	} {
@@ -129,6 +132,152 @@ func TestTLSConfigs(t *testing.T) {
 		if (err == nil) != tt.ok {
 			t.Errorf("%s: got %v, want success %v", tt.name, err, tt.ok)
 		}
+	}
+}
+
+// A fingerprint beside an address without TLS would be a password in the clear with nothing
+// checked, as MikroTik's without use_tls.
+func TestFingerprintNeedsTLS(t *testing.T) {
+	fingerprint := strings.Repeat("ab", 32)
+	for provider, settings := range map[string]string{
+		"adguardhome":             `"username": "u", "password": "p", "zone": "lan"`,
+		"pihole":                  `"password": "p", "zone": "lan"`,
+		"technitium":              `"token": "t", "zone": "lan", "ttl": "5m"`,
+		"opnsense_unbound":        `"key": "k", "secret": "s", "zone": "lan", "ttl": "5m"`,
+		"pfsense_restapi_unbound": `"key": "k", "zone": "lan"`,
+		"unifi":                   `"api_key": "k", "zone": "lan"`,
+	} {
+		for address, ok := range map[string]bool{
+			`"address": "http://192.0.2.1", "tls_fingerprint": "` + fingerprint + `"`:  false,
+			`"address": "192.0.2.1", "tls_fingerprint": "` + fingerprint + `"`:         false,
+			`"address": "https://192.0.2.1", "tls_fingerprint": "` + fingerprint + `"`: true,
+			`"address": "HTTPS://192.0.2.1", "tls_fingerprint": "` + fingerprint + `"`: true,
+			`"address": "http://192.0.2.1", "tls_fingerprint": ""`:                     true,
+			`"address": "http://192.0.2.1"`:                                            true,
+		} {
+			_, err := NewService(provider, json.RawMessage("{"+address+", "+settings+"}"))
+			if (err == nil) != ok {
+				t.Errorf("%s, %s: got %v, want success %v", provider, address, err, ok)
+			}
+			if err != nil && !strings.Contains(err.Error(), "tls_fingerprint needs an address that starts with https://") {
+				t.Errorf("%s, %s: the error doesn't tell of https://: %v", provider, address, err)
+			}
+		}
+	}
+}
+
+// A fingerprint is taken as openssl prints it, with colons and in upper case, as the discovery
+// plugins take theirs: the schema has it so too, and not only the code that compares it.
+func TestFingerprintWithColons(t *testing.T) {
+	plain := strings.Repeat("ab", 32)
+	withColons := colons(strings.ToUpper(plain))
+	count := 0
+	for provider, settings := range validSettings {
+		schema, err := SettingsSchema(provider)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(schema), `"tls_fingerprint"`) {
+			continue
+		}
+		count++
+		for fingerprint, ok := range map[string]bool{
+			plain:                 true,
+			withColons:            true,
+			"":                    true,
+			withColons + ":":      false,
+			":" + withColons:      false,
+			plain[2:]:             false,
+			withColons + ":AB":    false,
+			"zz" + plain[2:]:      false,
+			"SHA256:" + plain[7:]: false,
+		} {
+			var with map[string]any
+			if err := json.Unmarshal([]byte(settings), &with); err != nil {
+				t.Fatal(err)
+			}
+			with["tls_fingerprint"] = fingerprint
+			with["address"] = "https://192.0.2.1"
+			if provider == "mikrotik" {
+				with["address"], with["use_tls"] = "192.0.2.1", true
+			}
+			raw, _ := json.Marshal(with)
+			if _, err := NewService(provider, raw); (err == nil) != ok {
+				t.Errorf("%s, tls_fingerprint %q: got %v, want success %v", provider, fingerprint, err, ok)
+			}
+		}
+	}
+	if count != 7 {
+		t.Errorf("%d providers with a tls_fingerprint, want 7", count)
+	}
+}
+
+// A ttl is whole seconds: one below a second would be no ttl, and so the provider's default, its
+// least without the warning, or at Cloudflare a 0 that it refuses with every record.
+func TestTTLWholeSeconds(t *testing.T) {
+	for provider, settings := range validSettings {
+		schema, err := SettingsSchema(provider)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(schema), `"ttl"`) {
+			continue
+		}
+		for ttl, ok := range map[string]bool{"900ms": false, "1500ms": false, "0.5s": false, "1h0m0.1s": false, "1h": true, "0.5h": true, "1h30m": true} {
+			var with map[string]any
+			if err := json.Unmarshal([]byte(settings), &with); err != nil {
+				t.Fatal(err)
+			}
+			with["ttl"] = ttl
+			raw, _ := json.Marshal(with)
+			_, err := NewService(provider, raw)
+			if (err == nil) != ok {
+				t.Errorf("%s, ttl %s: got %v, want success %v", provider, ttl, err, ok)
+			}
+			if err != nil && !strings.Contains(err.Error(), "invalid settings: ttl: ") || err != nil && !strings.Contains(err.Error(), " is not whole seconds: write it as 30s, 5m or 1h") {
+				t.Errorf("%s, ttl %s: the error doesn't tell what to write: %v", provider, ttl, err)
+			}
+		}
+	}
+}
+
+// What a device answers is read up to a limit, and an error has its start alone: a page without
+// end, of a wrong address or a proxy, neither fills the memory nor the log.
+func TestAnswersAreBounded(t *testing.T) {
+	page := strings.Repeat("<p>not the API</p>", 200000)
+	for _, status := range []int{http.StatusOK, http.StatusBadGateway} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			w.Write([]byte(page))
+		}))
+		opnsense := &OpnsenseUnbound{Address: server.URL, Key: "k", Secret: "s", Zone: "lan"}
+		pfsense := &PfsenseRestapiUnbound{Address: server.URL, Key: "k", Zone: "lan"}
+		client := newHTTPClient(nil)
+		for name, call := range map[string]func() error{
+			"opnsense, the overrides": func() error { return opnsense.Update("nas", desired()) },
+			"opnsense, an override":   func() error { return opnsense.addOverride(client, "nas", "lan", newIP) },
+			"opnsense, a delete":      func() error { return opnsense.deleteOverride(client, "1") },
+			"opnsense, reconfigure":   func() error { return opnsense.reconfigure(client) },
+			"pfsense, the overrides":  func() error { return pfsense.Update("nas", desired()) },
+			"pfsense, an override":    func() error { return pfsense.addOverride(client, "nas", "lan", []string{newIP}) },
+			"pfsense, a change":       func() error { return pfsense.updateOverride(client, "1", "nas", "lan", []string{newIP}) },
+			"pfsense, a delete":       func() error { return pfsense.deleteOverride(client, "1") },
+			"pfsense, apply":          func() error { return pfsense.applyChanges(client) },
+			"duckdns":                 func() error { return (&DuckDNS{APIToken: duckToken, updateURL: server.URL}).Update("nas", desired()) },
+		} {
+			if err := call(); err == nil {
+				t.Errorf("%s, HTTP %d: no error", name, status)
+			} else if len(err.Error()) > 1000 {
+				t.Errorf("%s, HTTP %d: an error of %d bytes", name, status, len(err.Error()))
+			}
+		}
+		server.Close()
+	}
+	if got := brief([]byte("  refused \n")); got != "refused" {
+		t.Errorf("brief: %q", got)
+	}
+	if got := brief([]byte(strings.Repeat("é", 400))); len(got) > 510 || !strings.HasSuffix(got, "é...") {
+		t.Errorf("brief, of a long answer: %d bytes, ending %q", len(got), got[len(got)-8:])
 	}
 }
 
@@ -203,6 +352,10 @@ func TestWindowsHelpers(t *testing.T) {
 	}
 	if got := psQuote("o'brien"); got != "'o''brien'" {
 		t.Errorf("psQuote: got %s", got)
+	}
+	// The other characters PowerShell ends a string with: each doubled, as the plain one.
+	if got := psQuote("a\u2018b\u2019c\u201ad\u201be"); got != "'a\u2018\u2018b\u2019\u2019c\u201a\u201ad\u201b\u201be'" {
+		t.Errorf("psQuote, of typographic quotes: got %s", got)
 	}
 	if windowsRecordName("", "example.com") != "@" || windowsRecordName("host", "example.com") != "host" {
 		t.Error("windowsRecordName")

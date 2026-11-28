@@ -127,6 +127,7 @@ func (g *Gandi) call(ctx context.Context, method, path string, body, out any) (b
 		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
 		switch {
+		// Refused, and so not applied: asked again, a request that makes a record makes one.
 		case resp.StatusCode == http.StatusTooManyRequests:
 			select {
 			case <-ctx.Done():

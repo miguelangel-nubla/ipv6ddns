@@ -45,6 +45,9 @@ func NewUniFi(settings json.RawMessage) (Service, error) {
 	if err := decodeSettings(settings, "unifi", &service); err != nil {
 		return nil, err
 	}
+	if err := fingerprintNeedsTLS(service.Address, service.TLSFingerprint); err != nil {
+		return nil, err
+	}
 	if service.TTL.Duration > unifiMaxTTL {
 		return nil, fmt.Errorf("ttl: %s is longer than UniFi takes, %s", service.TTL.Duration, unifiMaxTTL)
 	}

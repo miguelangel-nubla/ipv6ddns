@@ -18,7 +18,7 @@ It talks to the UniFi Network API of a UniFi OS console, such as a UDM, UDR, UCG
 - **A local user.** A user with two-factor authentication can't log in: use an API key, or a local user without it.
 - **Logins are limited.** The provider and the plugin each log in when ipv6ddns starts. UniFi OS refuses logins that come too often, as from restarts close together: what was refused is tried again a minute later. An API key needs no login.
 - **What it may do.** The discovery plugin only reads. The DNS provider changes the network's settings, so its key's user, or its user, must be allowed to. Give each its own, so the plugin's can't change anything.
-- **The certificate.** A console's certificate is its own, signed by itself, so give its fingerprint, `tls_fingerprint`. The certificate is then checked by it alone:
+- **The certificate.** A console's certificate is its own, signed by itself, so give its fingerprint, `tls_fingerprint`, with an `https://` address. The discovery plugin then checks the certificate by it alone. The DNS provider accepts the certificate with that fingerprint, and also one that the system's certificate authorities verify, whatever its fingerprint, as it does without `tls_fingerprint`:
 
   ```
   openssl s_client -connect 192.168.1.1:443 </dev/null 2>/dev/null | openssl x509 -outform der | openssl dgst -sha256

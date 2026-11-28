@@ -37,6 +37,10 @@ type OVH struct {
 	// How far OVH's clock is from this one's, once asked: each signature has OVH's time.
 	clockDelta time.Duration
 	clockKnown bool
+	// A change was made that no refresh has served yet: one that failed leaves it so, for the
+	// next update to refresh, which would otherwise find the records as wanted and nothing to do.
+	// Kept in memory alone, as OPNsense's: the API tells of no change left to refresh.
+	pending bool
 }
 
 // The endpoints of OVH's API, by their names.
@@ -165,6 +169,7 @@ func (o *OVH) call(ctx context.Context, method, path string, body, out any) erro
 		}
 		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
+		// Refused, and so not applied: asked again, a request that makes a record makes one.
 		if resp.StatusCode == http.StatusTooManyRequests {
 			select {
 			case <-ctx.Done():
@@ -198,7 +203,9 @@ func (o *OVH) call(ctx context.Context, method, path string, body, out any) erro
 	}
 }
 
-// records are the records of the name of a type: their ids listed, and each read.
+// records are the records of the name of a type: their ids listed, and each read. One of another
+// name is not taken as its own, should the listing give it: an API that took the empty name of the
+// zone itself for every name would have the zone's update delete the addresses of them all.
 func (o *OVH) records(ctx context.Context, sub, rrType string) ([]ovhRecord, error) {
 	var ids []int64
 	if err := o.call(ctx, http.MethodGet, "/record?fieldType="+rrType+"&subDomain="+url.QueryEscape(sub), nil, &ids); err != nil {
@@ -210,7 +217,9 @@ func (o *OVH) records(ctx context.Context, sub, rrType string) ([]ovhRecord, err
 		if err := o.call(ctx, http.MethodGet, "/record/"+strconv.FormatInt(id, 10), nil, &r); err != nil {
 			return nil, err
 		}
-		out = append(out, r)
+		if strings.EqualFold(r.SubDomain, sub) {
+			out = append(out, r)
+		}
 	}
 	return out, nil
 }
@@ -261,8 +270,26 @@ func (o *OVH) subname(hostname string) (string, string, error) {
 	return fqdn, strings.ToLower(RelativeName(fqdn, o.Zone)), nil
 }
 
+// refreshPending refreshes the zone when this update changed a record, or an earlier one did and
+// its refresh failed.
+func (o *OVH) refreshPending(ctx context.Context, changed bool) error {
+	o.mutex.Lock()
+	o.pending = o.pending || changed
+	pending := o.pending
+	o.mutex.Unlock()
+	if !pending {
+		return nil
+	}
+	err := o.refresh(ctx)
+	o.mutex.Lock()
+	// Set again of a failure: another update's refresh, since, may have cleared it.
+	o.pending = err != nil
+	o.mutex.Unlock()
+	return err
+}
+
 // Update makes the A and AAAA records of the name the addresses, and refreshes the zone when it
-// changed any, even of an update that failed halfway; its other records stay.
+// changed any, or an earlier update did and failed before its refresh; its other records stay.
 func (o *OVH) Update(hostname string, addresses *ipv6disc.AddrCollection) error {
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 	defer cancel()
@@ -279,14 +306,12 @@ func (o *OVH) Update(hostname string, addresses *ipv6disc.AddrCollection) error 
 		c, err := o.set(ctx, sub, recordType, desired[recordType], o.ttl(), canonicalIP)
 		changed = changed || c
 		if err != nil {
-			if changed {
-				_ = o.refresh(ctx)
-			}
+			_ = o.refreshPending(ctx, changed)
 			return fmt.Errorf("the %s records of %s: %w", recordType, fqdn, err)
 		}
 	}
-	if changed {
-		return o.refresh(ctx)
+	if err := o.refreshPending(ctx, changed); err != nil {
+		return fmt.Errorf("the records of %s are written, and not served yet: %w", fqdn, err)
 	}
 	return nil
 }
@@ -303,10 +328,8 @@ func (o *OVH) SetTXT(hostname string, values []string) error {
 	// OVH gives a TXT record's target as it was given, or quoted.
 	same := func(s string) (string, bool) { return strings.Trim(s, `"`), true }
 	changed, err := o.set(ctx, sub, "TXT", values, max(txtTTL, ovhMinimumTTL), same)
-	if changed {
-		if rerr := o.refresh(ctx); err == nil {
-			err = rerr
-		}
+	if rerr := o.refreshPending(ctx, changed); err == nil {
+		err = rerr
 	}
 	if err != nil {
 		return fmt.Errorf("the TXT records of %s: %w", fqdn, err)

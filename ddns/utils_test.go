@@ -36,6 +36,14 @@ func TestFQDN(t *testing.T) {
 			want:     "example.com",
 		},
 		{
+			// By design, as the one above: a name written in full. What keeps a device called
+			// lan, of a {hostname} template, from writing the zone's own records is the worker.
+			name:     "hostname that is a zone of one label",
+			hostname: "lan",
+			zone:     "lan",
+			want:     "lan",
+		},
+		{
 			name:     "empty hostname",
 			hostname: "",
 			zone:     "example.com",

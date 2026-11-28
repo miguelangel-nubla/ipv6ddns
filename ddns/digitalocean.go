@@ -104,6 +104,7 @@ func (d *DigitalOcean) call(ctx context.Context, method, path string, body, out 
 		}
 		answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
+		// Refused, and so not applied: asked again, a request that makes a record makes one.
 		if resp.StatusCode == http.StatusTooManyRequests {
 			select {
 			case <-ctx.Done():

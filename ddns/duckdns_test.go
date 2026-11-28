@@ -1,6 +1,7 @@
 package ddns
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -129,6 +130,18 @@ func TestDuckDNSRefused(t *testing.T) {
 	}
 	if service.Domain("nas") != "nas.duckdns.org" {
 		t.Errorf("domain: %s", service.Domain("nas"))
+	}
+}
+
+// withoutURL keeps what failed and why, of an error of the HTTP client, and drops the URL.
+func TestWithoutURL(t *testing.T) {
+	cause := errors.New("connection refused")
+	err := withoutURL(fmt.Errorf("update: %w", &url.Error{Op: "Get", URL: "https://www.duckdns.org/update?token=" + duckToken, Err: cause}))
+	if err.Error() != "Get request: connection refused" || !errors.Is(err, cause) {
+		t.Errorf("of an error with a URL: %q", err)
+	}
+	if got := withoutURL(cause); got != cause {
+		t.Errorf("of an error without one: %q", got)
 	}
 }
 

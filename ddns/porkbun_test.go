@@ -25,6 +25,8 @@ type porkbunFake struct {
 	throttle bool
 	// The API access of the domain is off.
 	noAccess bool
+	// It lists the records of every name, whatever the name asked.
+	wholeZone bool
 }
 
 func startPorkbunFake(t *testing.T, fake *fakeDNS) (*porkbunFake, *httptest.Server) {
@@ -89,7 +91,11 @@ func (p *porkbunFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			sub = parts[4]
 		}
 		records := []porkbunRecord{}
-		for _, rec := range p.fake.of(full(sub)) {
+		listed := p.fake.of(full(sub))
+		if p.wholeZone {
+			listed = p.fake.records
+		}
+		for _, rec := range listed {
 			if rec.rrType == parts[3] {
 				records = append(records, porkbunRecord{ID: rec.id, Name: rec.name, Type: rec.rrType, Content: rec.ip, TTL: strconv.Itoa(rec.ttl)})
 			}
@@ -233,5 +239,27 @@ func TestPorkbunSetTXT(t *testing.T) {
 	}
 	if got := fake.addresses("nas.example.com"); len(got) != 2 {
 		t.Errorf("the addresses of nas: %v", got)
+	}
+}
+
+// A listing with the records of other names, as of an API that took the path without a subdomain
+// for every name, is not the name's: they are neither counted as its own nor deleted.
+func TestPorkbunRecordsOfOtherNames(t *testing.T) {
+	fake := newFakeDNS(t, "nas.example.com", "other.example.com")
+	api, server := startPorkbunFake(t, fake)
+	fake.add("other.example.com", "TXT", "keep", 300)
+	api.wholeZone = true
+	service := porkbunService(t, server, 0)
+	if err := service.Update("example.com", collectionWith(newIPv4)); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetTXT("example.com", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.addresses("example.com"); len(got) != 1 || got[0].ip != newIPv4 {
+		t.Errorf("the zone: %v", got)
+	}
+	if nas, other := fake.of("nas.example.com"), fake.of("other.example.com"); len(nas) != 2 || len(other) != 2 {
+		t.Errorf("the other names: nas has %v, and other %v, want the 2 of each", nas, other)
 	}
 }

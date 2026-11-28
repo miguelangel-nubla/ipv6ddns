@@ -171,3 +171,21 @@ func TestMikrotikTLS(t *testing.T) {
 		}
 	}
 }
+
+// A name is one word of the API, whatever it has: a word is sent with its length, so that no
+// character of the name ends it, to start another, as an address of its own choosing.
+func TestMikrotikNameIsOneWord(t *testing.T) {
+	fake := &fakeDNS{t: t}
+	router := newFakeRouterOS(t, nil, mikrotikFake(fake))
+	service := &Mikrotik{Address: router.address(), Username: "admin", Zone: "lan"}
+	service.TTL.Duration = 5 * time.Minute
+	name := "nas\n=disabled=yes\x00=address=192.0.2.66"
+	for range 2 {
+		if err := service.Update(name, collectionWith(newIPv4)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(fake.records) != 1 || fake.records[0].name != name+".lan" || fake.records[0].ip != newIPv4 || fake.records[0].disabled {
+		t.Errorf("the records: %+v, want one, of the name whole and its address", fake.records)
+	}
+}
