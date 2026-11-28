@@ -274,7 +274,7 @@ func TestKeyGivenWhileConnecting(t *testing.T) {
 	if err := d.setKey(testKey()); err != nil {
 		t.Fatal(err)
 	}
-	d.closeUntrusted(nil)
+	d.closeOthers(nil)
 	if !other.closed(0) {
 		t.Error("a connection without the key outlived the key")
 	}
@@ -323,7 +323,7 @@ func TestKeyGivenDuringHandshake(t *testing.T) {
 	if err := d.setKey(testKey()); err != nil {
 		t.Fatal(err)
 	}
-	d.closeUntrusted(nil)
+	d.closeOthers(nil)
 
 	// The handshake ends, with the zero key the device began it with.
 	writeFrame(conn, append([]byte{handshakeOK}, first...))
@@ -353,19 +353,22 @@ func (c *closeRecorder) Close() error {
 	return nil
 }
 
-// Of the connections without the key, the one that gave it is not closed with the others: its
-// answer, that the key was taken, may not be written yet, and it ends itself after it.
-func TestKeyGiverNotClosedWithTheUntrusted(t *testing.T) {
+// When the key changes, the connection that gave it is not closed with the others: its answer,
+// that the key was taken, may not be written yet, and it ends itself after it. Every other is,
+// the ones that proved the key of before too.
+func TestKeyGiverNotClosedWithTheOthers(t *testing.T) {
 	d := &Device{conns: make(map[*connection]struct{})}
 	add := func(trusted bool) *closeRecorder {
 		conn := &closeRecorder{}
-		d.conns[&connection{conn: conn, trusted: trusted}] = struct{}{}
+		c := &connection{conn: conn}
+		c.trusted.Store(trusted)
+		d.conns[c] = struct{}{}
 		return conn
 	}
-	giver, other, homeAssistant := add(false), add(false), add(true)
+	giver, other, withOldKey := add(false), add(false), add(true)
 	for c := range d.conns {
 		if c.conn == giver {
-			d.closeUntrusted(c)
+			d.closeOthers(c)
 		}
 	}
 	if giver.closed.Load() {
@@ -374,8 +377,168 @@ func TestKeyGiverNotClosedWithTheUntrusted(t *testing.T) {
 	if !other.closed.Load() {
 		t.Error("another connection without the key was not closed")
 	}
-	if homeAssistant.closed.Load() {
-		t.Error("a connection with the key was closed")
+	if !withOldKey.closed.Load() {
+		t.Error("a connection with the key of before was not closed")
+	}
+}
+
+// giveKey gives the device a key over the connection, nil to forget it, and tells whether the
+// device took it.
+func giveKey(t *testing.T, c *testClient, key []byte) bool {
+	t.Helper()
+	var encoded string
+	if key != nil {
+		encoded = base64.StdEncoding.EncodeToString(key)
+	}
+	c.WriteMessage(msgNoiseEncryptionSetKeyRequest, message{}.string(1, encoded))
+	f, err := parse(c.expect(t, msgNoiseEncryptionSetKeyResponse))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f.numbers[1] == 1
+}
+
+// A connection that proved the key of before is trusted no more once the key changes, or is
+// forgotten: someone who has only a key that leaked presses no button, and can't change the key
+// again, which would lock out the owner's new one.
+func TestOldKeyConnectionAfterKeyChange(t *testing.T) {
+	for name, forget := range map[string]bool{"changed": false, "forgotten": true} {
+		t.Run(name, func(t *testing.T) {
+			var pressed atomic.Int32
+			keyA, keyB := testKey(), testKey()
+			d := &Device{Key: keyA, OnKey: func([]byte) error { return nil }}
+			d.AddButton(Entity{ID: "update", Name: "Update"}, func() { pressed.Add(1) })
+			addr := serveDevice(t, d)
+			button := d.entities[0]
+
+			old, reason := dialNoise(t, addr, keyA) // someone who has keyA, as after it leaked
+			if old == nil {
+				t.Fatal(reason)
+			}
+			old.ping(t)
+			ha, reason := dialNoise(t, addr, keyA)
+			if ha == nil {
+				t.Fatal(reason)
+			}
+			if forget {
+				keyB = nil
+			}
+			if !giveKey(t, ha, keyB) || string(d.key()) != string(keyB) {
+				t.Fatal("the key not changed")
+			}
+			if c, _ := dialNoise(t, addr, keyA); c != nil {
+				t.Fatal("the old key still gets in anew")
+			}
+			// What it sends now is either not read, or read and not taken.
+			old.WriteMessage(msgButtonCommandRequest, message{}.fixed32(1, button.key))
+			if !forget {
+				old.WriteMessage(msgNoiseEncryptionSetKeyRequest, message{}.string(1, GenerateKey()))
+			}
+			for name, c := range map[string]*testClient{"a connection of the old key": old, "the one that changed it": ha} {
+				if !c.closed(0) {
+					t.Errorf("%s: not closed once the key changed", name)
+				}
+			}
+			time.Sleep(50 * time.Millisecond) // a press runs apart
+			if pressed.Load() != 0 {
+				t.Error("a connection of the old key pressed the button after the key changed")
+			}
+			if string(d.key()) != string(keyB) {
+				t.Error("a connection of the old key changed the device's key after it was changed: the owner's is locked out")
+			}
+		})
+	}
+}
+
+// A message a connection of the old key sent before it is closed, and the device reads after the
+// key changed, is not taken: it is trusted no more from the change itself.
+func TestOldKeyConnectionBeforeItIsClosed(t *testing.T) {
+	var pressed atomic.Int32
+	keyA, keyB := testKey(), testKey()
+	d := &Device{Key: keyA, OnKey: func([]byte) error { return nil }}
+	d.AddButton(Entity{ID: "update", Name: "Update"}, func() { pressed.Add(1) })
+	addr := serveDevice(t, d)
+	old, reason := dialNoise(t, addr, keyA)
+	if old == nil {
+		t.Fatal(reason)
+	}
+	old.ping(t)
+	// The key changes, and the connections are not closed yet.
+	if err := d.setKey(keyB); err != nil {
+		t.Fatal(err)
+	}
+	old.WriteMessage(msgButtonCommandRequest, message{}.fixed32(1, d.entities[0].key))
+	if giveKey(t, old, testKey()) || string(d.key()) != string(keyB) {
+		t.Error("a connection of the old key changed the key again")
+	}
+	time.Sleep(50 * time.Millisecond) // a press runs apart
+	if pressed.Load() != 0 {
+		t.Error("a connection of the old key pressed the button after the key changed")
+	}
+	d.closeOthers(nil)
+	if !old.closed(0) {
+		t.Error("a connection of the old key outlived it")
+	}
+}
+
+// A client whose handshake began with the device's key, and ended once Home Assistant had changed
+// it, or forgotten it, proved a key the device has no more: it is closed when its handshake ends.
+func TestKeyChangedDuringHandshake(t *testing.T) {
+	for name, forget := range map[string]bool{"changed": false, "forgotten": true} {
+		t.Run(name, func(t *testing.T) {
+			keyA := testKey()
+			d := &Device{Key: keyA, OnKey: func([]byte) error { return nil }}
+			d.AddTextSensor(Entity{ID: "addresses", Name: "Addresses"}).Set("2001:db8::1")
+			addr := serveDevice(t, d)
+
+			// The client's hello alone: the device answers it, with the key it has then.
+			conn := dial(t, addr)
+			hs, err := noise.NewHandshakeState(noise.Config{
+				CipherSuite: cipherSuite, Pattern: noise.HandshakeNN, Initiator: true,
+				Prologue: append(append([]byte{}, prologue...), 0, 0), PresharedKey: keyA, PresharedKeyPlacement: 0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, _, _, err := hs.WriteMessage(nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFrame(conn, nil)
+			r := bufio.NewReader(conn)
+			if hello, err := readFrame(r, maxHandshakeFrame); err != nil || len(hello) == 0 || hello[0] != protocolNNpsk0 {
+				t.Fatalf("the device's hello: %x, %v", hello, err)
+			}
+
+			var keyB []byte
+			if !forget {
+				keyB = testKey()
+			}
+			if err := d.setKey(keyB); err != nil {
+				t.Fatal(err)
+			}
+			d.closeOthers(nil)
+
+			writeFrame(conn, append([]byte{handshakeOK}, first...))
+			reply, err := readFrame(r, maxHandshakeFrame)
+			if err != nil || len(reply) == 0 || reply[0] != handshakeOK {
+				t.Fatalf("the device's handshake: %x, %v", reply, err)
+			}
+			_, send, recv, err := hs.ReadMessage(nil, reply[1:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := &testClient{conn, &secureConn{conn: conn, r: r, send: send, recv: recv}}
+			c.WriteMessage(msgSubscribeStatesRequest, nil)
+			if !c.closed(msgTextSensorStateResponse) {
+				t.Error("served with a key the device has no more, by a handshake that began before it changed")
+			}
+			d.mutex.Lock()
+			defer d.mutex.Unlock()
+			if len(d.conns) != 0 {
+				t.Error("it is among the device's connections")
+			}
+		})
 	}
 }
 
@@ -403,7 +566,7 @@ func TestConnected(t *testing.T) {
 	if err := d.setKey(key); err != nil {
 		t.Fatal(err)
 	}
-	d.closeUntrusted(nil)
+	d.closeOthers(nil)
 	ha, reason := dialNoise(t, addr, key)
 	if ha == nil {
 		t.Fatal(reason)
@@ -549,7 +712,8 @@ func TestServeAcceptsAgain(t *testing.T) {
 
 // Who may do what: the key is given over Noise only, with the zero key while the device has none
 // and with the key after; forgotten with the key only; and a client without the key presses no
-// button and gives no state.
+// button and gives no state. TestOldKeyConnectionAfterKeyChange has the connections of a key that
+// was changed.
 func TestTrust(t *testing.T) {
 	var kept [][]byte
 	var keptMutex sync.Mutex
@@ -569,16 +733,7 @@ func TestTrust(t *testing.T) {
 	}
 	setKey := func(c *testClient, key []byte) bool {
 		t.Helper()
-		var encoded string
-		if key != nil {
-			encoded = base64.StdEncoding.EncodeToString(key)
-		}
-		c.WriteMessage(msgNoiseEncryptionSetKeyRequest, message{}.string(1, encoded))
-		f, err := parse(c.expect(t, msgNoiseEncryptionSetKeyResponse))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return f.numbers[1] == 1
+		return giveKey(t, c, key)
 	}
 	act := func(c *testClient) {
 		t.Helper()
@@ -642,6 +797,13 @@ func TestTrust(t *testing.T) {
 	if !setKey(ha, keyB) || string(d.key()) != string(keyB) {
 		t.Error("the key changed with the key: not taken")
 	}
+	// The one that changed it proved the key of before: it ends too, and connects with the new.
+	if !ha.closed(0) {
+		t.Error("the connection that changed the key: not closed after its answer")
+	}
+	if ha, reason = dialNoise(t, addr, keyB); ha == nil {
+		t.Fatal(reason)
+	}
 	if !setKey(ha, nil) || d.HasKey() {
 		t.Error("the key forgotten with the key: kept")
 	}
@@ -681,6 +843,34 @@ func TestOneKeyTaken(t *testing.T) {
 	if kept.Load() != 1 || !d.HasKey() {
 		t.Errorf("%d keys kept, of clients without one", kept.Load())
 	}
+}
+
+// A device serves each of its listeners, and Home Assistant may give the key over the first while
+// the next one's Serve starts: it reads the key as everything else does, which the race detector
+// tells.
+func TestServeWhileKeyGiven(t *testing.T) {
+	d := &Device{OnKey: func([]byte) error { return nil }}
+	d.MAC, _ = net.ParseMAC("02:00:5e:10:00:11")
+	ctx, cancel := context.WithCancel(context.Background())
+	var serving sync.WaitGroup
+	for range 50 {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		serving.Add(1)
+		go func() {
+			defer serving.Done()
+			if err := d.Serve(ctx, ln); err != nil {
+				t.Error(err)
+			}
+		}()
+		if err := d.setKey(testKey()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cancel()
+	serving.Wait()
 }
 
 // The messages the device writes, byte by byte, as api.proto has their fields: a number that

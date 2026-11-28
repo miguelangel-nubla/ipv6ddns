@@ -8,6 +8,7 @@
 package esphome
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -19,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -269,12 +271,20 @@ func (d *Device) keyChange() <-chan struct{} {
 }
 
 // setKey takes a key Home Assistant gave, or forgets it: OnKey keeps it first. With keying held.
+//
+// No connection of before is trusted from then on: each proved the key of before, or none, and
+// one who has only that key must not press a button, give a state or change the key again. They
+// are trusted no more here, with the key's change, and not when closeOthers closes them, so that
+// a message one of them sent in between is not taken.
 func (d *Device) setKey(key []byte) error {
 	if err := d.OnKey(key); err != nil {
 		return err
 	}
 	d.mutex.Lock()
 	d.Key = key
+	for c := range d.conns {
+		c.trusted.Store(false)
+	}
 	if d.keyChanged != nil {
 		close(d.keyChanged)
 	}
@@ -283,18 +293,19 @@ func (d *Device) setKey(key []byte) error {
 	return nil
 }
 
-// closeUntrusted ends the connections without the key, after it changed: Home Assistant's own
-// reconnects with it. But the one that gave it, which ends itself once it is answered.
-func (d *Device) closeUntrusted(but *connection) {
+// closeOthers ends every connection after the key changed or was forgotten, those that proved the
+// key of before as those without one, as ESPHome's devices do: Home Assistant's own reconnects
+// with the new one. But the one that gave it, which ends itself once it is answered.
+func (d *Device) closeOthers(but *connection) {
 	d.mutex.Lock()
-	var untrusted []*connection
+	var others []*connection
 	for c := range d.conns {
-		if !c.trusted && c != but {
-			untrusted = append(untrusted, c)
+		if c != but {
+			others = append(others, c)
 		}
 	}
 	d.mutex.Unlock()
-	for _, c := range untrusted {
+	for _, c := range others {
 		c.close()
 	}
 }
@@ -325,10 +336,12 @@ func (d *Device) ConnectedSince() (time.Time, bool) {
 // failure to accept one, as with no file descriptor left, is tried again, ever later up to a
 // second: only the listener closed ends it.
 func (d *Device) Serve(ctx context.Context, ln net.Listener) error {
-	if d.Key != nil && len(d.Key) != 32 {
+	// Through key, with the mutex: another listener's Serve may be taking a key given already.
+	key := d.key()
+	if key != nil && len(key) != 32 {
 		return errors.New("the device's key must be of 32 bytes")
 	}
-	if d.Key == nil && d.OnKey == nil {
+	if key == nil && d.OnKey == nil {
 		return errors.New("the device needs a key, or OnKey for Home Assistant to give it one")
 	}
 	if len(d.MAC) != 6 {
@@ -340,6 +353,7 @@ func (d *Device) Serve(ctx context.Context, ln net.Listener) error {
 	}
 	d.mutex.Unlock()
 
+	// It ends with ctx, not with Serve: after a listener closed by another, it waits until then.
 	go func() {
 		<-ctx.Done()
 		ln.Close()
@@ -393,9 +407,11 @@ type outgoing struct {
 // connection is a client past its handshake. Its handler reads, and only its writer writes, each
 // message within writeTimeout: nothing that holds a lock waits for a client to read.
 type connection struct {
-	sc      msgConn
-	conn    net.Conn
-	trusted bool // with the device's key: only then are Home Assistant's states and commands taken
+	sc   msgConn
+	conn net.Conn
+	// With the device's key, as it is now: only then are Home Assistant's states and commands
+	// taken. A change of the key ends it, for every connection.
+	trusted atomic.Bool
 
 	out  chan outgoing // the answers, for the writer: closed when the handler ends
 	wake chan struct{} // there are states to send
@@ -502,7 +518,7 @@ func (d *Device) serveConn(ctx context.Context, conn net.Conn) {
 		d.logf("%s: %s", conn.RemoteAddr(), err)
 		return
 	}
-	sc, trusted, err := accept(conn, d.Name, d.MAC, d.key)
+	sc, proved, err := accept(conn, d.Name, d.MAC, d.key)
 	if err != nil {
 		d.logf("%s: %s", conn.RemoteAddr(), err)
 		return
@@ -511,17 +527,19 @@ func (d *Device) serveConn(ctx context.Context, conn net.Conn) {
 		d.logf("%s: %s", conn.RemoteAddr(), err)
 		return
 	}
-	c := &connection{sc: sc, conn: conn, trusted: trusted,
+	c := &connection{sc: sc, conn: conn,
 		out: make(chan outgoing, 16), wake: make(chan struct{}, 1), done: make(chan struct{}),
 		queued: make(map[*entity]struct{})}
-	// The key may have been given since the handshake began: setKey sets it with the mutex, before
-	// closeUntrusted, so a connection without it is either among conns for that, or sees it here.
+	// The key may have been given, changed or forgotten since the handshake began: setKey sets it
+	// with the mutex, before closeOthers, so a connection that proved another, or none, is either
+	// among conns for that, or sees it here.
 	d.mutex.Lock()
-	if !trusted && d.Key != nil {
+	if !bytes.Equal(proved, d.Key) || (proved == nil) != (d.Key == nil) {
 		d.mutex.Unlock()
-		d.logf("%s: connected without the key, which the device has now: closed", conn.RemoteAddr())
+		d.logf("%s: connected without the key the device has now: closed", conn.RemoteAddr())
 		return
 	}
+	c.trusted.Store(proved != nil)
 	d.conns[c] = struct{}{}
 	d.mutex.Unlock()
 	go d.writer(c)
@@ -605,7 +623,7 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		d.mutex.Unlock()
 		return false, nil
 	case msgSubscribeHomeAssistantStatesRequest:
-		if !c.trusted {
+		if !c.trusted.Load() {
 			// States from a client without the key would be anyone's: not asked.
 			return false, nil
 		}
@@ -625,7 +643,7 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		return false, nil
 	case msgHomeAssistantStateResponse:
-		if !c.trusted {
+		if !c.trusted.Load() {
 			return false, nil
 		}
 		f, err := parse(data)
@@ -643,7 +661,7 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		return false, nil
 	case msgButtonCommandRequest:
-		if !c.trusted {
+		if !c.trusted.Load() {
 			d.logf("a button pressed without the key: ignored")
 			return false, nil
 		}
@@ -665,6 +683,7 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 		}
 		return false, nil
 	case msgNoiseEncryptionSetKeyRequest:
+		// The key is the field's bytes, which are its base64, as ESPHome has it: read as text.
 		f, err := parse(data)
 		if err != nil {
 			return false, err
@@ -674,10 +693,11 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 			return false, err
 		}
 		if ok {
-			d.closeUntrusted(c)
+			d.closeOthers(c)
 		}
-		// Without the key the device has now, this one ends too, its answer written first.
-		return ok && !c.trusted, nil
+		// This one proved the key of before too, or none: it ends as the others, its answer
+		// written first.
+		return ok, nil
 	}
 	// The rest, as the logs and services subscriptions: nothing to do.
 	return false, nil
@@ -686,7 +706,8 @@ func (d *Device) handle(c *connection, msgType uint16, data []byte) (bool, error
 // takeKey takes the key Home Assistant gives: over Noise, with the zero key while the device has
 // none, or with the key, to change it; never in plaintext. An empty one forgets it, with the key
 // only. It tells whether the key was taken. One at a time: of two clients that give a device
-// without a key one each, the second finds it has one, and is refused.
+// without a key one each, the second finds it has one, and is refused; and of two that change it,
+// the second is trusted no more.
 func (d *Device) takeKey(c *connection, encoded string) bool {
 	if d.OnKey == nil {
 		d.logf("a key given, but the device's is fixed: refused")
@@ -695,12 +716,12 @@ func (d *Device) takeKey(c *connection, encoded string) bool {
 	d.keying.Lock()
 	defer d.keying.Unlock()
 	_, plain := c.sc.(*plainConn)
-	if plain || !c.trusted && d.HasKey() {
+	if plain || !c.trusted.Load() && d.HasKey() {
 		d.logf("a key given without encryption, or without the key: refused")
 		return false
 	}
 	if encoded == "" {
-		if !c.trusted {
+		if !c.trusted.Load() {
 			return false
 		}
 		if err := d.setKey(nil); err != nil {

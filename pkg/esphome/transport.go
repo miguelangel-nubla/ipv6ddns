@@ -107,26 +107,30 @@ var zeroKey = make([]byte, 32)
 // accept answers a connection as the device of name and mac. With a key, the client must
 // prove it, by the Noise handshake. Without one, as ESPHome's devices whose key Home Assistant
 // gives, the first byte says: 0x00 the plaintext protocol, 0x01 Noise with the zero key, for Home
-// Assistant to give the key. trusted is a connection with the key.
+// Assistant to give the key. proved is the key the client proved, nil without one: the caller
+// checks it is still the device's, which may have changed while the handshake went on.
 //
 // The key is read once the client speaks, not when it connects: a client that connected before
 // the device had its key, and waited, needs it as any other.
-func accept(conn net.Conn, name string, mac net.HardwareAddr, deviceKey func() []byte) (c msgConn, trusted bool, err error) {
+func accept(conn net.Conn, name string, mac net.HardwareAddr, deviceKey func() []byte) (c msgConn, proved []byte, err error) {
 	r := bufio.NewReader(conn)
 	first, err := r.Peek(1)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
 	key := deviceKey()
 	if key == nil {
 		if first[0] == plaintextIndicator {
-			return &plainConn{conn: conn, r: r}, false, nil
+			return &plainConn{conn: conn, r: r}, nil, nil
 		}
 		sc, err := noiseHandshake(conn, r, name, mac, zeroKey)
-		return sc, false, err
+		return sc, nil, err
 	}
 	sc, err := noiseHandshake(conn, r, name, mac, key)
-	return sc, err == nil, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return sc, key, nil
 }
 
 // noiseHandshake answers a client's Noise handshake as the device of name and mac, with key: the 32
@@ -205,6 +209,7 @@ func (c *secureConn) ReadMessage() (uint16, []byte, error) {
 		return 0, nil, errors.New("a message too short")
 	}
 	msgType := binary.BigEndian.Uint16(plain[0:])
+	// The length the message tells of itself is the client's word: held to the frame it came in.
 	size := int(binary.BigEndian.Uint16(plain[2:]))
 	if size > len(plain)-4 {
 		return 0, nil, errors.New("a message longer than its frame")
