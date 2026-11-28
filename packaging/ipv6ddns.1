@@ -32,6 +32,19 @@ The configuration, without \fB\-\-config\fR: the working directory's.
 .TP
 .I /etc/ipv6ddns/config.yaml
 The configuration, when the one before is not there: the system's, as a package installs it.
+.SH EXIT STATUS
+.TP
+0
+Stopped by SIGINT or SIGTERM, or after \-\-version.
+.TP
+1
+A failure, as an address it can't listen on.
+.TP
+2
+An argument it doesn't take.
+.TP
+78
+A configuration it can't use, or none found. The same would fail again: systemd's unit of the packages doesn't restart it of this one.
 .SH SEE ALSO
 The keys of the configuration file:
 .UR https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md

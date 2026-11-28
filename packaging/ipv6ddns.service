@@ -11,6 +11,9 @@ After=network-online.target
 ExecStart=/usr/bin/ipv6ddns --config /etc/ipv6ddns/config.yaml
 Restart=on-failure
 RestartSec=5s
+# But not of a configuration that can't be used, which it ends with 78: the same one would fail
+# again every 5 seconds, until it is fixed and the service restarted.
+RestartPreventExitStatus=78
 # The updates running get 30 seconds to end, and then the process ends by itself.
 TimeoutStopSec=40s
 

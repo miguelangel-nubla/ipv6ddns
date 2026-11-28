@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -121,29 +122,32 @@ func main() {
 
 	sugar, level := initializeLogger()
 	ipv6ddns.Version = version
+	// Of a configuration that can't be used: its own exit code, so that a service manager doesn't
+	// start it again and again, as nothing changes until the configuration does.
+	inConfig := sugar.WithOptions(zap.WithFatalHook(exitWith(exitConfig)))
 
 	configFile, err := findConfig(configFile)
 	if err != nil {
-		sugar.Fatal(err)
+		inConfig.Fatal(err)
 	}
 	config, err := config.NewConfig(configFile)
 	if err != nil {
-		sugar.Fatalf("error reading config: %s", err)
+		inConfig.Fatalf("error reading config: %s", err)
 	}
 	if err := setLogLevel(config.LogLevel, level); err != nil {
-		sugar.Fatalf("error in config: %s", err)
+		inConfig.Fatalf("error in config: %s", err)
 	}
 
 	worker, err := ipv6ddns.NewWorker(sugar, config)
 	if err != nil {
-		sugar.Fatalf("error in config: %s", err)
+		inConfig.Fatalf("error in config: %s", err)
 	}
 
 	// The plugins get the lifetime of the discovery: a family's own, when given, is the state's
 	// to put in its place.
 	plugins, err := config.Discovery.NewPlugins()
 	if err != nil {
-		sugar.Fatalf("can't create the plugins: %s", err)
+		inConfig.Fatalf("can't create the plugins: %s", err)
 	}
 	for _, p := range plugins {
 		worker.RegisterPlugin(p)
@@ -172,40 +176,47 @@ func main() {
 			worker.SetWeb(strings.TrimPrefix(shared.Resolver, "resolvers."), shared.Listener, allowOnly(webHandler(worker), shared.Allow))
 		}
 	}
+	// The web servers' sockets, before anything starts: one that can't listen, as on a port
+	// another program holds, ends the start with nothing begun to undo, no resolver listening
+	// and no Home Assistant device announced.
+	sockets, err := listenWeb(config.Webservers, webNames)
+	if err != nil {
+		closeTerminal()
+		sugar.Fatal(err)
+	}
 	err = worker.Start(ctx)
 	if err != nil {
+		for _, s := range sockets {
+			s.listener.Close()
+		}
 		closeTerminal()
 		sugar.Fatalf("can't start worker: %s", err)
 	}
 
 	// The web servers: of HTTP on their plain entries, and of HTTPS, HTTP/1.1 and HTTP/2, with
-	// their certificates, on the others; each with its allow.
+	// their certificates, on the others; each with its allow. One that fails while serving stops
+	// it all as a signal does, the updates running let end, and the process ends with 1.
 	var servers []*http.Server
+	var failed atomic.Bool
+	for _, s := range sockets {
+		var tlsConfig *tls.Config
+		scheme := "http://"
+		if s.entry.Certificate != "" {
+			tlsConfig, scheme = worker.TLS(s.entry.Certificate, "h2", "http/1.1"), "https://"
+		}
+		worker.WebListening(s.entry.Listener, scheme+s.listener.Addr().String())
+		server := newWebServer(allowOnly(webHandler(worker), s.entry.Allow), tlsConfig)
+		servers = append(servers, server)
+		go func() {
+			if err := serveWeb(sugar, s.path, server, s.listener); err != nil {
+				sugar.Errorf("%s failed: %s: stopping", s.path, err)
+				failed.Store(true)
+				stop()
+			}
+		}()
+	}
 	for _, name := range webNames {
 		web := config.Webservers[name]
-		for _, entry := range web.Entries {
-			listeners, err := listen.Listen([]listen.Entry{entry.Entry})
-			if err != nil {
-				closeTerminal()
-				sugar.Fatalf("%s failed: %s", web.Path, err)
-			}
-			var tlsConfig *tls.Config
-			scheme := "http://"
-			if entry.Certificate != "" {
-				tlsConfig, scheme = worker.TLS(entry.Certificate, "h2", "http/1.1"), "https://"
-			}
-			for _, listener := range listeners {
-				worker.WebListening(entry.Listener, scheme+listener.Addr().String())
-				server := newWebServer(allowOnly(webHandler(worker), entry.Allow), tlsConfig)
-				servers = append(servers, server)
-				go func() {
-					if err := serveWeb(sugar, web.Path, server, listener); err != nil {
-						closeTerminal()
-						sugar.Fatalf("%s failed: %s", web.Path, err)
-					}
-				}()
-			}
-		}
 		for _, shared := range web.Shared {
 			sugar.Infof("Starting %s on %s, of listeners.%s, whose %s serves DNS over HTTPS at %s", web.Path, strings.Join(shared.Lines, ", "), shared.Listener, shared.Resolver, resolver.DoHPath)
 		}
@@ -243,6 +254,51 @@ func main() {
 	if err := worker.Shutdown(shutdown); err != nil {
 		sugar.Errorf("%s: updates still running were cut off", err)
 	}
+	if failed.Load() {
+		closeTerminal()
+		os.Exit(1)
+	}
+}
+
+// exitConfig is the exit code of a configuration that can't be used: EX_CONFIG, of sysexits.h.
+// The unit of systemd doesn't restart the service of it, RestartPreventExitStatus. Any other
+// failure, as a port another program holds, ends with 1, and is tried again.
+const exitConfig = 78
+
+// exitWith ends the process with its code, after a fatal entry is written.
+type exitWith int
+
+func (code exitWith) OnWrite(*zapcore.CheckedEntry, []zapcore.Field) {
+	os.Exit(int(code))
+}
+
+// webSocket is a socket a web server listens on, of one of its entries.
+type webSocket struct {
+	path     string
+	entry    config.WebEntry
+	listener net.Listener
+}
+
+// listenWeb opens the sockets of the web servers' own entries, in the order of their names. Of
+// one that can't listen, those opened before are closed, and the error is the web server's.
+func listenWeb(webservers map[string]config.Webserver, names []string) ([]webSocket, error) {
+	var sockets []webSocket
+	for _, name := range names {
+		web := webservers[name]
+		for _, entry := range web.Entries {
+			listeners, err := listen.Listen([]listen.Entry{entry.Entry})
+			if err != nil {
+				for _, s := range sockets {
+					s.listener.Close()
+				}
+				return nil, fmt.Errorf("%s failed: %w", web.Path, err)
+			}
+			for _, l := range listeners {
+				sockets = append(sockets, webSocket{web.Path, entry, l})
+			}
+		}
+	}
+	return sockets, nil
 }
 
 // shutdownTimeout is how long the updates running get to end, when stopping.

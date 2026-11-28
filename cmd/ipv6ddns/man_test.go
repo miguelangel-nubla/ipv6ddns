@@ -55,6 +55,11 @@ func manPage() string {
 		}
 		fmt.Fprintf(&b, ".TP\n.I %s\n%s.\n", roff(file), what)
 	}
+	b.WriteString(".SH EXIT STATUS\n")
+	fmt.Fprintf(&b, ".TP\n0\n%s\n", roff("Stopped by SIGINT or SIGTERM, or after --version."))
+	fmt.Fprintf(&b, ".TP\n1\n%s\n", roff("A failure, as an address it can't listen on."))
+	fmt.Fprintf(&b, ".TP\n2\n%s\n", roff("An argument it doesn't take."))
+	fmt.Fprintf(&b, ".TP\n%d\n%s\n", exitConfig, roff("A configuration it can't use, or none found. The same would fail again: systemd's unit of the packages doesn't restart it of this one."))
 	b.WriteString(".SH SEE ALSO\n" + roff("The keys of the configuration file:") + "\n.UR " + reference + "\n.UE\n")
 	return b.String()
 }

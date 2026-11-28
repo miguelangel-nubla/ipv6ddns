@@ -53,6 +53,7 @@ The packages, and Homebrew, install ipv6ddns as a service, with a starting confi
 | Restart it | `sudo systemctl restart ipv6ddns` | `rc-service ipv6ddns restart` | `sudo brew services restart ipv6ddns` |
 | The log | `journalctl -u ipv6ddns` | `/var/log/messages`, by syslog | `ipv6ddns.log` in `$(brew --prefix)/var/log` |
 
+- **A failure restarts it**, 5 seconds later, under systemd and OpenRC: as when a port it listens on is another program's. A configuration it can't use ends it with the exit code 78. systemd doesn't restart it then, as it would fail again: the error is in the log, and the service starts again once you fix the configuration and restart it. OpenRC restarts it either way.
 - **An upgrade** keeps your configuration, and restarts the service if it runs.
 - **A removal** stops the service and leaves the configuration you changed.
 - **Under systemd, the service runs as root with two capabilities only**, `CAP_NET_RAW` for discovery and `CAP_NET_BIND_SERVICE` for a [resolver](resolver.md) on port 53. The file system is read-only to it, except `/etc/ipv6ddns`, where it keeps [what it writes](configuration.md#state), and `/var/lib/ipv6ddns`, for a [`state_dir`](configuration.md#state) there. A [`command` source](sources.md) runs inside those limits. To loosen them, use `sudo systemctl edit ipv6ddns` rather than editing the unit, which an upgrade replaces.
