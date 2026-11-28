@@ -451,6 +451,45 @@ func TestEncryptedShutdown(t *testing.T) {
 	pc.Close()
 }
 
+// A Shutdown right after the handshakes closes each connection of DNS over QUIC, and says so to
+// its client: those the server had yet to take from quic-go's queue, or to register, too. One the
+// server hadn't registered was closed after its socket, and its client waited out its idle timeout.
+func TestEncryptedShutdownClosesNewConnections(t *testing.T) {
+	ca := newTestCA(t)
+	s := start(t, encryptedConfig(t, ca))
+	address := addressOf(t, s, TransportQUIC)
+	conns := make([]*quic.Conn, 16)
+	var wg sync.WaitGroup
+	for i := range conns {
+		wg.Go(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			conn, err := quic.DialAddr(ctx, address, clientTLS(ca, alpnQUIC), nil)
+			if err != nil {
+				t.Errorf("dial %s: %v", address, err)
+				return
+			}
+			t.Cleanup(func() { conn.CloseWithError(0, "") })
+			conns[i] = conn
+		})
+	}
+	wg.Wait()
+	if err := s.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(3 * time.Second)
+	for i, conn := range conns {
+		if conn == nil {
+			continue
+		}
+		select {
+		case <-conn.Context().Done():
+		case <-deadline:
+			t.Fatalf("connection %d of DNS over QUIC stays open", i)
+		}
+	}
+}
+
 // An answer past 65535 bytes, the most its two bytes of length can say, is truncated over DNS over
 // QUIC, as over TCP and DNS over TLS: not sent with a length that isn't its own.
 func TestServeQUICAnswerTooLarge(t *testing.T) {

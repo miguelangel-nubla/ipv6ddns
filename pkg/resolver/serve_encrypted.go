@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -355,8 +356,9 @@ func (s *Server) serveQUIC(conns []net.PacketConn, routes [][]route) {
 		s.quic = append(s.quic, l)
 		s.quicSockets = append(s.quicSockets, c)
 		s.mutex.Unlock()
-		go func() {
+		s.quicAccepting.Go(func() {
 			for {
+				// Once the listener is closed, it gives the connections it has yet, then the error.
 				conn, err := l.Accept(s.ctx)
 				if err != nil {
 					s.mutex.Lock()
@@ -368,26 +370,36 @@ func (s *Server) serveQUIC(conns []net.PacketConn, routes [][]route) {
 					return
 				}
 				r := choose(of, conn.ConnectionState().TLS.ServerName)
+				// Registered here, not in its goroutine: one registered later than Shutdown looks
+				// was closed after its socket, and its client never told.
+				if !r.s.registerQUIC(conn) {
+					_ = conn.CloseWithError(doqNoError, "")
+					continue
+				}
 				go r.s.serveQUICConn(conn, r.e.Allow)
 			}
-		}()
+		})
 	}
 }
 
-// serveQUICConn answers the streams of a connection of DNS over QUIC, until it closes.
-func (s *Server) serveQUICConn(conn *quic.Conn, allow []netip.Prefix) {
+// registerQUIC registers a connection of DNS over QUIC, for Shutdown to close: false when the
+// server is shut down, or, of a socket another server opened, not started yet, as the client then
+// asks again.
+func (s *Server) registerQUIC(conn *quic.Conn) bool {
 	s.mutex.Lock()
-	// Shut down, or, of a socket another server opened, not started yet: the client asks again.
+	defer s.mutex.Unlock()
 	if s.stopping || !s.started {
-		s.mutex.Unlock()
-		_ = conn.CloseWithError(doqNoError, "")
-		return
+		return false
 	}
 	if s.quicConns == nil {
 		s.quicConns = make(map[*quic.Conn]struct{})
 	}
 	s.quicConns[conn] = struct{}{}
-	s.mutex.Unlock()
+	return true
+}
+
+// serveQUICConn answers the streams of a connection of DNS over QUIC, registered, until it closes.
+func (s *Server) serveQUICConn(conn *quic.Conn, allow []netip.Prefix) {
 	defer func() {
 		s.mutex.Lock()
 		delete(s.quicConns, conn)
@@ -450,14 +462,12 @@ func resetQUIC(stream *quic.Stream) {
 
 // shutdownEncrypted stops answering over HTTPS and QUIC: the answers being made over HTTPS are
 // waited for, until ctx is done, and the connections of QUIC are closed, and then its UDP
-// sockets, which a listener of QUIC given its socket leaves open when it closes.
+// sockets, which a listener of QUIC given its socket leaves open when it closes. A connection is
+// closed while its socket is open, for its client to be told: one that is not hears nothing,
+// and waits for its idle timeout.
 func (s *Server) shutdownEncrypted(ctx context.Context) {
 	s.mutex.Lock()
 	https, listeners, sockets := s.https, s.quic, s.quicSockets
-	conns := make([]*quic.Conn, 0, len(s.quicConns))
-	for c := range s.quicConns {
-		conns = append(conns, c)
-	}
 	s.mutex.Unlock()
 	var wg sync.WaitGroup
 	for _, srv := range https {
@@ -465,9 +475,15 @@ func (s *Server) shutdownEncrypted(ctx context.Context) {
 		wg.Go(func() { _ = srv.Shutdown(ctx) })
 	}
 	wg.Wait()
+	// quic-go closes the handshakes still going, and gives the connections it has queued: the
+	// loops close those, as the server is stopping, and end.
 	for _, l := range listeners {
 		l.Close()
 	}
+	s.quicAccepting.Wait()
+	s.mutex.Lock()
+	conns := slices.Collect(maps.Keys(s.quicConns))
+	s.mutex.Unlock()
 	for _, c := range conns {
 		_ = c.CloseWithError(doqNoError, "")
 	}

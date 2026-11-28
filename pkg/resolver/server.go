@@ -107,7 +107,10 @@ type Server struct {
 	quicConns map[*quic.Conn]struct{}
 	// The UDP sockets of DNS over QUIC, which its listeners don't close with themselves.
 	quicSockets []net.PacketConn
-	listening   []string
+	// The loops that take the connections of its listeners of DNS over QUIC: Shutdown waits for
+	// them, so that each connection is registered or closed before the sockets are.
+	quicAccepting sync.WaitGroup
+	listening     []string
 	// The sockets of each listener's entries, by its name.
 	listenerSockets map[string][]string
 	allow           []netip.Prefix
