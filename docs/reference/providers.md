@@ -48,7 +48,7 @@ It writes TXT records too: its credential can write the DNS challenge, of ipv6dd
 |---|---|---|
 | `api_token` | string | **Required.** An API token with Zone.DNS edit permission on the zone. |
 | `zone` | string | **Required.** The zone, as example.com. |
-| `ttl` | string | **Required.** The records' TTL, as 5m or 1h. 1s means Cloudflare's automatic TTL. |
+| `ttl` | string | **Required.** The records' TTL, as 5m or 1h. 1s means Cloudflare's automatic TTL. 0s is an error, as Cloudflare refuses it. |
 | `proxied` | boolean | **Required.** Whether traffic to the records goes through Cloudflare's proxy. |
 
 ## desec

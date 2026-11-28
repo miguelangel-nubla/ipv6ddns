@@ -241,6 +241,25 @@ func TestTTLWholeSeconds(t *testing.T) {
 	}
 }
 
+// Cloudflare refuses a TTL of 0 with every record: so does its provider, at the start.
+func TestCloudflareZeroTTL(t *testing.T) {
+	for ttl, ok := range map[string]bool{"0s": false, "0m": false, "0h0m0s": false, "1s": true, "1h": true} {
+		var with map[string]any
+		if err := json.Unmarshal([]byte(validSettings["cloudflare"]), &with); err != nil {
+			t.Fatal(err)
+		}
+		with["ttl"] = ttl
+		raw, _ := json.Marshal(with)
+		_, err := NewService("cloudflare", raw)
+		if (err == nil) != ok {
+			t.Errorf("ttl %s: got %v, want success %v", ttl, err, ok)
+		}
+		if err != nil && !strings.Contains(err.Error(), "invalid settings: ttl: 0s is a TTL Cloudflare refuses: write 1s for its automatic one") {
+			t.Errorf("ttl %s: the error doesn't tell what to write: %v", ttl, err)
+		}
+	}
+}
+
 // What a device answers is read up to a limit, and an error has its start alone: a page without
 // end, of a wrong address or a proxy, neither fills the memory nor the log.
 func TestAnswersAreBounded(t *testing.T) {

@@ -3,6 +3,7 @@ package ddns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -32,6 +33,10 @@ func NewCloudflare(settings json.RawMessage) (Service, error) {
 	var service Cloudflare
 	if err := decodeSettings(settings, "cloudflare", &service); err != nil {
 		return nil, err
+	}
+	// Cloudflare refuses a TTL of 0 with every record: at the start, not at each update.
+	if service.TTL.Duration == 0 {
+		return nil, errors.New("invalid settings: ttl: 0s is a TTL Cloudflare refuses: write 1s for its automatic one, or 60s at the least, 30s of an Enterprise zone")
 	}
 	return &service, nil
 }
