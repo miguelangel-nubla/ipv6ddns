@@ -4,8 +4,9 @@
 //
 // A list is a name per line, as hagezi's wildcard onlydomains lists: a name blocks itself and every
 // name below it. Lines of a hosts file, 0.0.0.0 ads.example.com, and the adblock rules of a domain,
-// ||ads.example.com^, and *.ads.example.com, are the same. Comments, # and !, and blank lines are
-// skipped; any other line is unreadable, and counted.
+// ||ads.example.com^, and *.ads.example.com, are the same. Comments, a line that starts with # or
+// !, and what follows a # after a space, an adblock header, [Adblock Plus 2.0], and blank lines
+// are skipped; any other line is unreadable, and counted.
 package blocklist
 
 import (
@@ -18,7 +19,10 @@ import (
 )
 
 // Set is the names of a list, sorted, each once, in lower case and with no final dot: in one
-// string, each ending where ends says, which is four bytes a name beside its text.
+// string, each ending where ends says, which is four bytes a name beside its text. Four are
+// enough: a list is MaxSize at most, 64 MiB, and its names no longer than it. Sorted by their
+// bytes, as has compares them. A set never changes once made, so a list swaps it whole under the
+// lookups.
 type Set struct {
 	text string
 	ends []uint32
@@ -97,6 +101,9 @@ type Parsed struct {
 // maxLine is the longest line read: longer, it is unreadable.
 const maxLine = 4096
 
+// bom is UTF-8's byte order mark.
+const bom = "\xef\xbb\xbf"
+
 // Parse reads a list, a line at a time.
 func Parse(r io.Reader) (Parsed, error) { return parse(r, 0) }
 
@@ -110,6 +117,10 @@ func parse(r io.Reader, size int64) (Parsed, error) {
 		unreadable int
 	)
 	br := bufio.NewReaderSize(r, maxLine)
+	// A byte order mark, as Windows' editors begin a file with, is no part of the first line.
+	if start, _ := br.Peek(len(bom)); string(start) == bom {
+		_, _ = br.Discard(len(bom))
+	}
 	for {
 		line, err := br.ReadSlice('\n')
 		if err == bufio.ErrBufferFull {
@@ -170,12 +181,15 @@ var hostsOwn = map[string]bool{
 // whether it could be read.
 func parseLine(line string) ([]string, bool) {
 	line = strings.TrimSpace(line)
-	// A comment after a name, of a hosts file, follows a space: ## is an adblock rule.
+	// A comment after a name, of a hosts file, follows a space: ## is an adblock rule, and so
+	// ads.example.com#x is unreadable, not a name with its comment.
 	if i := strings.IndexByte(line, '#'); i == 0 {
 		return nil, true
 	} else if i > 0 && (line[i-1] == ' ' || line[i-1] == '\t') {
 		line = strings.TrimSpace(line[:i])
 	}
+	// An adblock comment is a line that begins with !, and its header one in brackets: neither
+	// follows a name.
 	if line == "" || line[0] == '!' || line[0] == '[' {
 		return nil, true
 	}
@@ -224,7 +238,8 @@ func checked(n string) ([]string, bool) {
 
 // ValidName tells whether n, in lower case and with no final dot, is a name a list may block: of
 // labels of letters, digits, - and _, 63 bytes at most each, and 253 in all; no address. A name of
-// other letters is given in punycode, as xn--bcher-kva.example.
+// other letters is given in punycode, as xn--bcher-kva.example. One label alone is a name, as com,
+// which blocks every name below it: a list may mean it.
 func ValidName(n string) bool {
 	if n == "" || len(n) > 253 {
 		return false

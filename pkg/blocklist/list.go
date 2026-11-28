@@ -115,7 +115,9 @@ func (l *List) path(ext string) string {
 }
 
 // Load reads the copy kept of the list, of its URL: none, or one of another URL, is no error, and
-// the list waits for its download.
+// the list waits for its download. So does it of a copy that doesn't read, or has no name, as one
+// emptied by hand: nothing is kept of it, so that the server is asked the list whole, and not
+// whether it changed since.
 func (l *List) Load() error {
 	b, err := os.ReadFile(l.path(".json"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -147,6 +149,9 @@ func (l *List) Load() error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", l.path(".txt"), err)
 	}
+	if parsed.Set.Len() == 0 {
+		return fmt.Errorf("%s: it has no name it could read", l.path(".txt"))
+	}
 	l.set.Store(parsed.Set)
 	l.mutex.Lock()
 	l.meta, l.unreadable = m, parsed.Unreadable
@@ -176,7 +181,9 @@ func (l *List) Run(ctx context.Context) {
 }
 
 // schedule sets when the list is downloaded next, and tells it: an interval after its last
-// success; at once without a copy; RetryWait after a download that failed, or the interval.
+// success; at once without a copy; RetryWait after a download that failed, or the interval. Never
+// later than an interval from now: a success of the future, of a clock set back since, postpones
+// nothing.
 func (l *List) schedule() time.Time {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
@@ -187,13 +194,16 @@ func (l *List) schedule() time.Time {
 	if l.lastError != "" {
 		next = l.lastRefresh.Add(min(RetryWait, l.config.Interval))
 	}
+	if latest := l.now().Add(l.config.Interval); next.After(latest) {
+		next = latest
+	}
 	l.next = next
 	return next
 }
 
 // Refresh downloads the list, asking the server whether it changed since the copy: a list that
 // didn't is kept, and one that did replaces it, on disk and here. A download that fails, or of
-// a list with no name, leaves the names as they were.
+// what isn't a list, leaves the names as they were.
 func (l *List) Refresh(ctx context.Context) error {
 	err := l.download(ctx)
 	// Of a URL, the error tells it whole, which may hold a token: it tells it as the report does.
@@ -266,6 +276,8 @@ func (l *List) download(ctx context.Context) error {
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
+	// The limit is of what is read here, after the transport decompressed it: an answer that
+	// grows without end is cut as any other.
 	n, err := io.Copy(tmp, io.LimitReader(resp.Body, MaxSize+1))
 	if err != nil {
 		return fmt.Errorf("reading it: %w", err)
@@ -280,8 +292,8 @@ func (l *List) download(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if parsed.Set.Len() == 0 {
-		return fmt.Errorf("it has no name it could read, of %d lines unreadable: is it a list of names, one per line?", parsed.Unreadable)
+	if err := parsed.check(l.set.Load().Len()); err != nil {
+		return err
 	}
 	if err := tmp.Sync(); err != nil {
 		return err
@@ -305,11 +317,34 @@ func (l *List) download(ctx context.Context) error {
 	l.mutex.Lock()
 	l.meta, l.unreadable = m, parsed.Unreadable
 	l.mutex.Unlock()
-	l.config.Infof("blocklist %s: %d names, %d lines unreadable, from %s", l.config.Name, parsed.Set.Len(), parsed.Unreadable, l.config.URL)
+	// The URL as the errors tell it, and the report: it may hold a token.
+	l.config.Infof("blocklist %s: %d names, %d lines unreadable, from %s", l.config.Name, parsed.Set.Len(), parsed.Unreadable, Redacted(l.config.URL, "<sensible data hidden>"))
 	return nil
 }
 
-// writeMeta writes what is kept of the copy, whole or not at all.
+// check tells why what a server sent is not taken for the list, whose copy has copied names, 0
+// without one. It has no name; or it is the page a server, a proxy or a captive portal answers
+// with in the list's place, with a 200: more lines unreadable than names, and fewer than half the
+// names of the copy.
+//
+// Both, since neither tells a page alone: a list of rules for a browser, as EasyList, has more
+// lines unreadable than names at every download, and is taken as it always was, the first time
+// and at each update; and a list made for DNS may lose half its names, with no line unreadable.
+// So a first download is taken whatever its lines, with no copy to hold it to. A page of one word
+// alone, as Forbidden, is a list of one name, and is taken.
+func (p Parsed) check(copied int) error {
+	names := p.Set.Len()
+	if names == 0 {
+		return fmt.Errorf("it has no name it could read, of %d lines unreadable: is it a list of names, one per line?", p.Unreadable)
+	}
+	if p.Unreadable > names && names < copied-names {
+		return fmt.Errorf("it has %d lines unreadable and %d names, where the copy has %d: it looks like a page the server sent in the list's place, not the list", p.Unreadable, names, copied)
+	}
+	return nil
+}
+
+// writeMeta writes what is kept of the copy, whole or not at all. Through one file beside it, of a
+// fixed name: a list's downloads are one at a time, Run's alone.
 func (l *List) writeMeta(m meta) error {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

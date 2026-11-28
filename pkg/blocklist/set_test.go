@@ -41,6 +41,22 @@ func TestParseLine(t *testing.T) {
 		{"192.0.2.1", nil, false},
 		{"a..b", nil, false},
 		{strings.Repeat("a", 64) + ".example", nil, false},
+		// A line end of Windows', and a zone in a hosts file's address.
+		{"0.0.0.0\tads.example.com\r", []string{"ads.example.com"}, true},
+		{"fe80::1%lo0 localhost", nil, true},
+		// A comment follows a space, and ! begins a line: else the line is no name.
+		{"ads.example.com#comment", nil, false},
+		{"ads.example.com ! a comment", nil, false},
+		{"#", nil, true},
+		{"\t# a comment", nil, true},
+		{"||ads.example.com^$important", nil, false},
+		{"||ads.example.com^|", nil, false},
+		{"*.*.example.com", nil, false},
+		{"*", nil, false},
+		{"ads.example\x00.com", nil, false},
+		{"address=/ads.example.com/0.0.0.0", nil, false},
+		// A byte order mark is the file's, not a line's: parse takes it off the first.
+		{"\xef\xbb\xbfads.example.com", nil, false},
 	} {
 		names, ok := parseLine(c.line)
 		if !slices.Equal(names, c.names) || ok != c.ok {
@@ -160,5 +176,26 @@ func BenchmarkMatch(b *testing.B) {
 	for b.Loop() {
 		p.Set.Match("www.cdn.host0123456.ads-007.example.com.")
 		p.Set.Match("www.not-listed.example.org.")
+	}
+}
+
+// A file that begins with a byte order mark, as Windows' editors save it, loses neither its first
+// name nor counts its first comment unreadable.
+func TestParseByteOrderMark(t *testing.T) {
+	p, err := Parse(strings.NewReader("\xef\xbb\xbfads.example.com\r\ntrack.example.net\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.Set.Match("ads.example.com"); !ok || p.Set.Len() != 2 || p.Unreadable != 0 {
+		t.Errorf("the first name, after the mark, isn't blocked: %d names, %d unreadable", p.Set.Len(), p.Unreadable)
+	}
+	if p, _ = Parse(strings.NewReader("\xef\xbb\xbf# Title: a list\nads.example.com\n")); p.Set.Len() != 1 || p.Unreadable != 0 {
+		t.Errorf("a comment after the mark: %d names, %d unreadable", p.Set.Len(), p.Unreadable)
+	}
+	// The mark alone, part of it, and one that isn't the file's first bytes.
+	for list, unreadable := range map[string]int{"\xef\xbb\xbf": 0, "\xef\xbb": 1, "ads.example.com\n\xef\xbb\xbftrack.example.net\n": 1} {
+		if p, err := Parse(strings.NewReader(list)); err != nil || p.Unreadable != unreadable {
+			t.Errorf("%q: %d unreadable, %v; want %d", list, p.Unreadable, err, unreadable)
+		}
 	}
 }

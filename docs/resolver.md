@@ -971,9 +971,12 @@ A list is a text file. Each line is read by itself, and may be:
 - **A name**, as hagezi's `onlydomains` lists have them: `ads.example.com`.
 - **A hosts file's line**: `0.0.0.0 ads.example.com`, or `127.0.0.1 ads.example.com`, of any address. The names of the machine itself, such as `localhost`, are skipped.
 - **An adblock rule of a domain**: `||ads.example.com^`, or `*.ads.example.com`. Each is the same as the name alone.
-- **A comment**, after `#` or `!`, or a blank line, which is skipped.
+- **A comment**, which is skipped: a line that starts with `#` or `!`, and what follows a `#` after a name and a space, as in `0.0.0.0 ads.example.com # ads`.
+- **An adblock header**, a line that starts with `[`, as `[Adblock Plus 2.0]`, or **a blank line**, which is skipped too.
 
-Any other line is unreadable, such as an adblock rule of a page, `||example.com/ads^`, or with options, `||example.com^$third-party`. It is skipped and counted, and the report shows the count. Lists made for DNS, such as hagezi's `wildcard` or `hosts` formats, have none.
+Any other line is unreadable, such as an adblock rule of a page, `||example.com/ads^`, or with options, `||example.com^$third-party`. So is a name with a comment right after it, `ads.example.com#ads` or `ads.example.com ! ads`. It is skipped and counted, and the report shows the count. Lists made for DNS, such as hagezi's `wildcard` or `hosts` formats, have none.
+
+A file may be saved by Windows: its line ends, and a byte order mark at its start, are not part of the names.
 
 A list takes little memory: the length of its names, and 4 bytes more each, about 25 MiB for a million names. Each list is held once, however many resolvers use it.
 
@@ -981,7 +984,9 @@ A list takes little memory: the length of its names, and 4 bytes more each, abou
 
 - **At start,** each list is read from its copy in `state_dir`, in `blocklists/<name>.txt`, so a start blocks at once and needs no network. A list without a copy, as at the first start, is downloaded then. Until that succeeds, the resolvers answer without it, and the report and the log say so. The start never waits for a list.
 - **Every `interval`,** 24 hours by default and an hour at least, the list is downloaded again. The server is asked whether it changed since the copy, with `If-None-Match` and `If-Modified-Since`, so a list that didn't change isn't sent again.
-- **A download that fails,** or that has no name it could read, keeps the list as it was, on disk and in memory. It is tried again 10 minutes later.
+- **A download that fails** keeps the list as it was, on disk and in memory. It is tried again 10 minutes later. So does one that isn't a list: one with no name it could read, or one that looks like the error page a server or a proxy sends in the list's place. That is a download with more unreadable lines than names, and fewer than half the names of the copy.
+- **A list of rules made for a browser,** such as EasyList, is taken, at the first download and at every update: its rules of a domain are its names, and the rest are counted as unreadable.
+- **A copy with no names,** as one emptied by hand, is not used: the list is downloaded again at the start, whole.
 - A download has 2 minutes, and a list may be 64 MiB at most. It follows 5 redirects at most, and none of an `https://` list to `http://`, which would have it in plain text.
 - `https://` URLs are checked against the system's certificate authorities. A proxy given by `HTTPS_PROXY` is used.
 - **The list's host is looked up by the system's resolver.** That may be this resolver itself, as when the machine's DNS is the resolver: the downloads start once the resolvers serve, so the lookup is forwarded to the upstream servers like any other name. A list's own host is not to be blocked by a list, or it is never downloaded again: put it in `allow` if one of the lists has it.
