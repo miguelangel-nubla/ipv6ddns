@@ -199,6 +199,9 @@ check() {
 	trap - EXIT
 }
 
+# The systems are of their latest release, by tag and not by digest, unlike the servers of
+# tools/live-providers.sh: a package is installed on what is released, and a release that breaks
+# it is what this is to find.
 apt='DEBIAN_FRONTEND=noninteractive apt-get install -yqq'
 check debian:stable "$systemd" '
 	export DEBIAN_FRONTEND=noninteractive

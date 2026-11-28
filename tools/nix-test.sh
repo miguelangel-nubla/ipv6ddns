@@ -17,6 +17,7 @@ cd "$(dirname "$0")/.."
 kvm=""
 [ ! -e /dev/kvm ] || kvm="--device /dev/kvm"
 
+# Nix's latest, by tag: the flake pins nixpkgs itself, in flake.lock, and so what it builds.
 # shellcheck disable=SC2086 # kvm is words, or none.
 nix() {
 	docker run --rm --privileged $kvm -v "$PWD":/src -w /src -v ipv6ddns-nix:/nix nixos/nix:latest sh -euc '

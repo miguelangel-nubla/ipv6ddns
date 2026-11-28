@@ -14,14 +14,17 @@
 # ddns/live_cloud_test.go.
 #
 # The servers are of the versions written here, so that a run tells of the code and not of what
-# was released that day: a newer one is a change of this file, which CI then runs.
+# was released that day: a newer one is a change of this file, which CI then runs. Each image is
+# pinned by its digest too, as a tag can be pushed again, and RouterOS's download by its SHA-256,
+# the one MikroTik publishes beside it: chr-<version>.img.zip.sha256. A digest is of a tag's
+# index, as docker buildx imagetools inspect tells it, so that each machine takes its own.
 set -eu
 cd "$(dirname "$0")/.."
 
-TECHNITIUM_IMAGE=${TECHNITIUM_IMAGE:-technitium/dns-server:15.6.2}
-GRAVITY_IMAGE=${GRAVITY_IMAGE:-ghcr.io/beryju/gravity:v0.34.0}
-ADGUARDHOME_IMAGE=${ADGUARDHOME_IMAGE:-adguard/adguardhome:v1.0.0}
-PIHOLE_IMAGE=${PIHOLE_IMAGE:-pihole/pihole:2026.11.0}
+TECHNITIUM_IMAGE=${TECHNITIUM_IMAGE:-technitium/dns-server:15.6.2@sha256:eb48ac5c135f4ab936b536f74f853d53e15ab39ef37fdbc9598a089b90d9f245}
+GRAVITY_IMAGE=${GRAVITY_IMAGE:-ghcr.io/beryju/gravity:v0.34.0@sha256:477047a127d07a5c5d96691a668939e74ab7a348aa8e766b5ba9c35b30135acc}
+ADGUARDHOME_IMAGE=${ADGUARDHOME_IMAGE:-adguard/adguardhome:v1.0.0@sha256:f00a586f0d1caa74f149340bfb225014960310488ffa838406b89256900a96c2}
+PIHOLE_IMAGE=${PIHOLE_IMAGE:-pihole/pihole:2026.11.0@sha256:66c798d79a95c2691f280329c3611dba1746117c61c9f331907ca35a06a52778}
 # ISC's image is of amd64 alone: BIND 9.20.31.
 # Let's Encrypt's test authority, of ACME, 2.7.0.
 PEBBLE_IMAGE=${PEBBLE_IMAGE:-ghcr.io/letsencrypt/pebble@sha256:c156cabea562e43ed0060bddc03539c07de40e311b52c6b0e5ea710a496e56b8}
@@ -33,15 +36,26 @@ LEGO_IMAGE=${LEGO_IMAGE:-goacme/lego:v5.7.0@sha256:9fe6151508c0e1ddc51a6d3e47435
 ACMESH_IMAGE=${ACMESH_IMAGE:-neilpang/acme.sh:3.1.7@sha256:78d9f4ec812fd1ca48d565fac9fee78ca67f607175afc3c58f62784b4100a369}
 # Kea's DHCP-DDNS, which sends a DHCP server's names to the resolver's dynamic updates.
 KEA_IMAGE=${KEA_IMAGE:-docker.cloudsmith.io/isc/docker/kea-dhcp-ddns:3.0.2@sha256:0047489b20627867996d5bda36e3ab58624c0b78eb4f6aed16de7beaccf9bbc1}
-UNIFI_IMAGE=${UNIFI_IMAGE:-lscr.io/linuxserver/unifi-network-application:10.6.109-ls155}
+UNIFI_IMAGE=${UNIFI_IMAGE:-lscr.io/linuxserver/unifi-network-application:10.6.109-ls155@sha256:053a608b25f578bb92b7b4f59e3835f6cc6dd0c7500c30b24ac0e27e1742ab20}
 MONGO_IMAGE=${MONGO_IMAGE:-mongo@sha256:41e8195b2791692695e1dc9bd21cd51d0a3af05fff8ace9304a5c1acf94f1ae1}
 OPENWRT_VERSION=${OPENWRT_VERSION:-25.12.6}
+# OpenWrt's images are one of each target, without an index: a digest for each.
 case $(docker version --format '{{.Server.Arch}}') in
-arm64 | aarch64) openwrt_target=armsr-armv8 openwrt_platform=linux/aarch64_generic ;;
-*) openwrt_target=x86-64 openwrt_platform=linux/amd64 ;;
+arm64 | aarch64) openwrt_target=armsr-armv8 openwrt_platform=linux/aarch64_generic openwrt_digest=sha256:22f13387da208c0fb4150c41f3ec12e34cc5994a0717a49e50aa9f9ae6cb5e7b ;;
+*) openwrt_target=x86-64 openwrt_platform=linux/amd64 openwrt_digest=sha256:14401c04218c2e0da0448f099710ada2460636a92395f353351cc616cf3f67af ;;
 esac
-OPENWRT_IMAGE=${OPENWRT_IMAGE:-openwrt/rootfs:$openwrt_target-$OPENWRT_VERSION}
+# Of another version, the digest isn't known here: its tag alone, or OPENWRT_IMAGE.
+[ "$OPENWRT_VERSION" = 25.12.6 ] || openwrt_digest=""
+OPENWRT_IMAGE=${OPENWRT_IMAGE:-openwrt/rootfs:$openwrt_target-$OPENWRT_VERSION${openwrt_digest:+@$openwrt_digest}}
+# The machine RouterOS runs in, under QEMU.
+ROUTEROS_RUNNER_IMAGE=${ROUTEROS_RUNNER_IMAGE:-alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f}
+# Another version needs its own SHA-256, of chr-<version>.img.zip.
 ROUTEROS_VERSION=${ROUTEROS_VERSION:-7.20.4}
+[ "$ROUTEROS_VERSION" != 7.20.4 ] || ROUTEROS_SHA256=${ROUTEROS_SHA256:-336946180bc979e04118e718c157b6cfc214a7f0ed5d9e4a6a9f3ac64b9c417c}
+[ -n "${ROUTEROS_SHA256:-}" ] || {
+	echo "live-providers: ROUTEROS_VERSION $ROUTEROS_VERSION needs ROUTEROS_SHA256, of chr-$ROUTEROS_VERSION.img.zip: MikroTik publishes it at https://download.mikrotik.com/routeros/$ROUTEROS_VERSION/chr-$ROUTEROS_VERSION.img.zip.sha256" >&2
+	exit 1
+}
 
 zone=example.test
 password=live-$$
@@ -92,10 +106,15 @@ fi
 # QEMU of Alpine 3.22, 10.0: the 11.0 of later ones forwards no UDP to the machine, so its DNS,
 # port 53, never answers.
 docker run -d --name "$prefix-routeros" $kvm $publish -p 127.0.0.1::80/tcp -p 127.0.0.1::8728/tcp -p 127.0.0.1::8729/tcp \
-	-v ipv6ddns-live-routeros:/cache -e VERSION="$ROUTEROS_VERSION" alpine:3.22 sh -euc '
+	-v ipv6ddns-live-routeros:/cache -e VERSION="$ROUTEROS_VERSION" -e SHA256="$ROUTEROS_SHA256" "$ROUTEROS_RUNNER_IMAGE" sh -euc '
 		apk add -q qemu-system-x86_64
 		if [ ! -f "/cache/chr-$VERSION.img" ]; then
 			wget -q -O /tmp/chr.zip "https://download.mikrotik.com/routeros/$VERSION/chr-$VERSION.img.zip"
+			# Not kept unless it is the one of the SHA-256: the container ends, and the test with it.
+			echo "$SHA256  /tmp/chr.zip" | sha256sum -c -s || {
+				echo "chr-$VERSION.img.zip is not of the SHA-256 $SHA256" >&2
+				exit 1
+			}
 			unzip -q -o /tmp/chr.zip -d /tmp
 			mv "/tmp/chr-$VERSION.img" /cache/
 		fi
