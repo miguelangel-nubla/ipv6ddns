@@ -57,9 +57,8 @@ in
         as `''${NAME}`, with the variable in {option}`environmentFile`, or as
         `''${file:/run/secrets/name}`, a file the service reads as root.
 
-        The file is not written to, so a `homeassistant` block with `key_provisioning`
-        needs its `key_provisioning_state_file` somewhere that is, as
-        `/var/lib/ipv6ddns/homeassistant.state`.
+        Its `state_dir`, where ipv6ddns keeps what it writes, is `/var/lib/ipv6ddns`
+        unless given.
       '';
     };
 
@@ -69,7 +68,8 @@ in
       example = "/etc/ipv6ddns/config.yaml";
       description = ''
         A configuration file to use as it is, in place of {option}`settings`: one kept outside
-        the Nix store.
+        the Nix store. The service can't write beside it: give it
+        `state_dir: /var/lib/ipv6ddns`, for what ipv6ddns keeps.
       '';
     };
 
@@ -89,6 +89,9 @@ in
     services.ipv6ddns.settings = {
       tasks = lib.mkDefault { };
       credentials = lib.mkDefault { };
+      # What it writes goes to the service's state directory: its default is beside the
+      # configuration, which is in the store.
+      state_dir = lib.mkDefault "/var/lib/ipv6ddns";
     };
 
     # The command, for its --version and its --live, and its manual page.

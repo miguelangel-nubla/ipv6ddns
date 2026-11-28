@@ -53,7 +53,7 @@ The packages, and Homebrew, install ipv6ddns as a service, with a starting confi
 
 - **An upgrade** keeps your configuration, and restarts the service if it runs.
 - **A removal** stops the service and leaves the configuration you changed.
-- **Under systemd, the service runs as root with two capabilities only**, `CAP_NET_RAW` for discovery and `CAP_NET_BIND_SERVICE` for a [resolver](resolver.md) on port 53. The file system is read-only to it, except `/etc/ipv6ddns`, where it keeps the key Home Assistant gives it. A [`command` source](sources.md) runs inside those limits. To loosen them, use `sudo systemctl edit ipv6ddns` rather than editing the unit, which an upgrade replaces.
+- **Under systemd, the service runs as root with two capabilities only**, `CAP_NET_RAW` for discovery and `CAP_NET_BIND_SERVICE` for a [resolver](resolver.md) on port 53. The file system is read-only to it, except `/etc/ipv6ddns`, where it keeps [what it writes](configuration.md#state), and `/var/lib/ipv6ddns`, for a [`state_dir`](configuration.md#state) there. A [`command` source](sources.md) runs inside those limits. To loosen them, use `sudo systemctl edit ipv6ddns` rather than editing the unit, which an upgrade replaces.
 - **Under OpenRC, and with Homebrew, the service runs as root**, without those limits. On macOS, raw sockets are root's alone.
 - **With Homebrew, a service that ran as root leaves files of root's.** `brew uninstall ipv6ddns` then stops at them: stop the service, and remove them with `sudo rm -rf "$(brew --prefix)/Cellar/ipv6ddns"`.
 
@@ -118,7 +118,7 @@ Add the flake to your system's, and enable the service:
 | `package` | The package to run. Default: the flake's |
 
 - **Keep secrets out of `settings`.** It is written to the Nix store, which every user can read. Name a secret as `${NAME}` and put it in `environmentFile`, as above, or as `${file:/run/secrets/name}`. In Nix, write `''${NAME}` so that Nix leaves it alone.
-- **With `key_provisioning`**, set `homeassistant.key_provisioning_state_file` to a file under `/var/lib/ipv6ddns`, the service's state directory. Its default is beside the configuration, which is in the store and can't be written to.
+- **What ipv6ddns [writes](configuration.md#state)** goes to `/var/lib/ipv6ddns`, the service's state directory: `settings` has it as its `state_dir`. A `configFile` of your own must set `state_dir: /var/lib/ipv6ddns` itself, because the service can't write beside it.
 - **The flake follows `main`**, which is the latest release. To stay on a version, name its tag: `github:miguelangel-nubla/ipv6ddns/v0.25.2`.
 - **Without NixOS**, `nix run github:miguelangel-nubla/ipv6ddns -- --version` runs the command, and `nix profile install github:miguelangel-nubla/ipv6ddns` installs it.
 

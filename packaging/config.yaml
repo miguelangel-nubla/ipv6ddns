@@ -1,7 +1,8 @@
 # ipv6ddns: the names to keep, and the DNS providers to keep them at.
 #
 # Until you add tasks, it only discovers: the report lists the hosts of the network and their MAC
-# addresses, to choose from. After a change: systemctl restart ipv6ddns
+# addresses, to choose from. After a change: systemctl restart ipv6ddns,
+# or rc-service ipv6ddns restart with OpenRC.
 #
 # Every key: https://github.com/miguelangel-nubla/ipv6ddns/blob/main/docs/reference/configuration.md
 #
@@ -59,5 +60,6 @@ webservers:
     listeners:
       - web
 
-# How much the log says: debug, info, warn or error. The log: journalctl -u ipv6ddns
+# How much the log says: debug, info, warn or error. The log: journalctl -u ipv6ddns, or
+# /var/log/messages with OpenRC.
 log_level: info

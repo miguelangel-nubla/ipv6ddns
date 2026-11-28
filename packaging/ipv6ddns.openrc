@@ -9,6 +9,8 @@ supervisor="supervise-daemon"
 command="/usr/bin/ipv6ddns"
 command_args="--config /etc/ipv6ddns/config.yaml"
 respawn_delay=5
+# Every time, as systemd does: by default it gives up after ten.
+respawn_max=0
 
 # It runs as root, for the raw sockets discovery listens and probes with and for a resolver at
 # 53, and so its configuration, which has the credentials, is root's alone to read.

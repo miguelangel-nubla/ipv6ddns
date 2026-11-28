@@ -43,6 +43,8 @@ pkgs.testers.runNixOSTest {
     assert machine.succeed("systemctl show ipv6ddns.service -p NoNewPrivileges --value").strip() == "yes"
     machine.succeed("systemctl cat ipv6ddns.service | grep -q 'man:ipv6ddns(1)'")
     machine.succeed("test -d /var/lib/ipv6ddns")
+    # What it writes goes there, and not beside the configuration, which is in the store.
+    machine.succeed("grep -qx 'state_dir: /var/lib/ipv6ddns' $(systemctl show ipv6ddns.service -p ExecStart --value | grep -o '/nix/store/[^ ;]*ipv6ddns.yaml' | head -1)")
 
     # And nothing was refused to it.
     machine.fail(

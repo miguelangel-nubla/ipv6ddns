@@ -20,10 +20,13 @@ TimeoutStopSec=40s
 CapabilityBoundingSet=CAP_NET_RAW CAP_NET_BIND_SERVICE
 NoNewPrivileges=yes
 
-# The file system is read only, but for the configuration's folder: the key Home Assistant
-# gives is kept there, in homeassistant.state.
+# The file system is read only, but for the configuration's folder, where it keeps what it
+# writes: the certificates, the blocklists' copies, the key Home Assistant gives. And for
+# /var/lib/ipv6ddns, for a state_dir there.
 ProtectSystem=strict
 ReadWritePaths=/etc/ipv6ddns
+StateDirectory=ipv6ddns
+StateDirectoryMode=0700
 ProtectHome=read-only
 PrivateTmp=yes
 PrivateDevices=yes

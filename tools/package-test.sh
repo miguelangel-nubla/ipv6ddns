@@ -121,10 +121,12 @@ inside='
 	printf "[server]\nhost-name=pkgpeer\nuse-ipv4=yes\nuse-ipv6=yes\nenable-dbus=no\nallow-interfaces=eth0\n[publish]\npublish-workstation=no\n" >/tmp/avahi/avahi-daemon.conf
 	ip netns exec peer avahi-daemon -f /tmp/avahi/avahi-daemon.conf -D
 
-	# The service, with the configuration the package brings, and IPv4, which it leaves off.
-	printf "\ndiscovery:\n  ipv4:\n    enabled: true\n" >>"$config"
+	# The service, with the configuration the package brings, and IPv4, which it leaves off. And
+	# with the state_dir the documentation gives, which the service must be let to make and write.
+	printf "\ndiscovery:\n  ipv4:\n    enabled: true\nstate_dir: /var/lib/ipv6ddns\n" >>"$config"
 	service_start
 	healthy || fail "the service does not answer"
+	[ -d /var/lib/ipv6ddns ] || fail "the service did not make its state_dir, /var/lib/ipv6ddns"
 	service_limits
 	pid=$(service_pid)
 
