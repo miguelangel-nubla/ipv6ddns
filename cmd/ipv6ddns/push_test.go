@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -123,10 +124,10 @@ func TestPushHandler(t *testing.T) {
 	// Without myip, the address it comes from, when public: as from a router on the internet.
 	req := httptest.NewRequest("GET", "/nic/update?hostname=lab", nil)
 	req.SetBasicAuth("x", "other")
-	req.RemoteAddr = "198.51.100.7:4321"
+	req.RemoteAddr = "9.9.9.9:4321"
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
-	if body := strings.TrimSpace(resp.Body.String()); resp.Code != 200 || body != "good 198.51.100.7" {
+	if body := strings.TrimSpace(resp.Body.String()); resp.Code != 200 || body != "good 9.9.9.9" {
 		// lab had 203.0.113.20: the address it comes from replaces it.
 		t.Errorf("from a public address: %d %q", resp.Code, body)
 	}
@@ -187,5 +188,118 @@ credentials: {}
 	}
 	if got := logs.FilterMessageSnippet("keeping the addresses").Len(); got != 1 {
 		t.Errorf("logged %v", logs.All())
+	}
+}
+
+// Without myip, the address the update came from, when it is public: one of the carrier's NAT,
+// 100.64.0.0/10, as a tunnel's too, or of the other ranges no one reaches, is not, however it is
+// written; and one the Internet reaches is, of either family.
+func TestPushFromAnAddressThatIsNotPublic(t *testing.T) {
+	for remote, public := range map[string]bool{
+		"100.64.0.7:40000":             false,
+		"198.18.0.1:40000":             false,
+		"192.0.0.8:40000":              false,
+		"203.0.113.9:40000":            false,
+		"240.0.0.1:40000":              false,
+		"[64:ff9b:1::1]:40000":         false,
+		"[2001:db8::1]:40000":          false,
+		"[fd00::1]:40000":              false,
+		"[fe80::1%eth0]:40000":         false,
+		"[::ffff:192.168.1.1]:40000":   false,
+		"[::ffff:100.64.0.7]:40000":    false,
+		"127.0.0.1:40000":              false,
+		"nonsense":                     false,
+		"9.9.9.9:40000":                true,
+		"[::ffff:9.9.9.9]:40000":       true,
+		"[2620:fe::fe]:40000":          true,
+		"[2a00:1450:4003::2003]:40000": true,
+	} {
+		w, handler := pushWorker(t)
+		req := httptest.NewRequest(http.MethodGet, "/nic/update?hostname=wan", nil)
+		req.RemoteAddr = remote
+		req.SetBasicAuth("router", "secret")
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+		s, _ := w.PushSource("wan")
+		got := s.Addresses().Strings()
+		switch {
+		case !public && (resp.Code != http.StatusBadRequest || len(got) != 0):
+			t.Errorf("from %s: %d %q, and the source has %v: want 400 and none", remote, resp.Code, strings.TrimSpace(resp.Body.String()), got)
+		case public && (resp.Code != http.StatusOK || len(got) != 1 || got[0] != netip.MustParseAddrPort(remote).Addr().Unmap().String()):
+			t.Errorf("from %s: %d %q, and the source has %v: want 200 and the address", remote, resp.Code, strings.TrimSpace(resp.Body.String()), got)
+		}
+	}
+}
+
+// What myip gives is published as given, with the password: an IPv4 address written as IPv6 is
+// the IPv4 one, and a zone is left out.
+func TestPushAddressForms(t *testing.T) {
+	w, handler := pushWorker(t)
+	req := httptest.NewRequest(http.MethodGet, "/nic/update?hostname=wan&myip=::ffff:203.0.113.9&myipv6=fe80::1%25eth0", nil)
+	req.SetBasicAuth("router", "secret")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	s, _ := w.PushSource("wan")
+	if got := slices.Sorted(slices.Values(s.Addresses().Strings())); resp.Code != http.StatusOK || !slices.Equal(got, []string{"203.0.113.9", "fe80::1"}) {
+		t.Errorf("%d %q, and the source has %v", resp.Code, strings.TrimSpace(resp.Body.String()), got)
+	}
+}
+
+// A POST's body is bounded, before any password: one over the bound is refused, and one within
+// it, as a router sends, is taken.
+func TestPushBodyIsBounded(t *testing.T) {
+	w, handler := pushWorker(t)
+	post := func(body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/nic/update", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+		return resp.Code
+	}
+	if code := post("hostname=wan&myip=203.0.113.9&password=secret&x=" + strings.Repeat("a", pushBodyLimit)); code != http.StatusRequestEntityTooLarge {
+		t.Errorf("a body over the bound: %d, want 413", code)
+	}
+	s, _ := w.PushSource("wan")
+	if got := s.Addresses().Strings(); len(got) != 0 {
+		t.Errorf("after it, the source has %v", got)
+	}
+	if code := post("hostname=wan&myip=203.0.113.9&password=secret"); code != http.StatusOK {
+		t.Errorf("a router's body: %d, want 200", code)
+	}
+}
+
+// What is logged of a refused update is the address it came from and why: never the password,
+// in the URL or the body.
+func TestPushLogsNoPassword(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte("listeners:\n  web:\n    listen:\n      - http://127.0.0.1:8053\nwebservers:\n  main:\n    listeners:\n      - web\nsources:\n  wan:\n    type: push\n    password: secret\ntasks: {}\ncredentials: {}\n"), 0o600)
+	cfg, err := config.NewConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core, logs := observer.New(zap.DebugLevel)
+	w, err := ipv6ddns.NewWorker(zap.New(core).Sugar(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := refusedWait
+	refusedWait = 0
+	t.Cleanup(func() { refusedWait = saved })
+	for _, target := range []string{
+		"/nic/update?hostname=wan&myip=203.0.113.9&password=GUESSED-1",
+		"/nic/update?hostname=nope&myip=203.0.113.9&password=GUESSED-2",
+		"/nic/update?hostname=wan&myip=nonsense&password=GUESSED-3",
+		"/nic/update?hostname=wan&myip=203.0.113.9&password=secret",
+	} {
+		webHandler(w).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+	}
+	if logs.Len() < 4 {
+		t.Fatalf("logged %d lines, want one for each", logs.Len())
+	}
+	for _, entry := range logs.All() {
+		if strings.Contains(entry.Message, "GUESSED") || strings.Contains(entry.Message, "secret") {
+			t.Errorf("logged a password: %s", entry.Message)
+		}
 	}
 }

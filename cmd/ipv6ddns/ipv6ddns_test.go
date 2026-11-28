@@ -383,3 +383,56 @@ tasks: {}
 		t.Errorf("%d %q", response.Code, response.Body.String())
 	}
 }
+
+// What the configuration's reading leaves to the worker's making is refused there, before
+// anything starts: a provider there is none of, and two keys of one name to TSIG, which has no
+// case.
+func TestWorkerRefusesWhatTheConfigurationLeaves(t *testing.T) {
+	for name, c := range map[string]struct{ config, want string }{
+		"an unknown provider": {"tasks: {}\ncredentials:\n  x:\n    provider: nope\n    settings: {}\n", "nope"},
+		"two keys of one name": {`
+listeners:
+  lan:
+    listen:
+      - dns://192.0.2.1
+resolvers:
+  lan:
+    listeners:
+      - lan
+    upstream: 192.0.2.53
+    updates:
+      keys:
+        nas:
+          secret: MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
+          permissions:
+            - names:
+                zone: home.arpa
+        NAS:
+          secret: MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
+          permissions:
+            - names:
+                zone: lab.test
+credentials:
+  home:
+    provider: resolver
+    settings:
+      zone: home.arpa
+  lab:
+    provider: resolver
+    settings:
+      zone: lab.test
+tasks: {}
+`, "is there twice"},
+	} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		os.WriteFile(path, []byte(c.config), 0o600)
+		cfg, err := config.NewConfig(path)
+		if err != nil {
+			t.Errorf("%s: the configuration: %v", name, err)
+			continue
+		}
+		if _, err := ipv6ddns.NewWorker(zap.NewNop().Sugar(), cfg); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: the worker: %v, want an error with %q", name, err, c.want)
+		}
+	}
+}

@@ -196,7 +196,7 @@ func main() {
 			}
 			for _, listener := range listeners {
 				worker.WebListening(entry.Listener, scheme+listener.Addr().String())
-				server := &http.Server{Handler: allowOnly(webHandler(worker), entry.Allow), ReadHeaderTimeout: 10 * time.Second, TLSConfig: tlsConfig}
+				server := newWebServer(allowOnly(webHandler(worker), entry.Allow), tlsConfig)
 				servers = append(servers, server)
 				go func() {
 					if err := serveWeb(sugar, web.Path, server, listener); err != nil {
@@ -234,13 +234,12 @@ func main() {
 	stop()
 
 	sugar.Info("stopping")
+	// The web servers first, in a time of their own: the updates running have all of theirs after.
+	if err := stopWeb(servers); err != nil {
+		sugar.Errorf("web server: %s: requests still in progress were cut off", err)
+	}
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	for _, server := range servers {
-		if err := server.Shutdown(shutdown); err != nil {
-			sugar.Errorf("web server: %s: requests still in progress were cut off", err)
-		}
-	}
 	if err := worker.Shutdown(shutdown); err != nil {
 		sugar.Errorf("%s: updates still running were cut off", err)
 	}
@@ -248,6 +247,51 @@ func main() {
 
 // shutdownTimeout is how long the updates running get to end, when stopping.
 const shutdownTimeout = 30 * time.Second
+
+// The times of a web server. They are variables for the tests, which shorten them.
+var (
+	// A request, whole, with its body: a router's update is a line. One that doesn't come in it,
+	// from anyone, before any password, is ended.
+	webReadTimeout = 30 * time.Second
+	// An answer, from the request's headers on: more than the slowest takes, which is an update
+	// whose body took all of webReadTimeout, and then refusedWait for a wrong password.
+	webWriteTimeout = time.Minute
+	// A connection kept open with no request on it.
+	webIdleTimeout = 2 * time.Minute
+	// The requests in progress, of all the web servers, when stopping: those left then are cut off.
+	webShutdownTimeout = 5 * time.Second
+)
+
+// newWebServer is a web server of the handler, with the times of one, and over HTTPS with a TLS
+// configuration.
+func newWebServer(handler http.Handler, tlsConfig *tls.Config) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: min(10*time.Second, webReadTimeout),
+		ReadTimeout:       webReadTimeout,
+		WriteTimeout:      webWriteTimeout,
+		IdleTimeout:       webIdleTimeout,
+	}
+}
+
+// stopWeb shuts the web servers down, all at once, letting the requests in progress end within
+// webShutdownTimeout: after it they are cut off, which is the error, the first.
+func stopWeb(servers []*http.Server) error {
+	ctx, cancel := context.WithTimeout(context.Background(), webShutdownTimeout)
+	defer cancel()
+	errs := make([]error, len(servers))
+	var wg sync.WaitGroup
+	for i, server := range servers {
+		wg.Go(func() {
+			if errs[i] = server.Shutdown(ctx); errs[i] != nil {
+				_ = server.Close()
+			}
+		})
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
 
 // webHandler serves the state: as a page, of HTML for a browser and of text for the rest, as JSON
 // and as Prometheus metrics, with the sensible data hidden, as the server has no authentication. /healthz answers while the process runs, and its

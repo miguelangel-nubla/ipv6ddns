@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,6 +16,9 @@ import (
 
 // pushPath is where a router sends its addresses, as to a DynDNS service of the dyndns2 protocol.
 const pushPath = "/nic/update"
+
+// pushBodyLimit is the most a POST's body has: an update is a line, of a few names and addresses.
+const pushBodyLimit = 64 << 10
 
 // refusedWait is how long a refused password waits for its answer: it slows guessing.
 var refusedWait = time.Second
@@ -40,8 +44,14 @@ func pushHandler(worker *ipv6ddns.Worker) http.Handler {
 			w.WriteHeader(status)
 			fmt.Fprintln(w, word)
 		}
+		// Read before any password: bounded, as anyone the web server answers can send it.
+		r.Body = http.MaxBytesReader(w, r.Body, pushBodyLimit)
 		if err := r.ParseForm(); err != nil {
-			fail(http.StatusBadRequest, "911", "the request doesn't read: "+err.Error())
+			status := http.StatusBadRequest
+			if tooLarge := new(http.MaxBytesError); errors.As(err, &tooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			fail(status, "911", "the request doesn't read: "+err.Error())
 			return
 		}
 		password, hasBasic := "", false
@@ -94,11 +104,11 @@ func pushHandler(worker *ipv6ddns.Worker) http.Handler {
 		if len(addrs) == 0 && !prefix.IsValid() {
 			host, _, _ := net.SplitHostPort(r.RemoteAddr)
 			ip, err := netip.ParseAddr(host)
-			if err != nil || !ip.IsGlobalUnicast() || ip.IsPrivate() {
-				fail(http.StatusBadRequest, "911", "no myip, and the request comes from a private address, which is no public one: give myip")
+			if err != nil || !isPublic(ip) {
+				fail(http.StatusBadRequest, "911", fmt.Sprintf("no myip, and the request comes from %s, which is no public address: give myip", host))
 				return
 			}
-			addrs = []netip.Addr{ip.Unmap()}
+			addrs = []netip.Addr{ip.Unmap().WithZone("")}
 		}
 
 		// Every source, and its password, before any takes the addresses: a request refused
@@ -136,6 +146,36 @@ func pushHandler(worker *ipv6ddns.Worker) http.Handler {
 		}
 		fmt.Fprintln(w, strings.Join(answer, "\n"))
 	})
+}
+
+// notPublic are the ranges that no one reaches from the Internet, other than those netip tells of
+// itself, as the private ones: the carrier's NAT, which a tunnel's addresses are of too, the
+// protocols' own, the benchmarks', those of the documentation, the reserved ones, and in IPv6 the
+// local NAT64's, the discard's and those of the documentation.
+var notPublic = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("3fff::/20"),
+}
+
+// isPublic tells whether the address is one the Internet reaches: what a request without myip
+// comes from is published only then. An IPv4 one written as IPv6, ::ffff:192.168.1.1, is the
+// IPv4 one.
+func isPublic(ip netip.Addr) bool {
+	ip = ip.Unmap().WithZone("")
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return false
+	}
+	return !slices.ContainsFunc(notPublic, func(p netip.Prefix) bool { return p.Contains(ip) })
 }
 
 // sortedAddresses are the addresses in order, IPv4 first.
