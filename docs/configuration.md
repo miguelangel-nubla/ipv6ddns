@@ -114,6 +114,18 @@ credentials:
 
 A missing variable or file is an error. The error names the key, not the value.
 
+## Proxies
+
+Some of what ipv6ddns sends over HTTP goes through a proxy when `HTTPS_PROXY` is set, or `HTTP_PROXY` for `http://`, except to the hosts in `NO_PROXY`. The others connect directly, whatever the environment says.
+
+| Through the proxy | Directly |
+|---|---|
+| An [`http` source](sources.md), whose address is then the one the proxy goes out from | Every DNS provider, Cloudflare and Route 53 among them, and MikroTik's API, which isn't HTTP |
+| The [blocklists'](resolver.md#blocking) downloads | The resolver's upstream servers, DNS over HTTPS too |
+| The ACME authority, for [certificates](resolver.md#a-certificate-from-lets-encrypt) | |
+
+So on a network whose only way out is a proxy, the providers can't be reached. The machine ipv6ddns runs on needs a direct way out to them.
+
 ## Validation
 
 The configuration is checked against its [schema](../config/schema.json) as it loads. Any of these stops the start, with an error that says what is wrong and where:

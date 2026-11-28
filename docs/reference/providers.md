@@ -2,7 +2,7 @@
 
 <!-- Generated from the schemas by `go test ./internal/docgen -update`: edit them, not this page. -->
 
-A credential's `provider` is one of these, and its `settings` are those of the provider. An unknown setting is an error. A `ttl` is a duration string, as `5m`. Adding a provider: see [CONTRIBUTING](../../CONTRIBUTING.md).
+A credential's `provider` is one of these, and its `settings` are those of the provider. An unknown setting is an error. A `ttl` is a duration string, as `5m`. A provider connects directly, through no proxy: see [proxies](../configuration.md#proxies). Adding a provider: see [CONTRIBUTING](../../CONTRIBUTING.md).
 
 - [`adguardhome`](#adguardhome)
 - [`cloudflare`](#cloudflare)
